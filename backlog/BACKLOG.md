@@ -1,0 +1,181 @@
+# Backlog
+
+The work queue for the agent team. `/next-task` takes the first task with `status: todo` whose dependencies are `done`.
+
+Status values: `todo`, `in-progress`, `done`, `blocked`, `needs-mac-verification`.
+
+Owners: `contract-keeper`, `backend-engineer`, `infra-engineer`, `ios-engineer`, `planner`, `human`.
+
+Milestones M0 and M1 are broken into tasks. M2 to M6 are planned with `/plan-milestone` when their turn comes, so the plan can use what was learned before.
+
+---
+
+## M0 Foundations
+
+Goal: the repo builds, tests and checks itself; the shared contract exists.
+
+### M0-T1 Vocabulary v1
+- status: todo
+- owner: contract-keeper
+- depends: none
+- implements: docs/04-specification.md, sections Input model, F2, F3
+- acceptance:
+  - `contracts/vocabulary/v1/` holds methods, criteria, intensities, water types, milk types, processes, roast levels, bag sizes, price bands, numeric ranges and flavour notes (two levels, about 80 terms, marked `draft` until the owner approves).
+  - `contracts/i18n/en.json` and `de.json` have a label for every id; a test fails when one is missing.
+  - A JSON Schema validates every vocabulary file; a test runs it.
+
+### M0-T2 OpenAPI skeleton
+- status: todo
+- owner: contract-keeper
+- depends: M0-T1
+- implements: docs/05-system-design.md, Data model
+- acceptance:
+  - `contracts/openapi.yaml` defines the routes for barcode lookup, bean create, shelf, brews, recipes, profile, export and delete account.
+  - A lint test fails on any string property without `enum`, `pattern` or `format`, and on any number without bounds.
+
+### M0-T3 Backend workspace
+- status: todo
+- owner: backend-engineer
+- depends: M0-T2
+- acceptance:
+  - `backend/` is a strict TypeScript project with Vitest, ESLint and an esbuild bundle script.
+  - zod schemas and types are generated from `contracts/`; generation is checked in CI (no drift).
+  - A health handler with a passing test exists.
+
+### M0-T4 Infra workspace
+- status: todo
+- owner: infra-engineer
+- depends: M0-T3
+- acceptance:
+  - `infra/` is a CDK v2 app with `dev` and `prod` stages in eu-central-1 that synthesises.
+  - An assertion test fails if the template contains a forbidden resource type (see CLAUDE.md, invariant 5).
+
+### M0-T5 Continuous integration
+- status: todo
+- owner: infra-engineer
+- depends: M0-T3, M0-T4
+- acceptance:
+  - `.github/workflows/ci.yml` runs on pull requests: contract tests, backend tests and lint, `cdk synth`, infra tests, `scripts/check-no-free-text.sh`.
+  - Third-party actions are pinned; the workflow has read-only permissions.
+
+### M0-T6 iOS project skeleton
+- status: todo
+- owner: ios-engineer
+- depends: M0-T1
+- acceptance:
+  - `ios/` holds an Xcode project (iOS 17, SwiftUI) with app and test targets, a String Catalog with German and English, and the vocabulary bundled and loaded through generated types.
+  - A unit test loads every vocabulary file and resolves every label in both languages.
+  - A macOS CI job builds and tests the app.
+
+### M0-T7 Accounts and secrets
+- status: todo
+- owner: human
+- needs: human
+- depends: none
+- acceptance:
+  - Apple Developer Program membership active; App ID and Sign in with Apple key created.
+  - AWS dev and prod accounts exist with MFA on root; CDK bootstrapped; GitHub OIDC deploy role created.
+  - Repository secrets set for the Claude GitHub workflow.
+
+---
+
+## M1 Personal log, backend
+
+Goal: a signed-in user can store and read their own shelf, brews and recipes through the API, in the dev account.
+
+### M1-T1 Table, buckets and safety properties
+- status: todo
+- owner: infra-engineer
+- depends: M0-T4
+- implements: docs/05-system-design.md, Data model, Persistence and recovery
+- acceptance:
+  - The DynamoDB table and both buckets exist in the stack with the properties in the design doc.
+  - Assertion tests pin: on-demand billing, PITR, deletion protection, stream enabled, RETAIN, public access blocked, versioning, TLS-only policy.
+
+### M1-T2 Identity and API shell
+- status: todo
+- owner: infra-engineer
+- depends: M1-T1, M0-T7
+- implements: docs/05-system-design.md, Components, Security
+- acceptance:
+  - Cognito user pool (Lite plan, Sign in with Apple only) and an HTTP API with JWT authorizer and throttling are in the stack.
+  - A test asserts every route except the App Store notifications route has the authorizer.
+
+### M1-T3 Repository module
+- status: todo
+- owner: backend-engineer
+- depends: M0-T3
+- implements: docs/05-system-design.md, Data model
+- acceptance:
+  - One module builds every key format in the data model and exposes typed reads and writes.
+  - Tests against DynamoDB Local cover each item type and prove one user cannot address another user's partition.
+
+### M1-T4 Bean catalogue and barcode routes
+- status: todo
+- owner: backend-engineer
+- depends: M1-T3, M0-T2
+- implements: docs/04-specification.md, F1
+- acceptance:
+  - Look up a barcode; create an unverified bean from pick-list attributes or a confirmed Open Food Facts hit, with the source tagged per field.
+  - Issue a presigned upload URL for a label photo (size and content-type limited).
+  - Tests cover known, unknown and malformed barcodes.
+
+### M1-T5 Shelf, brew and recipe routes
+- status: todo
+- owner: backend-engineer
+- depends: M1-T3, M0-T2
+- implements: docs/04-specification.md, F2, F3
+- acceptance:
+  - Create, list, update and delete for shelf entries, brews with ratings, and recipes.
+  - Every field is validated against the vocabulary version sent with the request; unknown properties are rejected.
+  - Tests cover range limits, half-step scores, the five-note maximum and method-dependent fields.
+
+### M1-T6 Profile, consent, export and deletion
+- status: todo
+- owner: backend-engineer
+- depends: M1-T5
+- implements: docs/05-system-design.md, Security; docs/07-open-questions.md D1, D2
+- acceptance:
+  - Profile holds consent and locale; export returns all of a user's items as CSV; delete removes the whole user partition and the label photos.
+  - Tests prove nothing of the user remains after deletion.
+
+### M1-T7 Deploy pipeline to dev
+- status: todo
+- owner: infra-engineer
+- depends: M1-T2, M0-T5
+- needs: human (approve the first deployment)
+- acceptance:
+  - A workflow deploys to dev through OIDC on merge to `main`, and to prod only through a manually approved environment.
+  - A smoke test calls the health route after deploy.
+
+---
+
+## M2 Personal log, iOS
+
+Goal: scan, shelf, brew, rate and personal statistics work offline and sync. Not yet planned; run `/plan-milestone M2`.
+
+Scope: Sign in with Apple, barcode scanner, Open Food Facts lookup, pick-list bean entry with label photo, shelf, brew form per method, timer, rating screen, recipes and one-tap repeat, local store and sync outbox, personal statistics, CSV export, account deletion, onboarding with consent, accessibility pass.
+
+## M3 Aggregation
+
+Goal: aggregates per bean and per method stay correct under create, edit, delete and replay. Not yet planned.
+
+Scope: stream aggregator, rater markers, recipe histogram buckets, nightly rankings job, 5-rater threshold, one-rating-per-user-bean-day rule, weekly export to S3, load test of the aggregator with replayed records.
+
+## M4 Paid tier
+
+Goal: subscribers see Explore; free users see the give-to-get teaser. Not yet planned.
+
+Scope: StoreKit 2 purchase and restore, transaction verification, App Store Server Notifications route, entitlement on the profile, paid API routes, Explore screens (bean page, method breakdown, top recipes, rankings), paywall.
+
+## M5 Hardening
+
+Goal: ready for strangers. Not yet planned.
+
+Scope: App Attest, per-user write caps, budgets and alarms, operator CLI for the review queue and catalogue curation, restore drill from point-in-time recovery and from the S3 export, privacy review, performance against the 300 ms target.
+
+## M6 Launch
+
+Goal: TestFlight, then App Store. Not yet planned. Mostly human tasks.
+
+Scope: App Store listing, screenshots, privacy nutrition labels, privacy policy and terms, TestFlight round with the persona interviews, production deployment, launch checklist.

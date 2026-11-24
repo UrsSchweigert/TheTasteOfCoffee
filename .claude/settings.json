@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git switch:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(npm ci:*)",
+      "Bash(npm test:*)",
+      "Bash(npm run lint:*)",
+      "Bash(npm run build:*)",
+      "Bash(npx vitest:*)",
+      "Bash(npx cdk synth:*)",
+      "Bash(scripts/check-no-free-text.sh:*)"
+    ],
+    "deny": [
+      "Bash(cdk deploy:*)",
+      "Bash(npx cdk deploy:*)",
+      "Bash(cdk destroy:*)",
+      "Bash(npx cdk destroy:*)",
+      "Bash(cdk bootstrap:*)",
+      "Bash(npx cdk bootstrap:*)",
+      "Bash(aws:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./**/*.p8)",
+      "Read(./**/*.pem)",
+      "Read(./**/*.mobileprovision)"
+    ]
+  }
+}

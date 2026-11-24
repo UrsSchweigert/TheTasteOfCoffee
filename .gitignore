@@ -1,0 +1,24 @@
+# secrets
+.env
+.env.*
+*.p8
+*.p12
+*.pem
+*.mobileprovision
+.claude/settings.local.json
+
+# node
+node_modules/
+dist/
+coverage/
+cdk.out/
+*.tsbuildinfo
+
+# xcode
+DerivedData/
+build/
+xcuserdata/
+*.xcuserstate
+
+# os
+.DS_Store
