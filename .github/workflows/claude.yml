@@ -1,10 +1,13 @@
 # Lets you drive the agent team from GitHub: mention @claude in an issue or
 # pull request comment, for example "@claude /next-task" or "@claude /status".
 #
-# Setup (once): install the Claude GitHub App on this repository and add the
-# ANTHROPIC_API_KEY repository secret. If you use a Claude subscription instead,
-# add CLAUDE_CODE_OAUTH_TOKEN and replace the anthropic_api_key line with:
-#   claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+# Setup (once): install the Claude GitHub App on this repository, run
+# `claude setup-token` locally and save the result as the repository secret
+# CLAUDE_CODE_OAUTH_TOKEN. Runs then draw on your Claude subscription's usage
+# allowance. To bill an API key instead, replace the token line with:
+#   anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+#
+# Each run is capped by --max-turns and the job timeout below.
 name: Claude Code
 on:
   issue_comment:
@@ -31,4 +34,5 @@ jobs:
           fetch-depth: 1
       - uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: "--max-turns 80"

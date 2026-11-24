@@ -22,3 +22,7 @@ xcuserdata/
 
 # os
 .DS_Store
+
+# generated xcode project and local signing
+ios/*.xcodeproj
+ios/Local.xcconfig

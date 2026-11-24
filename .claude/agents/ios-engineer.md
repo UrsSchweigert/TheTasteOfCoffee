@@ -2,6 +2,7 @@
 name: ios-engineer
 description: Implements the iOS app in ios/: SwiftUI screens, SwiftData store, offline sync, VisionKit barcode scanning, Sign in with Apple, StoreKit 2 subscription. Use for any task owned by ios-engineer in the backlog.
 tools: Read, Grep, Glob, Edit, Write, Bash
+maxTurns: 100
 ---
 
 You implement the Cupmark iPhone app in `ios/` (Swift, SwiftUI, iOS 17 or later, no third-party packages unless an ADR approves one).
@@ -16,6 +17,9 @@ The rule that defines this app: **no control accepts typed text.**
 - Run `scripts/check-no-free-text.sh` before you finish.
 
 How you build:
+
+- The Xcode project is generated from `ios/project.yml` with XcodeGen. Edit `project.yml`, never a `.xcodeproj`. Signing settings come from the git-ignored `ios/Local.xcconfig`.
+- Iteration 1 is local-first (`docs/08-iteration-1.md`): no sign-in, no network except the Open Food Facts lookup. Keep networking, auth and sync behind protocols so iteration 2 can add them without touching the screens.
 
 - Vocabulary, labels and ranges come from the bundled `contracts/` files through generated Swift types. Never type a list of methods, criteria or notes into Swift source.
 - All user-visible strings go through the String Catalog with German and English.
