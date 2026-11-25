@@ -29,6 +29,9 @@ final class SystemWebAuthenticator: WebAuthenticator {
 
     func authenticate(url: URL, callbackScheme: String) async throws -> URL {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, any Error>) in
+            // ASWebAuthenticationSession may call the completion even when `start()` returns
+            // false; whichever comes first resumes, the other is ignored.
+            let once = ResumeOnce(continuation)
             let completion: ASWebAuthenticationSession.CompletionHandler = { [weak self] callbackURL, error in
                 Task { @MainActor in
                     self?.session = nil
@@ -36,17 +39,17 @@ final class SystemWebAuthenticator: WebAuthenticator {
                 }
                 if let error {
                     if let sessionError = error as? ASWebAuthenticationSessionError, sessionError.code == .canceledLogin {
-                        continuation.resume(throwing: AuthError.cancelled)
+                        once.resume(.failure(AuthError.cancelled))
                     } else {
-                        continuation.resume(throwing: AuthError.couldNotStart)
+                        once.resume(.failure(AuthError.couldNotStart))
                     }
                     return
                 }
                 guard let callbackURL else {
-                    continuation.resume(throwing: AuthError.unexpectedCallback)
+                    once.resume(.failure(AuthError.unexpectedCallback))
                     return
                 }
-                continuation.resume(returning: callbackURL)
+                once.resume(.success(callbackURL))
             }
             let session: ASWebAuthenticationSession
             if #available(iOS 17.4, *) {
@@ -62,7 +65,7 @@ final class SystemWebAuthenticator: WebAuthenticator {
             if !session.start() {
                 self.session = nil
                 self.anchorProvider = nil
-                continuation.resume(throwing: AuthError.couldNotStart)
+                once.resume(.failure(AuthError.couldNotStart))
             }
         }
     }
@@ -87,5 +90,31 @@ private final class PresentationAnchorProvider: NSObject, ASWebAuthenticationPre
 
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
         anchor
+    }
+}
+
+/// Resumes a checked continuation at most once; later calls do nothing. A second resume
+/// would trap.
+final class ResumeOnce<Value: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Value, any Error>?
+
+    init(_ continuation: CheckedContinuation<Value, any Error>) {
+        self.continuation = continuation
+    }
+
+    /// True if this call resumed the continuation.
+    @discardableResult
+    func resume(_ result: Result<Value, any Error>) -> Bool {
+        let pending: CheckedContinuation<Value, any Error>? = lock.withLock {
+            let current = continuation
+            continuation = nil
+            return current
+        }
+        guard let pending else {
+            return false
+        }
+        pending.resume(with: result)
+        return true
     }
 }

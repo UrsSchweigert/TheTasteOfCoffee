@@ -29,6 +29,14 @@ extension StoredBrew: SyncTracked {}
 extension StoredRecipe: SyncTracked {}
 extension StoredProfile: SyncTracked {}
 
+/// The models `AccountStore.markDeleted(_:)` accepts. The profile is not one of them.
+protocol LocalDeletable: SyncTracked {}
+
+extension StoredBean: LocalDeletable {}
+extension StoredShelfEntry: LocalDeletable {}
+extension StoredBrew: LocalDeletable {}
+extension StoredRecipe: LocalDeletable {}
+
 // MARK: - Beans
 
 /// The five bean attributes as contract ids, one group of `StoredBean`.
@@ -284,7 +292,8 @@ extension BrewParameterColumns {
         set { milkID = newValue?.rawValue }
     }
 
-    /// `water_temp_c` or `water_temp_special`. Setting one clears the other.
+    /// `water_temp_c` or `water_temp_special`. Setting one clears the other. Reading prefers
+    /// `water_temp_c` if both columns were ever set; `apiParameters()` refuses that case.
     var waterTemperature: API.WaterTemperature? {
         get {
             if let waterTempC {
@@ -323,10 +332,15 @@ extension BrewParameterColumns {
         milkID = parameters.milk?.rawValue
     }
 
-    /// The parameters to send. Throws for any id the bundled vocabulary does not know.
+    /// The parameters to send. Throws for any id the bundled vocabulary does not know, and
+    /// `conflictingWaterTemperature` when both temperature columns are set (the contract
+    /// allows at most one; `waterTemperature` never writes both).
     func apiParameters() throws -> API.BrewParameters {
         guard let method = try StoredVocabulary.require(methodID, as: Vocabulary.Method.self) else {
             throw LocalStoreError.unknownVocabularyID(namespace: Vocabulary.Method.namespace, id: methodID)
+        }
+        guard waterTempC == nil || waterTempSpecialID == nil else {
+            throw LocalStoreError.conflictingWaterTemperature
         }
         var temperature: API.WaterTemperature?
         if let waterTempC {
@@ -434,11 +448,16 @@ struct RatingValues: Codable, Equatable, Sendable {
         return API.Rating(scores: apiScores, intensities: apiIntensities, flavourNotes: notes, buyAgain: buyAgain)
     }
 
-    /// Sorted keys, so the same rating always encodes to the same bytes.
-    static func encoded(_ values: RatingValues) -> Data? {
+    /// The stored bytes, with sorted keys, so the same rating always encodes the same way.
+    /// Throws `nonFiniteScore` for a score that is NaN or infinite (JSON cannot hold it), and
+    /// passes on any other encoding error. Never returns nothing for a rating.
+    static func encoded(_ values: RatingValues) throws -> Data {
+        for id in values.scores.keys.sorted() where values.scores[id].map({ score in !score.isFinite }) == true {
+            throw LocalStoreError.nonFiniteScore(id: id)
+        }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        return try? encoder.encode(values)
+        return try encoder.encode(values)
     }
 
     static func decoded(_ data: Data) -> RatingValues? {
@@ -450,22 +469,26 @@ struct RatingValues: Codable, Equatable, Sendable {
 
 extension StoredBrew {
     /// A brew with the values of `input`. The caller links the shelf entry (`AccountStore`).
-    convenience init(_ input: API.BrewInput, serverID: String? = nil) {
+    /// Throws like `setRating(_:)` for a rating that cannot be stored.
+    convenience init(_ input: API.BrewInput, serverID: String? = nil) throws {
         self.init(
             serverID: serverID,
             vocabularyVersion: input.vocabularyVersion,
             brewedAtMilliseconds: input.brewedAt.millisecondsSince1970,
             methodID: input.parameters.method.rawValue
         )
-        apply(input)
+        try apply(input)
     }
 
     /// Takes every value of `input` but `shelf_entry_id`: the caller links the entry.
-    func apply(_ input: API.BrewInput) {
+    /// The rating is encoded first, so a rating that cannot be stored throws and changes
+    /// nothing.
+    func apply(_ input: API.BrewInput) throws {
+        let ratingBytes = try input.rating.map { value in try RatingValues.encoded(RatingValues(value)) }
         vocabularyVersion = input.vocabularyVersion
         brewedAtMilliseconds = input.brewedAt.millisecondsSince1970
         setParameters(input.parameters)
-        rating = input.rating.map { value in RatingValues(value) }
+        ratingData = ratingBytes
     }
 
     var brewedAt: Date {
@@ -473,9 +496,15 @@ extension StoredBrew {
     }
 
     /// The rating, nil for an unrated brew (or stored bytes that do not decode).
+    /// Set it with `setRating(_:)`.
     var rating: RatingValues? {
-        get { ratingData.flatMap { data in RatingValues.decoded(data) } }
-        set { ratingData = newValue.flatMap { values in RatingValues.encoded(values) } }
+        ratingData.flatMap { data in RatingValues.decoded(data) }
+    }
+
+    /// Stores `values`, or removes the rating for nil. Throws `nonFiniteScore` (or an
+    /// encoding error) and keeps the previous rating, instead of dropping it silently.
+    func setRating(_ values: RatingValues?) throws {
+        ratingData = try values.map { value in try RatingValues.encoded(value) }
     }
 
     /// Days since roast (`BrewDerivedValues.daysSinceRoast`), in the device calendar unless

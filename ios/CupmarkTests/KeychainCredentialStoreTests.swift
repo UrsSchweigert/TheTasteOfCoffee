@@ -23,8 +23,21 @@ final class KeychainCredentialStoreTests: XCTestCase {
         do {
             return try body()
         } catch AuthError.keychain(let status) where KeychainCredentialStoreTests.unavailable.contains(status) {
-            throw XCTSkip("Keychain not available in this test process (OSStatus \(status))")
+            throw KeychainCredentialStoreTests.skip(status)
         }
+    }
+
+    /// The skip, with a reason that says plainly in the CI log that the real Keychain test
+    /// did not run, and why.
+    private static func skip(_ status: OSStatus) -> XCTSkip {
+        let name: String
+        switch status {
+        case errSecMissingEntitlement: name = "errSecMissingEntitlement"
+        case errSecNotAvailable: name = "errSecNotAvailable"
+        case errSecInteractionNotAllowed: name = "errSecInteractionNotAllowed"
+        default: name = "unknown"
+        }
+        return XCTSkip("NOT RUN: real Keychain round trip skipped, SecItem returned OSStatus \(status) (\(name)); this test process has no Keychain access (unsigned simulator build). The session logic is still covered with FakeCredentialStore in AuthSessionTests.")
     }
 
     func testEachStageHasItsOwnService() {
@@ -75,7 +88,7 @@ final class KeychainCredentialStoreTests: XCTestCase {
         ]
         let status = SecItemAdd(item as CFDictionary, nil)
         if KeychainCredentialStoreTests.unavailable.contains(status) {
-            throw XCTSkip("Keychain not available in this test process (OSStatus \(status))")
+            throw KeychainCredentialStoreTests.skip(status)
         }
         XCTAssertEqual(status, errSecSuccess)
         XCTAssertNil(try store.load())

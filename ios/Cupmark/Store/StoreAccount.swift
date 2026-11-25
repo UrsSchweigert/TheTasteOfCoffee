@@ -3,11 +3,11 @@ import Foundation
 
 /// The account a local store belongs to (ADR 0020: the store is keyed by account).
 ///
-/// `stableID` is the id token's `sub`: opaque, stable for the life of the account, never
-/// shown and never logged. Sign-in (M2-T11) adapts its account value with one line, for
-/// example `extension AccountID: StoreAccount { var stableID: String { rawValue } }`.
-/// A later offline account (ADR 0020) only needs another stable id that cannot collide
-/// with a `sub`.
+/// `stableID` is a stable account id: the same account always has the same one, and no two
+/// accounts share one. It is never shown and never logged. The signed-in account's id is
+/// M2-T11's `AccountID`, already the lowercase hex SHA-256 of the id token's `sub`
+/// (`AccountID+StoreAccount.swift`). A later offline account (ADR 0020) only needs another
+/// stable id that cannot collide with an `AccountID`.
 protocol StoreAccount: Sendable {
     var stableID: String { get }
 }
@@ -19,8 +19,9 @@ struct StoreAccountID: StoreAccount, Hashable {
 
 /// Where an account's store lives on the device.
 ///
-/// One SQLite file per account, named from the SHA-256 of `stableID` in lower-case hex,
-/// so the raw `sub` never appears in a path. Different accounts always get different files,
+/// One SQLite file per account, named from the SHA-256 of `stableID` in lower-case hex.
+/// Hashing again keeps any `StoreAccount` id, whatever it holds, out of the path, and gives
+/// every id a fixed-length, file-safe name. Different accounts always get different files,
 /// which is what keeps one account from ever reading another's data.
 enum StoreLocation {
     /// The extension of a store file. SwiftData adds `-wal` and `-shm` files next to it.

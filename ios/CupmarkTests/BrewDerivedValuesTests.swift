@@ -22,7 +22,7 @@ final class BrewDerivedValuesTests: XCTestCase {
 
     func testBrewsAndRecipesUseTheSameRatio() throws {
         let input = try StoreFixtures.brewInput()
-        let brew = StoredBrew(input)
+        let brew = try StoredBrew(input)
         let recipe = StoredRecipe(API.RecipeInput(vocabularyVersion: Vocabulary.version, parameters: input.parameters))
         let expected = BrewDerivedValues.ratio(doseDg: input.parameters.doseDg, waterG: input.parameters.waterG)
         XCTAssertNotNil(expected)
@@ -93,7 +93,7 @@ final class BrewDerivedValuesTests: XCTestCase {
     func testAStoredBrewReadsItsShelfEntrysRoastDate() throws {
         let store = try AccountStore.inMemory()
         let entry = try StoreFixtures.syncedShelfEntry(in: store, roastDate: "2026-11-20")
-        let brew = StoredBrew(try StoreFixtures.brewInput(brewedAt: "2026-11-24T23:30:00Z"))
+        let brew = try StoredBrew(try StoreFixtures.brewInput(brewedAt: "2026-11-24T23:30:00Z"))
         try store.addBrew(brew, shelfEntry: entry)
 
         // The device travels from Berlin to New York: the stored instant stays, the count

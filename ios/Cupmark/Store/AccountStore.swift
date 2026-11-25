@@ -97,11 +97,11 @@ final class AccountStore {
             try save()
             return existing
         }
-        let profile = StoredProfile(values)
-        profile.syncState = .pendingCreate
-        context.insert(profile)
+        let created = StoredProfile(values)
+        created.syncState = .pendingCreate
+        context.insert(created)
         try save()
-        return profile
+        return created
     }
 
     /// Records a local edit of `item`, made by the caller before this call.
@@ -110,12 +110,24 @@ final class AccountStore {
         try save()
     }
 
-    /// Removes `item` on the device. An item the server never had is deleted at once; any
-    /// other is kept as `pendingDelete` and hidden until the server has removed it.
-    /// A shelf entry with brews that are not removed throws `shelfEntryHasBrews` (ADR 0012).
-    func markDeleted<Model: PersistentModel & SyncTracked>(_ item: Model) throws {
+    /// Removes `item` on the device. Only `LocalDeletable` models can be removed: the profile
+    /// cannot (the API has no delete for it; account deletion is M2-T30's own flow).
+    /// - Brew, shelf entry, recipe: an item the server never had is deleted at once; any
+    ///   other is kept as `pendingDelete` and hidden until the server has removed it.
+    /// - A shelf entry with brews that are not removed throws `shelfEntryHasBrews` (ADR 0012).
+    /// - A bean is only a local copy (the API has no bean delete), so it is deleted at once,
+    ///   but never while any shelf entry still names it: `beanHasShelfEntries`.
+    func markDeleted<Model: PersistentModel & LocalDeletable>(_ item: Model) throws {
         if let entry = item as? StoredShelfEntry, !entry.liveBrewsNewestFirst.isEmpty {
             throw LocalStoreError.shelfEntryHasBrews
+        }
+        if let bean = item as? StoredBean {
+            guard bean.shelfEntries.isEmpty else {
+                throw LocalStoreError.beanHasShelfEntries
+            }
+            context.delete(bean)
+            try save()
+            return
         }
         switch item.syncState.localDelete {
         case .removeNow:

@@ -45,6 +45,9 @@ actor AuthSession: TokenProvider {
     private var tokens: SessionTokens?
     private var refreshTask: Task<SessionTokens, any Error>?
     private var statusHandler: (@Sendable (AuthStatus) -> Void)?
+    /// Callers waiting on the running refresh without having started it. Read by the tests to
+    /// know a second caller has joined; never used for a decision.
+    private(set) var refreshJoinerCount = 0
 
     init(endpoint: any TokenEndpoint, store: any CredentialStore, now: @escaping @Sendable () -> Date = { Date() }) {
         self.endpoint = endpoint
@@ -119,6 +122,8 @@ actor AuthSession: TokenProvider {
     /// The running refresh, or a new one.
     private func refreshedTokens() async throws -> SessionTokens {
         if let running = refreshTask {
+            refreshJoinerCount += 1
+            defer { refreshJoinerCount -= 1 }
             return try await running.value
         }
         guard let credential = loadedCredential() else {

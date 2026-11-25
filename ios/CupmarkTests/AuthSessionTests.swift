@@ -36,6 +36,22 @@ final class AuthSessionTests: XCTestCase {
         return (session, log)
     }
 
+    /// Yields until `condition` holds. No clock: a bounded number of turns, then a failure.
+    private func waitUntil(
+        _ what: String,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        _ condition: () async -> Bool
+    ) async {
+        for _ in 0..<100_000 {
+            if await condition() {
+                return
+            }
+            await Task.yield()
+        }
+        XCTFail("never happened: \(what)", file: file, line: line)
+    }
+
     private func assertThrows<T>(
         _ expected: AuthError,
         file: StaticString = #filePath,
@@ -161,12 +177,18 @@ final class AuthSessionTests: XCTestCase {
 
     func testTwoCallersAtOnceShareOneRefresh() async throws {
         let endpoint = FakeTokenEndpoint()
-        await endpoint.setRefreshDelay(nanoseconds: 200_000_000)
+        await endpoint.holdRefreshes()
         let (session, _) = await makeSession(endpoint: endpoint, store: FakeCredentialStore(storedCredential))
 
-        async let first = session.currentAccessToken()
-        async let second = session.currentAccessToken()
-        let tokens = try await [first, second]
+        let first = Task { try await session.currentAccessToken() }
+        await endpoint.waitUntilARefreshIsHeld()
+        let second = Task { try await session.currentAccessToken() }
+        await waitUntil("the second caller joins the running refresh") {
+            await session.refreshJoinerCount == 1
+        }
+        await endpoint.releaseRefreshes()
+
+        let tokens = try await [first.value, second.value]
         XCTAssertEqual(tokens, ["access-2", "access-2"])
         let refreshCount = await endpoint.refreshCount
         XCTAssertEqual(refreshCount, 1)
@@ -174,13 +196,20 @@ final class AuthSessionTests: XCTestCase {
 
     func testTwoRefreshesAfterA401ShareOneRequest() async throws {
         let endpoint = FakeTokenEndpoint()
-        await endpoint.setRefreshDelay(nanoseconds: 200_000_000)
         let (session, _) = await makeSession(endpoint: endpoint)
         try await session.signIn(code: "code-1", verifier: "verifier-1")
+        await endpoint.holdRefreshes()
 
-        async let first: Void = session.refresh()
-        async let second: Void = session.refresh()
-        _ = try await (first, second)
+        let first = Task { try await session.refresh() }
+        await endpoint.waitUntilARefreshIsHeld()
+        let second = Task { try await session.refresh() }
+        await waitUntil("the second refresh joins the first") {
+            await session.refreshJoinerCount == 1
+        }
+        await endpoint.releaseRefreshes()
+
+        try await first.value
+        try await second.value
         let token = try await session.currentAccessToken()
         XCTAssertEqual(token, "access-2")
         let refreshCount = await endpoint.refreshCount
@@ -191,11 +220,18 @@ final class AuthSessionTests: XCTestCase {
         let endpoint = FakeTokenEndpoint()
         let (session, _) = await makeSession(endpoint: endpoint)
         try await session.signIn(code: "code-1", verifier: "verifier-1")
-        await endpoint.setRefreshDelay(nanoseconds: 300_000_000)
+        await endpoint.holdRefreshes()
 
         let refreshing = Task { try await session.refresh() }
-        try await Task.sleep(nanoseconds: 50_000_000)
-        let token = try await session.currentAccessToken()
+        await endpoint.waitUntilARefreshIsHeld()
+        // The access token in memory is still fresh, but a refresh is running: wait for it.
+        let caller = Task { try await session.currentAccessToken() }
+        await waitUntil("the caller waits for the running refresh") {
+            await session.refreshJoinerCount == 1
+        }
+        await endpoint.releaseRefreshes()
+
+        let token = try await caller.value
         try await refreshing.value
         XCTAssertEqual(token, "access-2")
         let refreshCount = await endpoint.refreshCount
@@ -312,22 +348,84 @@ final class AuthSessionTests: XCTestCase {
 
     func testARefreshThatEndsAfterSignOutIsDropped() async throws {
         let endpoint = FakeTokenEndpoint()
-        await endpoint.setRefreshDelay(nanoseconds: 200_000_000)
+        await endpoint.holdRefreshes()
         let store = FakeCredentialStore(storedCredential)
-        let (session, _) = await makeSession(endpoint: endpoint, store: store)
+        let (session, log) = await makeSession(endpoint: endpoint, store: store)
 
         let pending = Task { try await session.currentAccessToken() }
-        try await Task.sleep(nanoseconds: 50_000_000)
+        // The refresh is in flight at Cognito when the user signs out.
+        await endpoint.waitUntilARefreshIsHeld()
         await session.signOut()
+        XCTAssertNil(store.credential)
+        await endpoint.releaseRefreshes()
+
         do {
             _ = try await pending.value
             XCTFail("expected notSignedIn")
         } catch {
             XCTAssertEqual(error as? AuthError, .notSignedIn)
         }
-        XCTAssertNil(store.credential)
+        XCTAssertNil(store.credential, "the late answer does not sign the user back in")
+        XCTAssertEqual(log.statuses, [.signedOut])
+        let calls = await endpoint.calls
+        XCTAssertEqual(calls, [.refresh("refresh-1"), .revoke("refresh-1")])
         await assertThrows(.notSignedIn) {
             try await session.currentAccessToken()
         }
+    }
+
+    // MARK: - Token failures as API errors
+
+    func testCognitoFailuresDuringARefreshAreRetryableForTheAPIClient() async throws {
+        let cases: [(any Error, APIError)] = [
+            (AuthError.server(status: 500), .serviceUnavailable),
+            (AuthError.server(status: 503), .serviceUnavailable),
+            (AuthError.invalidResponse, .serviceUnavailable),
+            (AuthError.server(status: 429), .tooManyRequests),
+        ]
+        for (thrown, expected) in cases {
+            let endpoint = FakeTokenEndpoint(refresh: { throw thrown })
+            let store = FakeCredentialStore(storedCredential)
+            let (session, log) = await makeSession(endpoint: endpoint, store: store)
+            let server = try StubServer { _ in StubResponse(status: 200) }
+            let client = APIClient(baseURL: server.baseURL, tokenProvider: session, session: server.makeSession(), imageCache: nil)
+            do {
+                _ = try await client.getProfile()
+                XCTFail("expected \(expected)")
+            } catch {
+                XCTAssertEqual(error as? APIError, expected, "\(thrown)")
+            }
+            XCTAssertEqual(store.credential, storedCredential, "\(thrown) keeps the sign-in")
+            XCTAssertTrue(log.statuses.isEmpty)
+            XCTAssertTrue(server.requests.isEmpty)
+        }
+    }
+
+    func testOnlySignInAgainFailuresAreUnauthorized() {
+        XCTAssertEqual(APIClient.tokenFailure(AuthError.sessionExpired), .unauthorized)
+        XCTAssertEqual(APIClient.tokenFailure(AuthError.notSignedIn), .unauthorized)
+        XCTAssertEqual(APIClient.tokenFailure(AuthError.accountMismatch), .unauthorized)
+        XCTAssertEqual(APIClient.tokenFailure(AuthError.invalidGrant), .unauthorized)
+        XCTAssertEqual(APIClient.tokenFailure(AuthError.server(status: 400)), .unauthorized)
+        XCTAssertEqual(APIClient.tokenFailure(AuthError.keychain(-1)), .unauthorized)
+        XCTAssertEqual(APIClient.tokenFailure(URLError(.userAuthenticationRequired)), .unauthorized)
+        XCTAssertEqual(APIClient.tokenFailure(AuthError.server(status: 502)), .serviceUnavailable)
+        XCTAssertEqual(APIClient.tokenFailure(AuthError.server(status: 429)), .tooManyRequests)
+        XCTAssertEqual(APIClient.tokenFailure(AuthError.invalidResponse), .serviceUnavailable)
+        XCTAssertEqual(APIClient.tokenFailure(APIError.transport(.timedOut)), .transport(.timedOut))
+    }
+
+    func testAnExpiredSessionIsUnauthorizedForTheAPIClient() async throws {
+        let endpoint = FakeTokenEndpoint(refresh: { throw AuthError.invalidGrant })
+        let (session, _) = await makeSession(endpoint: endpoint, store: FakeCredentialStore(storedCredential))
+        let server = try StubServer { _ in StubResponse(status: 200) }
+        let client = APIClient(baseURL: server.baseURL, tokenProvider: session, session: server.makeSession(), imageCache: nil)
+        do {
+            _ = try await client.getProfile()
+            XCTFail("expected unauthorized")
+        } catch {
+            XCTAssertEqual(error as? APIError, .unauthorized)
+        }
+        XCTAssertTrue(server.requests.isEmpty)
     }
 }

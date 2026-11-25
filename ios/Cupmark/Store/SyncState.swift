@@ -53,8 +53,15 @@ enum LocalStoreError: Error, Equatable {
     case invalidDate
     /// A stored rating lacks the score of a criterion.
     case incompleteRating(missing: [Vocabulary.Criterion])
+    /// Both `water_temp_c` and `water_temp_special` are set; the contract allows one.
+    case conflictingWaterTemperature
+    /// A rating score is NaN or infinite, so it cannot be stored or sent.
+    case nonFiniteScore(id: String)
     /// The shelf entry still has brews (ADR 0012); remove them first.
     case shelfEntryHasBrews
+    /// The bean still has shelf entries on the device, also ones waiting to be deleted on
+    /// the server; remove them first.
+    case beanHasShelfEntries
 }
 
 /// Decodes stored vocabulary ids through the generated `Vocabulary` types.

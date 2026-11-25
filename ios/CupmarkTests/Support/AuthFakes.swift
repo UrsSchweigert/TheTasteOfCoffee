@@ -127,8 +127,10 @@ actor FakeTokenEndpoint: TokenEndpoint {
     private var exchangeResult: @Sendable () throws -> TokenResponse
     private var refreshResult: @Sendable () throws -> TokenResponse
     private var revokeError: (any Error)?
-    /// Nanoseconds every refresh waits before it answers, so concurrent callers overlap.
-    private var refreshDelay: UInt64 = 0
+    /// While true, every refresh blocks after it is recorded until `releaseRefreshes()`.
+    private var holdingRefreshes = false
+    private var heldRefreshes: [CheckedContinuation<Void, Never>] = []
+    private var heldRefreshWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(
         exchange: @escaping @Sendable () throws -> TokenResponse = { try AuthFixtures.tokenResponse() },
@@ -150,8 +152,30 @@ actor FakeTokenEndpoint: TokenEndpoint {
         refreshResult = result
     }
 
-    func setRefreshDelay(nanoseconds: UInt64) {
-        refreshDelay = nanoseconds
+    /// From now on, refreshes block until `releaseRefreshes()`. No time is involved, so a
+    /// test controls exactly what happens while a refresh is in flight.
+    func holdRefreshes() {
+        holdingRefreshes = true
+    }
+
+    /// Lets every blocked refresh answer, and later ones answer at once.
+    func releaseRefreshes() {
+        holdingRefreshes = false
+        let held = heldRefreshes
+        heldRefreshes = []
+        for continuation in held {
+            continuation.resume()
+        }
+    }
+
+    /// Returns once at least one refresh is blocked by `holdRefreshes()`.
+    func waitUntilARefreshIsHeld() async {
+        if !heldRefreshes.isEmpty {
+            return
+        }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            heldRefreshWaiters.append(continuation)
+        }
     }
 
     func setRevokeError(_ error: (any Error)?) {
@@ -165,16 +189,23 @@ actor FakeTokenEndpoint: TokenEndpoint {
 
     func refresh(refreshToken: String) async throws -> TokenResponse {
         calls.append(.refresh(refreshToken))
-        if refreshDelay > 0 {
-            try await Task.sleep(nanoseconds: refreshDelay)
+        if holdingRefreshes {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                heldRefreshes.append(continuation)
+                let waiters = heldRefreshWaiters
+                heldRefreshWaiters = []
+                for waiter in waiters {
+                    waiter.resume()
+                }
+            }
         }
         return try refreshResult()
     }
 
     func revoke(refreshToken: String) async throws {
         calls.append(.revoke(refreshToken))
-        if let revokeError {
-            throw revokeError
+        if let error = revokeError {
+            throw error
         }
     }
 }

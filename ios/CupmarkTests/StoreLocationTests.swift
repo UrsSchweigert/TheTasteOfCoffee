@@ -47,6 +47,14 @@ final class StoreLocationTests: XCTestCase {
         XCTAssertEqual(try StoreLocation.fileName(for: first), try StoreLocation.fileName(for: StoreAccountID(stableID: first.stableID)))
     }
 
+    func testTheSignedInAccountIDIsAStoreAccount() throws {
+        let account = AccountID(subject: "3f1c2a9e-7b4d-4c1e-9a55-0d6e2b8f4a17")
+        XCTAssertEqual(account.stableID, account.rawValue)
+        let name = try StoreLocation.fileName(for: account)
+        XCTAssertEqual(name, try StoreLocation.fileName(for: StoreAccountID(stableID: account.rawValue)))
+        XCTAssertFalse(name.contains(account.rawValue))
+    }
+
     func testAnAccountWithoutAnIDHasNoStore() {
         XCTAssertThrowsError(try StoreLocation.fileName(for: StoreAccountID(stableID: ""))) { error in
             XCTAssertEqual(error as? LocalStoreError, .emptyAccountID)

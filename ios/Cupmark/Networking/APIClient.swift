@@ -399,14 +399,28 @@ final class APIClient: Sendable {
         }
     }
 
-    /// What a failure of the token provider becomes: a network failure while refreshing stays
-    /// `transport` (M2-T11), so the app is not treated as signed out when it is offline;
-    /// anything else is `unauthorized`.
+    /// What a failure of the token provider becomes (M2-T11). Only a failure that means
+    /// "sign in again" is `unauthorized`; a failure of Cognito itself is retryable, so the
+    /// outbox backs off instead of signing the user out:
+    /// - a network failure while refreshing stays `transport`;
+    /// - a Cognito 5xx, or a token response the app cannot use, is `serviceUnavailable`;
+    /// - a Cognito 429 is `tooManyRequests`;
+    /// - anything else (`invalid_grant` as `sessionExpired`, no saved sign-in, an account
+    ///   mismatch, another 4xx, a Keychain failure) is `unauthorized`.
     static func tokenFailure(_ error: any Error) -> APIError {
         if let apiError = error as? APIError, case .transport = apiError {
             return apiError
         }
-        return .unauthorized
+        switch error as? AuthError {
+        case .server(let status) where (500...599).contains(status):
+            return .serviceUnavailable
+        case .server(429):
+            return .tooManyRequests
+        case .invalidResponse:
+            return .serviceUnavailable
+        default:
+            return .unauthorized
+        }
     }
 
     private func perform(_ endpoint: API.Endpoint, url: URL, body: Data?, token: String) async throws -> (data: Data, status: Int) {

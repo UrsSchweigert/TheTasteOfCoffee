@@ -42,7 +42,8 @@ final class AuthModel {
     private let hostedUI: HostedUI
     private let authenticator: any WebAuthenticator
     private let makeRequest: @Sendable (HostedUI) throws -> AuthorizationRequest
-    private var started = false
+    /// Not shown anywhere, so not observed.
+    @ObservationIgnored private var started = false
 
     /// Nonisolated, so `CupmarkApp.init` can build it whatever its isolation.
     nonisolated init(

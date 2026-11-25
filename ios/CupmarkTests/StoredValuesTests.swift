@@ -14,7 +14,7 @@ final class StoredValuesTests: XCTestCase {
         let store = try AccountStore.inMemory()
         let entry = try StoreFixtures.syncedShelfEntry(in: store)
         let input = try StoreFixtures.brewInput()
-        let brew = StoredBrew(input)
+        let brew = try StoredBrew(input)
         try store.addBrew(brew, shelfEntry: entry)
 
         XCTAssertEqual(try brew.apiInput(), input)
@@ -31,7 +31,7 @@ final class StoredValuesTests: XCTestCase {
         let store = try AccountStore.inMemory()
         let entry = try StoreFixtures.syncedShelfEntry(in: store)
         let input = try StoreFixtures.brewInput(rated: false)
-        let brew = StoredBrew(input)
+        let brew = try StoredBrew(input)
         try store.addBrew(brew, shelfEntry: entry)
         XCTAssertNil(brew.ratingData)
         XCTAssertNil(brew.rating)
@@ -115,7 +115,7 @@ final class StoredValuesTests: XCTestCase {
     func testAnUnknownIdReadsAsNilIsKeptAndIsNeverSent() throws {
         let store = try AccountStore.inMemory()
         let entry = try StoreFixtures.syncedShelfEntry(in: store)
-        let brew = StoredBrew(try StoreFixtures.brewInput())
+        let brew = try StoredBrew(try StoreFixtures.brewInput())
         try store.addBrew(brew, shelfEntry: entry)
 
         brew.methodID = unknownID
@@ -186,7 +186,7 @@ final class StoredValuesTests: XCTestCase {
         try store.addBean(bean, syncState: .synced)
         let entry = StoredShelfEntry(try StoreFixtures.shelfEntryInput())
         try store.addShelfEntry(entry, bean: bean)
-        let brew = StoredBrew(try StoreFixtures.brewInput())
+        let brew = try StoredBrew(try StoreFixtures.brewInput())
         try store.addBrew(brew, shelfEntry: entry)
 
         XCTAssertThrowsError(try brew.apiInput()) { error in
@@ -214,6 +214,58 @@ final class StoredValuesTests: XCTestCase {
         recipe.waterTemperature = nil
         XCTAssertNil(recipe.waterTempC)
         XCTAssertNil(recipe.waterTempSpecialID)
+    }
+
+    func testBothWaterTemperatureColumnsSetIsNeverSent() throws {
+        let recipe = StoredRecipe(API.RecipeInput(vocabularyVersion: Vocabulary.version, parameters: try StoreFixtures.parameters()))
+        recipe.waterTempC = 94
+        recipe.waterTempSpecialID = try StoreFixtures.first(Vocabulary.WaterTempSpecial.self).rawValue
+        XCTAssertThrowsError(try recipe.apiParameters()) { error in
+            XCTAssertEqual(error as? LocalStoreError, .conflictingWaterTemperature)
+        }
+        XCTAssertThrowsError(try recipe.apiInput()) { error in
+            XCTAssertEqual(error as? LocalStoreError, .conflictingWaterTemperature)
+        }
+    }
+
+    func testARatingWithANonFiniteScoreThrowsAndKeepsThePreviousRating() throws {
+        let input = try StoreFixtures.brewInput()
+        let brew = try StoredBrew(input)
+        let previous = try XCTUnwrap(brew.rating)
+        let criterion = try StoreFixtures.first(Vocabulary.Criterion.self)
+
+        for score in [Double.nan, .infinity, -.infinity] {
+            var values = previous
+            values.scores[criterion.rawValue] = score
+            XCTAssertThrowsError(try brew.setRating(values)) { error in
+                XCTAssertEqual(error as? LocalStoreError, .nonFiniteScore(id: criterion.rawValue))
+            }
+            XCTAssertEqual(brew.rating, previous)
+            XCTAssertThrowsError(try RatingValues.encoded(values))
+        }
+
+        try brew.setRating(nil)
+        XCTAssertNil(brew.ratingData)
+        try brew.setRating(previous)
+        XCTAssertEqual(brew.rating, previous)
+    }
+
+    func testABrewInputWithANonFiniteScoreThrowsAndChangesNothing() throws {
+        let input = try StoreFixtures.brewInput()
+        let brew = try StoredBrew(input)
+        let before = try XCTUnwrap(brew.ratingData)
+
+        var bad = try StoreFixtures.brewInput(brewedAt: "2026-11-26T08:00:00.000Z")
+        var rating = try XCTUnwrap(bad.rating)
+        rating.scores[try StoreFixtures.first(Vocabulary.Criterion.self)] = .nan
+        bad.rating = rating
+        bad.parameters.waterG = 999
+
+        XCTAssertThrowsError(try brew.apply(bad))
+        XCTAssertEqual(brew.ratingData, before)
+        XCTAssertEqual(brew.waterG, input.parameters.waterG)
+        XCTAssertEqual(brew.brewedAtMilliseconds, input.brewedAt.millisecondsSince1970)
+        XCTAssertThrowsError(try StoredBrew(bad))
     }
 
     func testTheDoseIsKeptInDecigrams() throws {

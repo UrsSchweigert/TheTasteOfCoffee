@@ -28,7 +28,7 @@ final class AccountStoreTests: XCTestCase {
         try store.addBean(bean)
         let entry = StoredShelfEntry(try StoreFixtures.shelfEntryInput())
         try store.addShelfEntry(entry, bean: bean)
-        let brew = StoredBrew(try StoreFixtures.brewInput())
+        let brew = try StoredBrew(try StoreFixtures.brewInput())
         try store.addBrew(brew, shelfEntry: entry)
 
         let brews = try store.brewsNewestFirst()
@@ -60,7 +60,7 @@ final class AccountStoreTests: XCTestCase {
     func testEditingASyncedItemMakesItAPendingUpdate() throws {
         let store = try AccountStore.inMemory()
         let entry = try StoreFixtures.syncedShelfEntry(in: store)
-        let brew = StoredBrew(try StoreFixtures.brewInput(), serverID: StoreFixtures.brewID)
+        let brew = try StoredBrew(try StoreFixtures.brewInput(), serverID: StoreFixtures.brewID)
         try store.addBrew(brew, shelfEntry: entry, syncState: .synced)
 
         brew.waterG = 320
@@ -100,7 +100,7 @@ final class AccountStoreTests: XCTestCase {
     func testDeletingASyncedItemKeepsItAsAPendingDeleteAndHidesIt() throws {
         let store = try AccountStore.inMemory()
         let entry = try StoreFixtures.syncedShelfEntry(in: store)
-        let brew = StoredBrew(try StoreFixtures.brewInput(), serverID: StoreFixtures.brewID)
+        let brew = try StoredBrew(try StoreFixtures.brewInput(), serverID: StoreFixtures.brewID)
         try store.addBrew(brew, shelfEntry: entry, syncState: .synced)
 
         try store.markDeleted(brew)
@@ -115,7 +115,7 @@ final class AccountStoreTests: XCTestCase {
     func testAShelfEntryWithBrewsCannotBeDeleted() throws {
         let store = try AccountStore.inMemory()
         let entry = try StoreFixtures.syncedShelfEntry(in: store)
-        let brew = StoredBrew(try StoreFixtures.brewInput(), serverID: StoreFixtures.brewID)
+        let brew = try StoredBrew(try StoreFixtures.brewInput(), serverID: StoreFixtures.brewID)
         try store.addBrew(brew, shelfEntry: entry, syncState: .synced)
 
         XCTAssertThrowsError(try store.markDeleted(entry)) { error in
@@ -127,6 +127,43 @@ final class AccountStoreTests: XCTestCase {
         try store.markDeleted(entry)
         XCTAssertTrue(try store.shelfEntries().isEmpty)
         XCTAssertEqual(entry.syncState, .pendingDelete)
+    }
+
+    func testABeanThatAShelfEntryStillNamesCannotBeDeleted() throws {
+        let store = try AccountStore.inMemory()
+        let entry = try StoreFixtures.syncedShelfEntry(in: store)
+        let bean = try XCTUnwrap(entry.bean)
+
+        XCTAssertThrowsError(try store.markDeleted(bean)) { error in
+            XCTAssertEqual(error as? LocalStoreError, .beanHasShelfEntries)
+        }
+        // An entry waiting for its server delete still names the bean.
+        try store.markDeleted(entry)
+        XCTAssertEqual(entry.syncState, .pendingDelete)
+        XCTAssertThrowsError(try store.markDeleted(bean)) { error in
+            XCTAssertEqual(error as? LocalStoreError, .beanHasShelfEntries)
+        }
+        XCTAssertNotNil(try store.bean(serverID: StoreFixtures.beanID))
+    }
+
+    func testABeanWithoutShelfEntriesIsRemovedAtOnceEvenWhenSynced() throws {
+        let store = try AccountStore.inMemory()
+        let bean = StoredBean(try StoreFixtures.bean())
+        try store.addBean(bean, syncState: .synced)
+
+        try store.markDeleted(bean)
+
+        XCTAssertNil(try store.bean(serverID: StoreFixtures.beanID))
+        XCTAssertTrue(try store.context.fetch(FetchDescriptor<StoredBean>()).isEmpty)
+    }
+
+    func testOnlyBeansShelfEntriesBrewsAndRecipesCanBeDeleted() {
+        // `markDeleted` takes `LocalDeletable` models only, so the profile does not compile
+        // as an argument. This pins the list of conforming models.
+        let deletable = CupmarkSchemaV1.models
+            .filter { model in model is any LocalDeletable.Type }
+            .map { model in String(describing: model) }
+        XCTAssertEqual(Set(deletable), ["StoredBean", "StoredShelfEntry", "StoredBrew", "StoredRecipe"])
     }
 
     // MARK: - Order
@@ -141,7 +178,7 @@ final class AccountStoreTests: XCTestCase {
             "2026-11-25T07:00:00.000Z",
         ]
         for time in times {
-            try store.addBrew(StoredBrew(try StoreFixtures.brewInput(brewedAt: time)), shelfEntry: entry)
+            try store.addBrew(try StoredBrew(try StoreFixtures.brewInput(brewedAt: time)), shelfEntry: entry)
         }
 
         let order = try store.brewsNewestFirst().map(\.brewedAtMilliseconds)
