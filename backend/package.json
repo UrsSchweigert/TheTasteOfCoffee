@@ -5,7 +5,9 @@
   "description": "Cupmark Lambda handlers (TypeScript, Node 22, arm64)",
   "license": "UNLICENSED",
   "type": "module",
-  "engines": { "node": "^22.18.0 || >=24" },
+  "engines": {
+    "node": "^22.18.0 || >=24"
+  },
   "scripts": {
     "generate": "node scripts/generate-contract.ts",
     "check:generated": "node scripts/generate-contract.ts --check",
@@ -18,6 +20,7 @@
     "build": "node scripts/build.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-cognito-identity-provider": "3.1177.0",
     "@aws-sdk/client-dynamodb": "3.1177.0",
     "@aws-sdk/client-ssm": "3.1177.0",
     "@aws-sdk/lib-dynamodb": "3.1177.0",

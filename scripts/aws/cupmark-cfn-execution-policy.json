@@ -36,6 +36,12 @@
       ]
     },
     {
+      "Sid": "LambdaCodeFromCupmarkBootstrapAssets",
+      "Effect": "Allow",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::cdk-cupmark-assets-${ACCOUNT}-${REGION}/*"
+    },
+    {
       "Sid": "CupmarkIamRolesWithBoundary",
       "Effect": "Allow",
       "Action": [

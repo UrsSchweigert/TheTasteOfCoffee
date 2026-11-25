@@ -69,6 +69,8 @@ One DynamoDB table holds everything. The partition key decides who can reach an 
 
 Ids in keys are server-generated ULIDs; `brewedAt` is fixed-width UTC (`toISOString()`), so brews list newest first. A brew, its pointer and the brew count of its shelf entry are always written in one transaction (ADR 0010, ADR 0012), so a shelf entry with brews cannot be deleted. `backend/src/repository/` builds every key and is the only code that talks to the table.
 
+The table's TTL attribute is `expires_at` (a number, epoch seconds). Only the two items marked "TTL" above carry it: an Open Food Facts miss and the daily lookup counter. DynamoDB deletes such an item some time after that moment (usually within a few days), at no charge, so reads must still compare `expires_at` with the current time. TTL deletes appear in the stream like any other delete; the aggregator must ignore them (they are not brews).
+
 One sparse index (`gsi1`) lists unverified beans for the review queue: only an unverified bean's `META` item carries `gsi1pk=REVIEW#UNVERIFIED` and `gsi1sk=<createdAt UTC>#<beanId>`, and verifying or rejecting the bean removes both (infra/README.md). The user id always comes from the verified token, never from the request body, so a user can only ever address their own `USER#` partition.
 
 ## Aggregation pipeline

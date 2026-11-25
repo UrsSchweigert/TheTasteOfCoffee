@@ -27,6 +27,14 @@ export const REVIEW_QUEUE_INDEX = {
   sortKey: 'gsi1sk',
 } as const;
 
+/**
+ * The TTL attribute (epoch seconds). Only short-lived items carry it: an Open Food
+ * Facts miss in the catalogue cache (`BARCODE#<ean>` / `OFF`) and the per-user daily
+ * lookup counter (`USER#<id>` / `LOOKUPS#<date>`). DynamoDB deletes them some time
+ * after the time passes, at no charge; the deletes appear in the stream.
+ */
+export const TTL_ATTRIBUTE = 'expires_at';
+
 /** Days after which a weekly export moves to S3 Glacier Flexible Retrieval. */
 export const BACKUP_ARCHIVE_AFTER_DAYS = 30;
 /** Days after which a weekly export is deleted. */
@@ -96,7 +104,7 @@ export class CupmarkData extends Construct {
       stream: dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,
       tableClass: dynamodb.TableClass.STANDARD,
       removalPolicy: RemovalPolicy.RETAIN,
-      // No TTL: no item in the data model expires.
+      timeToLiveAttribute: TTL_ATTRIBUTE,
     });
     this.table.addGlobalSecondaryIndex({
       indexName: REVIEW_QUEUE_INDEX.indexName,
@@ -106,7 +114,8 @@ export class CupmarkData extends Construct {
     });
 
     // Label photos (docs/04 F1): uploaded with presigned URLs (M1-T4), read only by the
-    // operator's review tooling, never shown to other users.
+    // operator's review tooling, never shown to other users. Also the catalogue's copies
+    // of Open Food Facts images under `catalogue/` (ADR 0011), which never expire.
     this.photoBucket = new s3.Bucket(this, 'PhotoBucket', {
       ...privateBucketProps(),
       bucketName: bucketName(stage, 'photos'),

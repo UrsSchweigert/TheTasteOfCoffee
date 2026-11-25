@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { Aws, CfnDeletionPolicy, CfnOutput, CfnResource, Duration, Fn, RemovalPolicy, Stack, Stage, Tags } from 'aws-cdk-lib';
 import { Template } from 'aws-cdk-lib/assertions';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -21,7 +22,7 @@ import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { CfnInclude } from 'aws-cdk-lib/cloudformation-include';
 import { describe, expect, it } from 'vitest';
-import { DENIED_RESOURCE_TYPES, formatViolations } from '../src/guards.ts';
+import { AWS_MANAGED_ARN_EXCEPTIONS, DENIED_RESOURCE_TYPES, STATEFUL_RESOURCE_TYPES, formatViolations } from '../src/guards.ts';
 import type { GuardName, Violation } from '../src/guards.ts';
 import { CupmarkStack } from '../src/stage.ts';
 import { FAKE_ACCOUNT, violationsAfter } from './helpers.ts';
@@ -31,8 +32,14 @@ function expectViolation(violations: readonly Violation[], guard: GuardName, mes
   expect(hit, `expected [${guard}] ${String(message)} in:\n${formatViolations(violations)}`).toBe(true);
 }
 
+/**
+ * A function with inline code. Unless the props bring a role, it gets a bare role of
+ * its own: CDK's default role carries AWSLambdaBasicExecutionRole, which the iam
+ * guard rejects (logs on `*`).
+ */
 function inlineFunction(stack: Stack, id: string, props: Partial<lambda.FunctionProps> = {}): lambda.Function {
   return new lambda.Function(stack, id, {
+    role: new iam.Role(stack, `${id}Role`, { assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com') }),
     runtime: lambda.Runtime.NODEJS_22_X,
     architecture: lambda.Architecture.ARM_64,
     handler: 'index.handler',
@@ -61,11 +68,11 @@ describe('positive control', () => {
         versioned: true,
         removalPolicy: RemovalPolicy.RETAIN,
       });
-      const logGroup = new logs.LogGroup(stack, 'HealthLogs', {
-        logGroupName: '/aws/lambda/cupmark-dev-health',
+      const logGroup = new logs.LogGroup(stack, 'ProbeLogs', {
+        logGroupName: '/aws/lambda/cupmark-dev-probe',
         retention: logs.RetentionDays.TWO_WEEKS,
       });
-      const fn = inlineFunction(stack, 'Health', { functionName: 'cupmark-dev-health', logGroup });
+      const fn = inlineFunction(stack, 'Probe', { functionName: 'cupmark-dev-probe', logGroup });
       new cloudwatch.Alarm(stack, 'Errors', {
         metric: fn.metricErrors({ period: Duration.minutes(5) }),
         threshold: 1,
@@ -252,6 +259,16 @@ describe('(c) names', () => {
     });
     expectViolation(violations, 'name', /LogGroupName must be set and start with \/aws\/lambda\/cupmark-dev- or \/cupmark\/dev\//);
   });
+
+  it.each(['cupmark-dev-x', 'cupmark-devx', 'cupmark-prod', 'other'])(
+    'fails on a Cognito domain prefix other than exactly cupmark-dev: %s',
+    (domain) => {
+      const violations = violationsAfter((stack) => {
+        new cognito.CfnUserPoolDomain(stack, 'Domain', { domain, userPoolId: 'eu-central-1_abcdefghi' });
+      });
+      expectViolation(violations, 'name', /UserPoolDomain.Domain ".*" must be exactly cupmark-dev$/);
+    },
+  );
 
   it('fails on a schedule in the default group', () => {
     const violations = violationsAfter((stack) => {
@@ -460,6 +477,213 @@ describe('(f) stateful resources', () => {
       });
     });
     expectViolation(violations, 'stateful', /must set BlockPublicPolicy, RestrictPublicBuckets to true/);
+  });
+});
+
+describe('(f) stateful: the user pool', () => {
+  function pool(stack: Stack, props: Partial<cognito.UserPoolProps> = {}): cognito.UserPool {
+    return new cognito.UserPool(stack, 'Pool', {
+      userPoolName: 'cupmark-dev-other',
+      deletionProtection: true,
+      removalPolicy: RemovalPolicy.RETAIN,
+      ...props,
+    });
+  }
+
+  it('is a stateful type', () => {
+    expect(STATEFUL_RESOURCE_TYPES).toContain('AWS::Cognito::UserPool');
+  });
+
+  it('passes a retained pool with deletion protection', () => {
+    const violations = violationsAfter((stack) => {
+      pool(stack);
+    });
+    expect(formatViolations(violations)).toBe('');
+  });
+
+  it('fails on a pool without deletion protection', () => {
+    const violations = violationsAfter((stack) => {
+      pool(stack, { deletionProtection: false });
+    });
+    expectViolation(violations, 'stateful', /AWS::Cognito::UserPool: DeletionProtection must be ACTIVE/);
+  });
+
+  it('fails on a pool with RemovalPolicy.DESTROY', () => {
+    const violations = violationsAfter((stack) => {
+      pool(stack, { removalPolicy: RemovalPolicy.DESTROY });
+    });
+    expectViolation(violations, 'stateful', /AWS::Cognito::UserPool: DeletionPolicy is Delete, must be Retain/);
+    expectViolation(violations, 'stateful', /AWS::Cognito::UserPool: UpdateReplacePolicy is Delete, must be Retain/);
+  });
+});
+
+describe('(g) IAM policies', () => {
+  const lambdaPrincipal = new iam.ServicePrincipal('lambda.amazonaws.com');
+
+  function roleWith(stack: Stack, ...statements: iam.PolicyStatement[]): iam.Role {
+    return new iam.Role(stack, 'Role', {
+      assumedBy: lambdaPrincipal,
+      inlinePolicies: { probe: new iam.PolicyDocument({ statements }) },
+    });
+  }
+
+  function iamOnly(violations: readonly Violation[]): string[] {
+    return violations.filter((v) => v.guard === 'iam').map((v) => v.message);
+  }
+
+  it('passes ARNs of this stack, Cupmark-named ARNs and the own parameters', () => {
+    const violations = violationsAfter((stack) => {
+      const table = new dynamodb.Table(stack, 'Table', {
+        tableName: 'cupmark-dev-other',
+        partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+        billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+        pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
+        deletionProtection: true,
+        removalPolicy: RemovalPolicy.RETAIN,
+      });
+      const role = roleWith(
+        stack,
+        new iam.PolicyStatement({ actions: ['dynamodb:GetItem'], resources: [table.tableArn, `${table.tableArn}/index/gsi1`] }),
+        new iam.PolicyStatement({
+          actions: ['ssm:GetParameter'],
+          resources: [stack.formatArn({ service: 'ssm', resource: 'parameter', resourceName: 'cupmark/dev/x' })],
+        }),
+        new iam.PolicyStatement({ actions: ['s3:GetObject'], resources: [`arn:aws:s3:::cupmark-dev-other-${Aws.ACCOUNT_ID}/catalogue/*`] }),
+      );
+      // A separate AWS::IAM::Policy is checked too.
+      role.addToPolicy(new iam.PolicyStatement({ actions: ['dynamodb:Query'], resources: [table.tableArn] }));
+    });
+    expect(formatViolations(violations)).toBe('');
+  });
+
+  it('fails on Resource "*"', () => {
+    const violations = violationsAfter((stack) => {
+      roleWith(stack, new iam.PolicyStatement({ actions: ['dynamodb:GetItem'], resources: ['*'] }));
+    });
+    expectViolation(violations, 'iam', /Resource "\*" is not allowed/);
+  });
+
+  it.each(['*', 's3:*', 'dynamodb:Get*'])('fails on the wildcard action %s', (action) => {
+    const violations = violationsAfter((stack) => {
+      roleWith(stack, new iam.PolicyStatement({ actions: [action], resources: ['arn:aws:s3:::cupmark-dev-x/*'] }));
+    });
+    expectViolation(violations, 'iam', /has a wildcard/);
+  });
+
+  it.each([
+    ['another project', 'arn:aws:s3:::derschweigert-site/*'],
+    ['a wildcard name', 'arn:aws:dynamodb:eu-central-1:123456789012:table/*'],
+    ['a prefix without the dash', 'arn:aws:dynamodb:eu-central-1:123456789012:table/cupmark*'],
+    ['another account', 'arn:aws:dynamodb:eu-central-1:999999999999:table/cupmark-dev-main'],
+    ['a non-ARN', 'cupmark-dev-main'],
+  ])('fails on a resource of %s', (_label, resource) => {
+    const violations = violationsAfter(
+      (stack) => {
+        roleWith(stack, new iam.PolicyStatement({ actions: ['dynamodb:GetItem'], resources: [resource] }));
+      },
+      { context: { 'cupmark:dev:account': FAKE_ACCOUNT } },
+    );
+    expect(iamOnly(violations)).toHaveLength(1);
+  });
+
+  it.each([
+    ['S3, cupmark- after another bucket', 'arn:aws:s3:::derschweigert/cupmark-x'],
+    ['S3, cupmark- inside the bucket name', 'arn:aws:s3:::other-cupmark-x/*'],
+    ['S3, the shared bootstrap bucket', 'arn:aws:s3:::cdk-hnb659fds-assets-123456789012-eu-central-1/*'],
+    ['DynamoDB, an index named cupmark- of another table', 'arn:aws:dynamodb:eu-central-1:123456789012:table/other/index/cupmark-x'],
+    ['Lambda, another function', 'arn:aws:lambda:eu-central-1:123456789012:function:other-cupmark-x'],
+    ['SSM, cupmark/ under another path', 'arn:aws:ssm:eu-central-1:123456789012:parameter/other/cupmark/x'],
+    ['logs, another log group', 'arn:aws:logs:eu-central-1:123456789012:log-group:/aws/lambda/other/cupmark-x:*'],
+    ['IAM, a role under another path', 'arn:aws:iam::123456789012:role/other/cupmark-x'],
+    ['Cognito, a literal pool ARN (only the template pool counts)', 'arn:aws:cognito-idp:eu-central-1:123456789012:userpool/*'],
+    ['an unlisted service', 'arn:aws:sqs:eu-central-1:123456789012:cupmark-dev-queue'],
+  ])('fails on a foreign ARN: %s', (_label, resource) => {
+    const violations = violationsAfter(
+      (stack) => {
+        roleWith(stack, new iam.PolicyStatement({ actions: ['s3:GetObject'], resources: [resource] }));
+      },
+      { context: { 'cupmark:dev:account': FAKE_ACCOUNT } },
+    );
+    expect(iamOnly(violations)).toHaveLength(1);
+    expectViolation(violations, 'iam', /is not a Cupmark resource|is not on OWNED_ARN_PREFIXES/);
+  });
+
+  it('passes literal ARNs whose first name segment is Cupmark\'s, for every listed service', () => {
+    const violations = violationsAfter(
+      (stack) => {
+        roleWith(
+          stack,
+          new iam.PolicyStatement({
+            actions: ['s3:GetObject'],
+            resources: [
+              'arn:aws:s3:::cupmark-dev-x/catalogue/*',
+              'arn:aws:s3:::cdk-cupmark-assets-123456789012-eu-central-1/*',
+              'arn:aws:dynamodb:eu-central-1:123456789012:table/cupmark-dev-main/index/gsi1',
+              'arn:aws:lambda:eu-central-1:123456789012:function:cupmark-dev-api',
+              'arn:aws:ssm:eu-central-1:123456789012:parameter/cupmark/dev/x',
+              'arn:aws:logs:eu-central-1:123456789012:log-group:/aws/lambda/cupmark-dev-api:*',
+              'arn:aws:logs:eu-central-1:123456789012:log-group:/cupmark/dev/x:*',
+              'arn:aws:iam::123456789012:role/cupmark-dev-api',
+              'arn:aws:iam::123456789012:role/CupmarkGitHubDeploy',
+              'arn:aws:iam::123456789012:policy/CupmarkBoundary',
+            ],
+          }),
+        );
+      },
+      { context: { 'cupmark:dev:account': FAKE_ACCOUNT } },
+    );
+    expect(formatViolations(violations)).toBe('');
+  });
+
+  it('passes the template pool\'s ARN for the Cognito identity-provider actions', () => {
+    const violations = violationsAfter((stack) => {
+      const pool = new cognito.UserPool(stack, 'Pool', {
+        userPoolName: 'cupmark-dev-other',
+        deletionProtection: true,
+        removalPolicy: RemovalPolicy.RETAIN,
+      });
+      roleWith(stack, new iam.PolicyStatement({ actions: ['cognito-idp:UpdateIdentityProvider'], resources: [pool.userPoolArn] }));
+    });
+    expect(formatViolations(violations)).toBe('');
+  });
+
+  it('fails on a resource that cannot be resolved at synth time', () => {
+    const violations = violationsAfter((stack) => {
+      roleWith(stack, new iam.PolicyStatement({ actions: ['s3:GetObject'], resources: [Fn.importValue('Other-BucketArn')] }));
+    });
+    expectViolation(violations, 'iam', /cannot be checked at synth time/);
+  });
+
+  it('fails on NotAction and NotResource', () => {
+    const violations = violationsAfter((stack) => {
+      roleWith(
+        stack,
+        new iam.PolicyStatement({ notActions: ['iam:CreateUser'], resources: ['arn:aws:s3:::cupmark-dev-x'] }),
+        new iam.PolicyStatement({ actions: ['s3:GetObject'], notResources: ['arn:aws:s3:::cupmark-dev-x'] }),
+      );
+    });
+    expectViolation(violations, 'iam', /NotAction is not allowed/);
+    expectViolation(violations, 'iam', /NotResource is not allowed/);
+  });
+
+  it('fails on an AWS-managed policy, for example the default Lambda role', () => {
+    expect(AWS_MANAGED_ARN_EXCEPTIONS).toEqual([]);
+    const violations = violationsAfter((stack) => {
+      new lambda.Function(stack, 'Default', {
+        runtime: lambda.Runtime.NODEJS_22_X,
+        handler: 'index.handler',
+        code: lambda.Code.fromInline('export const handler = async () => ({});'),
+      });
+    });
+    expectViolation(violations, 'iam', /managed policy ".*AWSLambdaBasicExecutionRole" is not on AWS_MANAGED_ARN_EXCEPTIONS/);
+  });
+
+  it('checks AWS::IAM::Policy resources as well as inline role policies', () => {
+    const violations = violationsAfter((stack) => {
+      const role = new iam.Role(stack, 'Role', { assumedBy: lambdaPrincipal });
+      role.addToPolicy(new iam.PolicyStatement({ actions: ['s3:GetObject'], resources: ['*'] }));
+    });
+    expect(violations.some((v) => v.guard === 'iam' && v.message.includes('AWS::IAM::Policy: Statement[0]: Resource "*"'))).toBe(true);
   });
 });
 

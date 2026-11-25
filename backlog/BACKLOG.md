@@ -133,7 +133,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - Assertion tests pin: on-demand billing, PITR, deletion protection, stream enabled, RETAIN, public access blocked, versioning, TLS-only policy.
 
 ### M1-T2 Identity and API shell
-- status: todo
+- status: done
 - owner: infra-engineer
 - depends: M1-T1, and the Apple items of M0-T7 (done 2026-11-25). The repository secrets in M0-T7 are needed only for M1-T7.
 - implements: docs/05-system-design.md, Components, Security
@@ -200,6 +200,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
 - acceptance:
   - Profile holds consent and locale; export returns all of a user's items as CSV; delete removes the whole user partition and the label photos.
   - Tests prove nothing of the user remains after deletion.
+  - From the M1-T2 review: deleting the account also deletes the Cognito user (`cognito-idp:AdminDeleteUser` on the stage pool). That needs a boundary change, and the owner re-applies the guardrails.
   - Deleting photos removes every object version, not just adding a delete marker, and a test asserts no version remains (see D10).
   - The boundary policy lacks `s3:DeleteObject`, `s3:DeleteObjectVersion` and `s3:ListBucketVersions` on the photo bucket. The policy change goes into `scripts/aws/`, and the owner re-applies it before deploy.
 

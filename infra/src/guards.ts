@@ -1,5 +1,5 @@
 // Synth-time guards for CLAUDE.md invariants 5 (pay-per-use only), 6 (eu-central-1)
-// and 9 (never touch existing infrastructure), and for deployability under
+// and 9 (never touch existing infrastructure), for least privilege, and for deployability under
 // scripts/aws/cupmark-cfn-execution-policy.json (ADR 0002).
 //
 // `checkApp` synthesises an app and returns every violation. It runs in two places:
@@ -12,9 +12,10 @@
 // reviewed" until someone adds it here, with its name rule, in a reviewed pull
 // request. A deny list alone would let a new fixed-fee type through unnoticed.
 
-import { CfnResource, Resource, Stack, Stage, TagManager } from 'aws-cdk-lib';
+import { CfnResource, DefaultStackSynthesizer, Resource, Stack, Stage, TagManager, Token } from 'aws-cdk-lib';
 import type { App } from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as s3assets from 'aws-cdk-lib/aws-s3-assets';
 import { CfnInclude } from 'aws-cdk-lib/cloudformation-include';
 import type { IConstruct } from 'constructs';
 import {
@@ -39,7 +40,8 @@ export type GuardName =
   | 'bootstrap'
   | 'boundary'
   | 'isolation'
-  | 'stateful';
+  | 'stateful'
+  | 'iam';
 
 export interface Violation {
   readonly guard: GuardName;
@@ -120,6 +122,8 @@ interface NameRule {
    * CupmarkCfnExecution, so the name must be set explicitly.
    */
   readonly required: boolean;
+  /** True when the name must equal one of `prefixes` exactly (Cognito domain prefixes). */
+  readonly exact?: boolean;
 }
 
 export interface ResourceRule {
@@ -154,7 +158,13 @@ export const ALLOWED_RESOURCE_TYPES: Readonly<Record<string, ResourceRule>> = {
   'AWS::Cognito::UserPool': { why: 'Sign in with Apple', names: [optionalName('UserPoolName')] },
   'AWS::Cognito::UserPoolClient': { why: 'iOS app client', names: [optionalName('ClientName')] },
   'AWS::Cognito::UserPoolIdentityProvider': { why: 'Apple identity provider', names: [] },
-  'AWS::Cognito::UserPoolDomain': { why: 'hosted domain for the Apple flow', names: [requiredName('Domain')] },
+  // ADR 0015: the deploy-time resource that creates the Sign in with Apple provider.
+  'Custom::CupmarkAppleIdentityProvider': { why: 'Sign in with Apple provider (ADR 0015)', names: [] },
+  'AWS::Cognito::UserPoolDomain': {
+    why: 'hosted domain for the Apple flow',
+    // Exactly `cupmark-<stage>`: the owner registered that return URL with Apple (M0-T7).
+    names: [{ path: ['Domain'], prefixes: [`${NAME_PREFIX}{stage}`], required: true, exact: true }],
+  },
   'AWS::ApiGatewayV2::Api': { why: 'HTTP API', names: [requiredName('Name')] },
   'AWS::ApiGatewayV2::Stage': { why: 'HTTP API stage with throttling', names: [] },
   'AWS::ApiGatewayV2::Route': { why: 'HTTP API routes', names: [] },
@@ -208,12 +218,15 @@ function fixedFeeProperties(type: string, props: Record<string, unknown>): strin
  * Types that hold data. Each must survive stack deletion and resource replacement
  * (DeletionPolicy and UpdateReplacePolicy Retain) and carry its own safety net:
  * deletion protection and point-in-time recovery for tables, versioning and a full
- * public access block for buckets (docs/05-system-design.md, Persistence and recovery).
+ * public access block for buckets (docs/05-system-design.md, Persistence and recovery),
+ * deletion protection for the user pool, whose user ids key every `USER#<sub>`
+ * partition: losing the pool would orphan all user data.
  */
 export const STATEFUL_RESOURCE_TYPES: readonly string[] = [
   'AWS::DynamoDB::Table',
   'AWS::DynamoDB::GlobalTable',
   'AWS::S3::Bucket',
+  'AWS::Cognito::UserPool',
 ];
 
 const PUBLIC_ACCESS_BLOCK = ['BlockPublicAcls', 'BlockPublicPolicy', 'IgnorePublicAcls', 'RestrictPublicBuckets'];
@@ -237,6 +250,145 @@ function statefulProblems(type: string, resource: unknown, props: Record<string,
     if (get(props, ['VersioningConfiguration', 'Status']) !== 'Enabled') found.push('VersioningConfiguration.Status must be Enabled');
     const missing = PUBLIC_ACCESS_BLOCK.filter((k) => get(props, ['PublicAccessBlockConfiguration', k]) !== true);
     if (missing.length > 0) found.push(`PublicAccessBlockConfiguration must set ${missing.join(', ')} to true`);
+  }
+  if (type === 'AWS::Cognito::UserPool' && props.DeletionProtection !== 'ACTIVE') {
+    found.push('DeletionProtection must be ACTIVE');
+  }
+  return found;
+}
+
+// ---------------------------------------------------------------------------
+// IAM policies (least privilege)
+// ---------------------------------------------------------------------------
+
+/**
+ * AWS-managed ARNs an identity policy or role may name although they are not
+ * Cupmark's: none so far. Each entry needs a reason in a reviewed pull request. In
+ * particular AWSLambdaBasicExecutionRole is not here: it allows logs on `*`; every
+ * function gets an explicit role that may only write to its own log group.
+ */
+export const AWS_MANAGED_ARN_EXCEPTIONS: readonly string[] = [];
+
+/** Placeholder for a `Ref` or `Fn::GetAtt` of a resource in the same template. */
+const OWNED = '${owned}';
+const UNKNOWN = '${unknown}';
+const ACCOUNT_PLACEHOLDER = '${account}';
+
+const PSEUDO: Readonly<Record<string, string>> = {
+  'AWS::Partition': 'aws',
+  'AWS::Region': REGION,
+  'AWS::AccountId': ACCOUNT_PLACEHOLDER,
+  'AWS::URLSuffix': 'amazonaws.com',
+};
+
+/** A policy value as text, with references to this template's resources as OWNED. */
+function renderArn(value: unknown, resources: Json, depth = 0): string {
+  if (typeof value === 'string') return value;
+  if (depth > 5) return UNKNOWN;
+  const ref = get(value, ['Ref']);
+  if (typeof ref === 'string') return PSEUDO[ref] ?? (ref in resources ? OWNED : UNKNOWN);
+  const att = get(value, ['Fn::GetAtt']);
+  if (Array.isArray(att)) return typeof att[0] === 'string' && att[0] in resources ? OWNED : UNKNOWN;
+  const join = get(value, ['Fn::Join']);
+  if (Array.isArray(join) && join.length === 2 && typeof join[0] === 'string' && Array.isArray(join[1])) {
+    const parts = join[1] as unknown[];
+    return parts.map((p) => renderArn(p, resources, depth + 1)).join(join[0]);
+  }
+  const sub = get(value, ['Fn::Sub']);
+  if (typeof sub === 'string') {
+    return sub.replace(/\$\{([^}]+)\}/g, (_m, name: string) => {
+      const pseudo = PSEUDO[name];
+      if (pseudo !== undefined) return pseudo;
+      return (name.split('.')[0] ?? '') in resources ? OWNED : UNKNOWN;
+    });
+  }
+  return UNKNOWN;
+}
+
+/**
+ * Literal ARNs the app may name, per service: the resource part of the ARN (after
+ * `arn:aws:<service>:<region>:<account>:`) must start with one of these prefixes, so
+ * the first name segment is Cupmark's. `cupmark-` later in the path does not count.
+ * A service that is not listed fails closed; resources of this template (Ref or
+ * Fn::GetAtt, such as the user pool's ARN) are always allowed, with any suffix.
+ */
+export const OWNED_ARN_PREFIXES: Readonly<Record<string, readonly string[]>> = {
+  // Bucket names; `cdk-cupmark-assets-` is the Cupmark bootstrap's asset bucket.
+  s3: ['cupmark-', 'cdk-cupmark-assets-'],
+  dynamodb: ['table/cupmark-'],
+  lambda: ['function:cupmark-'],
+  ssm: ['parameter/cupmark/'],
+  logs: ['log-group:/aws/lambda/cupmark-', 'log-group:/cupmark/'],
+  iam: ['role/cupmark-', 'role/Cupmark', 'policy/Cupmark'],
+};
+
+function iamResourceProblem(value: unknown, resources: Json, ownAccount: string | undefined): string | undefined {
+  const text = renderArn(value, resources);
+  if (AWS_MANAGED_ARN_EXCEPTIONS.includes(text)) return undefined;
+  if (text.includes(UNKNOWN)) return `resource ${JSON.stringify(value)} cannot be checked at synth time`;
+  if (text === '*') return 'Resource "*" is not allowed';
+  if (text.startsWith(OWNED)) return undefined;
+  if (!text.startsWith('arn:')) return `resource "${text}" is not an ARN of this stack`;
+  const parts = text.split(':');
+  const service = parts[2] ?? '';
+  const account = parts[4] ?? '';
+  const resource = parts.slice(5).join(':');
+  if (account !== '' && account !== ACCOUNT_PLACEHOLDER && account !== ownAccount) return `resource "${text}" is in another account`;
+  if (resource.startsWith(OWNED)) return undefined;
+  const prefixes = OWNED_ARN_PREFIXES[service];
+  if (prefixes === undefined) return `resource "${text}": service ${service} is not on OWNED_ARN_PREFIXES; name a resource of this template instead`;
+  if (prefixes.some((p) => resource.startsWith(p))) return undefined;
+  return `resource "${text}" is not a Cupmark resource: it must start with ${prefixes.map((p) => `${service}:${p}`).join(' or ')}`;
+}
+
+function asList(value: unknown): unknown[] {
+  if (value === undefined) return [];
+  return Array.isArray(value) ? value : [value];
+}
+
+/** Every problem of one identity policy document. */
+function policyDocumentProblems(doc: unknown, resources: Json, ownAccount: string | undefined): string[] {
+  const found: string[] = [];
+  for (const [i, statement] of asList(get(doc, ['Statement'])).entries()) {
+    const at = `Statement[${String(i)}]`;
+    for (const key of ['NotAction', 'NotResource', 'NotPrincipal']) {
+      if (get(statement, [key]) !== undefined) found.push(`${at}: ${key} is not allowed`);
+    }
+    if (get(statement, ['Effect']) !== 'Allow') continue;
+    const actions = asList(get(statement, ['Action']));
+    if (actions.length === 0) found.push(`${at}: no Action`);
+    for (const action of actions) {
+      if (typeof action !== 'string') found.push(`${at}: action ${JSON.stringify(action)} is not a literal`);
+      else if (action.includes('*')) found.push(`${at}: action "${action}" has a wildcard`);
+    }
+    const targets = asList(get(statement, ['Resource']));
+    if (targets.length === 0) found.push(`${at}: no Resource`);
+    for (const target of targets) {
+      const problem = iamResourceProblem(target, resources, ownAccount);
+      if (problem !== undefined) found.push(`${at}: ${problem}`);
+    }
+  }
+  return found;
+}
+
+function iamProblems(type: string, props: Json, resources: Json, ownAccount: string | undefined): string[] {
+  const found: string[] = [];
+  if (type === 'AWS::IAM::Policy') {
+    found.push(...policyDocumentProblems(props.PolicyDocument, resources, ownAccount));
+  }
+  if (type === 'AWS::IAM::Role') {
+    for (const [i, policy] of asList(props.Policies).entries()) {
+      const name = get(policy, ['PolicyName']);
+      for (const p of policyDocumentProblems(get(policy, ['PolicyDocument']), resources, ownAccount)) {
+        found.push(`Policies[${String(i)}] (${typeof name === 'string' ? name : '?'}) ${p}`);
+      }
+    }
+    for (const arn of asList(props.ManagedPolicyArns)) {
+      const text = renderArn(arn, resources);
+      if (!AWS_MANAGED_ARN_EXCEPTIONS.includes(text) && !text.startsWith(OWNED)) {
+        found.push(`managed policy "${text}" is not on AWS_MANAGED_ARN_EXCEPTIONS`);
+      }
+    }
   }
   return found;
 }
@@ -384,7 +536,22 @@ function isKnownInternalReference(c: IConstruct): boolean {
   // dynamodb.Table always references the AWS-managed service-linked role for DynamoDB
   // auto scaling (AWSServiceRoleForApplicationAutoScaling_DynamoDBTable). It is only
   // used when auto scaling is configured, which on-demand billing never is.
-  return c.node.id === 'ScalingRole' && c.node.scope instanceof dynamodb.Table;
+  if (c.node.id === 'ScalingRole' && c.node.scope instanceof dynamodb.Table) return true;
+  // A file asset (Lambda code) references the asset bucket of its stack's bootstrap.
+  // With the Cupmark synthesizer that is `cdk-cupmark-assets-<account>-<region>` of
+  // CDKToolkit-cupmark, the one exception invariant 9 names; the bootstrap guard below
+  // proves every stack uses that synthesizer.
+  const asset = c.node.scope;
+  if (c.node.id === 'AssetBucket' && asset instanceof s3assets.Asset) {
+    const stack = Stack.of(c);
+    const bucket = JSON.stringify(stack.resolve(asset.s3BucketName));
+    return (
+      stack.synthesizer instanceof DefaultStackSynthesizer &&
+      stack.synthesizer.bootstrapQualifier === BOOTSTRAP_QUALIFIER &&
+      bucket.includes(`cdk-${BOOTSTRAP_QUALIFIER}-assets-`)
+    );
+  }
+  return false;
 }
 
 function stackLabel(c: IConstruct): string {
@@ -472,6 +639,7 @@ function checkStack(stack: Stack): Violation[] {
   }
 
   // Resources.
+  const ownAccount = Token.isUnresolved(stack.account) ? undefined : stack.account;
   const resources = get(template, ['Resources']);
   const byId: Json = isRecord(resources) ? resources : {};
   for (const [id, res] of Object.entries(byId)) {
@@ -484,6 +652,7 @@ function checkStack(stack: Stack): Violation[] {
     }
     for (const f of fixedFeeProperties(type, props)) add('fixed-fee-property', id, `${type}: ${f}`);
     for (const p of statefulProblems(type, res, props)) add('stateful', id, `${type}: ${p}`);
+    for (const p of iamProblems(type, props, byId, ownAccount)) add('iam', id, `${type}: ${p}`);
     const denied = deniedReason(type);
     const rule = ALLOWED_RESOURCE_TYPES[type];
     if (denied !== undefined) {
@@ -498,6 +667,11 @@ function checkStack(stack: Stack): Violation[] {
         const known = knownPrefix(value, byId, name);
         if (value === undefined) {
           if (n.required) add('name', id, `${type}.${prop} must be set and start with ${prefixes.join(' or ')}`);
+        } else if (n.exact === true) {
+          if (typeof value !== 'string' || !prefixes.includes(value)) {
+            const shown = typeof value === 'string' ? `"${value}"` : 'is not a literal and';
+            add('name', id, `${type}.${prop} ${shown} must be exactly ${prefixes.join(' or ')}`);
+          }
         } else if (known === undefined || !prefixes.some((p) => known.startsWith(p))) {
           const shown = typeof value === 'string' ? `"${value}"` : 'is not a literal and';
           add('name', id, `${type}.${prop} ${shown} must start with ${prefixes.join(' or ')}`);
