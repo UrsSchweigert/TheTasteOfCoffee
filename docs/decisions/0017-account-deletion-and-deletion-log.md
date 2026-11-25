@@ -19,17 +19,17 @@ D1 (consent) and D2 (aggregates) were still open. The lead decides them here.
 1. **D1:** opt-in. `consent.contribute_to_aggregates` is false unless the user agrees at onboarding. The aggregator (M3) counts a brew only if its author had consent when it was written.
 2. **D2:** subtract, then delete. Deleting the account deletes every brew item. The aggregator subtracts a removed brew using the stream's old image, the same as for any brew delete. Nothing exists to subtract before M3.
 3. **Deletion runs in the request.** `DELETE /account` deletes, in this order:
-   1. **S3.** Every version and delete marker of `labels/<id>.jpg` and `uploads/<id>.jpg`, for the user's photos of unverified beans. The API lists the versions under that exact key (`ListObjectVersions` with the key as prefix), then calls `DeleteObject` with each `VersionId`.
+   1. **S3.** Every version and delete marker of `labels/<id>.jpg` and `uploads/<id>.jpg`, for the user's photos of beans that are not verified (unverified, rejected or missing: none of these belong to the shared catalogue). For a verified bean's photo only `uploads/<id>.jpg` goes, because the raw upload still carries its metadata. The API lists the versions under that exact key (`ListObjectVersions` with the key as prefix), then calls `DeleteObject` with each `VersionId`.
    2. **The bean-side `PHOTO#` items** of those photos. For photos of verified beans only the user-side item goes, so the photo stays and loses its link (D10).
    3. **Every item in `USER#<sub>`**, with `BatchWriteItem` in pages of 25 items. Retries on unprocessed items.
    4. **The deletion log entry** (point 4 below).
    5. **The Cognito user**, with `AdminDeleteUser` on the stage pool.
    
-   It answers 204 only when every step succeeded. A failure answers 500. The app retries, and every step is safe to repeat (idempotent). The deletion log is written before the Cognito user is deleted, so a retry is still authorised by the same token until it expires. A user with thousands of brews needs a few dozen batch calls, well inside the 10-second timeout.
+   It answers 204 only when every step succeeded. A failure answers 500. The app retries, and every step is safe to repeat (idempotent). The deletion log is written before the Cognito user is deleted, so a retry is still authorised by the same token until it expires. One brew is two items (the brew and its pointer), so 1,000 brews take about 80 `BatchWriteItem` pages. The pages run with bounded concurrency so that the export limit (about 13,000 brews) still fits inside the 10-second timeout; if it does not, the 500 and the retry finish the job, because each attempt shrinks the partition.
 4. **The deletion log lives outside the table,** in a new S3 bucket `cupmark-<stage>-deletion-log-<account>`. Restoring the table from point-in-time recovery or an export would otherwise lose log entries written after the restore point.
    - Each entry is one object, `entries/<ulid>.json`, holding `{ "sub", "photo_ids", "deleted_at" }`. These are ids only, with no other data.
    - The bucket is private, versioned and encrypted with SSE-S3, like the others.
-   - A lifecycle rule expires entries after 400 days. That outlives the 365-day exports and the 35-day point-in-time recovery window.
+   - A lifecycle rule expires entries after 400 days. That outlives the 365-day exports and the 35-day point-in-time recovery window. With the 30-day noncurrent-version rule, an entry exists for about 430 days in all; the privacy policy (M6) states that figure.
    - The API role may only `s3:PutObject` to `entries/*`. Reading the log is for the operator's restore procedure (M5 restore drill), not for the API.
 5. **Export** is `text/csv`, one row per item of the caller (profile, shelf entries, brews, recipes, label photo links). Counters and pending items are left out. The columns are fixed in the contract. Every value is an id, a vocabulary id, a number, a boolean or a timestamp, so there is no free text and nothing to escape except the separator. Even so, values are quoted per RFC 4180, and a leading `=`, `+`, `-` or `@` is never possible because the values are constrained.
 
@@ -63,4 +63,5 @@ An access token stays valid for up to 60 minutes after `AdminDeleteUser`, and th
 - Every write route checks the tombstone in the same transaction (a `ConditionCheck` that it does not exist), or with a strongly consistent read just before the write where the write is a single put. If the tombstone exists, the route answers 401.
 - A repeated `DELETE /account` with an old token answers 204 and does nothing further.
 - Reads need no check: once the partition is empty they return nothing.
-- Cost: one extra read unit per write request, pay-per-use.
+- Cost: a write that used to be a single put or update is now a transaction (double the write units) plus the `ConditionCheck` read. Pay-per-use, and negligible at the expected volume (docs/06).
+- A completion of a label photo that races the deletion and loses deletes the `labels/` and `uploads/` copies it wrote, and answers 500 if it cannot, so nothing of the user survives (found in the M1-T6 review).
