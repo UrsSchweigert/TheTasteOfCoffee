@@ -1,14 +1,26 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "bean.schema.json",
-  "title": "Bean vocabulary: processes and roast levels",
+  "title": "Bean vocabulary: processes, roast levels, and from version 2 origins and varieties",
   "type": "object",
   "required": ["version", "status", "processes", "roast_levels"],
   "properties": {
     "version": { "$ref": "common.schema.json#/$defs/version" },
     "status": { "$ref": "common.schema.json#/$defs/status" },
     "processes": { "$ref": "common.schema.json#/$defs/id_list" },
-    "roast_levels": { "$ref": "common.schema.json#/$defs/id_list" }
+    "roast_levels": { "$ref": "common.schema.json#/$defs/id_list" },
+    "origins": { "$ref": "common.schema.json#/$defs/id_list" },
+    "varieties": { "$ref": "common.schema.json#/$defs/id_list" }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "if": { "required": ["version"], "properties": { "version": { "type": "integer", "minimum": 2 } } },
+  "then": { "required": ["origins", "varieties"], "properties": { "origins": true, "varieties": true } },
+  "else": {
+    "not": {
+      "anyOf": [
+        { "required": ["origins"], "properties": { "origins": true } },
+        { "required": ["varieties"], "properties": { "varieties": true } }
+      ]
+    }
+  }
 }

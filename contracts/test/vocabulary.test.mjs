@@ -17,6 +17,8 @@ import {
 const schemas = loadSchemas();
 const versions = listVersions();
 const clone = (value) => structuredClone(value);
+/** Id lists merged over every version, drafts included: what the labels must cover. */
+const allLists = () => mergeIdLists(versions.map((version) => collectIds(loadVocabulary(version)).lists));
 
 test('at least version 1 exists', () => {
   assert.ok(versions.includes(1));
@@ -92,7 +94,8 @@ test('v1: every file is published', () => {
 });
 
 test('every vocabulary id has a non-empty label in every language, and no label is orphaned', () => {
-  const lists = mergeIdLists(versions.map((version) => collectIds(loadVocabulary(version)).lists));
+  // Drafts included: a draft version cannot be published without its labels.
+  const lists = allLists();
   const i18n = loadI18n();
   assert.deepEqual(Object.keys(i18n).sort(), [...LANGUAGES].sort());
   for (const lang of LANGUAGES) {
@@ -130,7 +133,7 @@ test('schema check fails: bad id, display text, unknown property, missing step, 
   assert.notDeepEqual(broken((f) => { delete f.shelf.bag_sizes[0].grams; }), []);
   assert.notDeepEqual(broken((f) => { f.flavour_notes.flavour_categories[0].flavour_notes = []; }), []);
   assert.notDeepEqual(broken((f) => { f.flavour_notes.comment = 'free text'; }), []);
-  assert.deepEqual(broken((f) => { f.bean.version = 2; }), ['bean.json: version 2 does not match directory v1']);
+  assert.deepEqual(broken((f) => { f.criteria.version = 2; }), ['criteria.json: version 2 does not match directory v1']);
 });
 
 test('id check fails: duplicate within a list, across categories, and a list in two files', () => {
@@ -179,7 +182,7 @@ test('label check fails: missing, empty and orphan labels and questions', () => 
 test('label check fails: a new vocabulary id without labels', () => {
   const files = clone(loadVocabulary(1));
   files.brew.methods.push({ id: 'pour_over_cone' });
-  const lists = collectIds(files).lists;
+  const lists = mergeIdLists([allLists(), collectIds(files).lists]);
   const i18n = loadI18n();
   assert.deepEqual(checkI18n('en', i18n.en, lists), ['en: missing label methods.pour_over_cone']);
   assert.deepEqual(checkI18n('de', i18n.de, lists), ['de: missing label methods.pour_over_cone']);
@@ -230,4 +233,80 @@ test('id check fails: an array of strings or other non-objects, even with a lax 
     );
   }
   assert.ok(collectIds({ zz_test_fixture: ['a'] }).problems.includes('zz_test_fixture.json: top level is an array, not an object'));
+});
+
+// ---- Vocabulary v2 (ADR 0006): a draft until the owner approves it. ----
+
+const withoutMeta = ({ version, status, ...rest }) => rest;
+
+test('v2 is a draft in every file, so v1 stays the latest published version', () => {
+  const files = loadVocabulary(2);
+  for (const [name, file] of Object.entries(files)) assert.equal(file.status, 'draft', `${name}.json`);
+});
+
+test('v2 is v1 plus the origins and varieties lists in bean.json, and nothing else changed', () => {
+  const v1 = loadVocabulary(1);
+  const v2 = loadVocabulary(2);
+  assert.deepEqual(Object.keys(v2), Object.keys(v1));
+  for (const name of Object.keys(v1)) {
+    const expected = withoutMeta(v1[name]);
+    const actual = withoutMeta(v2[name]);
+    if (name === 'bean') {
+      const { origins, varieties, ...rest } = actual;
+      assert.deepEqual(rest, expected, 'bean.json: v1 lists unchanged');
+      assert.ok(origins && varieties, 'bean.json: origins and varieties added');
+    } else {
+      assert.deepEqual(actual, expected, `${name}.json`);
+    }
+  }
+});
+
+test('no version drops or renames an id of the version before it (that needs an ADR)', () => {
+  for (const version of versions.slice(1)) {
+    const before = collectIds(loadVocabulary(version - 1)).lists;
+    const after = collectIds(loadVocabulary(version)).lists;
+    for (const [namespace, ids] of Object.entries(before)) {
+      const missing = ids.filter((id) => !(after[namespace] ?? []).includes(id));
+      assert.deepEqual(missing, [], `v${version} ${namespace}`);
+    }
+  }
+});
+
+test('v2 origins and varieties: well-known sets, ending with other and unknown', () => {
+  const { lists } = collectIds(loadVocabulary(2));
+  assert.ok(lists.origins.length >= 40 && lists.origins.length <= 60, `origins: ${lists.origins.length}`);
+  assert.ok(lists.varieties.length >= 20 && lists.varieties.length <= 30, `varieties: ${lists.varieties.length}`);
+  assert.deepEqual(lists.origins.slice(-2), ['other', 'unknown']);
+  assert.deepEqual(lists.varieties.slice(-2), ['other', 'unknown']);
+  for (const id of ['ethiopia', 'kenya', 'brazil', 'colombia', 'costa_rica', 'guatemala', 'indonesia', 'yemen']) {
+    assert.ok(lists.origins.includes(id), id);
+  }
+  for (const id of ['typica', 'bourbon', 'caturra', 'catuai', 'geisha', 'sl28', 'sl34', 'pacamara', 'castillo', 'heirloom', 'mundo_novo']) {
+    assert.ok(lists.varieties.includes(id), id);
+  }
+});
+
+test('schema check: bean.json needs origins and varieties from v2 on, and v1 has neither', () => {
+  const v2 = clone(loadVocabulary(2));
+  delete v2.bean.varieties;
+  assert.ok(validateVocabulary(v2, schemas, 2).includes("bean.json: / must have required property 'varieties'"));
+  const v1 = clone(loadVocabulary(1));
+  v1.bean.origins = [{ id: 'ethiopia' }];
+  assert.notDeepEqual(validateVocabulary(v1, schemas, 1), []);
+  const draftOrigins = clone(loadVocabulary(2));
+  draftOrigins.bean.origins.push({ id: 'Ethiopia Guji' });
+  assert.notDeepEqual(validateVocabulary(draftOrigins, schemas, 2), []);
+});
+
+test('label check fails: an origin or variety without a label in one language', () => {
+  const lists = allLists();
+  const en = clone(loadI18n().en);
+  const de = clone(loadI18n().de);
+  delete en.labels.origins.ethiopia;
+  de.labels.varieties.geisha = '';
+  delete de.labels.origins;
+  assert.deepEqual(checkI18n('en', en, lists), ['en: missing label origins.ethiopia']);
+  const problems = checkI18n('de', de, lists);
+  assert.ok(problems.includes('de: empty label varieties.geisha'));
+  assert.ok(problems.includes('de: missing label origins.unknown'));
 });

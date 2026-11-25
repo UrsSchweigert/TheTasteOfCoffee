@@ -1,11 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  FREE_TEXT_MAX_LENGTH,
+  UNAUTHENTICATED_ROUTES,
+  buildVocabularyContext,
   checkOpenApi,
   checkStructure,
   checkVocabularyBindings,
   compileComponentSchemas,
   findIdentityFields,
+  findRequestFreeText,
   isIdentityName,
   lintSchemas,
   loadOpenApi,
@@ -13,7 +17,7 @@ import {
   parseOpenApi,
   patternProblems,
 } from '../lib/openapi.mjs';
-import { loadVocabulary } from '../lib/vocabulary.mjs';
+import { collectIds, loadVocabulary } from '../lib/vocabulary.mjs';
 
 const doc = loadOpenApi();
 const context = loadVocabularyContext();
@@ -39,6 +43,10 @@ test('openapi.yaml: no free-text string, no unbounded number, no open object', (
   assert.deepEqual(lintSchemas(doc), []);
 });
 
+test('openapi.yaml: no request body or parameter reaches response-only free text', () => {
+  assert.deepEqual(findRequestFreeText(doc), []);
+});
+
 test('openapi.yaml: no field, parameter or path segment names a user', () => {
   assert.deepEqual(findIdentityFields(doc), []);
 });
@@ -52,9 +60,10 @@ test('openapi.yaml: all checks together, as the CLI runs them', () => {
   assert.deepEqual(checkOpenApi(doc, context), []);
 });
 
-test('openapi.yaml defines the routes of task M0-T2, all behind the bearer token', () => {
+test('openapi.yaml defines the routes of tasks M0-T2 and M1-T8, all behind the bearer token but GET /health', () => {
   const expected = [
-    'GET /barcodes/{barcode}',
+    'GET /barcodes/{barcode}', 'GET /barcodes/{barcode}/open_food_facts',
+    'GET /health',
     'POST /beans', 'GET /beans/{bean_id}',
     'GET /shelf', 'POST /shelf', 'GET /shelf/{shelf_entry_id}', 'PUT /shelf/{shelf_entry_id}', 'DELETE /shelf/{shelf_entry_id}',
     'GET /brews', 'POST /brews', 'GET /brews/{brew_id}', 'PUT /brews/{brew_id}', 'DELETE /brews/{brew_id}',
@@ -67,9 +76,45 @@ test('openapi.yaml defines the routes of task M0-T2, all behind the bearer token
     ['get', 'put', 'post', 'delete', 'patch'].filter((m) => item[m]).map((m) => `${m.toUpperCase()} ${route}`));
   assert.deepEqual(actual.sort(), expected.sort());
   assert.deepEqual(doc.security, [{ bearerAuth: [] }]);
-  for (const item of Object.values(doc.paths)) {
-    for (const op of Object.values(item)) assert.equal(op.security, undefined, `${op.operationId} overrides security`);
+  for (const [route, item] of Object.entries(doc.paths)) {
+    for (const [method, op] of Object.entries(item)) {
+      if (route === '/health' && method === 'get') assert.deepEqual(op.security, []);
+      else assert.equal(op.security, undefined, `${op.operationId} overrides security`);
+    }
   }
+  assert.deepEqual(UNAUTHENTICATED_ROUTES.map((r) => `${r.method.toUpperCase()} ${r.route}`), ['GET /health']);
+});
+
+test('openapi.yaml: GET /health takes no input and returns only {"status":"ok"} (ADR 0007)', () => {
+  const op = doc.paths['/health'].get;
+  assert.deepEqual(Object.keys(doc.paths['/health']), ['get']);
+  assert.equal(op.parameters, undefined);
+  assert.equal(op.requestBody, undefined);
+  assert.deepEqual(Object.keys(op.responses).sort(), ['200', '429']);
+  assert.deepEqual(schemas(doc).HealthStatus, {
+    description: schemas(doc).HealthStatus.description,
+    type: 'object',
+    additionalProperties: false,
+    required: ['status'],
+    properties: { status: { type: 'string', enum: ['ok'], 'x-health-status': true } },
+  });
+});
+
+test('openapi.yaml: Open Food Facts name and brand are response-only, length-limited and marked with their source', () => {
+  const product = schemas(doc).OpenFoodFactsProduct;
+  assert.deepEqual(Object.keys(product.properties), ['name', 'brand', 'image_ref']);
+  for (const name of ['name', 'brand']) {
+    const field = product.properties[name];
+    assert.equal(field['x-free-text-from'], 'open_food_facts', name);
+    assert.equal(field.readOnly, true, name);
+    assert.ok(field.maxLength >= 1 && field.maxLength <= FREE_TEXT_MAX_LENGTH, name);
+  }
+  // The image reference is not free text: a strict pattern on the image host.
+  assert.equal(product.properties.image_ref['x-free-text-from'], undefined);
+  assert.match(product.properties.image_ref.pattern, /^\^https:\/\/images\\\.openfoodfacts\\\.org\//);
+  assert.deepEqual(schemas(doc).Bean.properties.open_food_facts, { $ref: '#/components/schemas/OpenFoodFactsProduct' });
+  assert.equal(schemas(doc).BeanCreate.properties.open_food_facts, undefined);
+  assert.equal(schemas(doc).BeanAttributes.properties.name, undefined);
 });
 
 test('openapi.yaml: the export returns CSV only', () => {
@@ -96,6 +141,20 @@ test('openapi.yaml: ranges match v1 exactly (dose as integer decigrams)', () => 
 
 const validate = compileComponentSchemas(doc);
 const ID = '01JD8Z5Y3V9Q6M2K4N7P8R0S1T';
+const validBean = () => ({
+  bean_id: ID,
+  vocabulary_version: 1,
+  verified: false,
+  barcode: '4006381333931',
+  open_food_facts_match: true,
+  open_food_facts: {
+    name: 'Ethiopia Guji <b>washed</b>',
+    brand: 'Rösterei Beispiel',
+    image_ref: 'https://images.openfoodfacts.org/images/products/400/638/133/3931/front_de.3.400.jpg',
+  },
+  picked_attributes: { process: 'washed' },
+  operator_attributes: {},
+});
 const validBrew = () => ({
   vocabulary_version: 1,
   shelf_entry_id: ID,
@@ -122,6 +181,10 @@ test('schemas accept valid payloads', () => {
   assert.deepEqual(validate('BeanCreate', { vocabulary_version: 1, attributes: { process: 'washed', roast_level: 'medium_light' } }), []);
   assert.deepEqual(validate('Profile', { locale: 'de', consent: { contribute_to_aggregates: false } }), []);
   assert.deepEqual(validate('Barcode', '036000291452'), []);
+  assert.deepEqual(validate('HealthStatus', { status: 'ok' }), []);
+  assert.deepEqual(validate('Bean', validBean()), []);
+  assert.deepEqual(validate('Bean', { ...validBean(), open_food_facts: { name: 'ü'.repeat(150), brand: 'x' } }), [], 'length counts code points');
+  assert.deepEqual(validate('OpenFoodFactsProduct', {}), [], 'every field is optional');
 });
 
 test('schemas reject what the specification forbids', () => {
@@ -167,6 +230,18 @@ test('schemas reject what the specification forbids', () => {
   rejects('ShelfEntryInput', { vocabulary_version: 1, bean_id: ID, purchase_date: '2026-11-20', bag_size: '250g' }, 'bag size id');
   rejects('Profile', { locale: 'fr', consent: { contribute_to_aggregates: true } }, 'no French labels');
   rejects('Profile', { locale: 'de' }, 'consent required');
+  const offWith = (fields) => ({ ...validBean(), open_food_facts: { ...validBean().open_food_facts, ...fields } });
+  rejects('Bean', offWith({ name: 'x'.repeat(151) }), 'name longer than 150');
+  rejects('Bean', offWith({ brand: 'x'.repeat(101) }), 'brand longer than 100');
+  rejects('Bean', offWith({ name: '' }), 'empty name');
+  rejects('Bean', offWith({ origin: 'Guji' }), 'no other Open Food Facts text');
+  rejects('Bean', offWith({ image_ref: 'https://example.com/a.jpg' }), 'image from another host');
+  rejects('Bean', offWith({ image_ref: 'https://images.openfoodfacts.org/images/products/400/638/133/3931/front_de.3.400.jpg?x=1' }), 'image with a query');
+  rejects('Bean', offWith({ image_ref: 'http://images.openfoodfacts.org/images/products/400/638/133/3931/front_de.3.400.jpg' }), 'image over http');
+  rejects('BeanCreate', { vocabulary_version: 1, attributes: {}, open_food_facts: { name: 'Ethiopia Guji' } }, 'Open Food Facts text is never sent');
+  rejects('HealthStatus', { status: 'degraded' }, 'only ok');
+  rejects('HealthStatus', { status: 'ok', version: '1.2.3' }, 'nothing but status');
+  rejects('HealthStatus', {}, 'status required');
 });
 
 // ---- The checks themselves must be able to fail ----
@@ -458,4 +533,194 @@ test('identity check matches user, owner, sub and uid as whole tokens, after cam
   assertProblem(problems, '#/components/schemas/Profile: property cognito_sub');
   assertProblem(problems, 'components.parameters.CursorQuery: parameter uid');
   assert.ok(!hasProblem(problems, 'subscription'), 'subscription is not an identity field');
+});
+
+// ---- Exception 1: response-only Open Food Facts text (ADR 0005) ----
+
+const freeText = (extra = {}) => ({ type: 'string', maxLength: 10, readOnly: true, 'x-free-text-from': 'open_food_facts', ...extra });
+
+test('free-text exception fails: marked text reachable from any request, through $ref, items, parameters or any keyword', () => {
+  const problems = findRequestFreeText(broken((d) => {
+    const s = schemas(d);
+    // The response-only group put into a request through $ref.
+    s.BeanCreate.properties.open_food_facts = { $ref: '#/components/schemas/OpenFoodFactsProduct' };
+    // Inline, nested in array items, in a schema shared by several requests.
+    s.BrewParameters.properties.label = { type: 'array', maxItems: 2, items: freeText() };
+    // A query parameter.
+    d.components.parameters.CursorQuery.schema = freeText();
+    // An unused request body component that reaches the bean response.
+    d.components.requestBodies = { Unused: { content: { 'application/json': { schema: { $ref: '#/components/schemas/Bean' } } } } };
+    // Hidden under a keyword the lint does not walk.
+    s.Consent['x-hidden'] = { $ref: '#/components/schemas/OpenFoodFactsProduct' };
+  }));
+  for (const fragment of [
+    '#/components/schemas/OpenFoodFactsProduct/properties/name: free text from open_food_facts is reachable from the POST /beans request body',
+    '#/components/schemas/OpenFoodFactsProduct/properties/brand: free text from open_food_facts is reachable from the POST /beans request body',
+    '#/components/schemas/BrewParameters/properties/label/items: free text from open_food_facts is reachable from the POST /brews request body',
+    '#/components/schemas/BrewParameters/properties/label/items: free text from open_food_facts is reachable from the PUT /recipes/{recipe_id} request body',
+    '#/components/parameters/CursorQuery/schema: free text from open_food_facts is reachable from GET /shelf parameters',
+    '#/components/parameters/CursorQuery/schema: free text from open_food_facts is reachable from components.parameters.CursorQuery',
+    '#/components/schemas/OpenFoodFactsProduct/properties/name: free text from open_food_facts is reachable from components.requestBodies.Unused',
+    '#/components/schemas/OpenFoodFactsProduct/properties/name: free text from open_food_facts is reachable from the PUT /profile request body',
+  ]) assertProblem(problems, fragment);
+  // The same document is also rejected by the CLI's full run.
+  assert.ok(checkOpenApi(broken((d) => {
+    schemas(d).BeanAttributes.properties.roaster = freeText();
+  }), context).some((p) => p.includes('reachable from the POST /beans request body')));
+});
+
+test('free-text exception fails: a response string without the marker, and every malformed marker', () => {
+  const problems = lintSchemas(broken((d) => {
+    const f = schemas(d).OpenFoodFactsProduct.properties;
+    f.unmarked = { type: 'string', maxLength: 10 };
+    delete f.name.maxLength;
+    f.brand.maxLength = FREE_TEXT_MAX_LENGTH + 1;
+    f.brand['x-free-text-from'] = 'user';
+    f.writable = { type: 'string', maxLength: 10, 'x-free-text-from': 'open_food_facts' };
+    f.image_ref['x-free-text-from'] = 'open_food_facts';
+    f.image_ref.readOnly = true;
+    f.image_ref.maxLength = 120;
+    f.count = { type: 'integer', minimum: 0, maximum: 9, readOnly: true, 'x-free-text-from': 'open_food_facts' };
+    f.short = freeText({ minLength: 11 });
+    schemas(d).Bean.properties.verified.readOnly = true;
+  }));
+  const at = (name) => `#/components/schemas/OpenFoodFactsProduct/properties/${name}`;
+  for (const fragment of [
+    `${at('unmarked')}: string without enum, pattern or format`,
+    `${at('name')}: free text needs a maxLength from 1 to ${FREE_TEXT_MAX_LENGTH}`,
+    `${at('brand')}: free text needs a maxLength from 1 to ${FREE_TEXT_MAX_LENGTH}`,
+    `${at('brand')}: x-free-text-from "user" is not one of open_food_facts`,
+    `${at('writable')}: free text needs readOnly: true`,
+    `${at('image_ref')}: x-free-text-from is only for a string without enum, pattern, format or contentMediaType`,
+    `${at('count')}: x-free-text-from is only allowed on a string`,
+    `${at('short')}: free text minLength must be an integer from 0 to maxLength`,
+    '#/components/schemas/Bean/properties/verified: readOnly is only used on response-only free text',
+  ]) assertProblem(problems, fragment);
+});
+
+test('free-text exception passes: the same marked field in a response only', () => {
+  const changed = broken((d) => {
+    d.paths['/profile'].get.responses['200'].content['application/json'].schema = {
+      type: 'object', additionalProperties: false, properties: { title: freeText() },
+    };
+  });
+  assert.deepEqual(lintSchemas(changed), []);
+  assert.deepEqual(findRequestFreeText(changed), []);
+});
+
+// ---- Exception 2: GET /health without the token (ADR 0007) ----
+
+test('health exception fails: any other route or method without the bearer token', () => {
+  const problems = checkStructure(broken((d) => {
+    d.paths['/profile'].get.security = [];
+    d.paths['/brews'].get.security = [{}];
+    d.paths['/shelf'].get.security = [{ bearerAuth: [] }, {}];
+    d.paths['/health'].post = { ...clone(d.paths['/health'].get), operationId: 'postHealth' };
+    d.paths['/healthz'] = { get: { ...clone(d.paths['/health'].get), operationId: 'getHealthz' } };
+  }));
+  for (const fragment of [
+    'GET /profile: overrides security',
+    'GET /brews: overrides security',
+    'GET /shelf: overrides security',
+    'POST /health: overrides security',
+    'POST /health: no 401 response',
+    'GET /healthz: overrides security',
+    'GET /healthz: no 401 response',
+    "#/paths/~1healthz/get/responses/200/content/application~1json/schema: #/components/schemas/HealthStatus is the body of GET /health and may not be used anywhere else",
+  ]) assertProblem(problems, fragment);
+});
+
+test('health exception fails: GET /health with the token, input, other responses or another body', () => {
+  const problems = checkStructure(broken((d) => {
+    const health = d.paths['/health'].get;
+    health.security = [{ bearerAuth: [] }];
+    health.parameters = [{ $ref: '#/components/parameters/CursorQuery' }];
+    health.requestBody = { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/Profile' } } } };
+    health.responses['404'] = { description: 'x' };
+    health.responses['200'].content['application/json'].schema = { $ref: '#/components/schemas/Profile' };
+    d.paths['/profile'].get.responses['200'].content['application/json'].schema = { $ref: '#/components/schemas/HealthStatus' };
+  }));
+  for (const fragment of [
+    'GET /health: must declare security: []',
+    'GET /health: the unauthenticated route takes no parameters',
+    'GET /health: the unauthenticated route takes no request body',
+    'GET /health: the unauthenticated route returns 200 and 429 only',
+    'GET /health: 200 must return application/json with $ref #/components/schemas/HealthStatus',
+    '#/components/schemas/HealthStatus is the body of GET /health and may not be used anywhere else',
+  ]) assertProblem(problems, fragment);
+  assertProblem(checkStructure(broken((d) => { delete d.paths['/health'].get.security; })), 'GET /health: must declare security: []');
+  assertProblem(checkStructure(broken((d) => { delete d.paths['/health']; })), 'GET /health: missing');
+});
+
+test('health exception fails: the status enum changes, loses its tag or is used elsewhere', () => {
+  const problems = checkVocabularyBindings(broken((d) => {
+    const s = schemas(d);
+    s.HealthStatus.properties.status.enum = ['ok', 'degraded'];
+    s.Profile.properties.status = { type: 'string', enum: ['ok'], 'x-health-status': true };
+  }), context);
+  assertProblem(problems, '#/components/schemas/HealthStatus/properties/status: the health status enum must be exactly [ok]');
+  assertProblem(problems, '#/components/schemas/Profile/properties/status: x-health-status is only allowed on #/components/schemas/HealthStatus/properties/status');
+  const untagged = checkVocabularyBindings(broken((d) => { delete schemas(d).HealthStatus.properties.status['x-health-status']; }), context);
+  assertProblem(untagged, '#/components/schemas/HealthStatus/properties/status: enum without x-vocabulary');
+});
+
+// ---- Vocabulary v2: draft now, bound when published (ADR 0004, 0006) ----
+
+const v2Lists = () => collectIds(loadVocabulary(2)).lists;
+/** v1 and v2 as they would be once the owner approves v2 and it is published. */
+const contextWithV2Published = () => {
+  const v2 = clone(loadVocabulary(2));
+  for (const file of Object.values(v2)) file.status = 'published';
+  return buildVocabularyContext([{ version: 1, files: loadVocabulary(1) }, { version: 2, files: v2 }], context.languages);
+};
+/** The openapi.yaml change that publishing v2 needs (README.md, "Publishing a version"). */
+const addV2Fields = (d, lists = v2Lists()) => {
+  const s = schemas(d);
+  s.VocabularyVersion.maximum = 2;
+  s.Origin = { type: 'string', enum: lists.origins, 'x-vocabulary': 'origins' };
+  s.Variety = { type: 'string', enum: lists.varieties, 'x-vocabulary': 'varieties' };
+  s.BeanAttributes.properties.origin = { $ref: '#/components/schemas/Origin' };
+  s.BeanAttributes.properties.variety = { $ref: '#/components/schemas/Variety' };
+};
+
+test('while v2 is a draft, the enums come from v1 only and its new lists cannot be bound', () => {
+  assert.equal(context.latestPublished, 1);
+  assert.deepEqual(context.published.map((p) => p.version), [1]);
+  assert.deepEqual(context.draftLists, { origins: 2, varieties: 2 });
+  assert.equal(context.lists.origins, undefined);
+  const problems = checkVocabularyBindings(broken((d) => addV2Fields(d)), context);
+  assertProblem(problems, '#/components/schemas/Origin: x-vocabulary origins is only in draft vocabulary v2; bind it when v2 is published');
+  assertProblem(problems, '#/components/schemas/Variety: x-vocabulary varieties is only in draft vocabulary v2');
+  assertProblem(problems, '#/components/schemas/VocabularyVersion: vocabulary version must be an integer from 1 to the latest published version 1');
+});
+
+test('once v2 is published, the contract fails until it carries origin and variety and allows version 2', () => {
+  const published = contextWithV2Published();
+  assert.equal(published.latestPublished, 2);
+  const problems = checkVocabularyBindings(doc, published);
+  assertProblem(problems, 'vocabulary list origins is not used by any schema');
+  assertProblem(problems, 'vocabulary list varieties is not used by any schema');
+  assertProblem(problems, 'vocabulary version must be an integer from 1 to the latest published version 2');
+});
+
+test('once v2 is published, the planned change passes every check, and drift from v2 still fails', () => {
+  const published = contextWithV2Published();
+  const changed = broken((d) => addV2Fields(d));
+  assert.deepEqual(checkOpenApi(changed, published), []);
+  const v = compileComponentSchemas(changed);
+  assert.deepEqual(v('BeanCreate', { vocabulary_version: 2, attributes: { origin: 'costa_rica', variety: 'geisha', process: 'honey' } }), []);
+  assert.notDeepEqual(v('BeanCreate', { vocabulary_version: 2, attributes: { origin: 'Costa Rica' } }), []);
+  assert.notDeepEqual(v('BeanCreate', { vocabulary_version: 3, attributes: {} }), []);
+  const lists = v2Lists();
+  const drifted = broken((d) => addV2Fields(d, { ...lists, origins: lists.origins.filter((id) => id !== 'ethiopia') }));
+  assertProblem(checkVocabularyBindings(drifted, published), '#/components/schemas/Origin: enum differs from vocabulary origins; missing ethiopia');
+});
+
+test('every list of the latest published version is bound, except the documented ones', () => {
+  const problems = checkVocabularyBindings(broken((d) => {
+    delete schemas(d).Rating.properties.intensities;
+    delete schemas(d).Intensities;
+  }), context);
+  assertProblem(problems, 'vocabulary list intensity_dimensions is not used by any schema');
+  assert.ok(!hasProblem(checkVocabularyBindings(doc, context), 'flavour_categories'));
 });

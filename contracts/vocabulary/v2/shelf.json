@@ -1,0 +1,18 @@
+{
+  "version": 2,
+  "status": "draft",
+  "bag_sizes": [
+    { "id": "g_250", "grams": 250 },
+    { "id": "g_500", "grams": 500 },
+    { "id": "g_1000", "grams": 1000 }
+  ],
+  "price_band_basis": { "currency": "EUR", "per_grams": 1000 },
+  "price_bands": [
+    { "id": "under_15", "minimum": 0, "maximum_exclusive": 15 },
+    { "id": "from_15_to_30", "minimum": 15, "maximum_exclusive": 30 },
+    { "id": "from_30_to_45", "minimum": 30, "maximum_exclusive": 45 },
+    { "id": "from_45_to_60", "minimum": 45, "maximum_exclusive": 60 },
+    { "id": "from_60_to_80", "minimum": 60, "maximum_exclusive": 80 },
+    { "id": "from_80", "minimum": 80 }
+  ]
+}
