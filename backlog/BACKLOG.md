@@ -540,7 +540,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the unit tests run in the `ios` job. The task ends `needs-mac-verification` until camera scanning passes on a device in M2-T34.
 
 ### M2-T14 Lookup and confirm flow
-- status: todo
+- status: in-progress
 - owner: ios-engineer
 - depends: M2-T8, M2-T11, M2-T13
 - implements: docs/04-specification.md, F1 steps 2 and 3; docs/05-system-design.md, Barcode lookup; ADR 0005, ADR 0011
@@ -583,7 +583,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T16 Sync outbox and conflict rules
-- status: todo
+- status: in-progress
 - owner: ios-engineer
 - depends: M2-T8, M2-T11, M2-T15
 - implements: docs/04-specification.md, Non-functional (Offline, Durability); ADR 0012 (brew counts, `WriteConflictError`); docs/07 D14; ADR 0017, Addendum
