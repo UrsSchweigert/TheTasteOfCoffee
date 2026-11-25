@@ -351,7 +351,7 @@ Planning notes (planned 2026-11-25):
     - Grinders: a curated list of common home hand and electric grinders, each with the numbers on its own dial as its scale, in steps of 1 or 0.5. The contract-keeper proposes the list, and the owner approves it when v3 is published (M2-T4).
 
 ### M2-T3 Swift vocabulary generator: grinders and method field rules
-- status: needs-mac-verification
+- status: done (verified by the macOS `ios` job in its pull request; the v3 Swift output is first compiled at M2-T4)
 - owner: ios-engineer
 - depends: M2-T2
 - implements: docs/04-specification.md, F2; CLAUDE.md invariant 2; ios/README.md, Vocabulary
@@ -435,7 +435,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T8 API client
-- status: needs-mac-verification
+- status: done (verified by the macOS `ios` job in its pull request)
 - owner: ios-engineer
 - depends: M2-T7
 - implements: contracts/openapi.yaml 0.5.0 (0.6.0 after M2-T4); docs/05-system-design.md, Security
