@@ -129,14 +129,16 @@ const CDK_VERBS = ['deploy', 'destroy', 'bootstrap'];
 function cdkCommands(run) {
   const commands = [];
   const lines = run.replace(/\\\r?\n/g, ' ').split('\n');
-  // Each command of a line on its own: split at ;, &&, || and |.
-  for (const segment of lines.flatMap((l) => l.split(/;|&&|\|\||\|/))) {
+  // Each command of a line on its own: split at ;, &&, ||, | and at subshell or
+  // command-substitution brackets and backticks, so `(cd infra && npx cdk destroy)` and
+  // `x=$(npx cdk bootstrap)` are seen.
+  for (const segment of lines.flatMap((l) => l.split(/;|&&|\|\||\||[()`]/))) {
     const calls = [...segment.matchAll(CDK_INVOCATION)];
     calls.forEach((m, i) => {
       // The arguments of this call: up to the next cdk call in the same command.
       const end = i + 1 < calls.length ? calls[i + 1].index : segment.length;
       const rest = segment.slice(m.index + m[0].length, end);
-      const tokens = rest.split(/\s+/).map((t) => t.replace(/^['"]|['"]$/g, ''));
+      const tokens = rest.split(/\s+/).map((t) => t.replace(/^['"(`]+|['")`]+$/g, ''));
       // On purpose: any cdk call followed later in its command by the word deploy (or
       // destroy, bootstrap) counts, even if it is not the verb; the guard errs on the safe side.
       const verb = tokens.find((t) => CDK_VERBS.includes(t));

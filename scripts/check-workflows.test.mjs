@@ -740,6 +740,11 @@ ${run.split('\n').map((l) => `          ${l}`).join('\n')}
   has(check('dev', 'npx cdk deploy dev/core && npx cdk deploy prod/core'), 'must name exactly the stack');
   has(check('dev', 'npx cdk diff dev/core || npx cdk deploy --all'), 'cdk deploy --all');
   has(check('dev', 'npx cdk deploy dev/core | tee log; npx aws-cdk bootstrap'), 'runs cdk bootstrap');
+  has(check('dev', '(cd infra && npx cdk destroy)'), 'runs cdk destroy');
+  has(check('dev', 'x=$(npx cdk bootstrap)'), 'runs cdk bootstrap');
+  has(check('dev', 'echo `npx cdk destroy`'), 'runs cdk destroy');
+  has(check('dev', '(cd infra && npx cdk deploy --all)'), 'cdk deploy --all');
+  assert.deepEqual(check('dev', '(cd infra && npx cdk deploy dev/core)'), []);
   assert.deepEqual(check('dev', 'npx cdk diff dev/core; npx cdk deploy dev/core | tee deploy.log'), []);
   assert.deepEqual(check('dev', 'npx cdk -c stage=dev deploy dev/core --require-approval never'), []);
   assert.deepEqual(check('dev', 'npx cdk@2.1149.0 \\\n  deploy dev/core'), []);
