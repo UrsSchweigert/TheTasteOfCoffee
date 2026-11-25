@@ -213,7 +213,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - A smoke test calls the health route after deploy.
 
 ### M1-T8 Contract update for D7 to D9
-- status: in-progress
+- status: done
 - owner: contract-keeper
 - depends: M0-T3
 - implements: docs/decisions/0005, 0006, 0007
@@ -226,12 +226,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - The OpenAPI lint allows response-only Open Food Facts text and the one health route as explicit, documented exceptions. Any other text field or route without the bearer token still fails, and tests prove both.
   - docs/05 Barcode lookup describes the server-side lookup (User-Agent, catalogue cache, per-user cap), and docs/04 F1 step 3 matches it.
   - The backend regenerates its schemas, and the no-drift check passes.
-  - Status: the contract part (D7, D9, draft v2) was merged on 2026-11-25. Still open:
-    - apply the owner's amendments from ADR 0011: region entries carry their parent country (with Bali, Flores and `usa` added), a new `species` list, `robusta` removed from varieties, and the added origins and varieties;
-    - then publish and lock v2 (owner-approved with those amendments on 2026-11-25), and bind origin, variety and species in openapi (the `addV2Fields` steps in contracts/README.md, extended for species);
-    - replace the Open Food Facts `image_ref` pattern with a reference to our stored copy (ADR 0011);
-    - start after M1-T5 merges, because publishing regenerates the backend code M1-T5 builds on;
-    - from the review, the lint pins HealthStatus to exactly `{status}` (required, no additional properties) and `/health` to `get` only.
+  - Status: done on 2026-11-25 in two parts. Part 1: D7 and D9, plus draft v2. Part 2: v2 published and locked with the owner's ADR 0011 amendments; origin, species and variety bound in the contract; Open Food Facts images referenced by `image_id`; health route and raw-body lint hardened; backend and iOS on v2.
 
 ### M1-T9 GitHub OIDC deploy stack and IAM policy guards
 - status: todo
