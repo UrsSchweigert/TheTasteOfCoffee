@@ -907,3 +907,37 @@ test('the committed InfoPlist.xcstrings localises the camera permission in en an
   assert.ok(usageDescriptionSettings(pbxproj).has('NSCameraUsageDescription'));
   assert.ok(catalog.strings.NSCameraUsageDescription);
 });
+
+// ---- Lookup and confirm flow (M2-T14, ADR 0005, ADR 0011) ----
+
+import * as m2t14Fs from 'node:fs';
+
+/** Every file under `dir`, recursively, as paths relative to the repository root. */
+const m2t14Files = (dir) => {
+  const absolute = join(repoRoot, dir);
+  if (!existsSync(absolute)) return [];
+  return m2t14Fs.readdirSync(absolute, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => relative(repoRoot, join(entry.parentPath ?? entry.path, entry.name)));
+};
+
+test('the app never names an Open Food Facts host: images and text come through our API (M2-T14, ADR 0011)', () => {
+  const files = ['ios/Cupmark', 'ios/CupmarkTests', 'ios/Config', 'ios/Cupmark.xcodeproj'].flatMap(m2t14Files);
+  assert.ok(files.some((file) => file.endsWith('LookupModel.swift')), 'the lookup sources are scanned');
+  const offenders = files.filter((file) => /openfoodfacts\.org/i.test(readFileSync(join(repoRoot, file), 'latin1')));
+  assert.deepEqual(offenders, []);
+});
+
+test('Open Food Facts name and brand are shown only with Text(verbatim:) (M2-T14, ADR 0005)', () => {
+  const pattern = /\bText\(\s*(?!verbatim:)[^)\n]*\b(name|brand)\b/;
+  assert.match('Text(product.name)', pattern);
+  assert.match('Text(brand)', pattern);
+  assert.doesNotMatch('Text(verbatim: name)', pattern);
+  assert.doesNotMatch('Text(L10n.openFoodFactsName)', pattern);
+  const swift = m2t14Files('ios/Cupmark').filter((file) => file.endsWith('.swift'));
+  const offenders = swift.filter((file) => pattern.test(lexSwift(readFileSync(join(repoRoot, file), 'utf8')).masked));
+  assert.deepEqual(offenders, []);
+  const views = readFileSync(join(repoRoot, 'ios/Cupmark/Lookup/OpenFoodFactsViews.swift'), 'utf8');
+  assert.match(views, /Text\(verbatim: name\)/);
+  assert.match(views, /Text\(verbatim: brand\)/);
+});

@@ -117,6 +117,15 @@ actor AuthSession: TokenProvider {
         _ = try await refreshedTokens()
     }
 
+    // MARK: - Account check (M2-T16)
+
+    /// Whether `account` is the one signed in. Reads the Keychain, never the network.
+    /// `SyncEngine` asks before every request, so one account's outbox is never sent with
+    /// another account's token.
+    func isSignedIn(as account: AccountID) -> Bool {
+        loadedCredential()?.accountID == account
+    }
+
     // MARK: - Refresh
 
     /// The running refresh, or a new one.

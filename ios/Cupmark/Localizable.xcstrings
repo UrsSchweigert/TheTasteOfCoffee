@@ -73,6 +73,600 @@
         }
       }
     },
+    "bean.attribute.origin" : {
+      "comment" : "Label of the bean's origin.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Herkunft"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Origin"
+          }
+        }
+      }
+    },
+    "bean.attribute.process" : {
+      "comment" : "Label of the bean's processing method.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aufbereitung"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Process"
+          }
+        }
+      }
+    },
+    "bean.attribute.roast_level" : {
+      "comment" : "Label of the bean's roast level.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Röstgrad"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Roast Level"
+          }
+        }
+      }
+    },
+    "bean.attribute.species" : {
+      "comment" : "Label of the bean's species.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Art"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Species"
+          }
+        }
+      }
+    },
+    "bean.attribute.variety" : {
+      "comment" : "Label of the bean's variety.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Varietät"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Variety"
+          }
+        }
+      }
+    },
+    "bean.attributes.empty" : {
+      "comment" : "Shown when a bean has no details yet.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch keine Details"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No details yet"
+          }
+        }
+      }
+    },
+    "bean.attributes.header" : {
+      "comment" : "Header of the bean's origin, species, variety, process and roast.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Details"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Details"
+          }
+        }
+      }
+    },
+    "bean.source.operator" : {
+      "comment" : "Under a bean detail set by the Cupmark team.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Von Cupmark geprüft"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checked by Cupmark"
+          }
+        }
+      }
+    },
+    "bean.source.picked" : {
+      "comment" : "Under a bean detail picked by users.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Von Nutzern gewählt"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Picked by users"
+          }
+        }
+      }
+    },
+    "bean.unverified" : {
+      "comment" : "State of a bean not yet checked by the Cupmark team.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ungeprüft"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unverified"
+          }
+        }
+      }
+    },
+    "bean.unverified.message" : {
+      "comment" : "Explains the unverified state.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Von Nutzern angelegt. Das Cupmark-Team hat sie noch nicht geprüft."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Added by users. The Cupmark team has not checked it yet."
+          }
+        }
+      }
+    },
+    "bean.verified" : {
+      "comment" : "State of a bean checked by the Cupmark team.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geprüft"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verified"
+          }
+        }
+      }
+    },
+    "bean.verified.message" : {
+      "comment" : "Explains the verified state.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Cupmark-Team hat diese Bohne geprüft."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Cupmark team has checked this bean."
+          }
+        }
+      }
+    },
+    "lookup.confirm" : {
+      "comment" : "Button that confirms the Open Food Facts product is the user's coffee.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bestätigen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm"
+          }
+        }
+      }
+    },
+    "lookup.confirm.message" : {
+      "comment" : "Explains the Open Food Facts confirmation.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Food Facts kennt diesen Barcode. Bestätige, wenn er zu deiner Packung passt, dann kommt er als ungeprüfte Bohne in den Cupmark-Katalog."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Food Facts knows this barcode. Confirm if it matches your bag, and it is added to the Cupmark catalogue as an unverified bean."
+          }
+        }
+      }
+    },
+    "lookup.confirm.title" : {
+      "comment" : "Header of the Open Food Facts confirmation.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ist das dein Kaffee?"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Is This Your Coffee?"
+          }
+        }
+      }
+    },
+    "lookup.failed.message" : {
+      "comment" : "Message when the lookup failed for another reason.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bei der Suche nach dem Barcode ist etwas schiefgegangen. Versuche es erneut oder beschreibe den Kaffee mit Auswahllisten."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Something went wrong while looking up the barcode. Try again, or describe the coffee with pick lists."
+          }
+        }
+      }
+    },
+    "lookup.failed.title" : {
+      "comment" : "Title when the lookup failed for another reason.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suche fehlgeschlagen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lookup Failed"
+          }
+        }
+      }
+    },
+    "lookup.limit.message" : {
+      "comment" : "Message when the daily lookup limit for new barcodes is used up.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ab morgen kannst du wieder neue Barcodes suchen. Bis dahin beschreibe diesen Kaffee mit Auswahllisten."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You can look up more new barcodes tomorrow. Until then, describe this coffee with pick lists."
+          }
+        }
+      }
+    },
+    "lookup.limit.title" : {
+      "comment" : "Title when the daily lookup limit for new barcodes is used up.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tageslimit für Suchen erreicht"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Daily Lookup Limit Reached"
+          }
+        }
+      }
+    },
+    "lookup.looking_up" : {
+      "comment" : "Shown while the scanned barcode is looked up.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Barcode wird gesucht …"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Looking up the barcode…"
+          }
+        }
+      }
+    },
+    "lookup.no_product.message" : {
+      "comment" : "Message when neither the catalogue nor Open Food Facts knows the barcode.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weder Cupmark noch Open Food Facts kennen diesen Barcode bisher. Beschreibe den Kaffee mit Auswahllisten."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neither Cupmark nor Open Food Facts knows this barcode yet. Describe the coffee with pick lists."
+          }
+        }
+      }
+    },
+    "lookup.no_product.title" : {
+      "comment" : "Title when neither the catalogue nor Open Food Facts knows the barcode.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Barcode nicht gefunden"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Barcode Not Found"
+          }
+        }
+      }
+    },
+    "lookup.pick.not_set" : {
+      "comment" : "Pick list entry meaning no value is chosen.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht angegeben"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not set"
+          }
+        }
+      }
+    },
+    "lookup.picks.header" : {
+      "comment" : "Header of the optional pick lists on the confirmation.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Details ergänzen (optional)"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add Details (Optional)"
+          }
+        }
+      }
+    },
+    "lookup.reject" : {
+      "comment" : "Button that says the Open Food Facts product is not the user's coffee.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht mein Kaffee"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not My Coffee"
+          }
+        }
+      }
+    },
+    "lookup.rejected.message" : {
+      "comment" : "Message after the user rejected the Open Food Facts product.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wähle Herkunft, Aufbereitung und Röstung stattdessen aus Listen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick the origin, process and roast from lists instead."
+          }
+        }
+      }
+    },
+    "lookup.rejected.title" : {
+      "comment" : "Title after the user rejected the Open Food Facts product.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beschreibe deinen Kaffee"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Describe Your Coffee"
+          }
+        }
+      }
+    },
+    "lookup.retry" : {
+      "comment" : "Button that repeats the barcode lookup.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erneut versuchen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try Again"
+          }
+        }
+      }
+    },
+    "lookup.saving" : {
+      "comment" : "Confirm button while the confirmed coffee is being saved.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wird gespeichert …"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saving…"
+          }
+        }
+      }
+    },
+    "lookup.title" : {
+      "comment" : "Navigation title of the barcode lookup screen.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bohne"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bean"
+          }
+        }
+      }
+    },
+    "lookup.unavailable.message" : {
+      "comment" : "Message when the lookup is unavailable for now.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Barcode kann gerade nicht gesucht werden. Versuche es später erneut oder beschreibe den Kaffee mit Auswahllisten."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The barcode cannot be looked up right now. Try again later, or describe the coffee with pick lists."
+          }
+        }
+      }
+    },
+    "lookup.unavailable.title" : {
+      "comment" : "Title when the lookup is unavailable for now.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suche nicht verfügbar"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lookup Unavailable"
+          }
+        }
+      }
+    },
     "not_configured.message" : {
       "comment" : "Shown when the build has no valid server configuration, so the app cannot connect.",
       "extractionState" : "manual",
@@ -105,6 +699,114 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Not configured"
+          }
+        }
+      }
+    },
+    "open_food_facts.attribution" : {
+      "comment" : "ODbL attribution under Open Food Facts data. Keep the names Open Food Facts and Open Database License.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Produktdaten und Bild von Open Food Facts, verfügbar unter der Open Database License (ODbL)."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Product data and image from Open Food Facts, available under the Open Database License (ODbL)."
+          }
+        }
+      }
+    },
+    "open_food_facts.brand" : {
+      "comment" : "Label of the brand from Open Food Facts.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Marke"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brand"
+          }
+        }
+      }
+    },
+    "open_food_facts.header" : {
+      "comment" : "Header of the product data that comes from Open Food Facts.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Von Open Food Facts"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "From Open Food Facts"
+          }
+        }
+      }
+    },
+    "open_food_facts.image.accessibility" : {
+      "comment" : "Accessibility label of the product photo from Open Food Facts.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Produktfoto von Open Food Facts"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Product photo from Open Food Facts"
+          }
+        }
+      }
+    },
+    "open_food_facts.image.loading" : {
+      "comment" : "Accessibility label while the product photo loads.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Produktfoto wird geladen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading product photo"
+          }
+        }
+      }
+    },
+    "open_food_facts.name" : {
+      "comment" : "Label of the product name from Open Food Facts.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Name"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Name"
           }
         }
       }
