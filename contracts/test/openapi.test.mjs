@@ -51,8 +51,9 @@ test('openapi.yaml: no field, parameter or path segment names a user', () => {
   assert.deepEqual(findIdentityFields(doc), []);
 });
 
-test('openapi.yaml: enums, ranges and limits equal vocabulary v1', () => {
-  assert.equal(context.latestPublished, 1);
+test('openapi.yaml: enums, ranges and limits equal the published vocabulary (v1 and v2)', () => {
+  assert.equal(context.latestPublished, 2);
+  assert.deepEqual(context.published.map((p) => p.version), [1, 2]);
   assert.deepEqual(checkVocabularyBindings(doc, context), []);
 });
 
@@ -65,6 +66,7 @@ test('openapi.yaml defines the routes of tasks M0-T2 and M1-T8, all behind the b
     'GET /barcodes/{barcode}', 'GET /barcodes/{barcode}/open_food_facts',
     'GET /health',
     'POST /beans', 'GET /beans/{bean_id}',
+    'GET /catalogue_images/{image_id}',
     'GET /shelf', 'POST /shelf', 'GET /shelf/{shelf_entry_id}', 'PUT /shelf/{shelf_entry_id}', 'DELETE /shelf/{shelf_entry_id}',
     'GET /brews', 'POST /brews', 'GET /brews/{brew_id}', 'PUT /brews/{brew_id}', 'DELETE /brews/{brew_id}',
     'GET /recipes', 'POST /recipes', 'GET /recipes/{recipe_id}', 'PUT /recipes/{recipe_id}', 'DELETE /recipes/{recipe_id}',
@@ -102,19 +104,30 @@ test('openapi.yaml: GET /health takes no input and returns only {"status":"ok"} 
 
 test('openapi.yaml: Open Food Facts name and brand are response-only, length-limited and marked with their source', () => {
   const product = schemas(doc).OpenFoodFactsProduct;
-  assert.deepEqual(Object.keys(product.properties), ['name', 'brand', 'image_ref']);
+  assert.deepEqual(Object.keys(product.properties), ['name', 'brand', 'image_id']);
   for (const name of ['name', 'brand']) {
     const field = product.properties[name];
     assert.equal(field['x-free-text-from'], 'open_food_facts', name);
     assert.equal(field.readOnly, true, name);
     assert.ok(field.maxLength >= 1 && field.maxLength <= FREE_TEXT_MAX_LENGTH, name);
   }
-  // The image reference is not free text: a strict pattern on the image host.
-  assert.equal(product.properties.image_ref['x-free-text-from'], undefined);
-  assert.match(product.properties.image_ref.pattern, /^\^https:\/\/images\\\.openfoodfacts\\\.org\//);
+  // The image is our stored copy, named by a server-generated id (ADR 0011):
+  // no URL, and nothing that points the app at Open Food Facts.
+  assert.equal(product.properties.image_id.$ref, '#/components/schemas/Id');
+  assert.doesNotMatch(JSON.stringify(doc), /openfoodfacts\.org/);
   assert.deepEqual(schemas(doc).Bean.properties.open_food_facts, { $ref: '#/components/schemas/OpenFoodFactsProduct' });
   assert.equal(schemas(doc).BeanCreate.properties.open_food_facts, undefined);
   assert.equal(schemas(doc).BeanAttributes.properties.name, undefined);
+});
+
+test('openapi.yaml: a catalogue image is fetched by its id behind the token, as JPEG bytes only (ADR 0011)', () => {
+  const op = doc.paths['/catalogue_images/{image_id}'].get;
+  assert.deepEqual(Object.keys(doc.paths['/catalogue_images/{image_id}']), ['get']);
+  assert.equal(op.security, undefined, 'inherits the bearer token');
+  assert.deepEqual(op.parameters, [{ $ref: '#/components/parameters/ImageIdPath' }]);
+  assert.deepEqual(doc.components.parameters.ImageIdPath.schema, { $ref: '#/components/schemas/Id' });
+  assert.deepEqual(Object.keys(op.responses).sort(), ['200', '400', '401', '404', '429']);
+  assert.deepEqual(op.responses['200'].content, { 'image/jpeg': { schema: { type: 'string', contentMediaType: 'image/jpeg' } } });
 });
 
 test('openapi.yaml: the export returns CSV only', () => {
@@ -150,7 +163,7 @@ const validBean = () => ({
   open_food_facts: {
     name: 'Ethiopia Guji <b>washed</b>',
     brand: 'Rösterei Beispiel',
-    image_ref: 'https://images.openfoodfacts.org/images/products/400/638/133/3931/front_de.3.400.jpg',
+    image_id: '01JD8Z5Y3V9Q6M2K4N7P8R0S2V',
   },
   picked_attributes: { process: 'washed' },
   operator_attributes: {},
@@ -197,7 +210,7 @@ test('schemas reject what the specification forbids', () => {
   rejects('BrewInput', brewWith((b) => { b.note = 'tasty'; }), 'unknown property');
   rejects('BrewInput', brewWith((b) => { b.user_id = 'abc'; }), 'user id in the body');
   rejects('BrewInput', brewWith((b) => { delete b.vocabulary_version; }), 'missing vocabulary version');
-  rejects('BrewInput', brewWith((b) => { b.vocabulary_version = 2; }), 'unpublished vocabulary version');
+  rejects('BrewInput', brewWith((b) => { b.vocabulary_version = 3; }), 'unpublished vocabulary version');
   rejects('BrewInput', brewWith((b) => { delete b.parameters.method; }), 'method is required');
   rejects('BrewInput', brewWith((b) => { b.parameters.method = 'pour_over'; }), 'unknown method');
   rejects('BrewInput', brewWith((b) => { b.parameters.dose_dg = 49; }), 'dose below 5.0 g');
@@ -235,9 +248,10 @@ test('schemas reject what the specification forbids', () => {
   rejects('Bean', offWith({ brand: 'x'.repeat(101) }), 'brand longer than 100');
   rejects('Bean', offWith({ name: '' }), 'empty name');
   rejects('Bean', offWith({ origin: 'Guji' }), 'no other Open Food Facts text');
-  rejects('Bean', offWith({ image_ref: 'https://example.com/a.jpg' }), 'image from another host');
-  rejects('Bean', offWith({ image_ref: 'https://images.openfoodfacts.org/images/products/400/638/133/3931/front_de.3.400.jpg?x=1' }), 'image with a query');
-  rejects('Bean', offWith({ image_ref: 'http://images.openfoodfacts.org/images/products/400/638/133/3931/front_de.3.400.jpg' }), 'image over http');
+  rejects('Bean', offWith({ image_id: 'https://images.openfoodfacts.org/images/products/400/638/133/3931/front_de.3.400.jpg' }), 'an image URL is not an image id');
+  rejects('Bean', offWith({ image_id: '01jd8z5y3v9q6m2k4n7p8r0s2v' }), 'image ids are upper-case ULIDs');
+  rejects('Bean', offWith({ image_id: 'catalogue/01JD8Z5Y3V9Q6M2K4N7P8R0S2V.jpg' }), 'not a bucket key');
+  rejects('Bean', offWith({ image_ref: 'https://images.openfoodfacts.org/images/products/400/638/133/3931/front_de.3.400.jpg' }), 'the old Open Food Facts image URL is gone');
   rejects('BeanCreate', { vocabulary_version: 1, attributes: {}, open_food_facts: { name: 'Ethiopia Guji' } }, 'Open Food Facts text is never sent');
   rejects('HealthStatus', { status: 'degraded' }, 'only ok');
   rejects('HealthStatus', { status: 'ok', version: '1.2.3' }, 'nothing but status');
@@ -361,7 +375,7 @@ test('structure check fails on invalid OpenAPI', () => {
     'GET /recipes: duplicate operationId listBrews',
     'PUT /profile: requestBody must be application/json only',
     'GET /shelf: no 401 response',
-    'GET /export 200: a CSV body must be a string with contentMediaType text/csv',
+    'GET /export 200: a text/csv body must be exactly { type: string, contentMediaType: text/csv }',
     'DELETE /account 204: must not have content',
     'path /Beans/: must be lowercase segments',
     'components.schemas.Orphan is never used',
@@ -424,7 +438,7 @@ test('vocabulary binding fails on wrong ranges, steps, keys, limits and versions
     s.GrindNormalised.type = 'integer';
     s.BrewTimeS.type = 'number';
     s.Rating.properties.flavour_notes.maxItems = 6;
-    s.VocabularyVersion.maximum = 2;
+    s.VocabularyVersion.maximum = 3;
     delete s.Intensities.properties.bitterness;
     s.WaterG['x-vocabulary-rnage'] = 'brew.ranges.water_g';
   }), context);
@@ -434,7 +448,7 @@ test('vocabulary binding fails on wrong ranges, steps, keys, limits and versions
   assertProblem(problems, '#/components/schemas/GrindNormalised: step 0.5 is fractional, so type must be number');
   assertProblem(problems, '#/components/schemas/BrewTimeS: step 1 is whole, so type must be integer');
   assertProblem(problems, 'maxItems 6 differs from vocabulary flavour_notes.max_picks 5');
-  assertProblem(problems, '#/components/schemas/VocabularyVersion: vocabulary version must be an integer from 1 to the latest published version 1');
+  assertProblem(problems, '#/components/schemas/VocabularyVersion: vocabulary version must be an integer from 1 to the latest published version 2');
   assertProblem(problems, '#/components/schemas/Intensities: properties acidity, body differ from vocabulary intensity_dimensions');
   assertProblem(problems, '#/components/schemas/WaterG: unknown keyword x-vocabulary-rnage');
 });
@@ -577,9 +591,7 @@ test('free-text exception fails: a response string without the marker, and every
     f.brand.maxLength = FREE_TEXT_MAX_LENGTH + 1;
     f.brand['x-free-text-from'] = 'user';
     f.writable = { type: 'string', maxLength: 10, 'x-free-text-from': 'open_food_facts' };
-    f.image_ref['x-free-text-from'] = 'open_food_facts';
-    f.image_ref.readOnly = true;
-    f.image_ref.maxLength = 120;
+    f.image_id = { type: 'string', pattern: '^[0-9]{3}$', readOnly: true, maxLength: 120, 'x-free-text-from': 'open_food_facts' };
     f.count = { type: 'integer', minimum: 0, maximum: 9, readOnly: true, 'x-free-text-from': 'open_food_facts' };
     f.short = freeText({ minLength: 11 });
     schemas(d).Bean.properties.verified.readOnly = true;
@@ -591,7 +603,7 @@ test('free-text exception fails: a response string without the marker, and every
     `${at('brand')}: free text needs a maxLength from 1 to ${FREE_TEXT_MAX_LENGTH}`,
     `${at('brand')}: x-free-text-from "user" is not one of open_food_facts`,
     `${at('writable')}: free text needs readOnly: true`,
-    `${at('image_ref')}: x-free-text-from is only for a string without enum, pattern, format or contentMediaType`,
+    `${at('image_id')}: x-free-text-from is only for a string without enum, pattern, format or contentMediaType`,
     `${at('count')}: x-free-text-from is only allowed on a string`,
     `${at('short')}: free text minLength must be an integer from 0 to maxLength`,
     '#/components/schemas/Bean/properties/verified: readOnly is only used on response-only free text',
@@ -664,56 +676,132 @@ test('health exception fails: the status enum changes, loses its tag or is used 
   assertProblem(untagged, '#/components/schemas/HealthStatus/properties/status: enum without x-vocabulary');
 });
 
-// ---- Vocabulary v2: draft now, bound when published (ADR 0004, 0006) ----
-
-const v2Lists = () => collectIds(loadVocabulary(2)).lists;
-/** v1 and v2 as they would be once the owner approves v2 and it is published. */
-const contextWithV2Published = () => {
-  const v2 = clone(loadVocabulary(2));
-  for (const file of Object.values(v2)) file.status = 'published';
-  return buildVocabularyContext([{ version: 1, files: loadVocabulary(1) }, { version: 2, files: v2 }], context.languages);
-};
-/** The openapi.yaml change that publishing v2 needs (README.md, "Publishing a version"). */
-const addV2Fields = (d, lists = v2Lists()) => {
-  const s = schemas(d);
-  s.VocabularyVersion.maximum = 2;
-  s.Origin = { type: 'string', enum: lists.origins, 'x-vocabulary': 'origins' };
-  s.Variety = { type: 'string', enum: lists.varieties, 'x-vocabulary': 'varieties' };
-  s.BeanAttributes.properties.origin = { $ref: '#/components/schemas/Origin' };
-  s.BeanAttributes.properties.variety = { $ref: '#/components/schemas/Variety' };
-};
-
-test('while v2 is a draft, the enums come from v1 only and its new lists cannot be bound', () => {
-  assert.equal(context.latestPublished, 1);
-  assert.deepEqual(context.published.map((p) => p.version), [1]);
-  assert.deepEqual(context.draftLists, { origins: 2, varieties: 2 });
-  assert.equal(context.lists.origins, undefined);
-  const problems = checkVocabularyBindings(broken((d) => addV2Fields(d)), context);
-  assertProblem(problems, '#/components/schemas/Origin: x-vocabulary origins is only in draft vocabulary v2; bind it when v2 is published');
-  assertProblem(problems, '#/components/schemas/Variety: x-vocabulary varieties is only in draft vocabulary v2');
-  assertProblem(problems, '#/components/schemas/VocabularyVersion: vocabulary version must be an integer from 1 to the latest published version 1');
+test('health exception fails: HealthStatus grows a property, loses required or additionalProperties, or /health gets another method', () => {
+  const extra = checkStructure(broken((d) => {
+    schemas(d).HealthStatus.properties.version = { type: 'string', enum: ['1'], 'x-vocabulary': 'methods' };
+  }));
+  assertProblem(extra, 'components.schemas.HealthStatus: must have exactly one property, status');
+  const emptyRequired = checkStructure(broken((d) => { schemas(d).HealthStatus.required = []; }));
+  assertProblem(emptyRequired, 'components.schemas.HealthStatus: required must be exactly [status]');
+  const noRequired = checkStructure(broken((d) => { delete schemas(d).HealthStatus.required; }));
+  assertProblem(noRequired, 'components.schemas.HealthStatus: must hold exactly type, additionalProperties, required and properties');
+  const open = checkStructure(broken((d) => { delete schemas(d).HealthStatus.additionalProperties; }));
+  assertProblem(open, 'components.schemas.HealthStatus: must be an object with additionalProperties: false');
+  const loose = checkStructure(broken((d) => { schemas(d).HealthStatus.properties.status = { type: 'string', pattern: '^[a-z]{1,10}$' }; }));
+  assertProblem(loose, 'components.schemas.HealthStatus.properties.status: must be exactly { type: string, enum: [ok], x-health-status: true }');
+  // A POST /health with the bearer token and a 401 is a well-formed operation,
+  // and still fails: /health has GET only.
+  const post = checkStructure(broken((d) => {
+    d.paths['/health'].post = {
+      operationId: 'postHealth',
+      responses: { 204: { description: 'x' }, 401: { $ref: '#/components/responses/Unauthorized' } },
+    };
+  }));
+  assert.deepEqual(post, ['POST /health: /health has GET only (docs/decisions/0007-unauthenticated-health-route.md)']);
+  assert.deepEqual(checkStructure(doc), []);
 });
 
-test('once v2 is published, the contract fails until it carries origin and variety and allows version 2', () => {
-  const published = contextWithV2Published();
-  assert.equal(published.latestPublished, 2);
+// ---- Raw response bodies: CSV export and catalogue images (ADR 0011) ----
+
+test('raw body check fails: another media type, a JPEG body with more than its media type, a JPEG request', () => {
+  const problems = checkStructure(broken((d) => {
+    const image = d.paths['/catalogue_images/{image_id}'].get;
+    image.responses['200'].content = { 'image/png': { schema: { type: 'string', contentMediaType: 'image/png' } } };
+    d.paths['/export'].get.responses['200'].content['text/csv'].schema = { type: 'string', contentMediaType: 'text/csv', maxLength: 10 };
+    d.paths['/profile'].get.responses['200'].content = { 'image/jpeg': { schema: { type: 'string', contentMediaType: 'image/png' } } };
+    d.paths['/profile'].put.requestBody.content = { 'image/jpeg': { schema: { type: 'string', contentMediaType: 'image/jpeg' } } };
+  }));
+  for (const fragment of [
+    'GET /catalogue_images/{image_id} 200: media type image/png is not allowed',
+    'GET /export 200: a text/csv body must be exactly { type: string, contentMediaType: text/csv }',
+    'GET /profile 200: a image/jpeg body must be exactly { type: string, contentMediaType: image/jpeg }',
+    'PUT /profile: requestBody must be application/json only',
+  ]) assertProblem(problems, fragment);
+  // contentMediaType that is not the body's own media type is a plain string, which the lint refuses.
+  const lint = lintSchemas(broken((d) => {
+    d.paths['/profile'].get.responses['200'].content = { 'application/json': { schema: { type: 'string', contentMediaType: 'image/jpeg' } } };
+  }));
+  assertProblem(lint, '/content/application~1json/schema: string without enum, pattern or format');
+});
+
+// ---- Vocabulary v2: published on 2026-11-25 and bound (ADR 0004, 0006, 0011) ----
+
+test('v2 is bound: origin, species and variety are in BeanAttributes, and the version allows 2', () => {
+  const s = schemas(doc);
+  assert.equal(s.VocabularyVersion.maximum, 2);
+  assert.deepEqual(s.BeanAttributes.properties, {
+    process: { $ref: '#/components/schemas/Process' },
+    roast_level: { $ref: '#/components/schemas/RoastLevel' },
+    origin: { $ref: '#/components/schemas/Origin' },
+    species: { $ref: '#/components/schemas/Species' },
+    variety: { $ref: '#/components/schemas/Variety' },
+  });
+  const lists = collectIds(loadVocabulary(2)).lists;
+  assert.deepEqual([s.Origin['x-vocabulary'], s.Origin.enum], ['origins', lists.origins]);
+  assert.deepEqual([s.Species['x-vocabulary'], s.Species.enum], ['species', lists.species]);
+  assert.deepEqual([s.Variety['x-vocabulary'], s.Variety.enum], ['varieties', lists.varieties]);
+  assert.deepEqual(context.draftLists, {});
+});
+
+test('v2 bean attributes: the schema accepts v2 ids and rejects anything else', () => {
+  assert.deepEqual(validate('BeanCreate', { vocabulary_version: 2, attributes: { origin: 'costa_rica', species: 'arabica', variety: 'geisha', process: 'honey' } }), []);
+  assert.deepEqual(validate('BeanCreate', { vocabulary_version: 2, attributes: { origin: 'hawaii', variety: 'java', species: 'arabica_robusta_blend' } }), []);
+  const rejects = (value, why) => assert.notDeepEqual(validate('BeanCreate', value), [], why);
+  rejects({ vocabulary_version: 2, attributes: { origin: 'Costa Rica' } }, 'origin is an id');
+  rejects({ vocabulary_version: 2, attributes: { variety: 'robusta' } }, 'robusta is a species, not a variety');
+  rejects({ vocabulary_version: 2, attributes: { species: 'canephora' } }, 'not a species id');
+  rejects({ vocabulary_version: 2, attributes: { country: 'indonesia' } }, 'the country is derived from the vocabulary, never sent');
+  rejects({ vocabulary_version: 3, attributes: {} }, 'v3 is not published');
+  // The schema is the union over versions, so origin with version 1 passes
+  // here; the server rejects it, because v1 has no origins (ADR 0004, M1-T5).
+  assert.deepEqual(validate('BeanCreate', { vocabulary_version: 1, attributes: { origin: 'kenya' } }), []);
+});
+
+test('once a later version is published, the contract fails until it is bound and allowed', () => {
+  // A made-up v3 that adds a list, published.
+  const v3 = clone(loadVocabulary(2));
+  for (const file of Object.values(v3)) { file.version = 3; file.status = 'published'; }
+  v3.bean.altitudes = [{ id: 'low' }, { id: 'high' }];
+  const versions = [1, 2].map((version) => ({ version, files: loadVocabulary(version) }));
+  const published = buildVocabularyContext([...versions, { version: 3, files: v3 }], context.languages);
+  assert.equal(published.latestPublished, 3);
   const problems = checkVocabularyBindings(doc, published);
-  assertProblem(problems, 'vocabulary list origins is not used by any schema');
-  assertProblem(problems, 'vocabulary list varieties is not used by any schema');
-  assertProblem(problems, 'vocabulary version must be an integer from 1 to the latest published version 2');
+  assertProblem(problems, 'vocabulary list altitudes is not used by any schema');
+  assertProblem(problems, 'vocabulary version must be an integer from 1 to the latest published version 3');
+  // While it is a draft, its new list cannot be bound.
+  for (const file of Object.values(v3)) file.status = 'draft';
+  const draft = buildVocabularyContext([...versions, { version: 3, files: v3 }], context.languages);
+  assert.equal(draft.latestPublished, 2);
+  assert.deepEqual(draft.draftLists, { altitudes: 3 });
+  const bound = broken((d) => {
+    schemas(d).Altitude = { type: 'string', enum: ['low', 'high'], 'x-vocabulary': 'altitudes' };
+    schemas(d).BeanAttributes.properties.altitude = { $ref: '#/components/schemas/Altitude' };
+  });
+  assertProblem(checkVocabularyBindings(bound, draft), '#/components/schemas/Altitude: x-vocabulary altitudes is only in draft vocabulary v3; bind it when v3 is published');
 });
 
-test('once v2 is published, the planned change passes every check, and drift from v2 still fails', () => {
-  const published = contextWithV2Published();
-  const changed = broken((d) => addV2Fields(d));
-  assert.deepEqual(checkOpenApi(changed, published), []);
-  const v = compileComponentSchemas(changed);
-  assert.deepEqual(v('BeanCreate', { vocabulary_version: 2, attributes: { origin: 'costa_rica', variety: 'geisha', process: 'honey' } }), []);
-  assert.notDeepEqual(v('BeanCreate', { vocabulary_version: 2, attributes: { origin: 'Costa Rica' } }), []);
-  assert.notDeepEqual(v('BeanCreate', { vocabulary_version: 3, attributes: {} }), []);
-  const lists = v2Lists();
-  const drifted = broken((d) => addV2Fields(d, { ...lists, origins: lists.origins.filter((id) => id !== 'ethiopia') }));
-  assertProblem(checkVocabularyBindings(drifted, published), '#/components/schemas/Origin: enum differs from vocabulary origins; missing ethiopia');
+test('v2 lists must stay bound and in step with the vocabulary', () => {
+  const unbound = checkVocabularyBindings(broken((d) => {
+    const s = schemas(d);
+    delete s.BeanAttributes.properties.origin;
+    delete s.BeanAttributes.properties.species;
+    delete s.BeanAttributes.properties.variety;
+    delete s.Origin;
+    delete s.Species;
+    delete s.Variety;
+  }), context);
+  for (const name of ['origins', 'species', 'varieties']) assertProblem(unbound, `vocabulary list ${name} is not used by any schema`);
+  const drifted = checkVocabularyBindings(broken((d) => {
+    const s = schemas(d);
+    s.Origin.enum = s.Origin.enum.filter((id) => id !== 'ethiopia');
+    s.Variety.enum.push('robusta');
+    s.Species.enum.reverse();
+  }), context);
+  assertProblem(drifted, '#/components/schemas/Origin: enum differs from vocabulary origins; missing ethiopia');
+  assertProblem(drifted, '#/components/schemas/Variety: enum differs from vocabulary varieties; not in vocabulary robusta');
+  assertProblem(drifted, '#/components/schemas/Species: enum differs from vocabulary species; order differs');
+  const stale = checkVocabularyBindings(broken((d) => { schemas(d).VocabularyVersion.maximum = 1; }), context);
+  assertProblem(stale, 'vocabulary version must be an integer from 1 to the latest published version 2');
 });
 
 test('every list of the latest published version is bound, except the documented ones', () => {

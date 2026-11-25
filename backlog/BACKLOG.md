@@ -73,7 +73,7 @@ Goal: the repo builds, tests and checks itself; the shared contract exists.
 - needs: human
 - depends: none
 - acceptance:
-  - Apple Developer Program membership active (done, 2026-11-25). App ID `app.cupmark.Cupmark` with Sign in with Apple and the App Store Connect app record created (done, 2026-11-25). Services ID `app.cupmark.signin` and the Sign in with Apple key created, with the key stored only in Parameter Store as a SecureString and never in the repo (open).
+  - Apple Developer Program membership active (done, 2026-11-25). App ID `app.cupmark.Cupmark` with Sign in with Apple and the App Store Connect app record created (done, 2026-11-25). Services ID `app.cupmark.signin` and the Sign in with Apple key created (done, 2026-11-25). The owner holds the `.p8`, and stores it in Parameter Store as a SecureString when M1-T2 is deployed.
   - In the shared AWS account (ADR 0009), checked read-only by the owner on 2026-11-25:
     - root MFA is on (done);
     - `CupmarkBoundary` and `CupmarkCfnExecution` match `scripts/aws/*.json` (done);
@@ -135,7 +135,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
 ### M1-T2 Identity and API shell
 - status: todo
 - owner: infra-engineer
-- depends: M1-T1, M0-T7
+- depends: M1-T1, and the Apple items of M0-T7 (done 2026-11-25). The repository secrets in M0-T7 are needed only for M1-T7.
 - implements: docs/05-system-design.md, Components, Security
 - acceptance:
   - Cognito user pool (Lite plan, Sign in with Apple only) and an HTTP API with JWT authorizer and throttling are in the stack.
