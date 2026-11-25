@@ -7,11 +7,15 @@ import SwiftData
 
 // MARK: - Sync state
 
-/// What every synced model has: a local id, its vocabulary version and its sync state.
+/// What every synced model has: a local id, its vocabulary version, its sync state and,
+/// from M2-T16, its sync issue and the resource its outbox operations name.
 protocol SyncTracked: AnyObject {
     var localID: UUID { get }
     var vocabularyVersion: Int { get set }
     var syncStateRaw: String { get set }
+    var syncIssueRaw: String? { get set }
+    /// The API resource of this model (`Store/Outbox.swift`).
+    static var outboxResource: OutboxResource { get }
 }
 
 extension SyncTracked {
@@ -20,6 +24,13 @@ extension SyncTracked {
     var syncState: SyncState {
         get { SyncState(rawValue: syncStateRaw) ?? .pendingUpdate }
         set { syncStateRaw = newValue.rawValue }
+    }
+
+    /// What went wrong when the item was last sent, nil when nothing did (M2-T16). A raw
+    /// value that is not a `SyncIssue` reads as `rejected`.
+    var syncIssue: SyncIssue? {
+        get { syncIssueRaw.map { raw in SyncIssue(rawValue: raw) ?? .rejected } }
+        set { syncIssueRaw = newValue?.rawValue }
     }
 }
 

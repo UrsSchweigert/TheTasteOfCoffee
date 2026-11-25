@@ -13,7 +13,8 @@ final class AccountStoreTests: XCTestCase {
         XCTAssertTrue(CupmarkMigrationPlan.schemas.first == CupmarkSchemaV1.self)
         XCTAssertTrue(CupmarkMigrationPlan.stages.isEmpty)
         let names = Set(CupmarkSchemaV1.models.map { model in String(describing: model) })
-        XCTAssertEqual(names, ["StoredBean", "StoredShelfEntry", "StoredBrew", "StoredRecipe", "StoredProfile"])
+        // `OutboxOperation` joined version 1 before any release (M2-T16, ADR 0025).
+        XCTAssertEqual(names, ["StoredBean", "StoredShelfEntry", "StoredBrew", "StoredRecipe", "StoredProfile", "OutboxOperation"])
     }
 
     // MARK: - Create

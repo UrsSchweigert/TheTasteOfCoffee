@@ -5,11 +5,17 @@ import SwiftData
 /// writes and reads the app makes on it.
 ///
 /// Every write saves at once (autosave is off), so a write that returned is on disk.
-/// The outbox (M2-T16) adds its operation in the same save. Use one `AccountStore` from one
-/// actor at a time; `ModelContext` is not `Sendable`.
+/// The outbox (M2-T16, `Store/Outbox.swift`) adds its operation in the same save. Use one
+/// `AccountStore` from one actor at a time, the main actor in the app; `ModelContext` is not
+/// `Sendable`. `SyncEngine` uses the same store, so screens and sync see one context.
+/// Screens must therefore edit drafts (plain values) and write them through these methods,
+/// never change a model in place and leave it unsaved: the engine's `save()` saves the
+/// shared context, and would send a half-made change with it.
 final class AccountStore {
     let container: ModelContainer
     let context: ModelContext
+    /// Called after every successful save. `SyncHost` uses it to wake the sync engine.
+    var onSave: (@Sendable () -> Void)?
 
     init(container: ModelContainer) {
         self.container = container
@@ -56,11 +62,16 @@ final class AccountStore {
 
     // MARK: - Writes
 
+    // Each write that the server has to learn about adds its outbox operation (M2-T16,
+    // ADR 0025) before the one save, so the item change and the operation are on disk
+    // together or not at all. Items read from the server (`syncState: .synced`) add none.
+
     /// Adds a bean. `syncState` is `pendingCreate` for a bean made on the device and
     /// `synced` for one read from the server.
     func addBean(_ bean: StoredBean, syncState: SyncState = .pendingCreate) throws {
         bean.syncState = syncState
         context.insert(bean)
+        try enqueueCreate(of: bean)
         try save()
     }
 
@@ -70,6 +81,7 @@ final class AccountStore {
         // Insert first, then link: both ends are then in the same context.
         context.insert(entry)
         entry.bean = bean
+        try enqueueCreate(of: entry)
         try save()
     }
 
@@ -78,45 +90,54 @@ final class AccountStore {
         brew.syncState = syncState
         context.insert(brew)
         brew.shelfEntry = shelfEntry
+        try enqueueCreate(of: brew)
         try save()
     }
 
     func addRecipe(_ recipe: StoredRecipe, syncState: SyncState = .pendingCreate) throws {
         recipe.syncState = syncState
         context.insert(recipe)
+        try enqueueCreate(of: recipe)
         try save()
     }
 
     /// Sets the profile, the one per store. A new profile is `pendingCreate`; an edit of a
-    /// profile the server has is `pendingUpdate`.
+    /// profile the server has is `pendingUpdate`. Either is sent as `PUT /profile`.
     @discardableResult
     func setProfile(_ values: API.Profile) throws -> StoredProfile {
         if let existing = try profile() {
             existing.apply(values)
             existing.syncState = existing.syncState.afterLocalEdit
+            try enqueueEdit(of: existing)
             try save()
             return existing
         }
         let created = StoredProfile(values)
         created.syncState = .pendingCreate
         context.insert(created)
+        try enqueueEdit(of: created)
         try save()
         return created
     }
 
-    /// Records a local edit of `item`, made by the caller before this call.
+    /// Records a local edit of `item`, made by the caller before this call, and queues it
+    /// (`enqueueEdit(of:)`). A bean edit is not sent: the API has no bean update.
     func markUpdated<Model: PersistentModel & SyncTracked>(_ item: Model) throws {
         item.syncState = item.syncState.afterLocalEdit
+        try enqueueEdit(of: item)
         try save()
     }
 
     /// Removes `item` on the device. Only `LocalDeletable` models can be removed: the profile
     /// cannot (the API has no delete for it; account deletion is M2-T30's own flow).
-    /// - Brew, shelf entry, recipe: an item the server never had is deleted at once; any
-    ///   other is kept as `pendingDelete` and hidden until the server has removed it.
+    /// - Brew, shelf entry, recipe: an item the server never had is deleted at once, with its
+    ///   operations; any other is kept as `pendingDelete`, hidden, and a delete is queued.
+    ///   An item whose create may already have reached the server (sent without an answer,
+    ///   or on its way) counts as one the server has.
     /// - A shelf entry with brews that are not removed throws `shelfEntryHasBrews` (ADR 0012).
     /// - A bean is only a local copy (the API has no bean delete), so it is deleted at once,
-    ///   but never while any shelf entry still names it: `beanHasShelfEntries`.
+    ///   with any queued create, but never while any shelf entry still names it:
+    ///   `beanHasShelfEntries`.
     func markDeleted<Model: PersistentModel & LocalDeletable>(_ item: Model) throws {
         if let entry = item as? StoredShelfEntry, !entry.liveBrewsNewestFirst.isEmpty {
             throw LocalStoreError.shelfEntryHasBrews
@@ -125,20 +146,46 @@ final class AccountStore {
             guard bean.shelfEntries.isEmpty else {
                 throw LocalStoreError.beanHasShelfEntries
             }
+            try removeOutboxOperations(for: bean.localID)
             context.delete(bean)
             try save()
             return
         }
-        switch item.syncState.localDelete {
+        if item.syncState == .pendingDelete {
+            return
+        }
+        var decision = item.syncState.localDelete
+        if decision == .removeNow, try createMayHaveReachedServer(item.localID) {
+            decision = .markPendingDelete
+        }
+        switch decision {
         case .removeNow:
+            try removeOutboxOperations(for: item.localID)
             context.delete(item)
         case .markPendingDelete:
+            // Updates that have not been sent are dropped; one that may be on its way stays
+            // and goes out before the delete.
+            for operation in try outboxOperations(for: item.localID)
+            where operation.parked || (operation.action == .update && !operation.sentWithoutAnswer) {
+                context.delete(operation)
+            }
             item.syncState = .pendingDelete
+            if Model.outboxResource.sendsDeletes {
+                try enqueue(.delete, Model.outboxResource, localID: item.localID)
+            }
         }
         try save()
     }
 
+    /// Queues the create of an item made on the device.
+    private func enqueueCreate<Model: SyncTracked>(of item: Model) throws {
+        if item.syncState == .pendingCreate {
+            try enqueue(.create, Model.outboxResource, localID: item.localID)
+        }
+    }
+
     /// Saves the context; on failure, the unsaved changes are rolled back and the error thrown.
+    /// After a save `onSave` is called, so the sync engine can look at the outbox.
     func save() throws {
         do {
             try context.save()
@@ -146,6 +193,7 @@ final class AccountStore {
             context.rollback()
             throw error
         }
+        onSave?()
     }
 
     // MARK: - Reads (items removed on the device are left out)

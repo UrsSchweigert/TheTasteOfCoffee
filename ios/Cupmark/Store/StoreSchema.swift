@@ -13,6 +13,10 @@ import SwiftData
 //   the generated `Vocabulary` types: an id the bundled vocabulary does not know reads as nil
 //   and is kept as it is, never dropped and never a crash. No list is defined here.
 //
+// - `syncIssueRaw` holds a `SyncIssue` raw value, nil while nothing went wrong (M2-T16).
+//
+// `OutboxOperation` (M2-T16, ADR 0025) joined version 1 before any release: no store with
+// the shorter model list exists outside development, so no migration stage is needed.
 // Later versions add a `CupmarkSchemaV<N>` and a stage in `CupmarkMigrationPlan`.
 
 /// Version 1 of the local schema.
@@ -20,7 +24,7 @@ enum CupmarkSchemaV1: VersionedSchema {
     static var versionIdentifier: Schema.Version { Schema.Version(1, 0, 0) }
 
     static var models: [any PersistentModel.Type] {
-        [StoredBean.self, StoredShelfEntry.self, StoredBrew.self, StoredRecipe.self, StoredProfile.self]
+        [StoredBean.self, StoredShelfEntry.self, StoredBrew.self, StoredRecipe.self, StoredProfile.self, OutboxOperation.self]
     }
 
     /// A catalogue bean the user has on a shelf entry or has scanned (API `Bean`), or a bean
@@ -33,6 +37,8 @@ enum CupmarkSchemaV1: VersionedSchema {
         var serverID: String?
         var vocabularyVersion: Int = Vocabulary.version
         var syncStateRaw: String = SyncState.pendingCreate.rawValue
+        /// A `SyncIssue` raw value, nil while the item has none.
+        var syncIssueRaw: String?
 
         /// 13-digit `barcode`, as the server stores it.
         var barcode: String?
@@ -76,6 +82,7 @@ enum CupmarkSchemaV1: VersionedSchema {
             self.serverID = serverID
             self.vocabularyVersion = vocabularyVersion
             self.syncStateRaw = SyncState.pendingCreate.rawValue
+            self.syncIssueRaw = nil
             self.barcode = barcode
             self.verified = false
             self.openFoodFactsMatch = false
@@ -106,6 +113,8 @@ enum CupmarkSchemaV1: VersionedSchema {
         var serverID: String?
         var vocabularyVersion: Int = Vocabulary.version
         var syncStateRaw: String = SyncState.pendingCreate.rawValue
+        /// A `SyncIssue` raw value, nil while the item has none.
+        var syncIssueRaw: String?
         /// When the item was made on this device; orders entries with the same purchase date.
         var createdAt: Date = Date.now
 
@@ -134,6 +143,7 @@ enum CupmarkSchemaV1: VersionedSchema {
             self.serverID = serverID
             self.vocabularyVersion = vocabularyVersion
             self.syncStateRaw = SyncState.pendingCreate.rawValue
+            self.syncIssueRaw = nil
             self.createdAt = createdAt
             self.bean = nil
             self.purchaseDateRaw = purchaseDate.description
@@ -152,6 +162,8 @@ enum CupmarkSchemaV1: VersionedSchema {
         var serverID: String?
         var vocabularyVersion: Int = Vocabulary.version
         var syncStateRaw: String = SyncState.pendingCreate.rawValue
+        /// A `SyncIssue` raw value, nil while the item has none.
+        var syncIssueRaw: String?
 
         /// The shelf entry; its `serverID` is the brew's `shelf_entry_id`.
         var shelfEntry: StoredShelfEntry?
@@ -184,6 +196,7 @@ enum CupmarkSchemaV1: VersionedSchema {
             self.serverID = serverID
             self.vocabularyVersion = vocabularyVersion
             self.syncStateRaw = SyncState.pendingCreate.rawValue
+            self.syncIssueRaw = nil
             self.shelfEntry = nil
             self.brewedAtMilliseconds = brewedAtMilliseconds
             self.methodID = methodID
@@ -207,6 +220,8 @@ enum CupmarkSchemaV1: VersionedSchema {
         var serverID: String?
         var vocabularyVersion: Int = Vocabulary.version
         var syncStateRaw: String = SyncState.pendingCreate.rawValue
+        /// A `SyncIssue` raw value, nil while the item has none.
+        var syncIssueRaw: String?
         /// When the recipe was made on this device; recipes list newest first.
         var createdAt: Date = Date.now
 
@@ -231,6 +246,7 @@ enum CupmarkSchemaV1: VersionedSchema {
             self.serverID = serverID
             self.vocabularyVersion = vocabularyVersion
             self.syncStateRaw = SyncState.pendingCreate.rawValue
+            self.syncIssueRaw = nil
             self.createdAt = createdAt
             self.methodID = methodID
             self.doseDg = nil
@@ -253,6 +269,8 @@ enum CupmarkSchemaV1: VersionedSchema {
         /// Kept for the same rule as every model. The profile holds no vocabulary list value.
         var vocabularyVersion: Int = Vocabulary.version
         var syncStateRaw: String = SyncState.pendingCreate.rawValue
+        /// A `SyncIssue` raw value, nil while the item has none.
+        var syncIssueRaw: String?
 
         /// `locale`, a `VocabularyLanguage` raw value.
         var localeID: String = VocabularyLanguage.fallback.rawValue
@@ -268,8 +286,57 @@ enum CupmarkSchemaV1: VersionedSchema {
             self.localID = localID
             self.vocabularyVersion = vocabularyVersion
             self.syncStateRaw = SyncState.pendingCreate.rawValue
+            self.syncIssueRaw = nil
             self.localeID = localeID
             self.contributeToAggregates = contributeToAggregates
+        }
+    }
+
+    /// One local write waiting for the server (M2-T16, ADR 0025). It is written in the same
+    /// save as the item change, so a write that returned is also queued. It names the item by
+    /// `localID` only: the request body is built from the item's current values when the
+    /// operation is sent, so a reference to another item (a shelf entry's bean, a brew's
+    /// shelf entry) is resolved to that item's server id at that moment.
+    @Model
+    final class OutboxOperation {
+        /// The order of the operations of this store: lower goes first. Not unique on
+        /// purpose; SwiftData would make a duplicate an upsert.
+        var sequence: Int = 0
+        /// An `OutboxResource` raw value.
+        var resourceRaw: String = ""
+        /// An `OutboxAction` raw value.
+        var actionRaw: String = ""
+        /// The `localID` of the item.
+        var localID: UUID = UUID()
+        var createdAt: Date = Date.now
+        /// How often it was sent. Counted before each send.
+        var attemptCount: Int = 0
+        /// Not sent again before this moment (backoff).
+        var nextAttemptAt: Date = Date.distantPast
+        /// True once the request may have reached the server without an answer that says
+        /// what happened. A create with this flag is checked against the server's list before
+        /// it is sent again (ADR 0025).
+        var sentWithoutAnswer: Bool = false
+        /// The JSON body of the last send of a create, nil before. The check before a retry
+        /// matches the server's items against it, not against the item's current values.
+        var sentBody: Data?
+        /// A parked operation failed for good and is never sent again; the item is flagged.
+        var parked: Bool = false
+        /// An `OutboxParkReason` raw value, nil unless parked.
+        var parkReasonRaw: String?
+
+        init(sequence: Int, resourceRaw: String, actionRaw: String, localID: UUID, createdAt: Date = Date.now) {
+            self.sequence = sequence
+            self.resourceRaw = resourceRaw
+            self.actionRaw = actionRaw
+            self.localID = localID
+            self.createdAt = createdAt
+            self.attemptCount = 0
+            self.nextAttemptAt = Date.distantPast
+            self.sentWithoutAnswer = false
+            self.sentBody = nil
+            self.parked = false
+            self.parkReasonRaw = nil
         }
     }
 }
@@ -287,3 +354,4 @@ typealias StoredShelfEntry = CupmarkSchemaV1.StoredShelfEntry
 typealias StoredBrew = CupmarkSchemaV1.StoredBrew
 typealias StoredRecipe = CupmarkSchemaV1.StoredRecipe
 typealias StoredProfile = CupmarkSchemaV1.StoredProfile
+typealias OutboxOperation = CupmarkSchemaV1.OutboxOperation

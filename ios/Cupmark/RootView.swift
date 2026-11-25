@@ -6,6 +6,8 @@ import SwiftUI
 struct RootView: View {
     let state: VocabularyLoadState
     let stage: StageConfigLoadState
+    /// Set by `CupmarkApp` when the stage is configured (M2-T14).
+    @Environment(\.apiClient) private var apiClient
 
     var body: some View {
         NavigationStack {
@@ -33,10 +35,14 @@ struct RootView: View {
         case .loaded(let store, let language):
             List {
                 Section {
-                    // M2-T14 connects onScanned to the lookup, M2-T22 onPickListEntry to the
-                    // pick-list entry. Until then both are placeholders.
+                    // The scan leads to the lookup (M2-T14). M2-T22 connects onPickListEntry
+                    // to the pick-list entry; until then it is a placeholder.
                     NavigationLink {
-                        ScannerScreen(onScanned: { _ in }, onPickListEntry: {})
+                        if let apiClient {
+                            ScanFlowView(client: apiClient, vocabulary: store, language: language, onPickListEntry: {})
+                        } else {
+                            NotConfiguredView()
+                        }
                     } label: {
                         Label {
                             Text(L10n.rootScanBag)

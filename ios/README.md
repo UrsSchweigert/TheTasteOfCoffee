@@ -14,7 +14,9 @@ Cupmark/                  app target sources and resources
   Vocabulary/             VocabularyStore (runtime loader) and helpers
   Configuration/          StageConfig and the "not configured" screen
   Auth/                   sign-in (M2-T11): AuthModel, AuthSession, PKCE, Keychain, sign-in screen
-  Store/                  SwiftData local store, one per account (M2-T15)
+  Store/                  SwiftData local store, one per account (M2-T15), and its outbox (M2-T16)
+  Sync/                   SyncEngine, SyncBackoff and SyncHost: the outbox sent to the API (M2-T16)
+  Lookup/                 barcode lookup and Open Food Facts confirmation (M2-T14)
   L10n.swift              keys of the String Catalog
   Localizable.xcstrings   String Catalog, English (source) and German
 CupmarkTests/             XCTest unit tests (hosted in the app)
@@ -94,9 +96,23 @@ node scripts/generate-ios-api.mjs
 - The camera permission prompt is `INFOPLIST_KEY_NSCameraUsageDescription` in the app target's build settings, localised in `Cupmark/InfoPlist.xcstrings` (en, de).
 - Only a device can run the camera: unit tests cover the logic, the real scan is checked in M2-T34.
 
+## Barcode lookup
+
+`Lookup/` (M2-T14) implements F1 steps 2 and 3 for the scanned barcode. The root's "Scan a bag" row opens `ScanFlowView`: the scanner until the first valid code, then `LookupScreen` in its place, so no tap is needed between scan and answer. The `APIClient` comes from `CupmarkApp`, built once from the stage's `apiBaseURL` and the `AuthSession` of `AuthModel`, and read through `EnvironmentValues.apiClient` (`Networking/APIClientEnvironment.swift`).
+
+- `LookupModel` (`@MainActor`, `@Observable`) asks `GET /barcodes/{barcode}`. A 200 is the bean. A 404 asks `GET /barcodes/{barcode}/open_food_facts`; a hit waits for Confirm or Reject.
+- Confirm is `POST /beans` with `barcode`, `open_food_facts_confirmed: true`, the optional picks (`attributes`; species, process and roast level are offered, the long lists come with the pick-list entry of M2-T22) and `Vocabulary.version`. No Open Food Facts text is ever sent: the server copies it from its cache (ADR 0005).
+- A 409 from the Open Food Facts route or from `POST /beans` asks `GET /barcodes/{barcode}` again and shows that bean. A 409 followed by a 404 is a failure that can be retried.
+- Everything else ends in `.pickList(reason)`, which offers the pick-list entry (`onPickListEntry`, a placeholder until M2-T22): `rejected`, `noProduct` (Open Food Facts 404), `limitReached` (a 429 from the Open Food Facts route, the daily lookup cap), `unavailable` (503, another 5xx, no network, or a 429 from the other routes, which is throttling rather than the cap) with "Try again", and `failed` (400, an unreadable answer) with "Try again". Reject also calls `onPickListEntry`.
+- The lookup and the confirmation run in unstructured tasks started by the screen, so leaving the screen never cancels a request the server may already act on. `lookUp()` and `confirm()` ignore a second start.
+- `BeanDetailView` shows the verified state, the attributes (`API.Bean.attributeRows`: one row per field, the operator's value wins over the picked one, with its source) with labels from contracts/i18n, and the Open Food Facts name, brand and image if the bean has them.
+- `OpenFoodFactsSection` shows Open Food Facts name and brand with `Text(verbatim:)` only, never as a localisation key or Markdown, the image through `GET /catalogue_images/{image_id}` (`CatalogueImageView`, via `APIClient.catalogueImage` and its disk cache), and the localised ODbL attribution (`open_food_facts.attribution`) as its footer. The app never contacts Open Food Facts (ADR 0011).
+- Until M2-T18 the flow ends at the bean; from M2-T18 on it continues to the shelf entry. The bean is not cached in the local store yet.
+- Tests: `LookupModelTests` covers every answer above against `StubURLProtocol`, the POST body (exactly the four properties, no Open Food Facts text), operator-wins, the image route, and a test whose session puts `HostRecordingURLProtocol` in front of the stub: every host any path contacts is a stub API host. `scripts/ios-scripts.test.mjs` checks on Linux that no iOS file names the Open Food Facts domain and that name and brand are only shown with `Text(verbatim:)`.
+
 ## Local store
 
-`Store/` (M2-T15) is the SwiftData copy of the user's own data (docs/04, Offline). It is not wired into the app yet; M2-T16 to M2-T18 add the outbox, the pull and the screens.
+`Store/` (M2-T15) is the SwiftData copy of the user's own data (docs/04, Offline). `SyncHost` (M2-T16) opens the signed-in account's store; M2-T17 and M2-T18 add the pull and the screens.
 
 - One store per account (ADR 0020). `StoreAccount` gives the store a stable account id: the same account always has the same one, and no two accounts share one. The signed-in account's is M2-T11's `AccountID`, already the lowercase hex SHA-256 of the id token's `sub`; `Store/AccountID+StoreAccount.swift` makes it a `StoreAccount`. The file is `Library/Application Support/Accounts/<sha-256 hex of the stable id>.store`: hashing again gives every id a fixed-length, file-safe name. An empty id throws. `AccountStore.open(for:)` opens only that file, with CloudKit off; `AccountStore.inMemory()` is a new empty store for tests and previews.
 - `CupmarkSchemaV1` (`VersionedSchema` 1.0.0) holds `StoredBean`, `StoredShelfEntry`, `StoredBrew`, `StoredRecipe` and `StoredProfile`; `CupmarkMigrationPlan` has no stages yet. A new version adds `CupmarkSchemaV<N>`, a stage, and moves the `Stored...` type aliases.
@@ -105,6 +121,18 @@ node scripts/generate-ios-api.mjs
 - Writes save at once. A local edit of a synced item makes it `pendingUpdate`; `markDeleted` takes only `LocalDeletable` models (not the profile). Deleting an item the server never had removes it, any other becomes `pendingDelete` and is hidden. A shelf entry with brews cannot be deleted (ADR 0012). A bean is a local copy with no server delete: it is removed at once, but never while a shelf entry still names it (`beanHasShelfEntries`). Lists: `brewsNewestFirst()` (by `brewed_at`, kept in whole milliseconds), `shelfEntries()` (latest purchase first), `recipes()`.
 - `BrewDerivedValues` is the one place for derived values: ratio `water_g / (dose_dg / 10)` (ADR 0004), and days since roast from `roast_date` to the day `brewed_at` falls on in the device calendar's time zone, counted on calendar days, so a daylight saving or time zone change never shifts it by one.
 - Tests: `AccountStoreTests`, `StoredValuesTests`, `StoreLocationTests` (including two accounts on disk) and `BrewDerivedValuesTests`, with fixtures in `CupmarkTests/Support/StoreFixtures.swift`.
+
+## Sync outbox
+
+`Store/Outbox.swift` and `Sync/` (M2-T16, ADR 0025) send the local writes to the API. docs/05, Client sync, has the rules in short.
+
+- `OutboxOperation` is a model of `CupmarkSchemaV1` (added before any release, so no migration): `sequence`, resource and action (`create`, `update` or `delete` of a bean, shelf entry, brew or recipe; `update` of the profile), the item's `localID`, `attemptCount`, `nextAttemptAt`, `sentWithoutAnswer`, and `parked` with a `parkReason`. Every model also has `syncIssueRaw` (`SyncIssue`: `rejected`, `bean_change_reverted`, `delete_restored`), the flag the screens show (M2-T18).
+- `AccountStore`'s writes keep their API and add the operation before their one save: `addBean`, `addShelfEntry`, `addBrew`, `addRecipe` (with `syncState: .pendingCreate`, the default), `setProfile`, `markUpdated` and `markDeleted`. An edit is not queued again while a create or update that was not sent yet carries it (the body is built when an operation is sent). Deleting an item whose create may have reached the server (`sentWithoutAnswer`) keeps it as `pendingDelete` and queues a delete after the create; otherwise a never-sent item goes at once with its operations. A bean is local only and has no delete route.
+- `SyncEngine` (main actor, the same context as the screens) sends the lowest sequence that is not parked, one at a time; a retry holds the queue. A shelf entry's bean and a brew's shelf entry are read through the relationship when the body is built, so the request carries the server id the referenced item has by then; if that item never got one, the operation is parked (`missingReference`). Before each request it asks `AuthSession.isSignedIn(as:)` and stops if another account (or nobody) is signed in.
+- Answers: 2xx stores the server id and, when nothing later is queued for the item, the server values. 429, 503, other 5xx and transport failures back off with `SyncBackoff` (2 s doubling to 300 s, equal jitter); `drain()` returns `.waiting(until:)`. `unauthorized` (after `APIClient`'s one refresh and retry) returns `.signInRequired`, keeps every operation and calls `onSignInRequired`. 400 parks (`rejected`) and flags the item; so do a 404 on a create and an answer that breaks the contract. 404 on a delete is done. A 404 on a replace is followed by a `GET` of the item: 404 removes the local item, 200 parks the operation (`rejected`: the body named a bean or shelf entry the server refuses) and keeps the item, a transport failure or 5xx retries. 409 on a shelf delete restores the entry (`delete_restored`); 409 on a shelf replace gets the entry, relinks the server's bean (fetched if not cached), flags `bean_change_reverted` and sends the other values again. 409 on a bean create adopts the catalogue bean for the barcode.
+- `sentWithoutAnswer` is saved before each request. If a create comes back without an answer that says the server did nothing (a transport failure after a connection was made, 5xx, the app ended), the next attempt first lists the resource (counted as an attempt, so it backs off) and adopts a server item with no local counterpart that matches the body last sent (`sentBody`), not the current values: a brew with the same `shelf_entry_id` and `brewed_at`, a shelf entry with the same values, a recipe with the same parameters.
+- `SyncHost` (`CupmarkApp`, `.syncHost(_:auth:)`) switches with the signed-in account: it stops the old engine, opens the new account's store and starts its engine with the app's one `APIClient`. Sign-out stops the engine; a sign-in-required stop from the current engine signs out, but only while that account's session is still saved. Screens edit drafts and write them through `AccountStore`, since the engine's saves save the shared context. A local save wakes the engine (`AccountStore.onSave`).
+- Tests: `SyncEngineTests` with `FakeSyncServer` (`CupmarkTests/Support/FakeSyncServer.swift`, an in-memory API over `StubURLProtocol`), a `TestClock` and a fixed jitter: each status rule, the order, the rewrite across bean, shelf entry and brew, the adoptions, an on-disk store reopened with its queue, stopping and the account check.
 
 ## Sign-in
 

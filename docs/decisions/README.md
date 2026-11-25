@@ -50,3 +50,4 @@ What this costs, what it rules out, when to revisit.
 - [0022 Swift API types come from an in-repo generator](0022-swift-api-types-from-an-in-repo-generator.md)
 - [0023 Debug builds and the M2 TestFlight builds use the dev stage](0023-debug-and-testflight-builds-use-dev.md)
 - [0024 iOS sign-in: an ephemeral web flow, an Apple-style button of our own, and a local account key](0024-ios-sign-in-web-flow-and-token-store.md)
+- [0025 Client sync: an ordered outbox per account, and how each answer is handled](0025-client-sync-outbox-and-conflict-rules.md)
