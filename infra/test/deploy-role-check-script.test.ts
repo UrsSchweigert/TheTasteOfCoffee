@@ -46,6 +46,8 @@ const policies = role.Policies as { PolicyName: string; PolicyDocument: Json }[]
 
 interface Fixture {
   providers: string[];
+  /** The provider's ClientIDList (audiences). */
+  audiences: string[];
   trust: unknown;
   policyNames: string[];
   policy: unknown;
@@ -57,6 +59,8 @@ function matching(): Fixture {
   return {
     providers: [`arn:aws:iam::${FAKE_ACCOUNT}:oidc-provider/token.actions.githubusercontent.com`, `arn:aws:iam::${FAKE_ACCOUNT}:oidc-provider/example.com`],
     // IAM keeps the list order the owner used; the check ignores the order of string lists.
+    // Shared with other projects: it may list other audiences as well.
+    audiences: ['sigstore', 'sts.amazonaws.com'],
     trust: JSON.parse(JSON.stringify(role.AssumeRolePolicyDocument).replace(/("[^"]*:environment:dev"),("[^"]*:environment:prod")/, '$2,$1')) as unknown,
     policyNames: [policies[0]?.PolicyName ?? ''],
     policy: policies[0]?.PolicyDocument,
@@ -81,6 +85,7 @@ function runCheck(fixture: Fixture, template = importTemplate): { status: number
 case "$*" in
   "sts get-caller-identity --query Account --output text") echo "${FAKE_ACCOUNT}" ;;
   "iam list-open-id-connect-providers "*) cat "${f('providers', fixture.providers)}" ;;
+  "iam get-open-id-connect-provider --open-id-connect-provider-arn arn:aws:iam::${FAKE_ACCOUNT}:oidc-provider/token.actions.githubusercontent.com --query ClientIDList --output json") cat "${f('audiences', fixture.audiences)}" ;;
   *"get-role --role-name CupmarkGitHubDeploy --query Role.AssumeRolePolicyDocument "*) cat "${f('trust', fixture.trust)}" ;;
   *"get-role --role-name CupmarkGitHubDeploy --query Role.{"*) cat "${f('role', fixture.role)}" ;;
   *"list-role-policies --role-name CupmarkGitHubDeploy "*) cat "${f('names', fixture.policyNames)}" ;;
@@ -115,6 +120,16 @@ describe('check-github-deploy-role.sh', () => {
     expect(run.status, run.stdout + run.stderr).toBe(0);
     expect(run.stdout).toContain('The role matches the import template.');
     expect(run.stdout).not.toContain('DIFFERENT');
+    expect(run.stdout).toContain('OK         GitHub OIDC provider audience (ClientIDList contains sts.amazonaws.com)');
+  });
+
+  it('a missing provider also fails the audience check, without asking IAM for it', () => {
+    const fixture = matching();
+    fixture.providers = [];
+    const run = runCheck(fixture);
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain('DIFFERENT  GitHub OIDC provider audience');
+    expect(run.stderr).not.toContain('unexpected aws call');
   });
 
   it.each<[string, (f: Fixture) => void, string]>([
@@ -130,6 +145,15 @@ describe('check-github-deploy-role.sh', () => {
     ['a missing provider', (f) => {
       f.providers = [];
     }, 'GitHub OIDC provider exists'],
+    ['a provider without the audience sts.amazonaws.com', (f) => {
+      f.audiences = ['sigstore'];
+    }, 'GitHub OIDC provider audience (ClientIDList contains sts.amazonaws.com)'],
+    ['a provider with no audience at all', (f) => {
+      f.audiences = [];
+    }, 'GitHub OIDC provider audience'],
+    ['an audience that only resembles sts.amazonaws.com', (f) => {
+      f.audiences = ['sts.amazonaws.com.example.com', 'STS.amazonaws.com'];
+    }, 'GitHub OIDC provider audience'],
     ['a wildcard bootstrap role in the policy', (f) => {
       f.policy = JSON.parse(JSON.stringify(f.policy).replace(/cdk-cupmark-lookup-role-[^"]*/, 'cdk-cupmark-*')) as unknown;
     }, 'inline policy AssumeCdkBootstrapRoles'],

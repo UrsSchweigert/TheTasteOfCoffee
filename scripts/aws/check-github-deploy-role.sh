@@ -3,7 +3,8 @@
 # (infra/README.md, "One-time import", step 2; ADR 0018). It compares the existing role
 # CupmarkGitHubDeploy with the import template and exits non-zero on any difference,
 # because an import never changes the role: a difference would stay as silent drift.
-# It only calls `aws sts get-caller-identity` and `aws iam get-*` / `list-*`.
+# It only calls `aws sts get-caller-identity` and `aws iam get-*` / `list-*`. It also
+# checks that the GitHub OIDC provider's ClientIDList contains sts.amazonaws.com (M1-T7).
 #
 #   (cd infra && npx cdk synth --no-lookups --quiet -c cupmark:githubOidcImport=true)
 #   scripts/aws/check-github-deploy-role.sh [template]
@@ -61,6 +62,19 @@ aws iam list-open-id-connect-providers --query 'OpenIDConnectProviderList[].Arn'
   | jq -S --arg arn "arn:aws:iam::$ACCOUNT:oidc-provider/$PROVIDER_HOST" '[.[] | select(. == $arn)]' > "$tmp/provider.actual"
 jq -n -S --arg arn "arn:aws:iam::$ACCOUNT:oidc-provider/$PROVIDER_HOST" '[$arn]' > "$tmp/provider.expected"
 compare "GitHub OIDC provider exists" "$tmp/provider.expected" "$tmp/provider.actual"
+
+# The trust requires aud sts.amazonaws.com, so the provider must list it as a client id
+# (audience). The provider is shared with other projects and may list more; only this
+# one is checked, and the provider is only read.
+jq -n -S '["sts.amazonaws.com"]' > "$tmp/audience.expected"
+if [[ "$(jq length "$tmp/provider.actual")" -eq 1 ]]; then
+  aws iam get-open-id-connect-provider --open-id-connect-provider-arn "arn:aws:iam::$ACCOUNT:oidc-provider/$PROVIDER_HOST" \
+    --query 'ClientIDList' --output json \
+    | jq -S '[.[] | select(. == "sts.amazonaws.com")] | unique' > "$tmp/audience.actual"
+else
+  echo '[]' > "$tmp/audience.actual"
+fi
+compare "GitHub OIDC provider audience (ClientIDList contains sts.amazonaws.com)" "$tmp/audience.expected" "$tmp/audience.actual"
 
 expected '.Resources.DeployRole.Properties.AssumeRolePolicyDocument' > "$tmp/trust.expected"
 aws iam get-role --role-name "$ROLE" --query 'Role.AssumeRolePolicyDocument' --output json | actual > "$tmp/trust.actual"

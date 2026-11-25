@@ -30,6 +30,13 @@
 // - in a strict file, every job that grants `id-token: write` must declare one
 //   too, unless its policy lists it in `oidcWithoutEnvironment` (with a reason).
 //
+// Stage commands (M1-T7, ADR 0019), in every file (enforced in strict files):
+// - `cdk destroy` and `cdk bootstrap` never run in a workflow;
+// - `cdk deploy` never uses `--all` and names exactly one stack, `<env>/core` (or
+//   `cupmark-<env>-core`), where <env> is the job's literal environment;
+// - `scripts/deploy/*.sh <stage>` and `scripts/smoke/*.sh <stage>` name the job's
+//   literal environment, so a job in `dev` can never deploy or test prod.
+//
 // Needs Node 22 and `npm ci` in contracts/ (for the `yaml` package).
 // Usage: node scripts/check-workflows.mjs [workflow-dir]
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
@@ -59,6 +66,9 @@ export const STRICT_FILES = new Map([
   // configure-aws-credentials assumes the deploy role through GitHub OIDC,
   // in the `dev` environment (its sub is environment:dev).
   ['aws-oidc-check.yml', { jobWrites: { check: ['id-token'] } }],
+  // M1-T7: the two deploy jobs assume the deploy role through GitHub OIDC, each in its
+  // own environment (dev, prod). The gate job grants only read scopes.
+  ['deploy.yml', { jobWrites: { 'deploy-dev': ['id-token'], 'deploy-prod': ['id-token'] } }],
 ]);
 
 function loadYaml() {
@@ -104,6 +114,33 @@ const AWS_CREDENTIALS_ACTION = 'aws-actions/configure-aws-credentials@';
 function environmentName(job) {
   const env = isObject(job.environment) ? job.environment.name : job.environment;
   return typeof env === 'string' && !env.includes('${{') ? env : undefined;
+}
+
+const STAGE_SCRIPT = /\bscripts\/(?:deploy|smoke)\/[A-Za-z0-9_.-]+\.sh(?:[ \t]+([^\s;&|]+))?/g;
+const CDK_COMMAND = /\bcdk[ \t]+(deploy|destroy|bootstrap)\b[^\n]*/g;
+
+/** Findings for the stage commands of one `run` script in a job with literal environment `env`. */
+function checkStageCommands(run, env, where, findings) {
+  for (const m of run.matchAll(CDK_COMMAND)) {
+    const [line, verb] = m;
+    if (verb !== 'deploy') {
+      findings.push(`${where}: runs cdk ${verb}, which never runs in a workflow`);
+      continue;
+    }
+    if (/(^|\s)--all\b/.test(line)) findings.push(`${where}: cdk deploy --all (name the stage stack)`);
+    // A stage stack is selected by its hierarchical id, `<stage>/core` (the CLI does not
+    // match stack names inside a Stage); `cupmark-<stage>-core` is counted too.
+    const stacks = [...line.matchAll(/(?:\bcupmark-[a-z0-9-]+|\b[a-z0-9-]+\/[a-z0-9-]+)/g)].map((s) => s[0]);
+    const ok = env !== undefined && stacks.length === 1 && [`${env}/core`, `cupmark-${env}-core`].includes(stacks[0]);
+    if (!ok) {
+      findings.push(`${where}: cdk deploy must name exactly the stack <environment>/core of the job's environment (${env ?? 'none'})`);
+    }
+  }
+  for (const m of run.matchAll(STAGE_SCRIPT)) {
+    if (m[1] === undefined || m[1] !== env) {
+      findings.push(`${where}: ${m[0]} must name the job's environment (${env ?? 'none'})`);
+    }
+  }
 }
 
 function describe(scope) {
@@ -235,6 +272,7 @@ export function checkWorkflow(text, { strict, readOnly = false, jobWrites = {}, 
       findings.push(`job ${id}: requests an OIDC token (id-token: write) without the environment ${AWS_ENVIRONMENTS.join(' or ')}`);
     }
     steps.forEach((step, i) => {
+      if (isObject(step) && typeof step.run === 'string') checkStageCommands(step.run, env, `job ${id}, step ${i + 1}`, findings);
       if (!isObject(step) || step.uses === undefined) return;
       const where = `job ${id}, step ${i + 1}`;
       checkUses(step.uses, where, findings);

@@ -20,6 +20,8 @@ Run in `infra/` with Node `^22.18.0` or 24 and later (`.npmrc` sets `engine-stri
 
 `npm run synth` also synthesises `cupmark-github-oidc` (below), in the committed `reference` mode; `npm run synth -- -c cupmark:githubOidcProvider=create` shows create mode. `npm run synth -- -c stage=dev` synthesises one stage and leaves `cupmark-github-oidc` out. The target account comes from `-c cupmark:<stage>:account=<id>`, else from `CDK_DEFAULT_ACCOUNT` (set by the CDK CLI when credentials are present), else the stacks are account-agnostic. No account id is written in this repo.
 
+**Open Food Facts settings and deploy mode (ADR 0019).** `-c cupmark:offContact=<address>` sets the API function's `OFF_CONTACT` and `-c cupmark:offLookupCap=<0..10000>` its `OFF_LOOKUP_CAP`; both are validated with the backend's rules, and a missing one is left out of the environment. Without the contact the synth warns `cupmark:offContactMissing` ("not for deploy"): the stack works, but uncached Open Food Facts lookups answer 503. `-c cupmark:deploy=<stage>` is deploy mode, set only by `scripts/deploy/deploy-stage.sh`: the synth then fails unless `-c stage=` names the same stage, `-c cupmark:<stage>:account=` is given and the contact is valid. CI's synth uses none of them. To see a deploy synth offline: `npm run synth -- -c stage=dev -c cupmark:deploy=dev -c cupmark:dev:account=123456789012 -c cupmark:offContact=ops@example.invalid`.
+
 ## Layout
 
 ```
@@ -147,11 +149,31 @@ CloudFormation cannot put a SecureString into `ProviderDetails.private_key` (`{{
 
 The only S3 delete and list actions any role holds are the api role's account-deletion statements, limited to `labels/` and `uploads/` of the photo bucket; `catalogue/` and `verified/` cannot be deleted by the API. No role can read, list or delete the deletion log. The only delete actions any role holds are `dynamodb:DeleteItem`, `s3:DeleteObject`, `s3:DeleteObjectVersion` and `cognito-idp:AdminDeleteUser` (api) and `cognito-idp:DeleteIdentityProvider` (apple-idp). `test/api.test.ts` pins all of this, and the exact S3 and Cognito statements, per stage.
 
-**API function environment:** `TABLE_NAME` (`cupmark-<stage>-main`), `CURSOR_KEY_PARAMETER` (`/cupmark/<stage>/cursor-key`), `PHOTO_BUCKET` (`cupmark-<stage>-photos-<account>`, where the API stores and serves `catalogue/` images, signs label photo uploads to `uploads/` and writes stripped photos to `labels/`), `DELETION_LOG_BUCKET` (`cupmark-<stage>-deletion-log-<account>`, ADR 0017), `USER_POOL_ID` (the stage pool's id, for `AdminDeleteUser`), `NODE_OPTIONS=--enable-source-maps`. No secret is in the environment. Both bucket names match the backend's pattern `^cupmark-[a-z0-9][a-z0-9-]{0,53}[a-z0-9]$` without `--` (the longest, `cupmark-prod-deletion-log-<12 digits>`, is 38 characters); `test/api.test.ts` checks it.
+**API function environment:** `TABLE_NAME` (`cupmark-<stage>-main`), `CURSOR_KEY_PARAMETER` (`/cupmark/<stage>/cursor-key`), `PHOTO_BUCKET` (`cupmark-<stage>-photos-<account>`, where the API stores and serves `catalogue/` images, signs label photo uploads to `uploads/` and writes stripped photos to `labels/`), `DELETION_LOG_BUCKET` (`cupmark-<stage>-deletion-log-<account>`, ADR 0017), `USER_POOL_ID` (the stage pool's id, for `AdminDeleteUser`), `NODE_OPTIONS=--enable-source-maps`, and, from context (ADR 0019), `OFF_CONTACT` (the operator mailbox for the Open Food Facts User-Agent) and optionally `OFF_LOOKUP_CAP`. No secret is in the environment. Both bucket names match the backend's pattern `^cupmark-[a-z0-9][a-z0-9-]{0,53}[a-z0-9]$` without `--` (the longest, `cupmark-prod-deletion-log-<12 digits>`, is 38 characters); `test/api.test.ts` checks it.
 
 **Outbound HTTPS.** The functions are not in a VPC. A Lambda function outside a VPC has internet access through the Lambda service, so the API function reaches the Open Food Facts API and image host over HTTPS without a VPC, NAT gateway or VPC endpoint (all fixed-fee, invariant 5). Which hosts it calls is the backend's concern (docs/05, Barcode lookup); there is no egress filter, which would need a NAT gateway or a firewall.
 
 **Not done, on purpose:** no API access logging (it would need a log delivery setup and adds log charges; the function logs one line per request); no custom domain (would need ACM and Route 53, denied by `CupmarkCfnExecution`).
+
+## First-deploy setup (one script)
+
+The AWS steps of issues #45 (guardrails), #46 (the trust part) and #48 (the import) in one script, `scripts/aws/first-deploy-setup.sh`. The owner runs it in AWS CloudShell (eu-central-1), never an agent or CI. The detailed manual steps below ("One-time import (owner)", "Before the first deploy (owner)") stay the reference for what it does.
+
+```sh
+git clone https://github.com/UrsSchweigert/TheTasteOfCoffee.git && cd TheTasteOfCoffee   # clean main
+ALLOW_ROOT=1 scripts/aws/first-deploy-setup.sh            # dry run: shows every step, changes nothing
+ALLOW_ROOT=1 scripts/aws/first-deploy-setup.sh --apply    # does it
+```
+
+`ALLOW_ROOT=1` is only needed if you are signed in as root (the script warns); with an admin IAM or SSO identity leave it out. What it does, stopping with `STOP: ...` at the first mismatch:
+
+- **Step 0, preflight.** Identity (printed), region eu-central-1, Node 22.18 or later (else `nvm install 22 && nvm use 22`), a clean `main` checkout at the repository root, the backend built and infra installed (skipped if already done).
+- **Step 1, #45.** Runs `scripts/aws/apply-guardrails.sh`, with `--apply` passed through.
+- **Step 2, #46 trust.** Reads the trust of `CupmarkGitHubDeploy`. If it already matches the import template, the step is skipped. If it is exactly the document docs/07 describes (`StringEquals`, `aud` `sts.amazonaws.com`, `sub` `environment:dev` and `ref:refs/heads/main`), it shows the diff and, with `--apply`, replaces only the `sub` list with the two environment subjects, read from the synthesised import template. Any other trust stops the script; it is never overwritten.
+- **Step 3, #48.** Synthesises both modes offline. If the stack does not exist yet, it runs `check-github-deploy-role.sh` (which must pass), then `cdk import` with the resource mapping (non-interactive: a mapping file needs no prompt). If the stack exists (`IMPORT_COMPLETE` or `UPDATE_COMPLETE`), the import is skipped. Then come drift detection (`IN_SYNC`, or stop), `cdk diff`, `cdk deploy` (the tag), and a check of the role tag `project=cupmark`, termination protection and drift.
+- **Step 4.** A summary.
+
+It deletes nothing and touches only `CupmarkBoundary`, `CupmarkCfnExecution` (through apply-guardrails.sh, which also re-runs the unchanged `cupmark` bootstrap), the trust of `CupmarkGitHubDeploy` and the stack `cupmark-github-oidc`. Running it again is safe. Account ids are masked as `<account>`, except in the identity line. **Paste back:** the summary of the `--apply` run (Step 4) as a comment "done" on #45, #46 and #48, or, if it stopped, the `STOP:` line and the diff above it. The GitHub environment settings (the first half of #46) are done in the GitHub web UI, not by the script. `test/first-deploy-setup-script.test.ts` runs it against fake `aws`, `npx`, `node` and `git`.
 
 ## The GitHub deploy role (`src/github-oidc.ts`, stack `cupmark-github-oidc`)
 
@@ -213,7 +235,7 @@ cd .. && scripts/aws/check-github-deploy-role.sh && cd infra
 aws cloudformation describe-stacks --stack-name cupmark-github-oidc   # must fail: "does not exist"
 ```
 
-`scripts/aws/check-github-deploy-role.sh` renders the import template with your account id and runs `diff` against `aws iam get-role` (`AssumeRolePolicyDocument` and the other role properties), `list-role-policies`, `get-role-policy` and `list-attached-role-policies`. It ignores only the order of string lists, which IAM ignores too. It exits 1 on any difference and 2 if the template was synthesised without `-c cupmark:githubOidcImport=true`. **If it does not end with "The role matches the import template.", stop and report the diff.** The fix is a pull request, or a hand edit of the role's trust if you have not set it yet (above). Importing a role that differs from the template leaves silent drift (ADR 0018). A missing provider is a difference too: `reference` would trust a provider that is not there. `test/deploy-role-check-script.test.ts` runs the script against a fake `aws`.
+`scripts/aws/check-github-deploy-role.sh` checks that the GitHub OIDC provider exists and that its `ClientIDList` contains `sts.amazonaws.com` (the audience the trust requires; the shared provider may list more), renders the import template with your account id and runs `diff` against `aws iam get-role` (`AssumeRolePolicyDocument` and the other role properties), `list-role-policies`, `get-role-policy` and `list-attached-role-policies`. It ignores only the order of string lists, which IAM ignores too. It exits 1 on any difference and 2 if the template was synthesised without `-c cupmark:githubOidcImport=true`. **If it does not end with "The role matches the import template.", stop and report the diff.** The fix is a pull request, or a hand edit of the role's trust if you have not set it yet (above). Importing a role that differs from the template leaves silent drift (ADR 0018). A missing provider is a difference too: `reference` would trust a provider that is not there. `test/deploy-role-check-script.test.ts` runs the script against a fake `aws`.
 
 ```sh
 # 3. Import the role into the new stack. CloudFormation takes the role as it is and changes nothing.
@@ -263,7 +285,7 @@ If step 4 reports `DRIFTED`, do not run steps 5 and 6. Report the difference. It
 
 **A fresh account** (no provider yet): `npx cdk deploy cupmark-github-oidc -c cupmark:githubOidcProvider=create --toolkit-stack-name CDKToolkit-cupmark`, with no import, after the `cupmark` bootstrap. Commit `create` to cdk.json in that case, so a later deploy does not drop the provider from the stack (it would stay in the account because it is `RETAIN`).
 
-**For M1-T7.** The deploy jobs declare `environment: dev` and `environment: prod` (prod with the owner's approval), as `scripts/check-workflows.mjs` requires. The workflow names the stage stacks (`-c stage=<stage>`, `cupmark-<stage>-core`) and never uses `--all`. With `-c stage=` the app does not contain `cupmark-github-oidc`. If the workflow ever tried to deploy it, the deploy would fail with AccessDenied, because the role can only assume the bootstrap roles.
+**For M1-T7 (done, "Deploy pipeline" below).** The deploy jobs declare `environment: dev` and `environment: prod` (prod with the owner's approval), as `scripts/check-workflows.mjs` requires. The workflow names the one stage stack (`-c stage=<stage>`, selector `<stage>/core`, which is exactly `cupmark-<stage>-core`) and never uses `--all`. The CDK CLI selects a stack inside a Stage by its hierarchical id: `cdk deploy cupmark-dev-core` answers "No stacks match". With `-c stage=` the app does not contain `cupmark-github-oidc`. If the workflow ever tried to deploy it, the deploy would fail with AccessDenied, because the role can only assume the bootstrap roles.
 
 ## Parameters the owner creates
 
@@ -299,6 +321,8 @@ Check without decrypting: `aws ssm describe-parameters --region eu-central-1 --p
 
 ## Before the first deploy (owner)
 
+Steps 1 and 4 below, and the trust edit of #46, are done by `scripts/aws/first-deploy-setup.sh` ("First-deploy setup (one script)"). The GitHub side and the order of everything are in "Deploy pipeline".
+
 1. **Re-apply the guardrails** with `scripts/aws/apply-guardrails.sh` (dry run first, then `--apply`). M1-T2 changed both policies:
    - `CupmarkBoundary`: `dynamodb:ConditionCheckItem` on `table/cupmark-*` (the repository's transactions use condition checks), and the four Cognito identity-provider actions on `userpool/*` in eu-central-1 for the Apple provider function (pools cannot be name-scoped; each role's own policy names its pool).
    - `CupmarkCfnExecution`: `s3:GetObject` on `cdk-cupmark-assets-<account>-eu-central-1/*`, so CloudFormation can create functions from the bootstrap's asset bucket.
@@ -318,9 +342,100 @@ Check without decrypting: `aws ssm describe-parameters --region eu-central-1 --p
 
 Still unverified until the first dev deploy: whether CloudFormation's `AWS::Logs::LogGroup` handler also needs `logs:DescribeLogGroups` beyond `log-group:/aws/lambda/cupmark-*` (not added, because it could not be confirmed offline; an AccessDenied on the log groups would say so), and whether Cognito accepts empty Apple scopes.
 
+## Deploy pipeline (M1-T7, `.github/workflows/deploy.yml`)
+
+ADR 0019. No agent and no laptop deploys a stage stack: only this workflow does, through `CupmarkGitHubDeploy` (ADR 0018).
+
+**How it works.**
+
+- **Off switch.** Nothing deploys unless the repository variable `CUPMARK_DEPLOY_ENABLED` is exactly `true`. It is read only from `vars`, never from a workflow input. While it is unset or anything else, the `gate` job ends successfully with the notice "Deploys are off", makes no API call and outputs `deploy=false`, so no deploy job runs and no credentials are requested. This makes merging safe whatever state the GitHub settings are in. The owner sets the variable as the last prerequisite (below). Setting it back to anything but `true` stops all deploys, dev and prod, at once.
+- **dev** deploys after every push to `main` whose CI run succeeded (`workflow_run` on CI). The `gate` job has no AWS step, no checkout and only read scopes. It deploys only a CI run that was a `push` to `main` of this repository, from `ci.yml`, with conclusion `success`, and only if its commit is still the tip of `main`. An older commit whose CI finished late is skipped; the newer one deploys after its own CI. A fork's pull request never deploys: its CI event is `pull_request`.
+- **prod** deploys only by hand: Actions → Deploy → Run workflow, from `main`, stage `prod`. The job runs in the environment `prod` and waits for the owner's approval.
+- **Rollback**: the same Run workflow, with stage `dev` or `prod` and `commit` set to an earlier commit of `main`. The gate accepts only a full SHA that is on `main` and whose push passed CI. A rollback redeploys that commit's code and template, never data, and cannot go back before M1-T7.
+- **Each deploy job** runs in the literal environment of its stage, with `id-token: write` and `contents: read` only. It is in the concurrency group `deploy-<stage>`, so a running deploy is never cancelled; a newer waiting run replaces an older waiting one. The job:
+  1. checks out the gate's commit without persisted credentials;
+  2. sets up Node from `.nvmrc` (no npm cache);
+  3. runs `npm ci` and the build in `backend/`, then `npm ci` in `infra/`, all before any AWS credentials exist;
+  4. assumes the role with `configure-aws-credentials` (`secrets.AWS_DEPLOY_ROLE_ARN`, region `eu-central-1` literally);
+  5. runs `scripts/deploy/deploy-stage.sh <stage>`, which:
+     - checks the region and that `OFF_CONTACT` is set;
+     - takes the account from `aws sts get-caller-identity` and checks that it is `CupmarkGitHubDeploy`;
+     - masks the account and the mailbox in the log;
+     - runs `npx cdk diff <stage>/core`, then `npx cdk deploy <stage>/core --exclusively --require-approval never --ci`, both with `-c stage=<stage> -c cupmark:deploy=<stage> -c cupmark:<stage>:account=<id> -c cupmark:offContact=...` (and `-c cupmark:offLookupCap=...` if set), `--toolkit-stack-name CDKToolkit-cupmark` and `--no-lookups`. The synthesizer is `DefaultStackSynthesizer` with qualifier `cupmark`, so the CLI uses the `cdk-cupmark-*` roles;
+  6. runs `scripts/smoke/health.sh <stage>`. It reads the output `ApiUrl` of `cupmark-<stage>-core` with `aws cloudformation describe-stacks`, as the bootstrap's read-only lookup role (the GitHub role may only assume bootstrap roles). It then expects `GET /health` to answer 200 `application/json` `{"status":"ok"}`, with 5 attempts 3, 6, 12 and 24 seconds apart.
+- `scripts/check-workflows.mjs` treats `deploy.yml` as a strict file. Only the two deploy jobs may grant `id-token: write`. A `cdk deploy` with `--all`, or one that names another stack than `<environment>/core`, fails it. So do any `cdk destroy` or `cdk bootstrap`, and a deploy or smoke script that names another stage than its job's environment. Its tests run the gate's shell against a fake `gh`. `test/deploy-scripts.test.ts` runs the deploy and smoke scripts against fake `aws`, `npx` and `curl`.
+
+**What the owner sets in GitHub** (Settings → Environments and Settings → Secrets and variables → Actions):
+
+| Where | Name | Value |
+| --- | --- | --- |
+| Environments | `dev`, `prod` | Both: deployment branches limited to `main` only (issue #46). `prod`: you as required reviewer. For the first deploy, `dev` too (below). |
+| Environment variable, in `dev` and in `prod` | `OFF_CONTACT` | The operator mailbox for the Open Food Facts User-Agent, for example a dedicated address. Not a secret, but never committed (docs/05). Missing or invalid: the deploy fails at synth. |
+| Environment variable, optional, per environment | `OFF_LOOKUP_CAP` | Open Food Facts fetches per user and UTC day, 0 to 10000. Unset means the backend's default of 50. |
+| Repository variable | `CUPMARK_DEPLOY_ENABLED` | `true`, and only once every other prerequisite is done (the last step below). Unset or any other value: nothing deploys. |
+| Repository secret | `AWS_DEPLOY_ROLE_ARN` | `arn:aws:iam::<account>:role/CupmarkGitHubDeploy`. Repository level, because both environments use the one role (ADR 0018). The same secret serves the AWS OIDC check. The `AWS_REGION` secret is not used by the deploy: its region is written in the workflow. |
+
+**Order of the prerequisites for the first deploy.**
+
+1. #45: re-apply the guardrails (M1-T6 boundary).
+2. #46: the GitHub environments `dev` and `prod` limited to `main`, `prod` with you as reviewer, and the trust edit of `CupmarkGitHubDeploy`.
+3. #48: import the role into `cupmark-github-oidc` and tag it, then run the "AWS OIDC check" workflow.
+   Steps 1 to 3 on the AWS side are one script: "First-deploy setup (one script)" above.
+4. The four SecureStrings, `/cupmark/{dev,prod}/cursor-key` and `/cupmark/{dev,prod}/apple-sign-in-key` (done 2026-11-25, docs/07).
+5. The Lambda concurrency quota of at least 120 (done: 1000).
+6. The secret `AWS_DEPLOY_ROLE_ARN` and the variable `OFF_CONTACT` in both environments (table above).
+7. Last: the repository variable `CUPMARK_DEPLOY_ENABLED` = `true`. Until then, merges and pushes to `main` deploy nothing.
+
+**Approving the first deploy.** Two safeguards keep the first dev deploy from running before you are ready.
+
+- The off switch: nothing deploys until you set `CUPMARK_DEPLOY_ENABLED` to `true`.
+- A reviewer on `dev`: add yourself as a required reviewer of `dev` too, before you set the switch.
+
+With the switch set, the next push to `main` that passes CI starts a deploy. To start one without a push, use Run workflow with stage `dev`. The run then shows "Waiting for review" at the job `deploy dev`. Open the run, read the gate's line ("deploy=true stage=dev sha=..."), and approve with Review deployments → `dev` → Approve and deploy, once the prerequisites above are done. Watch the `cdk diff` and the deploy in the log; the smoke test must end with `GET /health: 200`. Afterwards you may remove yourself as reviewer of `dev`; `prod` keeps you. If the deploy fails, nothing is retried on its own: fix it in a pull request, or re-run the job.
+
+**Deploying prod.** Actions → Deploy → Run workflow, branch `main`, stage `prod`, commit empty (the tip of `main`) or a SHA. Approve the `deploy prod` job when it waits.
+
+**Rolling back.** Actions → Deploy → Run workflow, branch `main`, the stage, and in `commit` the full SHA of the last good commit of `main` (from `git log` or the history of earlier Deploy runs). For prod, approve it as usual. CloudFormation also rolls back a failed update on its own, so a failed deploy leaves the previous version running. Tables, buckets and the user pool are `RETAIN` and keep their data either way. `cdk destroy` is never used.
+
+### After the first dev deploy (owner)
+
+The checks from the M1-T4b, M1-T4c and M1-T4d reviews need a signed-in user's access token, which CI cannot get. `scripts/smoke/post-deploy-checks.sh` runs them, against dev only (it refuses any other stage and reads the API URL from `cupmark-dev-core` itself). Its checks:
+
+- `GET /health`;
+- an unknown barcode: 404 from both lookups;
+- a known barcode (default `3017620422003`) with a front image: the `OpenFoodFactsProduct` shape with `image_id`, then `GET /catalogue_images/{image_id}` as `image/jpeg` with `nosniff`;
+- a label photo: `POST /beans` with no picks, the upload, the presigned S3 POST of a 132-byte generated JPEG, and the completion, which must answer 204.
+
+What it writes in dev:
+
+- at most one Open Food Facts cache item per barcode, plus your daily lookup counter;
+- one unverified bean with no barcode: reject it in the review queue;
+- one upload, which expires after a day, and one stripped label photo.
+
+`--lookups-only` skips the bean and the photo. The token is read from `CUPMARK_ACCESS_TOKEN`, sent only from a private header file and never printed or stored. In CloudShell, with your own credentials:
+
+```sh
+CLIENT_ID="$(aws cloudformation describe-stacks --region eu-central-1 --stack-name cupmark-dev-core \
+  --query "Stacks[0].Outputs[?starts_with(OutputKey,'IdentityAppClientId')].OutputValue | [0]" --output text)"
+VERIFIER="$(openssl rand -base64 48 | tr -d '=+/\n' | cut -c1-64)"
+CHALLENGE="$(printf '%s' "$VERIFIER" | openssl dgst -sha256 -binary | openssl base64 | tr '+/' '-_' | tr -d '=\n')"
+echo "https://cupmark-dev.auth.eu-central-1.amazoncognito.com/oauth2/authorize?identity_provider=SignInWithApple&response_type=code&client_id=$CLIENT_ID&redirect_uri=cupmark://auth&scope=openid&code_challenge=$CHALLENGE&code_challenge_method=S256"
+# Open the URL in a browser and sign in with Apple. The browser then tries to open
+# cupmark://auth?code=...; copy the code from that address (or the browser's error page).
+read -rs CODE
+read -rs CUPMARK_ACCESS_TOKEN < <(curl -sS -X POST https://cupmark-dev.auth.eu-central-1.amazoncognito.com/oauth2/token \
+  -d grant_type=authorization_code -d "client_id=$CLIENT_ID" -d "code=$CODE" \
+  -d redirect_uri=cupmark://auth -d "code_verifier=$VERIFIER" | jq -r .access_token)
+export CUPMARK_ACCESS_TOKEN
+scripts/smoke/post-deploy-checks.sh dev        # every line PASS, ends "All post-deploy checks passed."
+unset CUPMARK_ACCESS_TOKEN CODE VERIFIER
+```
+
+The token is valid for 60 minutes. Signing in creates your user in the dev pool. A `FAIL` line says what to look at. A 503 from the lookup can have three causes: `OFF_CONTACT` is missing, Open Food Facts could not be reached, or its answer did not have the expected shape (`status`, `product.product_name`, `product.brands`). Nothing is cached then. A missing `image_id` on a hit that was cached earlier stays missing, because hits are never overwritten. A 500 on the label photo upload points to a presigner and SDK version skew. Report the output (it holds no token) in the M1-T7 issue.
+
 ## Outputs
 
-The stack outputs, as plain `CfnOutput`s without exports: the table name, the stream ARN, the three bucket names, the user pool id, the app client id, the hosted domain URL and the API URL. Nothing imports them across stacks.
+The stack outputs, as plain `CfnOutput`s without exports: the table name, the stream ARN, the three bucket names, the user pool id, the app client id, the hosted domain URL and the API URL. Nothing imports them across stacks. The API URL's key is pinned to `ApiUrl` (`API_URL_OUTPUT` in `src/api.ts`), because `scripts/smoke/` reads it; `test/deploy-config.test.ts` checks both.
 
 ## Guards
 
