@@ -100,27 +100,28 @@ class BodyNotUtf8 extends Error {
   public override readonly name = 'BodyNotUtf8';
 }
 
+/** Drops a body that is not read, without waiting on it. */
+function discard(response: Response): void {
+  response.body?.cancel().catch(() => undefined);
+}
+
 /** The body as text, or BodyTooLarge past `limit` bytes. Aborts with the request's signal. */
 async function readLimited(response: Response, limit: number): Promise<string> {
   const declared = response.headers.get('content-length');
   if (declared !== null && /^\d+$/.test(declared) && Number(declared) > limit) {
-    await response.body?.cancel();
+    discard(response);
     throw new BodyTooLarge('declared length over the limit');
   }
   if (response.body === null) return '';
-  const reader: ReadableStreamDefaultReader<Uint8Array> = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
-  for (;;) {
-    const chunk: ReadableStreamReadResult<Uint8Array> = await reader.read();
-    if (chunk.done) break;
-    const value = chunk.value;
-    size += value.byteLength;
-    if (size > limit) {
-      await reader.cancel();
-      throw new BodyTooLarge('body over the limit');
-    }
-    chunks.push(value);
+  const stream: AsyncIterable<unknown> = response.body;
+  for await (const chunk of stream) {
+    if (!(chunk instanceof Uint8Array)) throw new BodyNotUtf8('body is not bytes');
+    size += chunk.byteLength;
+    // Leaving the loop early cancels the stream.
+    if (size > limit) throw new BodyTooLarge('body over the limit');
+    chunks.push(chunk);
   }
   try {
     return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks));
@@ -154,8 +155,35 @@ function outcomeOf(status: number, payload: unknown): FetchOutcome {
   };
 }
 
-function isTimeout(error: unknown): boolean {
-  return error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
+/** One request and its answer; throws on network errors, BodyTooLarge and BodyNotUtf8. */
+async function exchange(fetchImpl: Fetch, url: string, contact: string, signal: AbortSignal, maxBytes: number): Promise<FetchOutcome> {
+  const response = await fetchImpl(url, {
+    method: 'GET',
+    headers: { 'user-agent': userAgent(contact), accept: 'application/json' },
+    redirect: 'manual',
+    signal,
+  });
+  if (response.redirected || (response.url !== '' && response.url !== url) || (response.status >= 300 && response.status < 400)) {
+    discard(response);
+    return unavailable('redirect');
+  }
+  if (response.status !== 200 && response.status !== 404) {
+    discard(response);
+    return unavailable('status');
+  }
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!/^application\/json(?:\s*;.*)?$/i.test(contentType.trim())) {
+    discard(response);
+    return unavailable('content_type');
+  }
+  const text = await readLimited(response, maxBytes);
+  let payload: unknown;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    return unavailable('malformed');
+  }
+  return outcomeOf(response.status, payload);
 }
 
 export function createOpenFoodFactsClient(options: OpenFoodFactsClientOptions): OpenFoodFactsClient {
@@ -172,37 +200,21 @@ export function createOpenFoodFactsClient(options: OpenFoodFactsClientOptions): 
       // Defence in depth: the URL is built from constants and 13 digits, but never send it anywhere else.
       if (new URL(url).origin !== OPEN_FOOD_FACTS_ORIGIN) return unavailable('redirect');
       const signal = AbortSignal.timeout(timeoutMs);
+      // The deadline covers the whole exchange, even a fetch or a body that ignores the signal.
+      const deadline = new Promise<FetchOutcome>((resolve) => {
+        signal.addEventListener(
+          'abort',
+          () => {
+            resolve(unavailable('timeout'));
+          },
+          { once: true },
+        );
+      });
       try {
-        const response = await fetchImpl(url, {
-          method: 'GET',
-          headers: { 'user-agent': userAgent(contact), accept: 'application/json' },
-          redirect: 'manual',
-          signal,
-        });
-        if (response.redirected || (response.url !== '' && response.url !== url) || (response.status >= 300 && response.status < 400)) {
-          await response.body?.cancel();
-          return unavailable('redirect');
-        }
-        if (response.status !== 200 && response.status !== 404) {
-          await response.body?.cancel();
-          return unavailable('status');
-        }
-        const contentType = response.headers.get('content-type') ?? '';
-        if (!/^application\/json(?:\s*;.*)?$/i.test(contentType.trim())) {
-          await response.body?.cancel();
-          return unavailable('content_type');
-        }
-        const text = await readLimited(response, maxBytes);
-        let payload: unknown;
-        try {
-          payload = JSON.parse(text);
-        } catch {
-          return unavailable('malformed');
-        }
-        return outcomeOf(response.status, payload);
+        return await Promise.race([exchange(fetchImpl, url, contact, signal, maxBytes), deadline]);
       } catch (error) {
+        if (signal.aborted) return unavailable('timeout');
         if (error instanceof BodyTooLarge) return unavailable('too_large');
-        if (isTimeout(error) || signal.aborted) return unavailable('timeout');
         if (error instanceof BodyNotUtf8) return unavailable('malformed');
         return unavailable('network');
       }
