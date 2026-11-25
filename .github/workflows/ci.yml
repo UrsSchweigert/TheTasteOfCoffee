@@ -59,6 +59,7 @@ jobs:
             contracts/openapi.yaml
             contracts/lib/vocabulary.mjs
             contracts/lib/lock.mjs
+            contracts/lib/openapi.mjs
             scripts/generate-ios-vocabulary.mjs
             scripts/generate-ios-api.mjs
             scripts/check-ios-strings.mjs
@@ -151,6 +152,9 @@ jobs:
         run: node --test scripts/ios-scripts.test.mjs
       - name: iOS generated vocabulary is up to date
         run: node scripts/generate-ios-vocabulary.mjs --check
+      # The Swift API types match contracts/openapi.yaml (M2-T7, ADR 0022).
+      - name: iOS generated API types are up to date
+        run: node scripts/generate-ios-api.mjs --check
       - name: iOS String Catalog is complete
         run: node scripts/check-ios-strings.mjs
 

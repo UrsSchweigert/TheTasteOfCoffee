@@ -47,3 +47,4 @@ What this costs, what it rules out, when to revisit.
 - [0019 Deploys run after CI through workflow_run; the operator mailbox comes from context in an explicit deploy mode](0019-deploy-pipeline-workflow-run-and-deploy-mode.md)
 - [0020 No local-only mode without sign-in for now](0020-no-local-only-mode-for-now.md)
 - [0021 Brew fields depend on the method, and grinders get their own scales](0021-method-dependent-brew-fields-and-grinders.md)
+- [0022 Swift API types come from an in-repo generator](0022-swift-api-types-from-an-in-repo-generator.md)

@@ -410,7 +410,7 @@ Planning notes (planned 2026-11-25):
   - ios/README.md, "Build and test", lists the new paths.
 
 ### M2-T7 Swift API types generated from the contract
-- status: todo
+- status: in-progress
 - owner: ios-engineer
 - depends: M2-T6
 - implements: docs/05-system-design.md, Components (client); CLAUDE.md invariant 2 and Style; ADR 0004

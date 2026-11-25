@@ -1,9 +1,13 @@
-// Tests for scripts/generate-ios-vocabulary.mjs and scripts/check-ios-strings.mjs.
+// Tests for scripts/generate-ios-vocabulary.mjs, scripts/generate-ios-api.mjs and
+// scripts/check-ios-strings.mjs.
 // Run: node --test scripts/ios-scripts.test.mjs (needs `npm ci` in contracts/).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { dirname, relative, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { LANGUAGES, loadVocabulary } from '../contracts/lib/vocabulary.mjs';
+import { loadOpenApi } from '../contracts/lib/openapi.mjs';
 import {
   GENERATED_FILE,
   PROJECT_FILE,
@@ -19,7 +23,17 @@ import {
   swiftString,
   upperCamel,
 } from './generate-ios-vocabulary.mjs';
+import {
+  EXCLUDED_OPERATIONS,
+  GENERATED_FILE as API_GENERATED_FILE,
+  describeApi,
+  describeOperations,
+  generateSwift as generateApiSwift,
+  reachableSchemas,
+} from './generate-ios-api.mjs';
 import { checkCatalog, checkKeys, keysInL10n, lexSwift, literalBindings, literalUiStrings } from './check-ios-strings.mjs';
+
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 const fixture = (extra = {}) => ({
   brew: {
@@ -331,4 +345,251 @@ test('the committed iOS sources pass the literal check', () => {
     const text = readFileSync(new URL(`../ios/Cupmark/${name}`, import.meta.url), 'utf8');
     assert.deepEqual(literalUiStrings(text), [], name);
   }
+});
+
+// ---- scripts/generate-ios-api.mjs (M2-T7, ADR 0022) ----
+
+const apiFixture = () => ({
+  openapi: '3.1.0',
+  info: { title: 't', version: '9.8.7' },
+  paths: {
+    '/things': {
+      get: {
+        operationId: 'listThings',
+        parameters: [{ $ref: '#/components/parameters/CursorQuery' }],
+        responses: { 200: { description: 'ok', content: { 'application/json': { schema: { $ref: '#/components/schemas/ThingPage' } } } } },
+      },
+      post: {
+        operationId: 'createThing',
+        requestBody: { content: { 'application/json': { schema: { $ref: '#/components/schemas/Thing' } } } },
+        responses: { 201: { description: 'ok', content: { 'application/json': { schema: { $ref: '#/components/schemas/Thing' } } } }, 400: { description: 'bad' } },
+      },
+    },
+    '/things/{id}': {
+      delete: { operationId: 'deleteThing', responses: { 204: { description: 'gone' } } },
+    },
+    '/picture': {
+      get: {
+        operationId: 'getPicture',
+        responses: { 200: { description: 'ok', content: { 'image/jpeg': { schema: { type: 'string', contentMediaType: 'image/jpeg' } } } } },
+      },
+    },
+    '/health': {
+      get: { operationId: 'getHealth', responses: { 200: { description: 'ok', content: { 'application/json': { schema: { $ref: '#/components/schemas/Unused' } } } } } },
+    },
+  },
+  components: {
+    parameters: { CursorQuery: { name: 'cursor', in: 'query', schema: { $ref: '#/components/schemas/Cursor' } } },
+    schemas: {
+      Cursor: { type: 'string', pattern: '^[a-z]{1,9}$' },
+      Unused: { type: 'object', additionalProperties: false, properties: { status: { type: 'string', enum: ['ok'] } } },
+      Day: { type: 'string', format: 'date' },
+      Method: { type: 'string', enum: ['pour_over', 'v60'], 'x-vocabulary': 'methods' },
+      DoseDg: { type: 'integer', minimum: 50, maximum: 1000, 'x-vocabulary-range': 'brew.ranges.dose_g', 'x-vocabulary-scale': 10 },
+      Thing: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['method'],
+        properties: {
+          method: { $ref: '#/components/schemas/Method' },
+          dose_dg: { $ref: '#/components/schemas/DoseDg' },
+          note_count: { type: 'integer' },
+        },
+      },
+      ThingPage: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['items'],
+        properties: { items: { type: 'array', items: { $ref: '#/components/schemas/Thing' } }, next_cursor: { $ref: '#/components/schemas/Cursor' } },
+      },
+    },
+  },
+});
+const apiOptions = { excluded: { getHealth: 'not called' }, groups: [] };
+const generateFixture = (doc = apiFixture(), options = apiOptions) =>
+  generateApiSwift({ doc, vocabularyVersion: 9, vocabularyFiles: fixture(), options });
+
+test('generate-ios-api: exports the file it writes, under the synchronized app folder', () => {
+  assert.equal(relative(repoRoot, API_GENERATED_FILE).split(sep).join('/'), 'ios/Cupmark/Generated/API.swift');
+});
+
+test('generate-ios-api: operations, reachable schemas and the excluded health route', () => {
+  const doc = apiFixture();
+  doc.components.schemas.Day = { type: 'string', format: 'date' }; // unreachable: not emitted
+  const ops = describeOperations(doc, apiOptions.excluded);
+  assert.deepEqual(ops.map((o) => [o.operationId, o.method, o.successStatus, o.requestSchema, o.responseSchema, o.responseContentType]), [
+    ['listThings', 'get', 200, null, 'ThingPage', 'application/json'],
+    ['createThing', 'post', 201, 'Thing', 'Thing', 'application/json'],
+    ['deleteThing', 'delete', 204, null, null, null],
+    ['getPicture', 'get', 200, null, null, 'image/jpeg'],
+  ]);
+  assert.deepEqual(reachableSchemas(doc, ['ThingPage', 'Cursor']), ['Cursor', 'Method', 'DoseDg', 'Thing', 'ThingPage']);
+  const swift = generateFixture(doc);
+  assert.doesNotMatch(swift, /Unused|getHealth = |CalendarDate \{|struct Day/);
+  assert.match(swift, /case listThings = "listThings"/);
+  assert.match(swift, /case \.getPicture: return "image\/jpeg"/);
+  assert.match(swift, /case \.deleteThing: return 204/);
+  assert.match(swift, /static let contractVersion = "9\.8\.7"/);
+  assert.throws(() => describeOperations(doc, { getNothing: 'x' }), /EXCLUDED_OPERATIONS names getNothing/);
+});
+
+test('generate-ios-api: vocabulary enums are the Vocabulary types, never a second list', () => {
+  const swift = generateFixture();
+  assert.match(swift, /var method: Vocabulary\.Method$/m);
+  assert.doesNotMatch(swift, /"pour_over"|"v60"/);
+  const drift = apiFixture();
+  drift.components.schemas.Method.enum = ['pour_over', 'v60', 'siphon'];
+  assert.throws(() => generateFixture(drift), /enum differs from methods.*not in the vocabulary: siphon/);
+  const unknown = apiFixture();
+  unknown.components.schemas.Method['x-vocabulary'] = 'gadgets';
+  assert.throws(() => generateFixture(unknown), /x-vocabulary gadgets is not a list/);
+});
+
+test('generate-ios-api: dose_dg stays an integer with a grams helper', () => {
+  const swift = generateFixture();
+  assert.match(swift, /typealias DoseDg = Int$/m);
+  assert.match(swift, /var doseDg: API\.DoseDg\?$/m);
+  assert.match(swift, /var doseGrams: Double\? \{/);
+  assert.match(swift, /API\.scaledInteger\(value, scale: 10\)/);
+});
+
+test('generate-ios-api: a list of objects decodes element by element', () => {
+  const swift = generateFixture();
+  assert.match(swift, /let itemsAttempts = try container\.decode\(\[API\.DecodingAttempt<API\.Thing>\]\.self, forKey: \.items\)/);
+  assert.match(swift, /self\.undecodableItems = API\.undecodableItems\(itemsAttempts, property: "items"\)/);
+  // Not encoded: CodingKeys hold only the contract's names.
+  const page = swift.slice(swift.indexOf('struct ThingPage'));
+  const keys = page.slice(page.indexOf('enum CodingKeys'), page.indexOf('}', page.indexOf('enum CodingKeys')));
+  assert.deepEqual([...keys.matchAll(/= "([a-z_]+)"/g)].map((m) => m[1]), ['items', 'next_cursor']);
+  // A struct without such a list keeps the synthesized Codable.
+  const thing = swift.slice(swift.indexOf('struct Thing:'), swift.indexOf('struct ThingPage'));
+  assert.doesNotMatch(thing, /init\(from decoder/);
+});
+
+test('generate-ios-api: properties that exclude each other become one enum', () => {
+  const doc = apiFixture();
+  doc.components.schemas.Thing.properties.temp_c = { type: 'integer' };
+  doc.components.schemas.Thing.properties.temp_special = { $ref: '#/components/schemas/Method' };
+  doc.components.schemas.Thing.not = { required: ['temp_c', 'temp_special'] };
+  assert.throws(() => generateFixture(doc), /`not` is supported only for the pairs in EXCLUSIVE_GROUPS/);
+  const groups = [{ schema: 'Thing', property: 'temp', type: 'Temp', cases: { temp_c: 'celsius', temp_special: 'special' } }];
+  const swift = generateFixture(doc, { ...apiOptions, groups });
+  assert.match(swift, /var temp: API\.Temp\?$/m);
+  assert.doesNotMatch(swift, /var tempC|var tempSpecial/);
+  assert.match(swift, /enum Temp: Hashable, Sendable \{\n {8}\/\/\/ `temp_c`\n {8}case celsius\(Int\)\n {8}\/\/\/ `temp_special`\n {8}case special\(Vocabulary\.Method\)\n {4}\}/);
+  assert.match(swift, /guard tempValues\.count <= 1 else \{/);
+  assert.match(swift, /case \.celsius\(let member\):\n\s+try container\.encode\(member, forKey: \.tempC\)/);
+  const wrongPair = structuredClone(doc);
+  wrongPair.components.schemas.Thing.not = { required: ['temp_c', 'note_count'] };
+  assert.throws(() => generateFixture(wrongPair, { ...apiOptions, groups }), /EXCLUSIVE_GROUPS expects/);
+  assert.throws(() => generateFixture(apiFixture(), { ...apiOptions, groups }), /EXCLUSIVE_GROUPS expects/);
+});
+
+test('generate-ios-api: shapes it cannot represent fail instead of being dropped', () => {
+  const cases = [
+    [(d) => { d.components.schemas.Thing.properties.x = { oneOf: [{ type: 'integer' }] }; }, /keyword oneOf is not supported/],
+    [(d) => { d.components.schemas.Thing.properties.x = { type: 'object', additionalProperties: false }; }, /inline object/],
+    [(d) => { d.components.schemas.Thing.properties.x = { type: 'string', enum: ['a'] }; }, /inline enum/],
+    [(d) => { delete d.components.schemas.Thing.additionalProperties; }, /additionalProperties: false/],
+    [(d) => { d.components.schemas.Thing.properties.x = { type: 'string', format: 'date' }; }, /inline enum or format/],
+    [(d) => { d.paths['/things'].post.responses[200] = d.paths['/things'].post.responses[201]; }, /exactly one 2xx/],
+    [(d) => { d.paths['/things'].post.requestBody.content = { 'text/csv': { schema: { type: 'string' } } }; }, /request body must be application\/json/],
+    [(d) => { d.components.schemas.Day = { type: 'string', format: 'date' }; d.components.schemas.Thing.properties.day = { $ref: '#/components/schemas/Day' }; }, /must be the component CalendarDate/],
+    [(d) => { d.components.schemas.Thing.properties.undecodable_items = { type: 'integer' }; }, /clashes with a generated member/],
+  ];
+  for (const [mutate, expected] of cases) {
+    const doc = apiFixture();
+    mutate(doc);
+    assert.throws(() => generateFixture(doc), expected);
+  }
+});
+
+test('generate-ios-api: the output is deterministic', () => {
+  assert.equal(generateFixture(), generateFixture());
+  const version = latestPublishedVersion();
+  const real = () => generateApiSwift({ doc: loadOpenApi(), vocabularyVersion: version, vocabularyFiles: loadVocabulary(version) });
+  assert.equal(real(), real());
+});
+
+/** The real contract, generated once for the structural tests below. */
+const realApi = () => {
+  const version = latestPublishedVersion();
+  const doc = loadOpenApi();
+  return { doc, swift: generateApiSwift({ doc, vocabularyVersion: version, vocabularyFiles: loadVocabulary(version) }), api: describeApi(doc, loadVocabulary(version)) };
+};
+
+test('generate-ios-api: the committed API.swift matches contracts/openapi.yaml', () => {
+  assert.equal(readFileSync(API_GENERATED_FILE, 'utf8').replace(/\r\n/g, '\n'), realApi().swift);
+});
+
+test('generate-ios-api: every user-facing route is covered, the health route is not', () => {
+  const { doc, api } = realApi();
+  const all = Object.values(doc.paths).flatMap((item) => Object.values(item).map((op) => op.operationId));
+  assert.deepEqual(api.operations.map((o) => o.operationId), all.filter((id) => id !== 'getHealth'));
+  assert.deepEqual(Object.keys(EXCLUDED_OPERATIONS), ['getHealth']);
+  const structs = api.structs.map((s) => s.name).sort();
+  assert.deepEqual(structs, [
+    'Bean', 'BeanAttributes', 'BeanCreate', 'Brew', 'BrewInput', 'BrewPage', 'BrewParameters', 'Consent', 'Intensities',
+    'LabelPhotoUpload', 'LabelPhotoUploadFields', 'LabelPhotoUploadForm', 'OpenFoodFactsProduct', 'Profile', 'Rating',
+    'Recipe', 'RecipeInput', 'RecipePage', 'Scores', 'ShelfEntry', 'ShelfEntryInput', 'ShelfEntryPage',
+  ]);
+  const ops = Object.fromEntries(api.operations.map((o) => [o.operationId, o]));
+  assert.equal(ops.getCatalogueImage.responseContentType, 'image/jpeg');
+  assert.equal(ops.exportData.responseContentType, 'text/csv');
+  assert.equal(ops.deleteAccount.successStatus, 204);
+  assert.equal(ops.completeLabelPhoto.successStatus, 204);
+});
+
+test('generate-ios-api: the real contract maps vocabulary, dose, dates and water temperature as required', () => {
+  const { swift } = realApi();
+  // Vocabulary lists exist once, in Vocabulary.swift: every raw-valued case in API.swift is an
+  // operationId, an HTTP method or a JSON property name (a CodingKey), never a list of ids.
+  const { api } = realApi();
+  const allowed = new Set([
+    ...api.operations.map((o) => o.operationId),
+    ...api.operations.map((o) => o.method.toUpperCase()),
+    ...Object.values(api.structs).flatMap((s) => s.fields.flatMap((f) => (f.group ? f.members.map((m) => m.json) : [f.json]))),
+  ]);
+  const rawCases = [...swift.matchAll(/^\s*case \S+ = "([^"]*)"$/gm)].map((m) => m[1]);
+  assert.ok(rawCases.length > 40);
+  assert.deepEqual(rawCases.filter((raw) => !allowed.has(raw)), []);
+  assert.doesNotMatch(swift, /enum (Method|MilkType|FlavourNote|Origin)\b/);
+  assert.match(swift, /var flavourNotes: \[Vocabulary\.FlavourNote\]\?$/m);
+  assert.match(swift, /var milk: Vocabulary\.MilkType\?$/m);
+  assert.match(swift, /var locale: VocabularyLanguage$/m);
+  assert.match(swift, /^extension VocabularyLanguage: Codable \{\}$/m);
+  assert.match(swift, /subscript\(criterion: Vocabulary\.Criterion\) -> API\.Score \{/);
+  // dose_dg (ADR 0004).
+  assert.match(swift, /typealias DoseDg = Int$/m);
+  assert.match(swift, /var doseGrams: Double\? \{/);
+  // Dates.
+  assert.match(swift, /var purchaseDate: API\.CalendarDate$/m);
+  assert.match(swift, /var roastDate: API\.CalendarDate\?$/m);
+  assert.match(swift, /var brewedAt: API\.Timestamp$/m);
+  assert.match(swift, /var expiresAt: API\.Timestamp$/m);
+  assert.match(swift, /struct CalendarDate: Codable, Hashable, Comparable, Sendable, CustomStringConvertible \{/);
+  assert.match(swift, /formatter\.formatOptions = \[\.withInternetDateTime, \.withFractionalSeconds\]/);
+  // Water temperature: one enum, never two stored properties.
+  const params = swift.slice(swift.indexOf('struct BrewParameters'), swift.indexOf('enum WaterTemperature'));
+  assert.match(params, /var waterTemperature: API\.WaterTemperature\?$/m);
+  assert.doesNotMatch(params, /var waterTemp(C|Special)\b/);
+  assert.match(params, /case waterTempC = "water_temp_c"/);
+  assert.match(params, /case waterTempSpecial = "water_temp_special"/);
+  assert.match(swift, /case celsius\(API\.WaterTempC\)\n.*\n\s+case special\(Vocabulary\.WaterTempSpecial\)/);
+  // Pages decode item by item.
+  for (const page of ['ShelfEntryPage', 'BrewPage', 'RecipePage']) {
+    assert.match(swift, new RegExp(`struct ${page}: APIObject \\{[\\s\\S]*?DecodingAttempt<API\\.[A-Za-z]+>[\\s\\S]*?\\n {4}\\}`), page);
+  }
+});
+
+test('generate-ios-api: the generated Swift is balanced and has no force unwraps or traps', () => {
+  const { swift } = realApi();
+  const { masked } = lexSwift(swift);
+  for (const [open, close] of [['{', '}'], ['(', ')'], ['[', ']']]) {
+    assert.equal(masked.split(open).length, masked.split(close).length, `${open}${close} unbalanced`);
+  }
+  assert.doesNotMatch(masked, /[A-Za-z0-9_)\]]!(?!=)/, 'force unwrap');
+  assert.doesNotMatch(masked, /\btry!|\bas!|fatalError|preconditionFailure/);
+  assert.doesNotMatch(masked, /\b(TextField|TextEditor|SecureField)\b/);
+  assert.deepEqual(literalUiStrings(swift), []);
 });
