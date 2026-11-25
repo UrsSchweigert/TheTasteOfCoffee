@@ -10,3 +10,10 @@
  * limit is stored within it.
  */
 export const MAX_CATALOGUE_IMAGE_BYTES = 1024 * 1024;
+
+/**
+ * Largest label photo upload accepted, in bytes: 8 MiB (ADR 0016). The POST
+ * policy enforces it at S3, and completion checks it again before and after
+ * reading. A 12-megapixel iPhone JPEG is typically 2 to 5 MB.
+ */
+export const MAX_LABEL_PHOTO_BYTES = 8 * 1024 * 1024;

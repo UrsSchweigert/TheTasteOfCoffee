@@ -55,3 +55,9 @@ The photo bucket already exists (`cupmark-<stage>-photos-<account>`, versioned, 
 - **Cost:** S3 requests and a few MB of storage per photo, pay-per-use. Within docs/06 (300 KB average label photo; the raw upload lives at most two days).
 - **Data:** the unstripped original exists for at most about two days, readable only by the API role. If D12 is read to forbid even that, revisit this ADR by adding the delete permissions and deleting the upload at completion.
 - **M1-T6:** must delete every version under `labels/<photo_id>.jpg` for the user's photos of unverified beans (D10), and their `uploads/` objects if they are still there. That needs the delete permissions M1-T6 already plans for.
+- **Refinements in M1-T4d (lead, ADR 0014; backend/README.md, Label photos):**
+  - a daily cap of 20 new uploads per user and UTC day (`USER#<sub>` / `PHOTO_UPLOADS#<day>`, the same atomic conditional counter as the Open Food Facts lookup cap); over it, 429;
+  - the upload is started by a pending item `USER#<sub>` / `PHOTO_PENDING#<photo_id>` (TTL 1 day); completion needs it, and a rejected photo (400) deletes it, so a later call is 404;
+  - the 3-photo cap is a counter `USER#<sub>` / `BEANPHOTOS#<bean_id>`, raised in the completion transaction on the condition that it is below 3, so parallel completions cannot pass it;
+  - a stripped `labels/` object whose transaction then fails is left unreferenced (an orphan, logged as such), as with the catalogue images;
+  - `@aws-sdk/s3-presigned-post` is bundled into the API function rather than taken from the Lambda runtime, because the runtime's copy could not be confirmed.

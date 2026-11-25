@@ -24,7 +24,7 @@ src/handlers/          one file per Lambda entry point (each exports `handler`):
 src/apple-idp/         the deploy-time custom resource for the Sign in with Apple provider (ADR 0015)
 src/api/               the API Lambda: router, resources, body and query parsing, signed cursors, configuration
 src/openfoodfacts/     the outbound Open Food Facts client, the cleaning of its text (M1-T4b), the image URL rules and the image copy (M1-T4c)
-src/images/            JPEG validation and metadata stripping, and the S3 store of catalogue images (M1-T4c)
+src/images/            JPEG validation and metadata stripping, the S3 store of catalogue images (M1-T4c) and of label photos (M1-T4d)
 src/vocabulary/        checks a request against the vocabulary version it names; method-dependent rules hook
 src/auth/user-id.ts    the caller's user id (`UserId`), from the token subject only
 src/repository/        the only module that talks to DynamoDB: key builders, typed reads and writes
@@ -70,7 +70,7 @@ When `contracts/openapi.yaml` changes, run `npm run generate` and commit the new
 
 ## The API Lambda
 
-`src/handlers/api.ts` is the one API function (docs/05, Components). `src/api/router.ts` holds a fixed route table and serves only the routes that have landed: list, create, get, replace and delete for `/shelf`, `/brews` and `/recipes` (task M1-T5), which share one implementation (`src/api/resources.ts`), the bean catalogue: `GET /barcodes/{barcode}`, `POST /beans` and `GET /beans/{bean_id}` (task M1-T4a, `src/api/catalogue.ts`), the Open Food Facts lookup `GET /barcodes/{barcode}/open_food_facts` (task M1-T4b, `src/api/open-food-facts.ts`) and the stored catalogue images `GET /catalogue_images/{image_id}` (task M1-T4c, `src/api/catalogue-images.ts`).
+`src/handlers/api.ts` is the one API function (docs/05, Components). `src/api/router.ts` holds a fixed route table and serves only the routes that have landed: list, create, get, replace and delete for `/shelf`, `/brews` and `/recipes` (task M1-T5), which share one implementation (`src/api/resources.ts`), the bean catalogue: `GET /barcodes/{barcode}`, `POST /beans` and `GET /beans/{bean_id}` (task M1-T4a, `src/api/catalogue.ts`), the Open Food Facts lookup `GET /barcodes/{barcode}/open_food_facts` (task M1-T4b, `src/api/open-food-facts.ts`) the stored catalogue images `GET /catalogue_images/{image_id}` (task M1-T4c, `src/api/catalogue-images.ts`) and the label photo upload `POST /beans/{bean_id}/label_photos` and `POST /label_photos/{photo_id}/complete` (task M1-T4d, `src/api/label-photos.ts`).
 
 For every request, in this order:
 
@@ -79,7 +79,7 @@ For every request, in this order:
 3. **Input**, 400 on any failure: path ids (including `{image_id}`) against the contract's `Id` pattern, a `{barcode}` against `Barcode` and its GS1 check digit; the query (only `cursor` and `limit`, each at most once, and only on lists; `limit` is checked against `LimitQuery` by hand because parameters are not generated, and a test compares the two); the body (below).
 4. **Operation.** Repository errors map to 404 (not in the caller's partition; a missing shelf entry; a missing bean, or a rejected one named newly by a shelf entry write, M1-T11), 409 (`DELETE /shelf/{id}` while brews reference it, ADR 0012; `PUT /shelf/{id}` that would change `bean_id` while brews reference it, D14; `POST /beans` for a barcode that already points to a bean, `BarcodeTakenError`, or with `open_food_facts_confirmed` but no cached hit, `OpenFoodFactsHitMissingError`) and 500 (including `CorruptItemError`). A write that raced another write (a changed condition, or a transaction cancelled with `TransactionConflict` by a concurrent one on the same shelf entry) is tried up to three times in all, with 10 to 100 ms of random wait.
 
-Every error has no body, so no error echoes input. One log line per request: `operation`, `status`, `request_id` and, on failure, the error class name (the Open Food Facts lookup adds a fixed `reason` code to its 503, and a fixed `image` code to a fetched answer; the catalogue image route adds `reason` `NoSuchKey` or `AccessDenied` to its 404). Never a body, header, query, path parameter (barcode or id), token, user id, Open Food Facts text or image URL.
+Every error has no body, so no error echoes input. One log line per request: `operation`, `status`, `request_id` and, on failure, the error class name (the Open Food Facts lookup adds a fixed `reason` code to its 503, and a fixed `image` code to a fetched answer; the catalogue image route adds `reason` `NoSuchKey` or `AccessDenied` to its 404; the label photo routes add the same to a missing upload, and `label_orphaned` when a stripped copy was written but not recorded). Never a body, header, query, path parameter (barcode or id), token, user id, photo or bean id, S3 key, bucket, presigned URL, policy, signature, credential, Open Food Facts text or image URL.
 
 ### Bean catalogue (M1-T4a)
 
@@ -150,6 +150,69 @@ ADR 0011, D12, docs/05 Barcode lookup ("Image copy"). Only for a hit just fetche
 
 The cache header: an id names one stored copy forever (new copies get new ULIDs and objects are never overwritten), so it is immutable for a year. It is `private`, not `public`, because the request carries an Authorization header and the route is meant for signed-in users only: the app's own URL cache may keep it, no shared cache or CDN may. 1 MiB is about 1.4 MB as base64, well under the 6 MB Lambda response limit.
 
+### Label photos (M1-T4d)
+
+ADR 0016, docs/04 F1 step 4, D10, D12. Two routes, user-scoped: every item is in the caller's partition, built from the token's subject only. No request field reaches S3 or a key: the photo id and the keys are server-chosen. Label photos are never served by the API; the operator's tooling reads `labels/` later.
+
+`POST /beans/{bean_id}/label_photos` (`createLabelPhotoUpload`), in this order:
+
+| Case | Answer |
+| --- | --- |
+| Bad `bean_id`, a query or a body | 400, nothing read |
+| No token | 401 |
+| No usable `PHOTO_BUCKET` | 500 `PhotoBucketNotConfigured` |
+| No such bean, or a rejected one | 404 |
+| A verified bean | 409 |
+| The caller already has 3 completed photos for the bean (`BEANPHOTOS#<beanId>`; pending uploads do not count) | 409 |
+| The caller's 20 new uploads for the UTC day are used up | 429 (only requests that got this far count) |
+| Otherwise | 201 `LabelPhotoUpload` |
+
+The 201 writes the pending item `USER#<sub>` / `PHOTO_PENDING#<photoId>` (bean id, `expires_at` 1 day ahead, TTL), then presigns with `@aws-sdk/s3-presigned-post`:
+
+- key `uploads/<photoId>.jpg`, field `Content-Type: image/jpeg`, `Expires` 600 s;
+- policy conditions: `["eq", "$key", <key>]`, `["content-length-range", 1, 8388608]`, `["eq", "$Content-Type", "image/jpeg"]`, `["eq", "$bucket", <bucket>]` (the presigner adds the exact-match form of every field as well).
+
+The SDK's field names are mapped to the contract's (`key`, `bucket`, `Content-Type` to `content_type`, `Policy` to `policy`, `X-Amz-Algorithm`, `X-Amz-Credential`, `X-Amz-Date`, `X-Amz-Security-Token` and `X-Amz-Signature` to `x_amz_*`). The answer is then checked against the generated `LabelPhotoUpload` schema, and the key, the bucket and the URL (`https://<bucket>.s3.eu-central-1.amazonaws.com/`) against what was signed. Any mismatch, including a field the mapping does not know, is 500 `LabelPhotoUploadInvalid`; a failure to sign is 500 with the error class name. `expires_at` is the server's clock at signing plus 600 s.
+
+`POST /label_photos/{photo_id}/complete` (`completeLabelPhoto`), in this order:
+
+| Case | Answer |
+| --- | --- |
+| Bad `photo_id`, a query or a body | 400, nothing read |
+| No token | 401 |
+| No usable `PHOTO_BUCKET` | 500 |
+| No pending item of the caller, and no completed `PHOTO#<photoId>` of the caller | 404 (unknown, another caller's, expired, or rejected before: all look the same) |
+| No pending item, but the caller completed this photo | 409 |
+| The bean is no longer unverified, or the caller has 3 photos for it | 409, before S3 is read |
+| No upload (`NoSuchKey`, or `AccessDenied` without `s3:ListBucket`) | 404; the pending item stays, so the app may upload and call again |
+| Over 8 MiB (`ContentLength`, checked before the body is read, then the byte count), or not a JPEG `jpeg.ts` accepts (baseline or progressive, 8-bit, at most 4096 px a side) | 400; the pending item is deleted, so every later call is 404 |
+| S3 read or write error | 500; nothing recorded, the pending item stays |
+| Otherwise | 204 |
+
+The stripped bytes (`stripJpeg`: EXIF, GPS, XMP, ICC, IPTC, comments, thumbnails and trailing data dropped) are written to `labels/<photoId>.jpg` with `ContentType: image/jpeg` and no metadata. Then one transaction (`Repository.completeLabelPhoto`):
+
+1. delete the pending item, if it exists, names this bean and has not expired;
+2. put `USER#<sub>` / `PHOTO#<photoId>` {photoId, beanId, createdAt};
+3. put `BEAN#<beanId>` / `PHOTO#<photoId>` {photoId, createdAt}, with no user id (D10: verification can drop the link by deleting the user item alone);
+4. `ADD photos 1` on `USER#<sub>` / `BEANPHOTOS#<beanId>`, if `photos` is below 3, so parallel completions cannot pass the cap (tested with 4 at once on DynamoDB Local);
+5. a ConditionCheck that the bean's `META` still has status `unverified`.
+
+A failed condition is 409 (already completed, bean reviewed meanwhile, cap reached) or 404 (pending item gone); a transaction cancelled by a concurrent one is retried like other writes. If the transaction fails after the S3 write, the `labels/` object is an orphan: no item references it, the operator's tooling follows only `BEAN#` / `PHOTO#` items, and the log says `reason: label_orphaned`. As with catalogue images, that is rare and accepted; an operator can sweep unreferenced objects. The API deletes nothing in S3: the raw upload under `uploads/` expires by the bucket's lifecycle rule (1 day, its noncurrent version 1 day later).
+
+Decisions (task M1-T4d):
+
+- **Daily cap of 20 new uploads per user and UTC day** (`LABEL_PHOTO_DAILY_CAP`, a constant, not configuration): F1 needs at most 3 per bean, and 20 leaves room for a few beans and retries while bounding pending items and S3 writes. Counter `USER#<sub>` / `PHOTO_UPLOADS#<YYYY-MM-DD>`, attribute `uploads`, the same atomic conditional `ADD` as the lookup cap (`countLookup`), `expires_at` the start of the day plus 2 days.
+- **The 3-photo cap is a counter**, `BEANPHOTOS#<beanId>`, not a count of `PHOTO#` items: a condition can only test one item, and the counter makes the cap atomic. It never goes down (there is no route that deletes a label photo).
+- **Pre-checks at completion.** The bean status and the counter are read before any S3 work, so the common refusals leave no orphan and do not consume the pending item; the transaction checks both again.
+- **Without a photo bucket both routes answer 500** (the contract declares no 503 for them), with `PhotoBucketNotConfigured` in the log.
+
+**For M1-T6 (export and account deletion).** Everything label-photo-related for a user is in `USER#<sub>`:
+
+- export: the `PHOTO#` items (photo id, bean id, creation time);
+- deletion: the `PHOTO#`, `PHOTO_PENDING#`, `BEANPHOTOS#` and `PHOTO_UPLOADS#` items. For each `PHOTO#` item, delete the bean's `BEAN#<beanId>` / `PHOTO#<photoId>` item and every version of `labels/<photoId>.jpg` if the bean is still unverified (D10); for a verified bean, keep both and delete only the user item, which is the only link to the user. For each `PHOTO_PENDING#` and `PHOTO#` item, delete every version of `uploads/<photoId>.jpg` if it is still there. The delete permissions are M1-T6's.
+
+**Dependency and bundling.** `@aws-sdk/s3-presigned-post` 3.1177.0 (Apache-2.0, pinned exact like the other SDK packages; it passes `scripts/check-licences.mjs`). It is **bundled**, not taken from the Lambda runtime: whether the `nodejs22.x` runtime ships it could not be confirmed from the build environment (the base image could not be pulled), and a missing module would fail every route at cold start. `scripts/build.ts` keeps every other `@aws-sdk/*` import external, including its `@aws-sdk/client-s3` import, so it signs with the runtime's S3Client; it bundles the helpers it needs from `@aws-sdk/core` and `@smithy/*` (the API bundle grows by about 17 KB in all, label photo code included). The build prefers ES module entries (`mainFields: ['module', 'main']`), because the package's CommonJS entry would `require()` the external client-s3, which throws in an ESM bundle; a guard in the build fails on any `require()` of an external package. The other bundles are unchanged byte for byte.
+
 ### Body validation
 
 `parseBody` in `src/api/http.ts`: JSON content type; at most 16 KiB (checked on the encoded size before base64 decoding, and again after); valid UTF-8; `JSON.parse`; the generated zod schema (unknown properties rejected); then `conformsToVocabulary` against the `vocabulary_version` of the body; then the method-dependent rules.
@@ -169,10 +232,12 @@ The contract's `Cursor` is HMAC-signed (`src/api/cursor.ts`): `base64url(HMAC-SH
 | `TABLE_NAME` | `cupmark-<stage>-main`. Missing: every request is 500. |
 | `OFF_CONTACT` | The operator mailbox named in the Open Food Facts User-Agent, an e-mail address (for example a project ops mailbox). Plain configuration, not a secret, never in the repo and not in Secrets Manager. Missing or not an e-mail address: the lookup answers from the cache only, and is 503 with no outbound call otherwise. |
 | `OFF_LOOKUP_CAP` | Open Food Facts fetches per user and UTC day. Optional, default 50; a plain integer from 0 (no fetches) to 10000. Anything else: the lookup is 503 before it counts or fetches. |
-| `PHOTO_BUCKET` | The photo bucket's name (`cupmark-<stage>-photos-<account>`), for the catalogue image copies under `catalogue/` (M1-T4c). Must start with `cupmark-` (invariant 9). Missing or another name: hits are cached without an image, and `GET /catalogue_images/{image_id}` is 404. |
+| `PHOTO_BUCKET` | The photo bucket's name (`cupmark-<stage>-photos-<account>`), for the catalogue image copies under `catalogue/` (M1-T4c) and the label photos under `uploads/` and `labels/` (M1-T4d). Must start with `cupmark-` (invariant 9). Missing or another name: hits are cached without an image, `GET /catalogue_images/{image_id}` is 404, and both label photo routes are 500. |
 | `CURSOR_KEY_PARAMETER` | Name of a Parameter Store **SecureString** under `/cupmark/` (for example `/cupmark/<stage>/cursor-key`), holding standard base64 of at least 32 random bytes (for example `openssl rand -base64 32`). Missing, unreadable, not a SecureString or too short: list routes are 500 and no cursor is accepted or issued (fail closed); other routes work. A failed read is retried after 60 s at the earliest. |
 
 **Follow-up for infra (M1-T2, `infra/src/api.ts`):** `OFF_CONTACT` and `OFF_LOOKUP_CAP` are not set by the stack yet, so a deployed lookup answers 503 for every uncached barcode until they are. `PHOTO_BUCKET` is not set yet either (M1-T4c): until it is, no image is copied. The role already has `s3:GetObject` and `s3:PutObject` on `catalogue/*`; without `s3:ListBucket` a missing image reads as `AccessDenied`, which the route also answers as 404. The API function needs outbound HTTPS to `world.openfoodfacts.org` and `images.openfoodfacts.org` (it is not in a VPC, so it has it; no NAT gateway). Its 10 s timeout covers the 3 s lookup, the 2.5 s image download and the 2 s S3 write.
+
+**Label photos (M1-T4d).** The API role needs, on the photo bucket: `s3:PutObject` on `uploads/*` (S3 checks the signer's permission when the app's POST arrives, so this is what makes the presigned POST work), `s3:GetObject` on `uploads/*` and `s3:PutObject` on `labels/*`. Nothing else: no delete, no `s3:ListBucket` (a missing upload then reads as `AccessDenied`, answered 404 like `NoSuchKey`), no `s3:PutObjectTagging` or ACL actions (the POST sets neither). The bucket needs the lifecycle rule that expires `uploads/` after 1 day (ADR 0016). The completion reads up to 8 MiB and writes the stripped copy within the function's 10 s timeout (4 s and 3 s deadlines).
 
 The API role needs `ssm:GetParameter` on exactly that parameter's ARN; the AWS-managed key `alias/aws/ssm` needs no extra grant. The key is read once per cold start and kept in memory only (ADR 0013). Its value is created by a human and never passes through the repo or CI. Tests generate their own key.
 

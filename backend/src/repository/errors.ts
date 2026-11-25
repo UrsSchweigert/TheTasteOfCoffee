@@ -77,3 +77,13 @@ export class ShelfEntryBeanLockedError extends RepositoryError {
 export class OpenFoodFactsHitMissingError extends RepositoryError {
   public override readonly name = 'OpenFoodFactsHitMissingError';
 }
+
+/** A label photo completion for a photo that is already completed (API: 409). */
+export class LabelPhotoCompletedError extends RepositoryError {
+  public override readonly name = 'LabelPhotoCompletedError';
+}
+
+/** The caller already has the most label photos allowed for the bean (API: 409; ADR 0016). */
+export class LabelPhotoCapReachedError extends RepositoryError {
+  public override readonly name = 'LabelPhotoCapReachedError';
+}

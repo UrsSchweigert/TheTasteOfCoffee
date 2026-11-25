@@ -14,14 +14,19 @@ import {
   beanMetaKey,
   brewKey,
   brewRefKey,
+  beanLabelPhotoKey,
   brewSortKey,
   fixedWidthUtc,
+  labelPhotoCountKey,
+  labelPhotoKey,
+  labelPhotoUploadCounterKey,
   lookupCounterKey,
   openFoodFactsCacheKey,
   parseBrewSortKey,
   parseRecipeSortKey,
   parseReviewQueueSortKey,
   parseShelfSortKey,
+  pendingLabelPhotoKey,
   profileKey,
   rankingKey,
   raterMarkerKey,
@@ -341,5 +346,45 @@ describe('sort key parsers', () => {
     }
     expect(parseRecipeSortKey(`SHELF#${ID}`)).toBeUndefined();
     expect(parseReviewQueueSortKey(`2026-02-30T09:15:30.000Z#${BEAN}`)).toBeUndefined();
+  });
+});
+
+describe('label photo keys (M1-T4d, ADR 0016)', () => {
+  it('user-side items in the caller partition, the bean item without a user id', () => {
+    expect(labelPhotoKey(USER, ID)).toEqual({ pk: `USER#${SUB}`, sk: `PHOTO#${ID}` });
+    expect(pendingLabelPhotoKey(USER, ID)).toEqual({ pk: `USER#${SUB}`, sk: `PHOTO_PENDING#${ID}` });
+    expect(labelPhotoCountKey(USER, ID)).toEqual({ pk: `USER#${SUB}`, sk: `BEANPHOTOS#${ID}` });
+    expect(labelPhotoUploadCounterKey(USER, '2026-11-25')).toEqual({ pk: `USER#${SUB}`, sk: 'PHOTO_UPLOADS#2026-11-25' });
+    const beanPhoto = beanLabelPhotoKey(ID, ID);
+    expect(beanPhoto).toEqual({ pk: `BEAN#${ID}`, sk: `PHOTO#${ID}` });
+    expect(JSON.stringify(beanPhoto)).not.toContain(SUB);
+  });
+
+  it('the prefixes do not overlap: a begins_with on PHOTO# finds only completed photos', () => {
+    for (const sk of [pendingLabelPhotoKey(USER, ID).sk, labelPhotoUploadCounterKey(USER, '2026-11-25').sk, labelPhotoCountKey(USER, ID).sk]) {
+      expect(sk.startsWith('PHOTO#')).toBe(false);
+    }
+  });
+
+  it.each(['', ID.toLowerCase(), `${ID}#x`, ID.slice(1), `../${ID}`])('refuses the id %s', (bad) => {
+    for (const build of [
+      () => labelPhotoKey(USER, bad),
+      () => pendingLabelPhotoKey(USER, bad),
+      () => labelPhotoCountKey(USER, bad),
+      () => beanLabelPhotoKey(bad, ID),
+      () => beanLabelPhotoKey(ID, bad),
+    ]) {
+      expect(build).toThrow(InvalidKeyError);
+    }
+  });
+
+  it('refuses a bad day and anything but a UserId', () => {
+    expect(() => labelPhotoUploadCounterKey(USER, '2026-02-30')).toThrow(InvalidKeyError);
+    expect(() => labelPhotoUploadCounterKey(USER, '2026-11-25#x')).toThrow(InvalidKeyError);
+    const fake = { value: SUB } as unknown as UserId;
+    expect(() => labelPhotoKey(fake, ID)).toThrow(InvalidKeyError);
+    expect(() => pendingLabelPhotoKey(fake, ID)).toThrow(InvalidKeyError);
+    expect(() => labelPhotoCountKey(fake, ID)).toThrow(InvalidKeyError);
+    expect(() => labelPhotoUploadCounterKey(fake, '2026-11-25')).toThrow(InvalidKeyError);
   });
 });

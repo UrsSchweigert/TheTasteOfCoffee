@@ -4,8 +4,10 @@
 // catalogue: GET /barcodes/{barcode}, POST /beans, GET /beans/{bean_id}
 // (task M1-T4a, catalogue.ts), the Open Food Facts lookup
 // GET /barcodes/{barcode}/open_food_facts (task M1-T4b, open-food-facts.ts)
-// and the stored catalogue images GET /catalogue_images/{image_id} (task
-// M1-T4c, catalogue-images.ts).
+// the stored catalogue images GET /catalogue_images/{image_id} (task
+// M1-T4c, catalogue-images.ts) and the label photo upload
+// POST /beans/{bean_id}/label_photos and
+// POST /label_photos/{photo_id}/complete (task M1-T4d, label-photos.ts).
 //
 // Order of checks for every request:
 // 1. Route: method and `rawPath` against the table. No match is 404 with no
@@ -29,13 +31,17 @@
 //    The Open Food Facts lookup answers 404, 409, 429 and 503 itself
 //    (open-food-facts.ts) and logs a fixed error name and, for 503, a reason
 //    code; a fetched hit also logs a fixed `image` code (stored, none, or why
-//    the copy failed). The catalogue image route answers 404 and 500 itself.
+//    the copy failed). The catalogue image route answers 404 and 500 itself,
+//    and the label photo routes answer 404, 409, 429, 400 and 500 themselves
+//    (label-photos.ts), with a fixed error code and, for a missing upload or
+//    an orphaned label object, a fixed reason code.
 //
 // Matching uses `rawPath`, so the API must use the `$default` stage (no stage
 // prefix in the path). Every response except a 2xx with content has no body.
 // One log line per request: operation, status, request id and, on failure,
 // the error class name (and a fixed reason code where there is one). Never a
-// body, token, header, query, barcode, image id, image URL, user id or Open
+// body, token, header, query, barcode, image id, image URL, user id, photo
+// id, bean id, S3 key, presigned URL, policy, signature, credential or Open
 // Food Facts text.
 import type { z } from 'zod';
 import type { UserId } from '../auth/user-id.ts';
@@ -57,6 +63,8 @@ import {
 import type { CatalogueImageStore } from '../images/catalogue-store.ts';
 import { BarcodeParameterSchema, createBean, getBean, lookupBarcode, parseBeanCreate } from './catalogue.ts';
 import { getCatalogueImage } from './catalogue-images.ts';
+import { completeLabelPhoto, createLabelPhotoUpload } from './label-photos.ts';
+import type { LabelPhotoConfig, LabelPhotoOutcome } from './label-photos.ts';
 import { lookupOpenFoodFacts } from './open-food-facts.ts';
 import type { LookupResult, OpenFoodFactsLookupConfig } from './open-food-facts.ts';
 import type { CursorSigner } from './cursor.ts';
@@ -84,6 +92,8 @@ export interface ApiDependencies {
   readonly openFoodFacts?: OpenFoodFactsLookupConfig;
   /** The catalogue image store in the photo bucket; absent without a usable PHOTO_BUCKET (no copies, GET is 404). */
   readonly catalogueImages?: CatalogueImageStore;
+  /** The label photo store in the photo bucket and its daily cap; absent without a usable PHOTO_BUCKET (both routes 500). */
+  readonly labelPhotos?: LabelPhotoConfig;
   readonly log?: (entry: LogEntry) => void;
   /** Wait before retry number `retry` (1, 2) of a write that raced; for tests. Default: 10 to 50 ms, then 20 to 100 ms. */
   readonly retryDelayMs?: (retry: number) => number;
@@ -341,12 +351,47 @@ const catalogueRoutes: Route[] = [
   },
 ];
 
+async function labelPhotoOutcome(operation: () => Promise<LabelPhotoOutcome>): Promise<Outcome> {
+  try {
+    return await operation();
+  } catch (error) {
+    return outcomeOf(error);
+  }
+}
+
+/** The label photo upload (M1-T4d, ADR 0016). User-scoped: every item is in the caller's partition. */
+const labelPhotoRoutes: Route[] = [
+  {
+    method: 'POST',
+    segments: ['', 'beans', '{bean_id}', 'label_photos'],
+    parameters: { bean_id: IdSchema },
+    operation: 'createLabelPhotoUpload',
+    handle: async ({ event, user, params, deps }) => {
+      if (!noQuery(event) || !hasNoBody(event)) return BAD_REQUEST;
+      return labelPhotoOutcome(() => createLabelPhotoUpload(deps.store, deps.labelPhotos, user, params.bean_id ?? ''));
+    },
+  },
+  {
+    method: 'POST',
+    segments: ['', 'label_photos', '{photo_id}', 'complete'],
+    // PhotoIdPath: the contract's `Id`.
+    parameters: { photo_id: IdSchema },
+    operation: 'completeLabelPhoto',
+    handle: async ({ event, user, params, deps }) => {
+      if (!noQuery(event) || !hasNoBody(event)) return BAD_REQUEST;
+      const retry = <T>(call: () => Promise<T>): Promise<T> => attempt(call, deps.retryDelayMs ?? jitteredDelay);
+      return labelPhotoOutcome(() => completeLabelPhoto(deps.store, deps.labelPhotos, user, params.photo_id ?? '', retry));
+    },
+  },
+];
+
 /** Every route this Lambda serves. */
 export const ROUTES: readonly Route[] = [
   ...routesOf(shelfResource),
   ...routesOf(brewResource),
   ...routesOf(recipeResource),
   ...catalogueRoutes,
+  ...labelPhotoRoutes,
 ];
 
 const PARAMETER = /^\{([a-z][a-z0-9_]*)\}$/;

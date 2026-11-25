@@ -44,6 +44,10 @@ export const PREFIX = {
   rater: 'RATER#',
   ranking: 'RANK#',
   lookups: 'LOOKUPS#',
+  labelPhoto: 'PHOTO#',
+  labelPhotoPending: 'PHOTO_PENDING#',
+  labelPhotoCount: 'BEANPHOTOS#',
+  labelPhotoUploads: 'PHOTO_UPLOADS#',
 } as const;
 
 export const SORT_KEY = {
@@ -162,6 +166,31 @@ export function lookupCounterKey(user: UserId, utcDay: string): Key {
   return { pk: userPk(user), sk: `${PREFIX.lookups}${calendarDate(utcDay, 'lookup day')}` };
 }
 
+// ---- label photos (M1-T4d; ADR 0016) ----
+// Every user-side item of a label photo is in the uploader's partition, so
+// export (M1-T6) finds the photos under `PHOTO#` and account deletion under
+// `PHOTO#`, `PHOTO_PENDING#`, `BEANPHOTOS#` and `PHOTO_UPLOADS#`.
+
+/** `PHOTO#<photoId>`: a completed label photo of the caller, holding its bean id. */
+export function labelPhotoKey(user: UserId, photoId: string): Key {
+  return { pk: userPk(user), sk: `${PREFIX.labelPhoto}${id(photoId, 'photo id')}` };
+}
+
+/** `PHOTO_PENDING#<photoId>`: an upload the caller started and has not completed; TTL `expires_at`. */
+export function pendingLabelPhotoKey(user: UserId, photoId: string): Key {
+  return { pk: userPk(user), sk: `${PREFIX.labelPhotoPending}${id(photoId, 'photo id')}` };
+}
+
+/** `BEANPHOTOS#<beanId>`: how many label photos the caller completed for the bean (at most 3). */
+export function labelPhotoCountKey(user: UserId, beanId: string): Key {
+  return { pk: userPk(user), sk: `${PREFIX.labelPhotoCount}${id(beanId, 'bean id')}` };
+}
+
+/** `PHOTO_UPLOADS#<YYYY-MM-DD>`: the label photo uploads the caller started that UTC day; TTL `expires_at`. */
+export function labelPhotoUploadCounterKey(user: UserId, utcDay: string): Key {
+  return { pk: userPk(user), sk: `${PREFIX.labelPhotoUploads}${calendarDate(utcDay, 'upload day')}` };
+}
+
 // ---- bean catalogue ----
 
 export function beanPk(beanId: string): string {
@@ -170,6 +199,11 @@ export function beanPk(beanId: string): string {
 
 export function beanMetaKey(beanId: string): Key {
   return { pk: beanPk(beanId), sk: SORT_KEY.beanMeta };
+}
+
+/** `BEAN#<beanId>` / `PHOTO#<photoId>`: a label photo of the bean for the operator. No user id (ADR 0016, D10). */
+export function beanLabelPhotoKey(beanId: string, photoId: string): Key {
+  return { pk: beanPk(beanId), sk: `${PREFIX.labelPhoto}${id(photoId, 'photo id')}` };
 }
 
 /** infra/README.md, Index `gsi1`: `REVIEW#UNVERIFIED` and `<createdAt UTC>#<beanId>`. */
