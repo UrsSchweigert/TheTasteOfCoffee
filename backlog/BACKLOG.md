@@ -109,7 +109,7 @@ Goal: the repo builds, tests and checks itself; the shared contract exists.
 
 
 ### M0-T10 Licence allowlist in CI
-- status: todo
+- status: done
 - owner: infra-engineer
 - depends: M0-T8
 - acceptance:
