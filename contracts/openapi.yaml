@@ -2,15 +2,18 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Cupmark API
-  version: 0.1.0
+  version: 0.2.0
   description: >-
-    Free-tier API of Cupmark (task M0-T2). There is no free text: every string
-    is an id from the closed vocabulary in contracts/vocabulary, a
-    server-generated id, a digit-only barcode or an ISO date. The user is
-    always the subject of the bearer token; no path, query or body field names
-    a user. Paid and aggregate routes are not part of this document yet.
-    Rules for this file, including the x-vocabulary extensions, are in
-    contracts/README.md.
+    Free-tier API of Cupmark (tasks M0-T2 and M1-T8). No request carries free
+    text: every string a client sends is an id from the closed vocabulary in
+    contracts/vocabulary, a server-generated id, a digit-only barcode or an
+    ISO date. The only text is response-only: the product name and brand the
+    server fetched from Open Food Facts, length-limited and marked
+    x-free-text-from (ADR 0005). The user is always the subject of the bearer
+    token; no path, query or body field names a user. Every route needs the
+    token except GET /health (ADR 0007). Paid and aggregate routes are not
+    part of this document yet. Rules for this file, including the x-vocabulary
+    extensions and both exceptions, are in contracts/README.md.
 
 security:
   - bearerAuth: []
@@ -34,9 +37,46 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
-          description: Unknown barcode. The app then queries Open Food Facts from the device (docs/05-system-design.md, Barcode lookup).
+          description: >-
+            Unknown barcode. The app then asks GET
+            /barcodes/{barcode}/open_food_facts (docs/05-system-design.md,
+            Barcode lookup).
         '429':
           $ref: '#/components/responses/TooManyRequests'
+
+  /barcodes/{barcode}/open_food_facts:
+    get:
+      operationId: lookupOpenFoodFacts
+      summary: The Open Food Facts product for a barcode that is not in the catalogue, fetched by the server.
+      description: >-
+        The server answers from its Open Food Facts cache in the catalogue, so
+        each barcode is fetched from Open Food Facts at most once; on a miss
+        it fetches the product with its own User-Agent and caches the result,
+        a hit or a miss. Each call counts against the caller's daily lookup
+        cap. The app shows the hit for confirmation; confirming it is POST
+        /beans with open_food_facts_confirmed. Nothing is stored in the
+        catalogue until then (docs/05-system-design.md, Barcode lookup).
+      parameters:
+        - $ref: '#/components/parameters/BarcodePath'
+      responses:
+        '200':
+          description: Open Food Facts has the product.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenFoodFactsProduct'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Open Food Facts has no product for this barcode, or none with a name, brand or front image.
+        '409':
+          description: The barcode already points to a bean. Use GET /barcodes/{barcode}.
+        '429':
+          description: Throttled, or the caller's daily lookup cap is used up.
+        '503':
+          description: Open Food Facts could not be reached. Nothing was cached; try again later.
 
   /beans:
     post:
@@ -60,7 +100,11 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '409':
-          description: The barcode already points to a bean. Look it up instead.
+          description: >-
+            The barcode already points to a bean (look it up instead), or
+            open_food_facts_confirmed is set but the server holds no Open Food
+            Facts hit for the barcode (look it up with GET
+            /barcodes/{barcode}/open_food_facts first).
         '429':
           $ref: '#/components/responses/TooManyRequests'
 
@@ -444,6 +488,26 @@ paths:
         '429':
           $ref: '#/components/responses/TooManyRequests'
 
+  /health:
+    get:
+      operationId: getHealth
+      summary: Liveness check for the deploy smoke test. Needs no token (ADR 0007).
+      description: >-
+        The one route without the bearer token. It takes no input and returns
+        only the fixed body {"status":"ok"}: no version, environment or other
+        data. It is throttled like every other route. The lint allows exactly
+        this operation without the token (contracts/README.md, Exceptions).
+      security: []
+      responses:
+        '200':
+          description: The API is reachable and routed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
   /export:
     get:
       operationId: exportData
@@ -579,6 +643,17 @@ components:
       minimum: 1
       maximum: 1
       x-vocabulary-version: true
+
+    HealthStatus:
+      description: The fixed body of GET /health, {"status":"ok"} (ADR 0007). Used nowhere else.
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+          x-health-status: true
 
     Locale:
       type: string
@@ -768,9 +843,11 @@ components:
 
     BeanAttributes:
       description: >-
-        Catalogue attributes picked from the vocabulary. Roaster, origin and
-        variety are not in vocabulary v1, so they cannot be sent until a
-        version with those lists exists (open question D8).
+        Catalogue attributes picked from the vocabulary. Origin and variety
+        join from vocabulary v2 (ADR 0006); they are added here when v2 is
+        published, and a request that uses them must then send
+        vocabulary_version 2 or later. Roaster is not a pick list: it comes
+        from the Open Food Facts brand and the operator (ADR 0006).
       type: object
       additionalProperties: false
       properties:
@@ -783,11 +860,10 @@ components:
       description: >-
         Creates an unverified bean. Every value in attributes is stored with
         source "user". open_food_facts_confirmed records that the user
-        confirmed an Open Food Facts hit for the barcode; it needs the
-        barcode. Open Food Facts name and brand are not sent: whether such
-        text may be stored and returned is open question D7, and roaster,
-        origin and variety wait for vocabulary lists (open question D8).
-        See docs/07-open-questions.md.
+        confirmed the Open Food Facts hit for the barcode; it needs the
+        barcode. The client never sends Open Food Facts text: the server
+        copies name, brand and image reference from its own cached lookup
+        (ADR 0005), so this body holds only ids, a barcode and a boolean.
       type: object
       additionalProperties: false
       required: [vocabulary_version, attributes]
@@ -823,13 +899,49 @@ components:
         open_food_facts_match:
           description: >-
             True if a user confirmed an Open Food Facts hit for this barcode
-            (attribution required, ODbL). Whether Open Food Facts text may be
-            returned is open question D7.
+            (attribution required, ODbL).
           type: boolean
+        open_food_facts:
+          $ref: '#/components/schemas/OpenFoodFactsProduct'
         picked_attributes:
           $ref: '#/components/schemas/BeanAttributes'
         operator_attributes:
           $ref: '#/components/schemas/BeanAttributes'
+
+    OpenFoodFactsProduct:
+      description: >-
+        What the server fetched from Open Food Facts for a barcode (ADR 0005).
+        Response-only: no request schema may reach it, which the lint checks.
+        The source of every field is Open Food Facts, which is why the group
+        has that name (D5, ODbL attribution); the operator's attributes are
+        kept apart in operator_attributes. name and brand are untrusted text:
+        trimmed and cut to maxLength code points by the server when stored,
+        shown as plain text only (never as markup), and never logged. A field
+        Open Food Facts does not have is left out.
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          description: Open Food Facts product_name, in the language Open Food Facts returned.
+          type: string
+          minLength: 1
+          maxLength: 150
+          readOnly: true
+          x-free-text-from: open_food_facts
+        brand:
+          description: The first entry of the Open Food Facts brands field. The operator curates roasters from it (ADR 0006).
+          type: string
+          minLength: 1
+          maxLength: 100
+          readOnly: true
+          x-free-text-from: open_food_facts
+        image_ref:
+          description: >-
+            URL of the selected front image on the Open Food Facts image
+            server, for the 13-digit barcode, split 3/3/3/4 as Open Food Facts
+            stores it. Not free text: anything else is dropped by the server.
+          type: string
+          pattern: '^https://images\.openfoodfacts\.org/images/products/[0-9]{3}/[0-9]{3}/[0-9]{3}/[0-9]{4}/front_[a-z]{2}\.[0-9]{1,6}\.(100|200|400|full)\.jpg$'
 
     # ---- Shelf (F1 step 5) ----
 

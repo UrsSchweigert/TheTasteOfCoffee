@@ -2,6 +2,17 @@
 
 A published version is immutable. Every change to a list goes into the next `v<N>/` directory and is recorded here. Removing or renaming an id is a breaking change and needs an ADR in `docs/decisions/`.
 
+## v2 (draft, awaiting the owner's approval)
+
+Task M1-T8, ADR 0006 (D8). Not published and not locked: ids may still change until the owner approves the lists. v1 stays the latest published version, and the API, the backend and the app keep using it until v2 is published.
+
+- Copied from v1: every file, with `"version": 2` and `"status": "draft"`. No id, value or range of v1 was changed, removed or renamed.
+- Added to `bean.json`: `origins`, 50 ids (47 producing countries and regions, then `blend`, `other`, `unknown`), and `varieties`, 28 ids (25 cultivars and groups, then `mixed`, `other`, `unknown`). Labels in `en.json` and `de.json`.
+- `schema/bean.schema.json` requires both lists from version 2 on and forbids them in version 1.
+- Not breaking: ids were only added.
+- Proposed by the agent; for the owner to confirm: the choice of origins, including the regions `hawaii`, `sumatra`, `java` and `sulawesi` next to the country `indonesia` (pick the island when the bag names it); `blend` for multi-origin coffees, since origin is a single pick; `robusta` as a variety entry, though it is a species; `mixed` for bags that name several varieties.
+- Still not in the vocabulary: roasters (from the Open Food Facts brand, ADR 0006), grinders, other equipment.
+
 ## 2026-11-25: v1 milk list extended before release
 
 - Exception to immutability, approved by the owner (ADR 0003). v1 was marked published only on an unmerged branch, and nothing used it yet.

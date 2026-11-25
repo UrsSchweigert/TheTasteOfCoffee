@@ -1,5 +1,6 @@
 import type { APIGatewayProxyEventV2 } from 'aws-lambda';
 import { describe, expect, it } from 'vitest';
+import { HealthStatusSchema } from '../src/generated/contract.ts';
 import { handler } from '../src/handlers/health.ts';
 
 function event(): APIGatewayProxyEventV2 {
@@ -31,6 +32,7 @@ describe('health handler', () => {
     expect(result.statusCode).toBe(200);
     expect(result.headers).toEqual({ 'content-type': 'application/json', 'cache-control': 'no-store' });
     expect(result.body).toBe('{"status":"ok"}');
+    expect(HealthStatusSchema.safeParse(JSON.parse(result.body ?? '')).success).toBe(true);
   });
 
   it('puts nothing from the environment into the body', async () => {

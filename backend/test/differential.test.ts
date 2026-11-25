@@ -26,6 +26,7 @@ import {
   validBeanCreate,
   validBrewInput,
   validBrewPage,
+  validHealthStatus,
   validProfile,
   validRecipeInput,
   validRecipePage,
@@ -55,6 +56,8 @@ const VOCABULARY_KEYWORDS = [
   'x-vocabulary-max-items',
   'x-vocabulary-version',
   'x-i18n-languages',
+  'x-health-status',
+  'x-free-text-from',
 ];
 
 type Name = keyof typeof componentSchemas;
@@ -146,6 +149,10 @@ const POOL: unknown[] = [
   'de',
   'tap',
   'oat',
+  'ok',
+  'x'.repeat(150),
+  'x'.repeat(151),
+  '\u{1F600}'.repeat(100),
   'high',
   ULID,
   ULID.toLowerCase(),
@@ -260,6 +267,7 @@ const FIXTURES: [Name, unknown][] = [
   ['RecipeInput', validRecipeInput()],
   ['BeanCreate', validBeanCreate()],
   ['Bean', validBean()],
+  ['HealthStatus', validHealthStatus()],
   ['ShelfEntryInput', validShelfEntryInput()],
   ['Profile', validProfile()],
   ['BrewPage', validBrewPage()],

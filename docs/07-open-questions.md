@@ -12,8 +12,8 @@ Agents must not decide these. Until one is answered, agents build to the stated 
 | D4 | Price points | 2.99 EUR a month, 19.99 EUR a year |
 | D5 | How does Open Food Facts share-alike apply to the bean catalogue? | Tag source per field, keep catalogue separate from ratings; lawyer to confirm |
 | D6 | Keep the give-to-get teaser for free users? | Yes |
-| D7 | F1 step 3 stores an Open Food Facts hit as a catalogue entry (name, brand), and docs/05 caches results in the catalogue, but the API accepts no free text. May Open Food Facts name and brand be stored and returned once fetched by the server or verified by the operator, or does F1 step 3 need a roaster pick list instead? | **Answered 2026-11-25 (ADR 0005):** store and show what Open Food Facts has; the backend fetches it, and the app has no free-text input. Until M1-T8 lands, the contract still carries no Open Food Facts text. |
-| D8 | docs/04 F1 and the docs/05 data model need roaster, origin and variety lists (with a curated roaster list), but vocabulary v1 has none of them, so F1 cannot describe a bean fully. When does a vocabulary v2 with these lists come, and who curates the roaster list? | **Answered 2026-11-25 (ADR 0006):** origin and variety lists go into vocabulary v2; roaster comes from the Open Food Facts brand and is curated by the operator. Until M1-T8 lands, these fields stay out of the API. |
+| D7 | F1 step 3 stores an Open Food Facts hit as a catalogue entry (name, brand), and docs/05 caches results in the catalogue, but the API accepts no free text. May Open Food Facts name and brand be stored and returned once fetched by the server or verified by the operator, or does F1 step 3 need a roaster pick list instead? | **Answered 2026-11-25 (ADR 0005):** store and show what Open Food Facts has; the backend fetches it, and the app has no free-text input. The contract carries them as response-only fields since M1-T8. |
+| D8 | docs/04 F1 and the docs/05 data model need roaster, origin and variety lists (with a curated roaster list), but vocabulary v1 has none of them, so F1 cannot describe a bean fully. When does a vocabulary v2 with these lists come, and who curates the roaster list? | **Answered 2026-11-25 (ADR 0006):** origin and variety lists go into vocabulary v2; roaster comes from the Open Food Facts brand and is curated by the operator. They stay out of the API until the owner approves vocabulary v2 (draft in M1-T8). |
 | D10 | When a user deletes their account, what happens to their label photos? Photos are versioned, so a plain delete keeps them for 30 days as old versions. | **Answered 2026-11-25 (owner):** delete every version of the photos the user uploaded, immediately. Photos of beans that are already verified stay, because they belong to the shared catalogue, but they are no longer linked to the user. |
 | D11 | A deleted user's data stays in point-in-time recovery for up to 35 days and in the weekly exports for about 395 days. Is that acceptable if the privacy policy discloses it, and must a restore re-apply deletions? | **Answered 2026-11-25 (owner):** acceptable if disclosed in the privacy policy. A deletion log of ids only is kept, and every restore re-applies it before the data is used. |
 | D12 | Should label photo uploads have their metadata (EXIF, GPS) stripped? | **Answered 2026-11-25 (owner):** strip all metadata (EXIF, XMP, GPS) before a photo is stored for review or shown. |
@@ -23,8 +23,11 @@ Record each answer as an ADR in `docs/decisions/`.
 
 ## Things only a human can do
 
-- [ ] Enrol in the Apple Developer Program and the Small Business Program.
-- [ ] Create the App ID, the Sign in with Apple service and key, and the subscription products in App Store Connect.
+- [x] Enrol in the Apple Developer Program. The owner is already a member (2026-11-25).
+- [ ] Join the Small Business Program (15% commission; needed before the paid launch).
+- [x] Create the App ID `app.cupmark.Cupmark` with Sign in with Apple, and the app record in App Store Connect (owner, 2026-11-25).
+- [ ] Create the Services ID `app.cupmark.signin` (domains and return URLs as in M1-T2) and the Sign in with Apple key.
+- [ ] Create the subscription products in App Store Connect (needed for M4).
 - [x] In the shared AWS account (ADR 0009): run `scripts/aws/apply-guardrails.sh --apply` and the `cupmark` CDK bootstrap. Done by the owner on 2026-11-25; both match the repo.
 - [x] Check whether a GitHub OIDC provider already exists. It does, so `cupmark-github-oidc` uses `reference` (owner, 2026-11-25).
 - [x] Confirm MFA on root in the shared account. Enabled (owner check, 2026-11-25).

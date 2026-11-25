@@ -30,6 +30,42 @@ export const VOCABULARY_KEYWORDS = [
 ];
 
 /**
+ * The two documented exceptions to "no free text" and "bearer token on every
+ * route". Both are listed here and nowhere else; see README.md, "Exceptions".
+ *
+ * 1. Response-only free text from Open Food Facts (ADR 0005). A string without
+ *    enum, pattern or format is allowed only with `x-free-text-from: <source>`
+ *    naming one of FREE_TEXT_SOURCES, `readOnly: true` and a `maxLength` of 1
+ *    to FREE_TEXT_MAX_LENGTH, and only where no request body or parameter can
+ *    reach it, through any number of `$ref`s.
+ * 2. The health route (ADR 0007). Exactly the operations in
+ *    UNAUTHENTICATED_ROUTES declare `security: []`; they take no parameters
+ *    and no body, and return the schema named there, whose one property is
+ *    an enum tagged `x-health-status: true` holding only HEALTH_STATUS_VALUES.
+ */
+export const FREE_TEXT_KEYWORD = 'x-free-text-from';
+export const FREE_TEXT_SOURCES = ['open_food_facts'];
+export const FREE_TEXT_MAX_LENGTH = 200;
+export const HEALTH_STATUS_KEYWORD = 'x-health-status';
+export const HEALTH_STATUS_VALUES = ['ok'];
+export const UNAUTHENTICATED_ROUTES = [
+  { method: 'get', route: '/health', schema: 'HealthStatus', decision: 'docs/decisions/0007-unauthenticated-health-route.md' },
+];
+
+/** Every extension keyword a schema may carry. */
+export const EXTENSION_KEYWORDS = [...VOCABULARY_KEYWORDS, FREE_TEXT_KEYWORD, HEALTH_STATUS_KEYWORD];
+
+/**
+ * Lists of the vocabulary that no API schema binds, with the reason. Every
+ * other list of the latest published version must be bound by an
+ * `x-vocabulary` enum or `x-vocabulary-keys`, so publishing a version with a
+ * new list fails until the API carries it.
+ */
+export const UNBOUND_LISTS = {
+  flavour_categories: 'groups the flavour notes for display; the API carries the notes only',
+};
+
+/**
  * Names that would let a client say who the user is. The user id comes from
  * the token only (CLAUDE.md, invariant 3). A name is normalised to
  * snake_case (camelCase split, `-` and `.` as `_`) and fails if it equals one
@@ -64,13 +100,13 @@ export function isIdentityName(name) {
  * (patternProperties, allOf, const, exclusive bounds).
  */
 export const SCHEMA_KEYWORDS = [
-  '$ref', 'description', 'title', 'default',
+  '$ref', 'description', 'title', 'default', 'readOnly',
   'type', 'enum', 'pattern', 'format', 'contentMediaType', 'minLength', 'maxLength',
   'minimum', 'maximum', 'multipleOf',
   'properties', 'required', 'additionalProperties', 'dependentRequired',
   'items', 'minItems', 'maxItems', 'uniqueItems',
   'oneOf', 'anyOf', 'not',
-  ...VOCABULARY_KEYWORDS,
+  ...EXTENSION_KEYWORDS,
 ];
 
 /** Parses YAML strictly: duplicate keys and other errors throw. */
@@ -215,8 +251,11 @@ export function patternProblems(pattern) {
 /**
  * The no-free-text lint. Fails on:
  * - a string without `enum`, an anchored `pattern` or a `format` of date or
- *   date-time (a CSV response body with `contentMediaType: text/csv` is the
- *   one exception);
+ *   date-time. Exceptions: a CSV response body with `contentMediaType:
+ *   text/csv`, and response-only free text marked `x-free-text-from` with
+ *   `readOnly: true` and a bounded `maxLength` (findRequestFreeText proves no
+ *   request reaches it);
+ * - `x-free-text-from` on anything but a string, and `readOnly` without it;
  * - a number or integer without numeric `minimum` and `maximum`, or with a
  *   `multipleOf` that is not exact in binary floating point (0.1 is not,
  *   0.5 is; send such values as scaled integers);
@@ -257,6 +296,8 @@ export function lintSchemas(doc) {
       if (extra.length > 0) add(path, `$ref has sibling keywords ${extra.join(', ')}`);
       return;
     }
+    if (FREE_TEXT_KEYWORD in schema && schema.type !== 'string') add(path, `${FREE_TEXT_KEYWORD} is only allowed on a string`);
+    if ('readOnly' in schema && !(FREE_TEXT_KEYWORD in schema)) add(path, `readOnly is only used on response-only free text (${FREE_TEXT_KEYWORD})`);
     const composed = Array.isArray(schema.oneOf) || Array.isArray(schema.anyOf);
     if (schema.type === undefined) {
       if (!composed) add(path, 'schema has no type');
@@ -281,7 +322,24 @@ export function lintSchemas(doc) {
           add(path, `format ${schema.format} is not one of ${STRING_FORMATS.join(', ')}`);
         }
         const isCsvBody = context.mediaType === CSV_MEDIA_TYPE && schema.contentMediaType === CSV_MEDIA_TYPE;
-        if (!hasEnum && !hasPattern && !hasFormat && !isCsvBody) add(path, 'string without enum, pattern or format');
+        const isFreeText = FREE_TEXT_KEYWORD in schema;
+        if (isFreeText) {
+          const source = schema[FREE_TEXT_KEYWORD];
+          if (!FREE_TEXT_SOURCES.includes(source)) {
+            add(path, `${FREE_TEXT_KEYWORD} ${JSON.stringify(source)} is not one of ${FREE_TEXT_SOURCES.join(', ')}`);
+          }
+          if (hasEnum || hasPattern || hasFormat || 'contentMediaType' in schema) {
+            add(path, `${FREE_TEXT_KEYWORD} is only for a string without enum, pattern, format or contentMediaType`);
+          }
+          if (!Number.isInteger(schema.maxLength) || schema.maxLength < 1 || schema.maxLength > FREE_TEXT_MAX_LENGTH) {
+            add(path, `free text needs a maxLength from 1 to ${FREE_TEXT_MAX_LENGTH}`);
+          }
+          if ('minLength' in schema && (!Number.isInteger(schema.minLength) || schema.minLength < 0 || schema.minLength > schema.maxLength)) {
+            add(path, 'free text minLength must be an integer from 0 to maxLength');
+          }
+          if (schema.readOnly !== true) add(path, 'free text needs readOnly: true (it is response-only)');
+        }
+        if (!hasEnum && !hasPattern && !hasFormat && !isCsvBody && !isFreeText) add(path, 'string without enum, pattern or format');
         break;
       }
       case 'number':
@@ -321,6 +379,64 @@ export function lintSchemas(doc) {
     }
   });
   return problems;
+}
+
+/**
+ * Response-only free text must stay response-only. Walks everything a client
+ * sends (every request body and parameter of every operation and webhook,
+ * their callbacks, and components.requestBodies and components.parameters
+ * even when unused), follows every `$ref` to its target, and reports each
+ * schema with `x-free-text-from` it reaches. The walk visits every nested
+ * value, not only the keywords the lint allows, so no keyword can hide one.
+ */
+export function findRequestFreeText(doc) {
+  const problems = new Set();
+  const walkFrom = (start, path, label) => {
+    const seen = new Set();
+    const walk = (node, where) => {
+      if (Array.isArray(node)) {
+        node.forEach((child, i) => walk(child, [...where, i]));
+        return;
+      }
+      if (!isMap(node)) return;
+      if (FREE_TEXT_KEYWORD in node) {
+        problems.add(`${pointerOf(where)}: free text from ${node[FREE_TEXT_KEYWORD]} is reachable from ${label}; it is allowed in responses only`);
+      }
+      for (const [key, child] of Object.entries(node)) {
+        if (key === '$ref' && typeof child === 'string') {
+          if (seen.has(child)) continue;
+          seen.add(child);
+          const target = resolveRef(doc, child);
+          if (target !== undefined) walk(target, [child]);
+          continue;
+        }
+        walk(child, [...where, key]);
+      }
+    };
+    walk(start, path);
+  };
+
+  for (const top of ['paths', 'webhooks']) {
+    for (const [route, item] of Object.entries(isMap(doc?.[top]) ? doc[top] : {})) {
+      if (!isMap(item)) continue;
+      if (item.parameters !== undefined) walkFrom(item.parameters, [top, route, 'parameters'], `${route} parameters`);
+      for (const method of HTTP_METHODS) {
+        const op = item[method];
+        if (!isMap(op)) continue;
+        const where = `${method.toUpperCase()} ${route}`;
+        for (const key of ['requestBody', 'parameters', 'callbacks']) {
+          const label = key === 'requestBody' ? `the ${where} request body` : `${where} ${key}`;
+          if (op[key] !== undefined) walkFrom(op[key], [top, route, method, key], label);
+        }
+      }
+    }
+  }
+  for (const kind of ['requestBodies', 'parameters', 'callbacks']) {
+    for (const [name, value] of Object.entries(isMap(doc?.components?.[kind]) ? doc.components[kind] : {})) {
+      walkFrom(value, ['components', kind, name], `components.${kind}.${name}`);
+    }
+  }
+  return [...problems];
 }
 
 function pointerOf(path) {
@@ -387,9 +503,22 @@ export function checkStructure(doc) {
     if (!used.has(SCHEMAS_PREFIX + name)) problems.push(`components.schemas.${name} is never used`);
   }
 
+  for (const open of UNAUTHENTICATED_ROUTES) {
+    const ref = SCHEMAS_PREFIX + open.schema;
+    const expected = ['paths', open.route, open.method, 'responses', '200', 'content', JSON_MEDIA_TYPE, 'schema'];
+    for (const { ref: found, path } of allRefs(doc)) {
+      if (found === ref && JSON.stringify(path) !== JSON.stringify(expected)) {
+        problems.push(`${pointer(path)}: ${ref} is the body of ${open.method.toUpperCase()} ${open.route} and may not be used anywhere else`);
+      }
+    }
+  }
+
   if (!isMap(doc.paths) || Object.keys(doc.paths).length === 0) {
     problems.push('paths is empty');
     return problems;
+  }
+  for (const open of UNAUTHENTICATED_ROUTES) {
+    if (!isMap(doc.paths[open.route]?.[open.method])) problems.push(`${open.method.toUpperCase()} ${open.route}: missing (${open.decision})`);
   }
   const operationIds = new Set();
   const deref = (node) => (isMap(node) && typeof node.$ref === 'string' ? resolveRef(doc, node.$ref) : node);
@@ -423,7 +552,27 @@ export function checkStructure(doc) {
       } else {
         operationIds.add(op.operationId);
       }
-      if ('security' in op && !isBearerOnly(op.security)) problems.push(`${where}: overrides security; every route needs the bearer token`);
+      const open = UNAUTHENTICATED_ROUTES.find((r) => r.method === method && r.route === route);
+      if (open) {
+        if (!Array.isArray(op.security) || op.security.length !== 0) {
+          problems.push(`${where}: must declare security: [] (${open.decision})`);
+        }
+        if (op.requestBody !== undefined) problems.push(`${where}: the unauthenticated route takes no request body`);
+        if ((item.parameters ?? []).length > 0 || (op.parameters ?? []).length > 0) {
+          problems.push(`${where}: the unauthenticated route takes no parameters`);
+        }
+        const codes = Object.keys(isMap(op.responses) ? op.responses : {});
+        if (JSON.stringify(codes.sort()) !== JSON.stringify(['200', '429'])) {
+          problems.push(`${where}: the unauthenticated route returns 200 and 429 only, got ${codes.join(', ')}`);
+        }
+        const ok = deref(op.responses?.['200']);
+        const body = isMap(ok?.content) ? ok.content : {};
+        if (Object.keys(body).join() !== JSON_MEDIA_TYPE || body[JSON_MEDIA_TYPE]?.schema?.$ref !== SCHEMAS_PREFIX + open.schema) {
+          problems.push(`${where}: 200 must return ${JSON_MEDIA_TYPE} with $ref ${SCHEMAS_PREFIX}${open.schema}`);
+        }
+      } else if ('security' in op && !isBearerOnly(op.security)) {
+        problems.push(`${where}: overrides security; every route needs the bearer token (the only exceptions are ${UNAUTHENTICATED_ROUTES.map((r) => `${r.method.toUpperCase()} ${r.route}`).join(', ')})`);
+      }
 
       const params = [...(item.parameters ?? []), ...(op.parameters ?? [])].map(deref);
       const seen = new Set();
@@ -457,7 +606,7 @@ export function checkStructure(doc) {
         continue;
       }
       if (!Object.keys(op.responses).some((code) => /^2\d\d$/.test(code))) problems.push(`${where}: no success response`);
-      if (!('401' in op.responses)) problems.push(`${where}: no 401 response`);
+      if (!open && !('401' in op.responses)) problems.push(`${where}: no 401 response`);
       for (const [code, raw] of Object.entries(op.responses)) {
         const response = deref(raw);
         if (!/^[1-5]\d\d$/.test(code)) problems.push(`${where}: response code ${code} is not a status code`);
@@ -508,23 +657,40 @@ export function findIdentityFields(doc) {
 }
 
 /**
- * What the OpenAPI document is checked against: the id lists (union over all
- * published versions, since ids are never reused or removed without an ADR),
- * the files of every published version, the latest published version, and
- * the languages that have an i18n file.
+ * What the OpenAPI document is checked against, built from every version
+ * `[{ version, files }]` and the i18n languages:
+ * - `lists`: the id lists, the union over all published versions (ids are
+ *   never reused or removed without an ADR);
+ * - `published`: the files of every published version, ascending;
+ * - `latestPublished`: the latest version whose files are all published;
+ * - `draftLists`: `{ <namespace>: version }` for lists that exist only in a
+ *   draft version. The API cannot bind them yet; the check says so by name.
+ * A draft version never feeds an enum: its ids may still change, and no
+ * request can name it in `vocabulary_version`.
  */
-export function loadVocabularyContext() {
-  const published = [];
-  for (const version of listVersions()) {
-    const files = loadVocabulary(version);
-    if (Object.values(files).every((file) => file.status === 'published')) published.push({ version, files });
+export function buildVocabularyContext(versions, languages) {
+  const published = versions.filter(({ files }) => Object.values(files).every((file) => file.status === 'published'));
+  const lists = mergeIdLists(published.map(({ files }) => collectIds(files).lists));
+  const draftLists = {};
+  for (const { version, files } of versions) {
+    if (published.some((p) => p.version === version)) continue;
+    for (const namespace of Object.keys(collectIds(files).lists)) {
+      if (!(namespace in lists) && !(namespace in draftLists)) draftLists[namespace] = version;
+    }
   }
   return {
-    lists: mergeIdLists(published.map(({ files }) => collectIds(files).lists)),
+    lists,
     published,
     latestPublished: published.length > 0 ? published[published.length - 1].version : undefined,
-    languages: Object.keys(loadI18n()).sort(),
+    draftLists,
+    languages: [...languages].sort(),
   };
+}
+
+/** The context for the files on disk. */
+export function loadVocabularyContext() {
+  const versions = listVersions().map((version) => ({ version, files: loadVocabulary(version) }));
+  return buildVocabularyContext(versions, Object.keys(loadI18n()));
 }
 
 function lookupValue(files, dotted) {
@@ -564,6 +730,7 @@ const round = (x) => Math.round(x * 1e9) / 1e9;
 export function checkVocabularyBindings(doc, context) {
   const problems = [];
   const usedRanges = new Set();
+  const boundLists = new Set();
 
   forEachSchema(doc, (schema, path, walkContext) => {
     if (!isMap(schema) || walkContext.inNot) return;
@@ -574,10 +741,24 @@ export function checkVocabularyBindings(doc, context) {
       }
     }
 
-    if ('enum' in schema) {
+    if (schema[HEALTH_STATUS_KEYWORD] !== undefined) {
+      const allowed = UNAUTHENTICATED_ROUTES.map((r) => `${SCHEMAS_PREFIX}${r.schema}/properties/status`);
+      if (schema[HEALTH_STATUS_KEYWORD] !== true) problems.push(`${where}: ${HEALTH_STATUS_KEYWORD} must be true`);
+      if (!allowed.includes(where)) problems.push(`${where}: ${HEALTH_STATUS_KEYWORD} is only allowed on ${allowed.join(', ')}`);
+      if (JSON.stringify(schema.enum) !== JSON.stringify(HEALTH_STATUS_VALUES)) {
+        problems.push(`${where}: the health status enum must be exactly [${HEALTH_STATUS_VALUES.join(', ')}]`);
+      }
+      if (schema['x-vocabulary'] !== undefined || schema['x-i18n-languages'] !== undefined) {
+        problems.push(`${where}: ${HEALTH_STATUS_KEYWORD} together with x-vocabulary or x-i18n-languages`);
+      }
+    } else if ('enum' in schema) {
       if (schema['x-vocabulary'] !== undefined) {
         const expected = context.lists[schema['x-vocabulary']];
-        if (!expected) problems.push(`${where}: x-vocabulary ${schema['x-vocabulary']} is not a vocabulary list`);
+        boundLists.add(schema['x-vocabulary']);
+        const draft = context.draftLists?.[schema['x-vocabulary']];
+        if (!expected && draft !== undefined) {
+          problems.push(`${where}: x-vocabulary ${schema['x-vocabulary']} is only in draft vocabulary v${draft}; bind it when v${draft} is published`);
+        } else if (!expected) problems.push(`${where}: x-vocabulary ${schema['x-vocabulary']} is not a vocabulary list`);
         else if (JSON.stringify(schema.enum) !== JSON.stringify(expected)) {
           const missing = expected.filter((id) => !schema.enum.includes(id));
           const extra = (schema.enum ?? []).filter((id) => !expected.includes(id));
@@ -630,6 +811,7 @@ export function checkVocabularyBindings(doc, context) {
     }
 
     if (schema['x-vocabulary-keys'] !== undefined) {
+      boundLists.add(schema['x-vocabulary-keys']);
       const expected = context.lists[schema['x-vocabulary-keys']];
       const actual = Object.keys(isMap(schema.properties) ? schema.properties : {});
       if (!expected) problems.push(`${where}: x-vocabulary-keys ${schema['x-vocabulary-keys']} is not a vocabulary list`);
@@ -660,6 +842,12 @@ export function checkVocabularyBindings(doc, context) {
       ...(files.criteria?.scale ? ['criteria.scale'] : []),
     ];
     for (const name of names) if (!usedRanges.has(name)) problems.push(`vocabulary range ${name} is not used by any schema`);
+    // Every list is bound, so a newly published list cannot be forgotten.
+    for (const namespace of Object.keys(collectIds(files).lists)) {
+      if (!boundLists.has(namespace) && !(namespace in UNBOUND_LISTS)) {
+        problems.push(`vocabulary list ${namespace} is not used by any schema (bind it with x-vocabulary or x-vocabulary-keys)`);
+      }
+    }
   }
 
   // Every request body that carries vocabulary values carries the version.
@@ -709,7 +897,7 @@ export function compileComponentSchemas(doc) {
   // strictRequired is off because `not: { required: [...] }` (two fields
   // that exclude each other) names properties outside its own subschema.
   const ajv = new Ajv2020({ allErrors: true, strict: true, strictRequired: false });
-  for (const keyword of VOCABULARY_KEYWORDS) ajv.addKeyword(keyword);
+  for (const keyword of EXTENSION_KEYWORDS) ajv.addKeyword(keyword);
   ajv.addFormat('date', /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/);
   ajv.addFormat('date-time', /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T([01]\d|2[0-3]):[0-5]\d:[0-5]\d(\.\d{1,9})?(Z|[+-]([01]\d|2[0-3]):[0-5]\d)$/);
   const schemas = JSON.parse(JSON.stringify(doc.components?.schemas ?? {}).replaceAll(`"${SCHEMAS_PREFIX}`, '"#/$defs/'));
@@ -728,7 +916,13 @@ export function compileComponentSchemas(doc) {
 
 /** All checks together, as used by bin/lint-openapi.mjs. */
 export function checkOpenApi(doc, context) {
-  const problems = [...checkStructure(doc), ...lintSchemas(doc), ...findIdentityFields(doc), ...checkVocabularyBindings(doc, context)];
+  const problems = [
+    ...checkStructure(doc),
+    ...lintSchemas(doc),
+    ...findRequestFreeText(doc),
+    ...findIdentityFields(doc),
+    ...checkVocabularyBindings(doc, context),
+  ];
   try {
     compileComponentSchemas(doc);
   } catch (error) {

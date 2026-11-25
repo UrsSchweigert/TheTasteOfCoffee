@@ -73,7 +73,7 @@ Goal: the repo builds, tests and checks itself; the shared contract exists.
 - needs: human
 - depends: none
 - acceptance:
-  - Apple Developer Program membership active; App ID and Sign in with Apple key created.
+  - Apple Developer Program membership active (done, 2026-11-25). App ID `app.cupmark.Cupmark` with Sign in with Apple and the App Store Connect app record created (done, 2026-11-25). Services ID `app.cupmark.signin` and the Sign in with Apple key created, with the key stored only in Parameter Store as a SecureString and never in the repo (open).
   - In the shared AWS account (ADR 0009), checked read-only by the owner on 2026-11-25:
     - root MFA is on (done);
     - `CupmarkBoundary` and `CupmarkCfnExecution` match `scripts/aws/*.json` (done);
@@ -140,7 +140,9 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
 - acceptance:
   - Cognito user pool (Lite plan, Sign in with Apple only) and an HTTP API with JWT authorizer and throttling are in the stack.
   - A test asserts every route except the App Store notifications route has the authorizer.
+  - The Cognito domain prefixes are exactly `cupmark-dev` and `cupmark-prod`, and the Apple identity provider uses the Services ID `app.cupmark.signin`. The owner registered both in Apple's portal with the return URL `https://cupmark-<stage>.auth.eu-central-1.amazoncognito.com/oauth2/idpresponse`. A test pins the prefixes.
   - From the M1-T1 review: the user pool is RETAIN with `DeletionProtection: ACTIVE`, and `AWS::Cognito::UserPool` joins the stateful guard. Losing the pool would orphan every `USER#<sub>` partition.
+  - From the M1-T8 review: the table gets `TimeToLiveSpecification` on a named attribute (`expires_at`), docs/05 names it, and the "no TTL" assertion in `infra/test/data.test.ts` changes accordingly. The API Lambda gets outbound HTTPS to Open Food Facts, with no VPC and no NAT.
   - From the M1-T1 review: a test snapshots the logical ids of the table, the buckets and the pool, so a construct rename that would replace them fails at test time.
 
 ### M1-T3 Repository module
@@ -162,6 +164,14 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - Look up a barcode; create an unverified bean from pick-list attributes or a confirmed Open Food Facts hit, with the source tagged per field.
   - Issue a presigned upload URL for a label photo (size and content-type limited).
   - Tests cover known, unknown and malformed barcodes.
+  - Server-side Open Food Facts lookup (ADR 0005), from the M1-T8 review:
+    - `GET /barcodes/{barcode}/open_food_facts` fetches with User-Agent `Cupmark/<version> (<contact>)`, with the contact taken from a Lambda environment variable, never Secrets Manager;
+    - results are cached in `BARCODE#<ean>`/`OFF`, and a miss expires by TTL;
+    - a per-user daily cap in `USER#<id>`/`LOOKUPS#<date>` returns 429, and the route returns 409 or 503 as the contract says; whether a 409 or 400 counts against the cap is decided and docs/05 matches it;
+    - name and brand are trimmed and cut in code points, and never logged;
+    - the server checks that the `image_ref` digits equal the canonical EAN-13;
+    - `POST /beans` with `open_food_facts_confirmed` copies from the cache and returns 409 when there is no cached hit;
+    - repository keys exist for both new items.
   - Rejecting a bean frees its barcode: the `BARCODE#` pointer is removed in the same write, so the next scan can submit a fresh entry. The rejected bean stays recorded for the operator (owner decision, 2026-11-25).
   - The uploader of each label photo is recorded, so account deletion (M1-T6) can find that user's photos. Photo handling follows D10 to D12 in `docs/07-open-questions.md`.
 
@@ -196,7 +206,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - A smoke test calls the health route after deploy.
 
 ### M1-T8 Contract update for D7 to D9
-- status: todo
+- status: in-progress
 - owner: contract-keeper
 - depends: M0-T3
 - implements: docs/decisions/0005, 0006, 0007
@@ -209,6 +219,9 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - The OpenAPI lint allows response-only Open Food Facts text and the one health route as explicit, documented exceptions. Any other text field or route without the bearer token still fails, and tests prove both.
   - docs/05 Barcode lookup describes the server-side lookup (User-Agent, catalogue cache, per-user cap), and docs/04 F1 step 3 matches it.
   - The backend regenerates its schemas, and the no-drift check passes.
+  - Status: the contract part (D7, D9, draft v2) was merged on 2026-11-25. Still open:
+    - the owner approves v2, then v2 is published and locked, and origin and variety are bound in openapi (the `addV2Fields` steps in contracts/README.md);
+    - from the review, the lint pins HealthStatus to exactly `{status}` (required, no additional properties) and `/health` to `get` only.
 
 ### M1-T9 GitHub OIDC deploy stack and IAM policy guards
 - status: todo
