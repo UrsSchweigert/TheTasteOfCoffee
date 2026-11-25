@@ -1,0 +1,33 @@
+{
+  "name": "cupmark-backend",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Cupmark Lambda handlers (TypeScript, Node 22, arm64)",
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "generate": "node scripts/generate-contract.ts",
+    "check:generated": "node scripts/generate-contract.ts --check",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings 0 && tsc --noEmit",
+    "test": "vitest run",
+    "build": "node scripts/build.ts"
+  },
+  "dependencies": {
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/aws-lambda": "8.10.164",
+    "@types/node": "22.20.5",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "esbuild": "0.28.2",
+    "eslint": "10.15.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.74.0",
+    "vitest": "5.1.1",
+    "yaml": "2.9.1"
+  }
+}
