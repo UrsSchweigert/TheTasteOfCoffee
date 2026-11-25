@@ -1,10 +1,10 @@
-// Tests for scripts/generate-ios-vocabulary.mjs, scripts/generate-ios-api.mjs and
-// scripts/check-ios-strings.mjs.
+// Tests for scripts/generate-ios-vocabulary.mjs, scripts/generate-ios-api.mjs,
+// scripts/check-ios-strings.mjs and the stage configuration in ios/Config (M2-T9).
 // Run: node --test scripts/ios-scripts.test.mjs (needs `npm ci` in contracts/).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { dirname, relative, resolve, sep } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LANGUAGES, loadVocabulary } from '../contracts/lib/vocabulary.mjs';
 import { loadOpenApi } from '../contracts/lib/openapi.mjs';
@@ -32,7 +32,16 @@ import {
   generateSwift as generateApiSwift,
   reachableSchemas,
 } from './generate-ios-api.mjs';
-import { checkCatalog, checkKeys, keysInL10n, lexSwift, literalBindings, literalUiStrings } from './check-ios-strings.mjs';
+import {
+  checkCatalog,
+  checkInfoPlistCatalog,
+  checkKeys,
+  keysInL10n,
+  lexSwift,
+  literalBindings,
+  literalUiStrings,
+  usageDescriptionSettings,
+} from './check-ios-strings.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -785,4 +794,116 @@ test('generate-ios-api: each route lists its documented error statuses, and Time
   assert.equal(timestamp.match(/ISO8601DateFormatter\(\)/g)?.length, 2, 'one formatter per format');
   assert.match(timestamp, /private static let fractionalSeconds: ISO8601DateFormatter = \{/);
   assert.match(timestamp, /private static let wholeSeconds: ISO8601DateFormatter = \{/);
+});
+
+// Stage configuration (M2-T9, ADR 0023). The Swift checks run in XCTest on a Mac; these
+// check on Linux that the xcconfigs, Info.plist and the project agree.
+const readXcconfig = (name) => {
+  const settings = {};
+  for (const line of readFileSync(join(repoRoot, 'ios', 'Config', name), 'utf8').split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed === '' || trimmed.startsWith('//')) continue;
+    const match = /^([A-Z_]+) = (.*)$/.exec(trimmed);
+    assert.ok(match, `${name}: unexpected line ${trimmed}`);
+    assert.ok(!match[2].includes('//'), `${name}: ${match[1]} has "//", which starts a comment in an xcconfig`);
+    // `$()` expands to nothing; it keeps "//" in URLs from starting a comment.
+    settings[match[1]] = match[2].replaceAll('$()', '');
+  }
+  return settings;
+};
+
+const STAGE_SETTINGS = {
+  CupmarkStage: 'CUPMARK_STAGE',
+  CupmarkHostedDomain: 'CUPMARK_HOSTED_DOMAIN',
+  CupmarkAppClientID: 'CUPMARK_APP_CLIENT_ID',
+  CupmarkAPIURL: 'CUPMARK_API_URL',
+  CupmarkRedirectURL: 'CUPMARK_REDIRECT_URL',
+  CupmarkSignOutURL: 'CUPMARK_SIGN_OUT_URL',
+};
+
+test('stage config: Dev and Prod xcconfigs set every value, in eu-central-1, with the registered URLs (M2-T9)', () => {
+  for (const [file, stage] of [['Dev.xcconfig', 'dev'], ['Prod.xcconfig', 'prod']]) {
+    const settings = readXcconfig(file);
+    assert.deepEqual(Object.keys(settings).sort(), Object.values(STAGE_SETTINGS).sort(), file);
+    assert.equal(settings.CUPMARK_STAGE, stage);
+    assert.equal(settings.CUPMARK_HOSTED_DOMAIN, `https://cupmark-${stage}.auth.eu-central-1.amazoncognito.com`);
+    assert.equal(settings.CUPMARK_REDIRECT_URL, 'cupmark://auth');
+    assert.equal(settings.CUPMARK_SIGN_OUT_URL, 'cupmark://signout');
+    assert.match(settings.CUPMARK_API_URL, /^https:\/\/[^/]+\.execute-api\.eu-central-1\.amazonaws\.com$/);
+    for (const [name, value] of Object.entries(settings)) {
+      assert.ok(!/(us|eu|ap|ca|sa|me|af|il|mx)-[a-z]+-\d/.test(value.replaceAll('eu-central-1', '')), `${file}: ${name} names another region`);
+    }
+  }
+  // Until M2-T10 (dev) and M6 (prod) the ids are placeholders that StageConfig rejects:
+  // uppercase and hyphens are not valid in an app client id or an API id.
+  assert.match(readXcconfig('Prod.xcconfig').CUPMARK_APP_CLIENT_ID, /^PLACEHOLDER-/);
+});
+
+test('stage config: the callback URLs match infra/src/identity.ts (M2-T9)', () => {
+  const identity = readFileSync(join(repoRoot, 'infra', 'src', 'identity.ts'), 'utf8');
+  assert.match(identity, /APP_CALLBACK_URL = 'cupmark:\/\/auth'/);
+  assert.match(identity, /APP_SIGN_OUT_URL = 'cupmark:\/\/signout'/);
+  const swift = readFileSync(join(repoRoot, 'ios', 'Cupmark', 'Configuration', 'StageConfig.swift'), 'utf8');
+  assert.match(swift, /static let redirectURLString = "cupmark:\/\/auth"/);
+  assert.match(swift, /static let signOutURLString = "cupmark:\/\/signout"/);
+  assert.match(swift, /static let region = "eu-central-1"/);
+  for (const key of Object.keys(STAGE_SETTINGS)) {
+    assert.match(swift, new RegExp(`= "${key}"`), `StageConfig.InfoKey lacks ${key}`);
+  }
+});
+
+test('stage config: Info.plist maps every key to its setting, and both app configurations use Dev (M2-T9, ADR 0023)', () => {
+  const plist = readFileSync(join(repoRoot, 'ios', 'Config', 'Info.plist'), 'utf8');
+  for (const [key, setting] of Object.entries(STAGE_SETTINGS)) {
+    assert.match(plist, new RegExp(`<key>${key}</key>\\s*<string>\\$\\(${setting}\\)</string>`), key);
+  }
+  const project = readFileSync(PROJECT_FILE, 'utf8');
+  assert.match(project, /\/\* Dev\.xcconfig \*\/ = \{isa = PBXFileReference; lastKnownFileType = text\.xcconfig; name = Dev\.xcconfig; path = Config\/Dev\.xcconfig; sourceTree = SOURCE_ROOT; \};/);
+  for (const name of ['Debug', 'Release']) {
+    const start = project.search(new RegExp(`C0FFEE000000000000000044 /\\* ${name} \\*/ = \\{|C0FFEE000000000000000045 /\\* ${name} \\*/ = \\{`));
+    assert.ok(start >= 0, `app configuration ${name}`);
+    const block = project.slice(start, project.indexOf(`name = ${name};`, start));
+    assert.match(block, /baseConfigurationReference = C0FFEE000000000000000051 \/\* Dev\.xcconfig \*\/;/, name);
+    assert.match(block, /INFOPLIST_FILE = Config\/Info\.plist;/, name);
+    assert.match(block, /GENERATE_INFOPLIST_FILE = YES;/, name);
+  }
+  // Info.plist sits outside the synchronized Cupmark/ folder, so it is not also copied as a resource.
+  assert.ok(!existsSync(join(repoRoot, 'ios', 'Cupmark', 'Info.plist')));
+});
+
+// ---- InfoPlist.xcstrings (M2-T13) ----
+
+const pbxWithCamera = (...values) =>
+  values.map((v) => `\t\t\t\tINFOPLIST_KEY_NSCameraUsageDescription = "${v}";\n`).join('');
+
+test('usageDescriptionSettings reads quoted and bare usage descriptions from the project', () => {
+  const settings = usageDescriptionSettings(`${pbxWithCamera('Reads "codes".'.replace(/"/g, '\\"'))}\t\tINFOPLIST_KEY_NSPhotoLibraryUsageDescription = Photos;\n\t\tINFOPLIST_KEY_CFBundleDisplayName = Cupmark;\n`);
+  assert.deepEqual([...settings.keys()], ['NSCameraUsageDescription', 'NSPhotoLibraryUsageDescription']);
+  assert.deepEqual([...settings.get('NSCameraUsageDescription')], ['Reads "codes".']);
+  assert.deepEqual([...settings.get('NSPhotoLibraryUsageDescription')], ['Photos']);
+});
+
+test('checkInfoPlistCatalog requires every usage description localised, with the project value in English', () => {
+  const catalog = (strings) => ({ sourceLanguage: 'en', strings });
+  const camera = entry({ en: unit('Reads codes.'), de: unit('Liest Codes.') });
+  assert.deepEqual(checkInfoPlistCatalog(catalog({ NSCameraUsageDescription: camera }), pbxWithCamera('Reads codes.', 'Reads codes.'), ['en', 'de']), []);
+  // Missing from the catalog.
+  assert.equal(checkInfoPlistCatalog(catalog({}), pbxWithCamera('Reads codes.'), ['en', 'de']).length, 1);
+  // English differs from the build setting.
+  assert.match(checkInfoPlistCatalog(catalog({ NSCameraUsageDescription: camera }), pbxWithCamera('Other.'), ['en', 'de']).join('\n'), /differs/);
+  // Configurations disagree.
+  assert.match(checkInfoPlistCatalog(catalog({ NSCameraUsageDescription: camera }), pbxWithCamera('Reads codes.', 'Other.'), ['en', 'de']).join('\n'), /disagree/);
+  // A key the project does not set.
+  assert.match(checkInfoPlistCatalog(catalog({ NSCameraUsageDescription: camera, NSMicrophoneUsageDescription: camera }), pbxWithCamera('Reads codes.'), ['en', 'de']).join('\n'), /NSMicrophoneUsageDescription/);
+  // German missing: the catalog rules apply too.
+  const noGerman = entry({ en: unit('Reads codes.') });
+  assert.equal(checkInfoPlistCatalog(catalog({ NSCameraUsageDescription: noGerman }), pbxWithCamera('Reads codes.'), ['en', 'de']).length, 1);
+});
+
+test('the committed InfoPlist.xcstrings localises the camera permission in en and de', () => {
+  const catalog = JSON.parse(readFileSync(new URL('../ios/Cupmark/InfoPlist.xcstrings', import.meta.url), 'utf8'));
+  const pbxproj = readFileSync(new URL('../ios/Cupmark.xcodeproj/project.pbxproj', import.meta.url), 'utf8');
+  assert.deepEqual(checkInfoPlistCatalog(catalog, pbxproj), []);
+  assert.ok(usageDescriptionSettings(pbxproj).has('NSCameraUsageDescription'));
+  assert.ok(catalog.strings.NSCameraUsageDescription);
 });

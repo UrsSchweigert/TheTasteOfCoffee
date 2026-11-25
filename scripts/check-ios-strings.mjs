@@ -14,6 +14,10 @@
 //   literal in the same file (`let title = "Hi"` then `Text(title)`). UI text
 //   goes through L10n; vocabulary labels use Text(verbatim:) with a
 //   VocabularyStore label. See literalUiStrings for the exact rule.
+// - ios/Cupmark/InfoPlist.xcstrings (M2-T13) passes the same catalog rules and
+//   localises exactly the permission strings (`INFOPLIST_KEY_NS...UsageDescription`)
+//   of the app target in ios/Cupmark.xcodeproj/project.pbxproj, with an English
+//   value equal to the build setting. See checkInfoPlistCatalog.
 //
 // Needs Node 22 and `npm ci` in contracts/ (for the language list).
 // Usage: node scripts/check-ios-strings.mjs
@@ -26,6 +30,8 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const appDir = join(root, 'ios', 'Cupmark');
 export const CATALOG_FILE = join(appDir, 'Localizable.xcstrings');
 export const KEYS_FILE = join(appDir, 'L10n.swift');
+export const INFOPLIST_CATALOG_FILE = join(appDir, 'InfoPlist.xcstrings');
+export const PROJECT_FILE = join(root, 'ios', 'Cupmark.xcodeproj', 'project.pbxproj');
 
 /** Problems with a parsed .xcstrings catalog. */
 export function checkCatalog(catalog, languages = LANGUAGES) {
@@ -84,6 +90,44 @@ export function checkKeys(codeKeys, catalogKeys) {
   }
   for (const key of catalogKeys) {
     if (!seen.has(key)) problems.push(`Localizable.xcstrings: key ${key} is not used in L10n.swift`);
+  }
+  return problems;
+}
+
+/**
+ * The permission strings set as build settings in project.pbxproj
+ * (`INFOPLIST_KEY_NSCameraUsageDescription = "...";`), as a map from the
+ * Info.plist key to the set of values found (one per build configuration).
+ */
+export function usageDescriptionSettings(pbxproj) {
+  const found = new Map();
+  const pattern = /^\s*INFOPLIST_KEY_(NS[A-Za-z]+UsageDescription)\s*=\s*(?:"((?:[^"\\]|\\.)*)"|([^;\s]+))\s*;/gm;
+  for (const match of pbxproj.matchAll(pattern)) {
+    const value = match[2] !== undefined ? match[2].replace(/\\(.)/g, '$1') : match[3];
+    if (!found.has(match[1])) found.set(match[1], new Set());
+    found.get(match[1]).add(value);
+  }
+  return found;
+}
+
+/**
+ * Problems with InfoPlist.xcstrings against the project: the catalog rules of
+ * checkCatalog, every usage description of the project in the catalog and no
+ * other key, one value per key across configurations, and the catalog's
+ * source-language value equal to it.
+ */
+export function checkInfoPlistCatalog(catalog, pbxproj, languages = LANGUAGES) {
+  const problems = checkCatalog(catalog, languages);
+  const settings = usageDescriptionSettings(pbxproj);
+  const strings = catalog?.strings ?? {};
+  for (const [key, values] of settings) {
+    if (values.size !== 1) problems.push(`${key}: build configurations disagree on the value`);
+    const source = strings[key]?.localizations?.[languages[0]]?.stringUnit?.value;
+    if (source === undefined) problems.push(`${key}: set in project.pbxproj but not localised`);
+    else if (!values.has(source)) problems.push(`${key}: ${languages[0]} value differs from project.pbxproj`);
+  }
+  for (const key of Object.keys(strings)) {
+    if (!settings.has(key)) problems.push(`${key}: not an INFOPLIST_KEY_ usage description in project.pbxproj`);
   }
   return problems;
 }
@@ -261,6 +305,17 @@ function main() {
   problems.push(...checkCatalog(catalog).map((p) => `Localizable.xcstrings: ${p}`));
   const catalogKeys = Object.keys(catalog.strings ?? {});
   problems.push(...checkKeys(keysInL10n(readFileSync(KEYS_FILE, 'utf8')), catalogKeys));
+  let infoPlistCatalog;
+  try {
+    infoPlistCatalog = JSON.parse(readFileSync(INFOPLIST_CATALOG_FILE, 'utf8'));
+  } catch (err) {
+    problems.push(`InfoPlist.xcstrings: cannot read: ${err instanceof Error ? err.message : err}`);
+  }
+  if (infoPlistCatalog !== undefined) {
+    problems.push(
+      ...checkInfoPlistCatalog(infoPlistCatalog, readFileSync(PROJECT_FILE, 'utf8')).map((p) => `InfoPlist.xcstrings: ${p}`),
+    );
+  }
   for (const file of swiftFiles(join(root, 'ios'))) {
     if (file === KEYS_FILE) continue;
     for (const { line, call, reason } of literalUiStrings(readFileSync(file, 'utf8'))) {

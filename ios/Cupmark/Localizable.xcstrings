@@ -19,6 +19,42 @@
         }
       }
     },
+    "not_configured.message" : {
+      "comment" : "Shown when the build has no valid server configuration, so the app cannot connect.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Version der App hat keine gültigen Servereinstellungen und kann sich deshalb nicht verbinden. Bitte installiere eine aktuelle Version."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This version of the app has no valid server settings, so it cannot connect. Please install an up-to-date version."
+          }
+        }
+      }
+    },
+    "not_configured.title" : {
+      "comment" : "Title of the screen shown when the build has no valid server configuration.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht eingerichtet"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not configured"
+          }
+        }
+      }
+    },
     "root.methods.header" : {
       "comment" : "Section header above the list of brew methods on the root screen.",
       "extractionState" : "manual",
@@ -33,6 +69,24 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Brew methods"
+          }
+        }
+      }
+    },
+    "root.scan_bag" : {
+      "comment" : "Row on the root screen that opens the barcode scanner.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Packung scannen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan a bag"
           }
         }
       }
@@ -69,6 +123,240 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Terms unavailable"
+          }
+        }
+      }
+    },
+    "scanner.camera.accessibility" : {
+      "comment" : "Accessibility label of the live camera view that reads the barcode.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kamera, liest Barcodes"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Camera, reading barcodes"
+          }
+        }
+      }
+    },
+    "scanner.checking" : {
+      "comment" : "Accessibility label of the spinner while the app checks whether the camera can scan.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kamera wird geprüft"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checking the camera"
+          }
+        }
+      }
+    },
+    "scanner.hint" : {
+      "comment" : "Instruction shown over the camera while scanning.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Richte die Kamera auf den Barcode der Packung."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Point the camera at the barcode on the bag."
+          }
+        }
+      }
+    },
+    "scanner.not_available.message" : {
+      "comment" : "Explains that the camera cannot scan right now, and what to do instead.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Kamera kann gerade nicht scannen. Versuche es später noch einmal, prüfe die Einstellungen oder beschreibe die Bohne mit Auswahllisten."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The camera cannot scan right now. Try again later, check Settings, or describe the bean with pick lists."
+          }
+        }
+      }
+    },
+    "scanner.not_available.title" : {
+      "comment" : "Title when the camera cannot scan right now.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scannen nicht verfügbar"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scanning not available"
+          }
+        }
+      }
+    },
+    "scanner.open_settings" : {
+      "comment" : "Button that opens the app's page in the Settings app.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Einstellungen öffnen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Settings"
+          }
+        }
+      }
+    },
+    "scanner.permission_denied.message" : {
+      "comment" : "Explains how to allow camera access, and what to do instead.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erlaube Cupmark in den Einstellungen den Kamerazugriff, um Barcodes zu scannen, oder beschreibe die Bohne mit Auswahllisten."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow camera access for Cupmark in Settings to scan barcodes, or describe the bean with pick lists."
+          }
+        }
+      }
+    },
+    "scanner.permission_denied.title" : {
+      "comment" : "Title when camera access is denied or restricted.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kamerazugriff ist aus"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Camera access is off"
+          }
+        }
+      }
+    },
+    "scanner.pick_list_entry" : {
+      "comment" : "Button that describes the bean by pick lists instead of scanning.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bohne stattdessen beschreiben"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Describe the bean instead"
+          }
+        }
+      }
+    },
+    "scanner.scanned.title" : {
+      "comment" : "Shown once a valid barcode was read; the barcode digits follow.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Barcode erkannt"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Barcode read"
+          }
+        }
+      }
+    },
+    "scanner.title" : {
+      "comment" : "Title of the barcode scanner screen.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scannen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan"
+          }
+        }
+      }
+    },
+    "scanner.unsupported.message" : {
+      "comment" : "Explains that the device cannot scan, and what to do instead.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieses Gerät kann keine Barcodes scannen. Du kannst die Bohne stattdessen mit Auswahllisten beschreiben."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This device cannot scan barcodes. You can describe the bean with pick lists instead."
+          }
+        }
+      }
+    },
+    "scanner.unsupported.title" : {
+      "comment" : "Title when this device cannot scan barcodes at all (also the simulator).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scannen nicht unterstützt"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scanning not supported"
           }
         }
       }
