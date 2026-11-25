@@ -1,7 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  ENTRY_RANGES,
   LANGUAGES,
+  SCALED_FIELDS,
+  UNSCALED_IDS,
+  checkEntryRanges,
+  checkFieldRules,
   checkI18n,
   checkParentReferences,
   checkSemantics,
@@ -14,6 +19,7 @@ import {
   mergeIdLists,
   validateVocabulary,
 } from '../lib/vocabulary.mjs';
+import { loadOpenApi } from '../lib/openapi.mjs';
 
 const schemas = loadSchemas();
 const versions = listVersions();
@@ -404,4 +410,193 @@ test('label check fails: a label left for an id that was removed (robusta under 
   const en = clone(loadI18n().en);
   en.labels.varieties.robusta = 'Robusta';
   assert.deepEqual(checkI18n('en', en, allLists()), ['en: orphan label varieties.robusta']);
+});
+
+// ---- Vocabulary v3 (draft, task M2-T2, D13): grinders and the method field rules. ----
+
+for (const version of versions) {
+  test(`v${version}: every entry scale sits on its step, and the step is exact in binary`, () => {
+    assert.deepEqual(checkEntryRanges(loadVocabulary(version)), []);
+  });
+}
+
+/**
+ * Fields that v3 adds to BrewParameters when it is published (M2-T4). Until
+ * then the API does not have them, because a draft is not in the API.
+ */
+const V3_FIELDS_NOT_IN_API_YET = ['grinder', 'grind_setting'];
+const brewParameterFields = () => Object.keys(loadOpenApi().components.schemas.BrewParameters.properties);
+const ruleFields = () => [...new Set([...brewParameterFields(), ...V3_FIELDS_NOT_IN_API_YET])];
+const v3 = () => clone(loadVocabulary(3));
+const methodIds = () => loadVocabulary(3).brew.methods.map((entry) => entry.id);
+const allowedBy = (files, field) => Object.keys(files.brew.field_rules[field]?.allowed_methods ?? {});
+const except = (...ids) => methodIds().filter((id) => !ids.includes(id));
+
+test('v3 is a draft in every file, and v1, v2 and their locks are untouched (the lock test covers the bytes)', () => {
+  for (const [name, file] of Object.entries(loadVocabulary(3))) {
+    assert.equal(file.version, 3, `${name}.json`);
+    assert.equal(file.status, 'draft', `${name}.json`);
+  }
+  for (const version of [1, 2]) {
+    for (const file of Object.values(loadVocabulary(version))) assert.equal(file.status, 'published');
+  }
+});
+
+test('v3 is v2 plus grinders and field_rules in brew.json, and nothing else changed', () => {
+  const v2 = loadVocabulary(2);
+  const files = loadVocabulary(3);
+  assert.deepEqual(Object.keys(files), Object.keys(v2));
+  for (const name of Object.keys(v2)) {
+    const actual = withoutMeta(files[name]);
+    if (name === 'brew') {
+      const { grinders, field_rules: fieldRules, ...rest } = actual;
+      assert.deepEqual(rest, withoutMeta(v2.brew), 'brew.json: v2 lists and ranges unchanged');
+      assert.ok(grinders && fieldRules, 'brew.json: grinders and field_rules added');
+    } else {
+      assert.deepEqual(actual, withoutMeta(v2[name]), `${name}.json`);
+    }
+  }
+});
+
+test('v3 grinders: hand and electric models, then pre_ground and other, each with its own scale or none', () => {
+  const { grinders } = loadVocabulary(3).brew;
+  const ids = grinders.map((entry) => entry.id);
+  assert.ok(ids.length >= 17 && ids.length <= 27, `expected 17 to 27 grinders, found ${ids.length}`);
+  assert.deepEqual(ids.slice(-2), ['pre_ground', 'other']);
+  for (const id of ['comandante_c40', 'onezpresso_jx_pro', 'baratza_encore', 'niche_zero']) assert.ok(ids.includes(id), id);
+  // Most models have a scale; a dial that is not in steps of 1 or 0.5 has none.
+  assert.ok(grinders.filter((entry) => 'scale' in entry).length >= 12);
+  for (const entry of grinders.filter((e) => 'scale' in e)) {
+    assert.ok([1, 0.5].includes(entry.scale.multipleOf), `${entry.id}: step ${entry.scale.multipleOf}`);
+  }
+});
+
+test('v3: pre_ground and other have no scale', () => {
+  assert.deepEqual(UNSCALED_IDS, ['pre_ground', 'other']);
+  const byId = new Map(loadVocabulary(3).brew.grinders.map((entry) => [entry.id, entry]));
+  for (const id of UNSCALED_IDS) {
+    assert.ok(byId.has(id), `${id} is a grinder`);
+    assert.ok(!('scale' in byId.get(id)), `${id} has no scale`);
+  }
+});
+
+test('v3 field rules are the D13 decision (ADR 0021)', () => {
+  const files = loadVocabulary(3);
+  assert.deepEqual(Object.keys(files.brew.field_rules).sort(), ['grind_setting', 'grinder', 'water_temp_c', 'water_temp_special']);
+  assert.deepEqual(allowedBy(files, 'water_temp_special'), ['cold_brew']);
+  assert.deepEqual(allowedBy(files, 'water_temp_c'), except('cold_brew', 'moka_pot', 'cezve'));
+  assert.deepEqual(allowedBy(files, 'grinder'), except('fully_automatic'));
+  assert.deepEqual(allowedBy(files, 'grind_setting'), except('fully_automatic'));
+  // Every other field is allowed with every method.
+  for (const field of ['dose_dg', 'water_g', 'brew_time_s', 'grind_normalised', 'water_type', 'milk']) {
+    assert.ok(!(field in files.brew.field_rules), field);
+  }
+});
+
+test('v3: every rule names a known method and a known BrewParameters field, never method', () => {
+  assert.deepEqual(checkFieldRules(loadVocabulary(3), { fields: ruleFields() }), []);
+  for (const field of Object.keys(loadVocabulary(3).brew.field_rules)) {
+    assert.ok(ruleFields().includes(field) && field !== 'method', field);
+  }
+});
+
+test('the fields v3 adds are not in the API while v3 is a draft, and must be once it is published', () => {
+  const published = Object.values(loadVocabulary(3)).every((file) => file.status === 'published');
+  for (const field of V3_FIELDS_NOT_IN_API_YET) {
+    assert.equal(brewParameterFields().includes(field), published, `${field}: drop it from V3_FIELDS_NOT_IN_API_YET once BrewParameters has it`);
+  }
+});
+
+test('the grinder scale binding: SCALED_FIELDS and ENTRY_RANGES name v3 lists and fields', () => {
+  assert.deepEqual(ENTRY_RANGES, { grinders: 'scale' });
+  assert.deepEqual(SCALED_FIELDS, { grind_setting: { by: 'grinder', list: 'grinders' } });
+  const { lists } = collectIds(loadVocabulary(3));
+  for (const [field, { by, list }] of Object.entries(SCALED_FIELDS)) {
+    assert.ok(list in ENTRY_RANGES && list in lists, list);
+    assert.ok(ruleFields().includes(field) && ruleFields().includes(by), `${field}, ${by}`);
+  }
+});
+
+test('field rule check fails: unknown method or field, method itself, empty, all methods, order, not true', () => {
+  const fields = ruleFields();
+  const check = (mutate) => {
+    const files = v3();
+    mutate(files.brew.field_rules, files);
+    return checkFieldRules(files, { fields });
+  };
+  assert.deepEqual(check((r) => { r.water_temp_special.allowed_methods.pour_over = true; }), ['field_rules.water_temp_special: pour_over is not a method']);
+  assert.deepEqual(check((r) => { r.grind_size = { allowed_methods: { espresso: true } }; }), ['field_rules.grind_size: grind_size is not a BrewParameters field']);
+  assert.deepEqual(check((r) => { r.method = { allowed_methods: { espresso: true } }; }), ['field_rules.method: the method is never ruled by a method']);
+  assert.deepEqual(check((r) => { r.milk = { allowed_methods: {} }; }), ['field_rules.milk: allows no method']);
+  assert.deepEqual(check((r) => { r.milk = { allowed_methods: Object.fromEntries(methodIds().map((m) => [m, true])) }; }), ['field_rules.milk: allows every method; drop the rule']);
+  assert.deepEqual(check((r) => { r.water_temp_c.allowed_methods = { v60: true, espresso: true }; }), ['field_rules.water_temp_c: methods are not in the order of the method list']);
+  assert.deepEqual(check((r) => { r.water_temp_special.allowed_methods.cold_brew = false; }), ['field_rules.water_temp_special: cold_brew must be true']);
+  assert.deepEqual(check((r) => { r.milk = { methods: ['espresso'] }; }), ['field_rules.milk: allowed_methods is missing or not an object']);
+  // A method removed from the list makes every rule that names it fail.
+  const files = v3();
+  files.brew.methods = files.brew.methods.filter((entry) => entry.id !== 'cold_brew');
+  assert.ok(checkFieldRules(files, { fields }).includes('field_rules.water_temp_special: cold_brew is not a method'));
+});
+
+test('field rule check fails: grind_setting allowed where grinder is not, or without the grinder list', () => {
+  const fields = ruleFields();
+  const files = v3();
+  files.brew.field_rules.grinder.allowed_methods = { espresso: true };
+  assert.deepEqual(checkFieldRules(files, { fields }), [
+    'field_rules.grind_setting: allowed with moka_pot, v60, chemex, kalita, batch_filter, aeropress, french_press, cold_brew, cezve, siphon, where grinder is not',
+  ]);
+  const noRule = v3();
+  delete noRule.brew.field_rules.grind_setting;
+  assert.deepEqual(checkFieldRules(noRule, { fields }), ['field_rules.grind_setting: allowed with fully_automatic, where grinder is not']);
+  const noList = v3();
+  delete noList.brew.grinders;
+  assert.deepEqual(checkFieldRules(noList, { fields }), ['field_rules.grind_setting: depends on the list grinders, which brew.json does not define']);
+});
+
+test('entry range check fails: off step, inexact step, empty, not a range, on pre_ground or other, on another list', () => {
+  const check = (mutate) => {
+    const files = v3();
+    const grinder = (id) => files.brew.grinders.find((entry) => entry.id === id);
+    mutate(grinder, files);
+    return checkEntryRanges(files);
+  };
+  assert.deepEqual(check((g) => { g('niche_zero').scale.maximum = 50.25; }), ['grinders.niche_zero: scale minimum and maximum are not on the step 0.5']);
+  assert.deepEqual(check((g) => { g('baratza_encore').scale = { minimum: 1, maximum: 4, multipleOf: 0.1 }; }), ['grinders.baratza_encore: scale step 0.1 is not exact in binary floating point (ADR 0004)']);
+  assert.deepEqual(check((g) => { g('baratza_encore').scale.minimum = 40; }), ['grinders.baratza_encore: scale minimum is not below maximum']);
+  assert.deepEqual(check((g) => { g('baratza_encore').scale = { minimum: 1, maximum: 40 }; }), ['grinders.baratza_encore: scale is not a range { minimum, maximum, multipleOf }']);
+  assert.deepEqual(check((g) => { g('pre_ground').scale = { minimum: 1, maximum: 10, multipleOf: 1 }; }), ['grinders.pre_ground: scale is not allowed; pre_ground has no scale']);
+  assert.deepEqual(check((g) => { g('other').scale = { minimum: 1, maximum: 10, multipleOf: 1 }; }), ['grinders.other: scale is not allowed; other has no scale']);
+  assert.deepEqual(check((g, f) => { f.brew.methods[0].scale = { minimum: 1, maximum: 10, multipleOf: 1 }; }), ['methods.espresso: scale is only allowed in grinders']);
+});
+
+test('schema check: grinders and field_rules are required from v3 on, forbidden before, and closed', () => {
+  const broken = (mutate) => {
+    const files = v3();
+    mutate(files.brew);
+    return validateVocabulary(files, schemas, 3);
+  };
+  assert.deepEqual(broken(() => {}), []);
+  for (const name of ['grinders', 'field_rules']) {
+    assert.ok(broken((brew) => { delete brew[name]; }).includes(`brew.json: / must have required property '${name}'`), name);
+    const v2 = clone(loadVocabulary(2));
+    v2.brew[name] = loadVocabulary(3).brew[name];
+    assert.notDeepEqual(validateVocabulary(v2, schemas, 2), [], `${name} in v2`);
+  }
+  assert.notDeepEqual(broken((brew) => { brew.grinders[0].scale.multipleOf = 0; }), [], 'step must be positive');
+  assert.notDeepEqual(broken((brew) => { delete brew.grinders[0].scale.maximum; }), [], 'scale is a full range');
+  assert.notDeepEqual(broken((brew) => { brew.grinders[0].label = 'Comandante'; }), [], 'no display text');
+  assert.notDeepEqual(broken((brew) => { brew.grinders[0].clicks = 40; }), [], 'no other attribute');
+  assert.notDeepEqual(broken((brew) => { brew.methods[0].scale = { minimum: 1, maximum: 2, multipleOf: 1 }; }), [], 'scale only on grinders');
+  assert.notDeepEqual(broken((brew) => { brew.field_rules.water_temp_c.allowed_methods.espresso = 'yes'; }), [], 'allowed is true');
+  assert.notDeepEqual(broken((brew) => { brew.field_rules.WaterTemp = { allowed_methods: { espresso: true } }; }), [], 'field is snake_case');
+  assert.notDeepEqual(broken((brew) => { brew.field_rules.water_temp_c.excluded_methods = { cezve: true }; }), [], 'no other rule kind');
+  assert.notDeepEqual(broken((brew) => { brew.field_rules = {}; }), [], 'not empty');
+  assert.notDeepEqual(broken((brew) => { brew.grinders.push({ id: '1zpresso_jx' }); }), [], 'ids start with a letter');
+});
+
+test('label check fails: a grinder without a label in one language', () => {
+  const lists = allLists();
+  const de = clone(loadI18n().de);
+  delete de.labels.grinders.pre_ground;
+  assert.deepEqual(checkI18n('de', de, lists), ['de: missing label grinders.pre_ground']);
 });

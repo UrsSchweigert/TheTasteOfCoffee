@@ -1009,7 +1009,8 @@ test('v2 is bound: origin, species and variety are in BeanAttributes, and the ve
   assert.deepEqual([s.Origin['x-vocabulary'], s.Origin.enum], ['origins', lists.origins]);
   assert.deepEqual([s.Species['x-vocabulary'], s.Species.enum], ['species', lists.species]);
   assert.deepEqual([s.Variety['x-vocabulary'], s.Variety.enum], ['varieties', lists.varieties]);
-  assert.deepEqual(context.draftLists, {});
+  // The v3 draft (M2-T2) adds grinders; it is bound when v3 is published (M2-T4).
+  assert.deepEqual(context.draftLists, { grinders: 3 });
 });
 
 test('v2 bean attributes: the schema accepts v2 ids and rejects anything else', () => {

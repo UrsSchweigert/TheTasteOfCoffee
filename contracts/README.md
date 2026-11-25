@@ -37,6 +37,27 @@ v2 is v1 with three lists added to `bean.json` (ADR 0006, ADR 0011). Every other
 
 `java` is both an origin (the island) and a variety (the cultivar). Namespaces are separate, so that is allowed; the generated Swift types are `Vocabulary.Origin.java` and `Vocabulary.Variety.java`.
 
+## Vocabulary v3 (draft)
+
+Task M2-T2, D13, ADR 0021. Not published and not in the API: `openapi.yaml` does not change, `vocabulary_version` stays at most 2, and the app keeps bundling v2 until M2-T4. While it is a draft, it may be edited in place.
+
+v3 is v2 with two additions to `brew.json`. Every other file is v2 byte for byte except `version` and `status`.
+
+| Key | Holds |
+| --- | --- |
+| `grinders` | Common home hand and electric grinders, then `pre_ground` and `other`. A grinder may carry `scale`, the range of the numbers on its own dial or of its clicks from zero, in steps of 1 or 0.5. `pre_ground`, `other` and grinders whose dial is not in steps of 1 or 0.5 have no scale. |
+| `field_rules` | For each `BrewParameters` field that only some methods allow, the methods that allow it: `{ <field>: { "allowed_methods": { <method>: true } } }`. A field without a rule is allowed with every method. |
+
+The rules in v3 (the D13 decision):
+
+- `water_temp_special` (`cold`): `cold_brew` only.
+- `water_temp_c`: every method except `cold_brew`, `moka_pot` and `cezve`.
+- `grinder` and `grind_setting`: every method except `fully_automatic`.
+- `grind_setting` needs a `grinder` whose entry has a `scale`, and lies on that scale (`SCALED_FIELDS` in `lib/vocabulary.mjs`). With `pre_ground`, `other` or another grinder without a scale, it is absent; `grind_normalised` still records the coarseness.
+- `dose_dg`, `water_g`, `brew_time_s`, `grind_normalised`, `water_type` and `milk`: every method.
+
+A field that a method does not allow must be absent; the server answers 400 (M2-T5). `grinder` and `grind_setting` are new `BrewParameters` fields that M2-T4 adds to the API.
+
 ## File shapes
 
 Generators and tests rely on these rules.
@@ -47,6 +68,8 @@ Generators and tests rely on these rules.
 - The property name that holds the array is the list's namespace, and a namespace lives in exactly one file. Ids are lowercase snake_case and unique within their namespace; the same id may appear in two namespaces (`acidity` is a criterion and an intensity dimension).
 - A range is `{ "minimum", "maximum", "multipleOf" }`, all three required, bounds inclusive.
 - An entry may name a parent entry of its own list only where `PARENT_REFERENCES` in `lib/vocabulary.mjs` says so: today only `origins`, with `country`. The parent is an id of the same list, never the entry itself, never a catch-all id (`NON_PARENT_IDS`: `blend`, `mixed`, `other`, `unknown`), and has no parent of its own, so the hierarchy has two levels. The schema allows the attribute on `origins` entries only. Generators emit it as a typed reference (`Vocabulary.Origin.country` in Swift).
+- An entry may carry a range of its own only where `ENTRY_RANGES` in `lib/vocabulary.mjs` says so: today only `grinders`, with `scale` (from v3). It is optional and a full range, its bounds sit on its step, and the step is exact in binary floating point (ADR 0004), so the API can send the value as a plain number. `pre_ground` and `other` (`UNSCALED_IDS`) never have one, and the schema allows the attribute on `grinders` entries only. Generators emit it as a typed optional range (`Vocabulary.Grinder.scale` in Swift).
+- `brew.json` may hold `field_rules` (from v3): an object keyed by `BrewParameters` field name, never `method`, each `{ "allowed_methods": { <method id>: true } }` with the methods in the order of `methods`, at least one and not all of them. It holds no array, so it is not a list and has no labels. `SCALED_FIELDS` in `lib/vocabulary.mjs` names a field whose value lies on the range of an entry picked in another field (`grind_setting` on the `scale` of the `grinder`); every method that allows it also allows the field it depends on.
 - A language file is `{ "language", "labels": { <namespace>: { <id>: text } }, "questions": { "criteria": { <id>: text } } }`.
 
 ## What the tests enforce
@@ -56,6 +79,8 @@ Generators and tests rely on these rules.
 - Every id has a non-empty label in `en.json` and `de.json`, every criterion has a question, and no label or question exists for an id the vocabulary does not define.
 - Ranges sit on their step, and price bands cover the axis from 0 upward without gap or overlap.
 - Every parent reference (`country` on a region) names an entry of the same list that has no parent itself, and the attribute appears in no other list.
+- Every entry range (`scale` on a grinder) is a range on its own step, the step is exact in binary, `pre_ground` and `other` have none, and the attribute appears in no other list.
+- Every method field rule names a method of its version and a `BrewParameters` field (plus `grinder` and `grind_setting`, which v3 adds when it is published), never `method`; `grind_setting` is allowed only where `grinder` is.
 - A version directory holds nothing but vocabulary files, and every array is an id list.
 - A version marked `published` has a lock, and every file in it matches the lock byte for byte (CRLF is read as LF, so line endings cannot break it; `.gitattributes` also keeps `contracts/vocabulary/**` at LF). A changed, added or removed file fails, and so does a lock whose version directory is gone.
 

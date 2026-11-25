@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "brew.schema.json",
-  "title": "Brew log vocabulary: methods, water, milk and numeric ranges",
+  "title": "Brew log vocabulary: methods, water, milk and numeric ranges, and from version 3 grinders and the method field rules",
   "type": "object",
   "required": ["version", "status", "methods", "water_types", "milk_types", "water_temp_special", "ranges"],
   "properties": {
@@ -11,6 +11,7 @@
     "water_types": { "$ref": "common.schema.json#/$defs/id_list" },
     "milk_types": { "$ref": "common.schema.json#/$defs/id_list" },
     "water_temp_special": { "$ref": "common.schema.json#/$defs/id_list" },
+    "grinders": { "$ref": "#/$defs/grinder_list" },
     "ranges": {
       "type": "object",
       "required": ["dose_g", "water_g", "water_temp_c", "brew_time_s", "grind_normalised"],
@@ -22,7 +23,55 @@
         "grind_normalised": { "$ref": "common.schema.json#/$defs/range" }
       },
       "additionalProperties": false
+    },
+    "field_rules": { "$ref": "#/$defs/field_rules" }
+  },
+  "additionalProperties": false,
+  "if": { "required": ["version"], "properties": { "version": { "type": "integer", "minimum": 3 } } },
+  "then": { "required": ["grinders", "field_rules"], "properties": { "grinders": true, "field_rules": true } },
+  "else": {
+    "not": {
+      "anyOf": [
+        { "required": ["grinders"], "properties": { "grinders": true } },
+        { "required": ["field_rules"], "properties": { "field_rules": true } }
+      ]
     }
   },
-  "additionalProperties": false
+  "$defs": {
+    "grinder_item": {
+      "description": "A grinder model, or pre_ground or other. `scale` is the range of the numbers on the grinder's own dial or click count; a grinder without one has no grind setting (ENTRY_RANGES and checkEntryRanges in lib/vocabulary.mjs).",
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/id" },
+        "scale": { "$ref": "common.schema.json#/$defs/range" }
+      },
+      "additionalProperties": false
+    },
+    "grinder_list": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/grinder_item" }
+    },
+    "field_rules": {
+      "description": "For each BrewParameters field that only some methods allow, the methods that allow it, keyed by method id. A field without a rule is allowed with every method. Field and method names are checked by checkFieldRules in lib/vocabulary.mjs.",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "common.schema.json#/$defs/id" },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["allowed_methods"],
+        "properties": {
+          "allowed_methods": {
+            "type": "object",
+            "minProperties": 1,
+            "propertyNames": { "$ref": "common.schema.json#/$defs/id" },
+            "additionalProperties": { "const": true }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
 }

@@ -38,6 +38,29 @@
     "water_temp_special": {
       "cold": "Cold"
     },
+    "grinders": {
+      "comandante_c40": "Comandante C40",
+      "onezpresso_jx_pro": "1Zpresso JX-Pro",
+      "onezpresso_k_ultra": "1Zpresso K-Ultra",
+      "timemore_chestnut_c3": "Timemore Chestnut C3",
+      "kingrinder_k6": "Kingrinder K6",
+      "hario_skerton_pro": "Hario Skerton Pro",
+      "porlex_mini_ii": "Porlex Mini II",
+      "baratza_encore": "Baratza Encore",
+      "baratza_encore_esp": "Baratza Encore ESP",
+      "baratza_virtuoso_plus": "Baratza Virtuoso+",
+      "fellow_ode_gen_2": "Fellow Ode Gen 2",
+      "fellow_opus": "Fellow Opus",
+      "wilfa_uniform": "Wilfa Uniform",
+      "graef_cm_800": "Graef CM 800",
+      "sage_smart_grinder_pro": "Sage / Breville Smart Grinder Pro",
+      "sage_dose_control_pro": "Sage / Breville Dose Control Pro",
+      "niche_zero": "Niche Zero",
+      "df64": "DF64",
+      "eureka_mignon_specialita": "Eureka Mignon Specialità",
+      "pre_ground": "Pre-ground",
+      "other": "Other grinder"
+    },
     "criteria": {
       "aroma": "Aroma",
       "flavour": "Flavour",

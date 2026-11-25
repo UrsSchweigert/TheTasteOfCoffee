@@ -1,0 +1,85 @@
+{
+  "version": 3,
+  "status": "draft",
+  "methods": [
+    { "id": "espresso" },
+    { "id": "moka_pot" },
+    { "id": "v60" },
+    { "id": "chemex" },
+    { "id": "kalita" },
+    { "id": "batch_filter" },
+    { "id": "aeropress" },
+    { "id": "french_press" },
+    { "id": "cold_brew" },
+    { "id": "cezve" },
+    { "id": "siphon" },
+    { "id": "fully_automatic" }
+  ],
+  "water_types": [
+    { "id": "tap" },
+    { "id": "filtered" },
+    { "id": "bottled" },
+    { "id": "remineralised" }
+  ],
+  "milk_types": [
+    { "id": "none" },
+    { "id": "dairy" },
+    { "id": "oat" },
+    { "id": "soy" },
+    { "id": "almond" },
+    { "id": "cashew" },
+    { "id": "hazelnut" },
+    { "id": "macadamia" },
+    { "id": "coconut" },
+    { "id": "rice" },
+    { "id": "pea" },
+    { "id": "other_plant" }
+  ],
+  "water_temp_special": [
+    { "id": "cold" }
+  ],
+  "grinders": [
+    { "id": "comandante_c40", "scale": { "minimum": 0, "maximum": 50, "multipleOf": 1 } },
+    { "id": "onezpresso_jx_pro", "scale": { "minimum": 0, "maximum": 200, "multipleOf": 1 } },
+    { "id": "onezpresso_k_ultra", "scale": { "minimum": 0, "maximum": 200, "multipleOf": 1 } },
+    { "id": "timemore_chestnut_c3", "scale": { "minimum": 0, "maximum": 36, "multipleOf": 1 } },
+    { "id": "kingrinder_k6", "scale": { "minimum": 0, "maximum": 240, "multipleOf": 1 } },
+    { "id": "hario_skerton_pro", "scale": { "minimum": 0, "maximum": 30, "multipleOf": 1 } },
+    { "id": "porlex_mini_ii", "scale": { "minimum": 0, "maximum": 20, "multipleOf": 1 } },
+    { "id": "baratza_encore", "scale": { "minimum": 1, "maximum": 40, "multipleOf": 1 } },
+    { "id": "baratza_encore_esp", "scale": { "minimum": 1, "maximum": 40, "multipleOf": 1 } },
+    { "id": "baratza_virtuoso_plus", "scale": { "minimum": 1, "maximum": 40, "multipleOf": 1 } },
+    { "id": "fellow_ode_gen_2" },
+    { "id": "fellow_opus" },
+    { "id": "wilfa_uniform", "scale": { "minimum": 0, "maximum": 40, "multipleOf": 1 } },
+    { "id": "graef_cm_800", "scale": { "minimum": 1, "maximum": 40, "multipleOf": 1 } },
+    { "id": "sage_smart_grinder_pro", "scale": { "minimum": 1, "maximum": 60, "multipleOf": 1 } },
+    { "id": "sage_dose_control_pro", "scale": { "minimum": 1, "maximum": 60, "multipleOf": 1 } },
+    { "id": "niche_zero", "scale": { "minimum": 0, "maximum": 50, "multipleOf": 0.5 } },
+    { "id": "df64", "scale": { "minimum": 0, "maximum": 90, "multipleOf": 1 } },
+    { "id": "eureka_mignon_specialita" },
+    { "id": "pre_ground" },
+    { "id": "other" }
+  ],
+  "ranges": {
+    "dose_g": { "minimum": 5, "maximum": 100, "multipleOf": 0.1 },
+    "water_g": { "minimum": 10, "maximum": 1500, "multipleOf": 1 },
+    "water_temp_c": { "minimum": 80, "maximum": 100, "multipleOf": 1 },
+    "brew_time_s": { "minimum": 1, "maximum": 172800, "multipleOf": 1 },
+    "grind_normalised": { "minimum": 1, "maximum": 10, "multipleOf": 0.5 }
+  },
+  "field_rules": {
+    "water_temp_c": {
+      "allowed_methods": { "espresso": true, "v60": true, "chemex": true, "kalita": true, "batch_filter": true, "aeropress": true, "french_press": true, "siphon": true, "fully_automatic": true }
+    },
+    "water_temp_special": {
+      "allowed_methods": { "cold_brew": true }
+    },
+    "grinder": {
+      "allowed_methods": { "espresso": true, "moka_pot": true, "v60": true, "chemex": true, "kalita": true, "batch_filter": true, "aeropress": true, "french_press": true, "cold_brew": true, "cezve": true, "siphon": true }
+    },
+    "grind_setting": {
+      "allowed_methods": { "espresso": true, "moka_pot": true, "v60": true, "chemex": true, "kalita": true, "batch_filter": true, "aeropress": true, "french_press": true, "cold_brew": true, "cezve": true, "siphon": true }
+    }
+  }
+}

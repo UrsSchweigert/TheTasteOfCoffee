@@ -27,6 +27,28 @@ export const QUESTION_NAMESPACES = ['criteria'];
 export const PARENT_REFERENCES = { origins: 'country' };
 /** Catch-all ids that are never a real place, so never a parent (`blend`, `other`, `unknown`). */
 export const NON_PARENT_IDS = ['blend', 'mixed', 'other', 'unknown'];
+/**
+ * Lists whose entries may carry a range of their own, by the attribute given
+ * here (vocabulary v3, D13): a grinder names the scale of its own dial or
+ * click count with `scale`. The attribute is optional; an entry without it
+ * has no scale. Generators read this to emit a typed optional range.
+ */
+export const ENTRY_RANGES = { grinders: 'scale' };
+/** Ids of ENTRY_RANGES lists that never have a scale: ground beans and the catch-all. */
+export const UNSCALED_IDS = ['pre_ground', 'other'];
+/**
+ * BrewParameters fields whose value lies on the range of an entry picked in
+ * another field (vocabulary v3, D13): `grind_setting` needs a `grinder`
+ * whose entry in `grinders` has a `scale`, and lies on that scale. So every
+ * method that allows the field must also allow the field it depends on.
+ */
+export const SCALED_FIELDS = { grind_setting: { by: 'grinder', list: 'grinders' } };
+/** Where the method field rules live: `brew.json`, `field_rules`. */
+export const FIELD_RULES_KEY = 'field_rules';
+/** The BrewParameters field that the rules are keyed by; it never has a rule itself. */
+export const METHOD_FIELD = 'method';
+/** A step is exact in binary floating point if it is a multiple of 2^-20 (ADR 0004, the API lint's rule). */
+export const isExactStep = (step) => typeof step === 'number' && step > 0 && Number.isInteger(step * 2 ** 20);
 
 const SCHEMA_SUFFIX = '.schema.json';
 const SHARED_SCHEMA = 'common';
@@ -223,6 +245,101 @@ export function checkParentReferences(files, references = PARENT_REFERENCES) {
       else if (NON_PARENT_IDS.includes(parentId)) problems.push(`${namespace}.${entry.id}: ${attribute} ${parentId} is a catch-all entry, not a parent`);
       else if (attribute in parent) problems.push(`${namespace}.${entry.id}: ${attribute} ${parentId} has a ${attribute} itself; a parent must be top level`);
     }
+  }
+  return problems;
+}
+
+const isRange = (value) =>
+  value !== null && typeof value === 'object' && !Array.isArray(value) &&
+  ['minimum', 'maximum', 'multipleOf'].every((key) => typeof value[key] === 'number');
+const onStep = (value, step) => Math.abs(value / step - Math.round(value / step)) < 1e-9;
+
+/**
+ * Checks the ranges of ENTRY_RANGES (a grinder's `scale`): each is a range
+ * whose minimum is below its maximum, whose bounds sit on its step, and whose
+ * step is exact in binary floating point (ADR 0004), so the API can send the
+ * value as a plain number. The ids of UNSCALED_IDS have no scale, and the
+ * attribute may not appear on an entry of any other list.
+ */
+export function checkEntryRanges(files, ranges = ENTRY_RANGES) {
+  const problems = [];
+  const attributes = new Set(Object.values(ranges));
+  for (const [namespace, entries] of Object.entries(collectEntries(files))) {
+    const attribute = ranges[namespace];
+    if (attribute === undefined) {
+      for (const entry of entries) {
+        for (const key of Object.keys(entry)) {
+          if (attributes.has(key)) problems.push(`${namespace}.${entry.id}: ${key} is only allowed in ${Object.keys(ranges).join(', ')}`);
+        }
+      }
+      continue;
+    }
+    for (const entry of entries) {
+      if (!(attribute in entry)) continue;
+      const range = entry[attribute];
+      const where = `${namespace}.${entry.id}: ${attribute}`;
+      if (UNSCALED_IDS.includes(entry.id)) problems.push(`${where} is not allowed; ${entry.id} has no scale`);
+      if (!isRange(range)) {
+        problems.push(`${where} is not a range { minimum, maximum, multipleOf }`);
+        continue;
+      }
+      if (!isExactStep(range.multipleOf)) {
+        problems.push(`${where} step ${range.multipleOf} is not exact in binary floating point (ADR 0004)`);
+        continue;
+      }
+      if (!(range.minimum < range.maximum)) problems.push(`${where} minimum is not below maximum`);
+      else if (!onStep(range.minimum, range.multipleOf) || !onStep(range.maximum, range.multipleOf)) {
+        problems.push(`${where} minimum and maximum are not on the step ${range.multipleOf}`);
+      }
+    }
+  }
+  return problems;
+}
+
+/**
+ * Checks the method field rules (`brew.json`, `field_rules`, vocabulary v3):
+ * every rule names a field of `fields` (the BrewParameters fields, never
+ * `method`), allows at least one method and not every method (a field
+ * without a rule is allowed with every method), and names only methods of
+ * the same version, each once, as `true`, in the order of the method list.
+ * For SCALED_FIELDS, every method that allows the field also allows the
+ * field it depends on, and the list it depends on exists.
+ * Returns a list of problems; no rules is no problem.
+ */
+export function checkFieldRules(files, { fields }) {
+  const rules = files.brew?.[FIELD_RULES_KEY];
+  if (rules === undefined) return [];
+  const isMap = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+  if (!isMap(rules)) return [`${FIELD_RULES_KEY}: not an object`];
+  const problems = [];
+  const methods = (files.brew?.methods ?? []).map((entry) => entry.id);
+  const allowed = (field) => (isMap(rules[field]?.allowed_methods) ? Object.keys(rules[field].allowed_methods) : methods);
+
+  for (const [field, rule] of Object.entries(rules)) {
+    const where = `${FIELD_RULES_KEY}.${field}`;
+    if (field === METHOD_FIELD) problems.push(`${where}: the method is never ruled by a method`);
+    else if (!fields.includes(field)) problems.push(`${where}: ${field} is not a BrewParameters field`);
+    if (!isMap(rule) || !isMap(rule.allowed_methods)) {
+      problems.push(`${where}: allowed_methods is missing or not an object`);
+      continue;
+    }
+    const names = Object.keys(rule.allowed_methods);
+    for (const name of names) {
+      if (!methods.includes(name)) problems.push(`${where}: ${name} is not a method`);
+      else if (rule.allowed_methods[name] !== true) problems.push(`${where}: ${name} must be true`);
+    }
+    const known = names.filter((name) => methods.includes(name));
+    if (names.length === 0) problems.push(`${where}: allows no method`);
+    else if (methods.every((method) => known.includes(method))) problems.push(`${where}: allows every method; drop the rule`);
+    const ordered = methods.filter((method) => known.includes(method));
+    if (known.join() !== ordered.join()) problems.push(`${where}: methods are not in the order of the method list`);
+  }
+
+  for (const [field, { by, list }] of Object.entries(SCALED_FIELDS)) {
+    if (!(field in rules) && !(by in rules)) continue;
+    if (!Array.isArray(files.brew?.[list])) problems.push(`${FIELD_RULES_KEY}.${field}: depends on the list ${list}, which brew.json does not define`);
+    const missing = allowed(field).filter((method) => !allowed(by).includes(method));
+    if (missing.length > 0) problems.push(`${FIELD_RULES_KEY}.${field}: allowed with ${missing.join(', ')}, where ${by} is not`);
   }
   return problems;
 }
