@@ -133,7 +133,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - Assertion tests pin: on-demand billing, PITR, deletion protection, stream enabled, RETAIN, public access blocked, versioning, TLS-only policy.
 
 ### M1-T2 Identity and API shell
-- status: todo
+- status: in-progress
 - owner: infra-engineer
 - depends: M1-T1, and the Apple items of M0-T7 (done 2026-11-25). The repository secrets in M0-T7 are needed only for M1-T7.
 - implements: docs/05-system-design.md, Components, Security
