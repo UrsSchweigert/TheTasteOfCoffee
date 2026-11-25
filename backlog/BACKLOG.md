@@ -220,7 +220,10 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - docs/05 Barcode lookup describes the server-side lookup (User-Agent, catalogue cache, per-user cap), and docs/04 F1 step 3 matches it.
   - The backend regenerates its schemas, and the no-drift check passes.
   - Status: the contract part (D7, D9, draft v2) was merged on 2026-11-25. Still open:
-    - the owner approves v2, then v2 is published and locked, and origin and variety are bound in openapi (the `addV2Fields` steps in contracts/README.md);
+    - apply the owner's amendments from ADR 0011: region entries carry their parent country (with Bali, Flores and `usa` added), a new `species` list, `robusta` removed from varieties, and the added origins and varieties;
+    - then publish and lock v2 (owner-approved with those amendments on 2026-11-25), and bind origin, variety and species in openapi (the `addV2Fields` steps in contracts/README.md, extended for species);
+    - replace the Open Food Facts `image_ref` pattern with a reference to our stored copy (ADR 0011);
+    - start after M1-T5 merges, because publishing regenerates the backend code M1-T5 builds on;
     - from the review, the lint pins HealthStatus to exactly `{status}` (required, no additional properties) and `/health` to `get` only.
 
 ### M1-T9 GitHub OIDC deploy stack and IAM policy guards
