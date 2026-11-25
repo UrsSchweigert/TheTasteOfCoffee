@@ -51,7 +51,7 @@ Goal: the repo builds, tests and checks itself; the shared contract exists.
   - An assertion test fails if the template contains a forbidden resource type (see CLAUDE.md, invariant 5).
 
 ### M0-T5 Continuous integration
-- status: todo
+- status: in-progress
 - owner: infra-engineer
 - depends: M0-T3, M0-T4
 - acceptance:
