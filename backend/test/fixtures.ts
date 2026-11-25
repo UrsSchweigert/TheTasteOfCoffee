@@ -54,9 +54,18 @@ export function validBean(): Record<string, unknown> {
     verified: false,
     barcode: EAN13,
     open_food_facts_match: true,
+    open_food_facts: {
+      name: 'Ethiopia Guji <b>natural</b>',
+      brand: 'Rösterei Beispiel',
+      image_ref: 'https://images.openfoodfacts.org/images/products/400/638/133/3931/front_de.3.400.jpg',
+    },
     picked_attributes: { process: 'natural' },
     operator_attributes: {},
   };
+}
+
+export function validHealthStatus(): Record<string, unknown> {
+  return { status: 'ok' };
 }
 
 export function validShelfEntryInput(): Record<string, unknown> {

@@ -4,6 +4,7 @@ import {
   BeanSchema,
   BrewInputSchema,
   BrewPageSchema,
+  HealthStatusSchema,
   IdSchema,
   ProfileSchema,
   RecipeInputSchema,
@@ -148,6 +149,38 @@ describe('Bean', () => {
     const bean = validBean();
     delete bean.picked_attributes;
     expect(BeanSchema.safeParse(bean).success).toBe(false);
+  });
+});
+
+describe('Open Food Facts text (ADR 0005)', () => {
+  function beanWith(fields: Record<string, unknown>): Mutable {
+    const bean = validBean();
+    bean.open_food_facts = { ...child(bean, 'open_food_facts'), ...fields };
+    return bean;
+  }
+  it('is accepted in a bean response up to its length limit, counted in code points', () => {
+    expect(BeanSchema.safeParse(beanWith({ name: 'x'.repeat(150), brand: 'x'.repeat(100) })).success).toBe(true);
+    expect(BeanSchema.safeParse(beanWith({ name: '\u{1F600}'.repeat(150) })).success).toBe(true);
+  });
+  it.each([
+    ['a name over 150', { name: 'x'.repeat(151) }],
+    ['a brand over 100', { brand: 'x'.repeat(101) }],
+    ['an empty name', { name: '' }],
+    ['an unknown field', { origin: 'Guji' }],
+    ['an image on another host', { image_ref: 'https://example.com/front_de.3.400.jpg' }],
+  ])('rejects %s', (_name, fields) => {
+    expect(BeanSchema.safeParse(beanWith(fields)).success).toBe(false);
+  });
+  it('is never accepted in a request', () => {
+    expect(BeanCreateSchema.safeParse({ ...validBeanCreate(), open_food_facts: { name: 'Ethiopia Guji' } }).success).toBe(false);
+  });
+});
+
+describe('HealthStatus (ADR 0007)', () => {
+  it('is exactly {"status":"ok"}', () => {
+    expect(HealthStatusSchema.safeParse({ status: 'ok' }).success).toBe(true);
+    expect(HealthStatusSchema.safeParse({ status: 'degraded' }).success).toBe(false);
+    expect(HealthStatusSchema.safeParse({ status: 'ok', version: '1' }).success).toBe(false);
   });
 });
 

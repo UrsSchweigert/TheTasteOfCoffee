@@ -39,6 +39,16 @@ describe('generator', () => {
     }
   });
 
+  it('emits response-only free text as a string bounded in code points, only with the marker', () => {
+    const source = generate({
+      A: { type: 'string', minLength: 1, maxLength: 150, readOnly: true, 'x-free-text-from': 'open_food_facts' },
+    });
+    expect(source).toContain(
+      "export const ASchema = z.string().refine((value) => codePointLength(value) >= 1, { error: 'Too short' })" +
+        ".refine((value) => codePointLength(value) <= 150, { error: 'Too long' });",
+    );
+  });
+
   it('is deterministic', () => {
     expect(generateFromContract()).toBe(generateFromContract());
   });
@@ -58,6 +68,32 @@ describe('generator', () => {
     ['a free-text string', { A: { type: 'string' } }, /enum, pattern or format/],
     ['a string with only a length', { A: { type: 'string', maxLength: 10 } }, /enum, pattern or format/],
     ['an unknown format', { A: { type: 'string', format: 'email' } }, /format email/],
+    ['a bounded string without the free-text marker', { A: { type: 'string', maxLength: 10, readOnly: true } }, /readOnly is only supported/],
+    [
+      'free text without maxLength',
+      { A: { type: 'string', readOnly: true, 'x-free-text-from': 'open_food_facts' } },
+      /needs maxLength/,
+    ],
+    [
+      'free text without readOnly',
+      { A: { type: 'string', maxLength: 10, 'x-free-text-from': 'open_food_facts' } },
+      /needs readOnly: true/,
+    ],
+    [
+      'free text from another source',
+      { A: { type: 'string', maxLength: 10, readOnly: true, 'x-free-text-from': 'user' } },
+      /must be open_food_facts/,
+    ],
+    [
+      'free text with a pattern',
+      { A: { type: 'string', pattern: '^a$', maxLength: 10, readOnly: true, 'x-free-text-from': 'open_food_facts' } },
+      /together with pattern/,
+    ],
+    [
+      'the free-text marker on a number',
+      { A: { type: 'integer', minimum: 0, maximum: 1, 'x-free-text-from': 'open_food_facts' } },
+      /keyword "x-free-text-from" is not supported on type integer/,
+    ],
     ['an invalid pattern', { A: { type: 'string', pattern: '^[a$' } }, /not a valid unicode regular expression/],
     ['a non-string enum', { A: { type: 'string', enum: [1] } }, /enum values must be strings/],
     ['an empty enum', { A: { type: 'string', enum: [] } }, /non-empty/],

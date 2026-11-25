@@ -57,8 +57,10 @@ One DynamoDB table holds everything. The partition key decides who can reach an 
 | Brew with rating | `USER#<id>` | `BREW#<brewedAt UTC>#<brewId>` | Method, parameters, 8 scores, intensities, notes, buy again, schema version |
 | Brew pointer | `USER#<id>` | `BREWID#<brewId>` | The brew's current sort key, for reads by id |
 | Recipe | `USER#<id>` | `RECIPE#<id>` | Saved parameter set |
-| Bean | `BEAN#<beanId>` | `META` | Roaster, origin, process, variety, roast level, status, source |
+| Bean | `BEAN#<beanId>` | `META` | Picked attributes (process, roast level; origin and variety from vocabulary v2), operator attributes including the curated roaster, Open Food Facts name, brand and image reference, each group tagged with its source; status |
 | Barcode | `BARCODE#<ean>` | `BEAN` | Pointer to the bean |
+| Open Food Facts cache | `BARCODE#<ean>` | `OFF` | The fetched product (name, brand, image reference) or a miss, fetch time; TTL on a miss |
+| Lookup counter | `USER#<id>` | `LOOKUPS#<YYYY-MM-DD>` | The caller's Open Food Facts lookups that UTC day; TTL |
 | Aggregate, all methods | `BEAN#<beanId>` | `AGG#ALL` | Rater count; count, sum and sum of squares per criterion; note counts |
 | Aggregate per method | `BEAN#<beanId>` | `AGG#METHOD#<method>` | Same, plus recipe histogram buckets |
 | Rater marker | `BEAN#<beanId>` | `RATER#<id>` | Proves a distinct rater; drives give-to-get |
@@ -80,10 +82,16 @@ This keeps the paid tier's read cost flat no matter how many brews exist. If ad 
 
 ## Barcode lookup
 
-- Known barcodes are answered from the `BARCODE#` items.
-- Unknown barcodes are looked up in [Open Food Facts](https://openfoodfacts.github.io/openfoodfacts-server/api) directly from the phone. Its documentation says limits apply per user when requests come from users' devices, and asks for a custom User-Agent.
-- Results are cached in the bean catalogue, so each barcode is fetched once across all users.
-- Open Food Facts data is under the Open Database License, which requires attribution and share-alike. Catalogue fields taken from it are tagged with their source and kept apart from the ratings. Have this reviewed before launch.
+The phone sends only the barcode and, later, the user's confirmation. The backend talks to Open Food Facts, so no text ever travels from a client to the API (ADR 0005, invariant 1).
+
+- Known barcodes are answered from the `BARCODE#` items (`GET /barcodes/{barcode}`).
+- Unknown barcodes: the app calls `GET /barcodes/{barcode}/open_food_facts`, and the backend looks the barcode up in [Open Food Facts](https://openfoodfacts.github.io/openfoodfacts-server/api).
+  - **User-Agent.** Every request names the app and a contact address, in the form Open Food Facts asks for (`Cupmark/<version> (<contact>)`). The contact is an operator mailbox set in configuration, not in the repository. Requests go over HTTPS to the read API only; the Lambda needs outbound HTTPS to Open Food Facts and nothing else outside AWS.
+  - **Catalogue cache.** The result, a hit or a miss, is stored in the catalogue under the barcode (`BARCODE#<ean>` / `OFF`), so each barcode is fetched from Open Food Facts once across all users. A miss is retried after a while (for example 30 days, via TTL), because products get added. A failed or timed-out fetch caches nothing and answers 503. Open Food Facts rate limits then apply to our one server, so the cache is what keeps us inside them.
+  - **Per-user daily cap.** Each call to the route counts against the caller's lookups for the UTC day (a counter in the user's partition with a TTL, so it costs one write). Over the cap the route answers 429 until the next day. The cap protects Open Food Facts and stops anyone using us to scrape it; known barcodes are not counted. The number is configuration (default 50 a day).
+  - A hit returns name, brand and the front image reference. Text is untrusted: trimmed, cut to the contract's maximum length in code points, stored and returned as plain data, never interpreted as markup and never logged. The image reference is kept only if it is a URL on the Open Food Facts image host in the contract's pattern.
+- The app shows the hit for confirmation. Confirming is `POST /beans` with the barcode and `open_food_facts_confirmed`; the backend copies name, brand and image reference from its cache into the new unverified bean's `open_food_facts` group. Nothing enters the catalogue as a bean before that.
+- Open Food Facts data is under the Open Database License, which requires attribution and share-alike. Catalogue fields taken from it are tagged with their source (the `open_food_facts` group of a bean, D5) and kept apart from the ratings. Have this reviewed before launch.
 
 ## Subscriptions
 
