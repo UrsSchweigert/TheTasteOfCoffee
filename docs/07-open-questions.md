@@ -25,7 +25,9 @@ Record each answer as an ADR in `docs/decisions/`.
 
 - [x] Enrol in the Apple Developer Program. The owner is already a member (2026-11-25).
 - [ ] Join the Small Business Program (15% commission; needed before the paid launch).
-- [ ] Create the App ID, the Sign in with Apple service and key, and the subscription products in App Store Connect.
+- [x] Create the App ID `app.cupmark.Cupmark` with Sign in with Apple, and the app record in App Store Connect (owner, 2026-11-25).
+- [ ] Create the Services ID `app.cupmark.signin` (domains and return URLs as in M1-T2) and the Sign in with Apple key.
+- [ ] Create the subscription products in App Store Connect (needed for M4).
 - [x] In the shared AWS account (ADR 0009): run `scripts/aws/apply-guardrails.sh --apply` and the `cupmark` CDK bootstrap. Done by the owner on 2026-11-25; both match the repo.
 - [x] Check whether a GitHub OIDC provider already exists. It does, so `cupmark-github-oidc` uses `reference` (owner, 2026-11-25).
 - [x] Confirm MFA on root in the shared account. Enabled (owner check, 2026-11-25).

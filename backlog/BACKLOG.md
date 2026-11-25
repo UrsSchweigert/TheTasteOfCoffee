@@ -73,7 +73,7 @@ Goal: the repo builds, tests and checks itself; the shared contract exists.
 - needs: human
 - depends: none
 - acceptance:
-  - Apple Developer Program membership active (done, 2026-11-25). App ID `app.cupmark.Cupmark` with Sign in with Apple, a Services ID, and a Sign in with Apple key created; the key is stored only in Parameter Store as a SecureString, never in the repo (open).
+  - Apple Developer Program membership active (done, 2026-11-25). App ID `app.cupmark.Cupmark` with Sign in with Apple and the App Store Connect app record created (done, 2026-11-25). Services ID `app.cupmark.signin` and the Sign in with Apple key created, with the key stored only in Parameter Store as a SecureString and never in the repo (open).
   - In the shared AWS account (ADR 0009), checked read-only by the owner on 2026-11-25:
     - root MFA is on (done);
     - `CupmarkBoundary` and `CupmarkCfnExecution` match `scripts/aws/*.json` (done);
