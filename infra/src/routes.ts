@@ -33,6 +33,8 @@ export const API_ROUTES: readonly ApiRoute[] = [
   api('GET', '/barcodes/{barcode}/open_food_facts'),
   api('POST', '/beans'),
   api('GET', '/beans/{bean_id}'),
+  api('POST', '/beans/{bean_id}/label_photos'),
+  api('POST', '/label_photos/{photo_id}/complete'),
   api('GET', '/catalogue_images/{image_id}'),
   api('GET', '/shelf'),
   api('POST', '/shelf'),

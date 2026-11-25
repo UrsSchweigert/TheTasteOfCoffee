@@ -17,7 +17,7 @@ import { Construct } from 'constructs';
 import { NAME_PREFIX } from './config.ts';
 import type { StageName } from './config.ts';
 import type { CupmarkData } from './data.ts';
-import { REVIEW_QUEUE_INDEX } from './data.ts';
+import { LABEL_PHOTO_PREFIX, REVIEW_QUEUE_INDEX, UPLOAD_PHOTO_PREFIX } from './data.ts';
 import { cupmarkFunction } from './functions.ts';
 import { API_ROUTES, routeKey } from './routes.ts';
 import type { RouteTarget } from './routes.ts';
@@ -102,7 +102,9 @@ export class CupmarkApi extends Construct {
       environment: {
         TABLE_NAME: data.table.tableName,
         CURSOR_KEY_PARAMETER: cursorKeyParameter(stage),
-        // The backend stores and serves catalogue images under `catalogue/` (ADR 0011).
+        // The backend stores and serves catalogue images under `catalogue/` (ADR 0011),
+        // signs label photo uploads to `uploads/` and writes stripped ones to `labels/`
+        // (ADR 0016).
         PHOTO_BUCKET: data.photoBucket.bucketName,
       },
       statements: [
@@ -125,6 +127,19 @@ export class CupmarkApi extends Construct {
           sid: 'CatalogueImages',
           actions: ['s3:GetObject', 's3:PutObject'],
           resources: [data.photoBucket.arnForObjects(`${CATALOGUE_IMAGE_PREFIX}*`)],
+        }),
+        // ADR 0016. PutObject authorises the presigned POST the API signs; GetObject lets
+        // the completion call read the raw upload. No delete: a lifecycle rule removes it.
+        new iam.PolicyStatement({
+          sid: 'LabelPhotoUploads',
+          actions: ['s3:GetObject', 's3:PutObject'],
+          resources: [data.photoBucket.arnForObjects(`${UPLOAD_PHOTO_PREFIX}*`)],
+        }),
+        // The stripped photo. Write only: the operator's tooling reads it, not the API.
+        new iam.PolicyStatement({
+          sid: 'LabelPhotos',
+          actions: ['s3:PutObject'],
+          resources: [data.photoBucket.arnForObjects(`${LABEL_PHOTO_PREFIX}*`)],
         }),
       ],
     });

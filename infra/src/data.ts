@@ -52,6 +52,18 @@ export const VERIFIED_PHOTO_EXPIRE_AFTER_DAYS = 90;
 /** Days a deleted or overwritten photo is kept as a noncurrent version. */
 export const PHOTO_NONCURRENT_DAYS = 30;
 
+/**
+ * ADR 0016: the app uploads a label photo with a presigned POST to
+ * `uploads/<photoId>.jpg`. The raw upload still has its metadata; the API strips it and
+ * writes the result to `labels/<photoId>.jpg`. The API never deletes the upload: a
+ * lifecycle rule expires it after 1 day and its noncurrent version 1 day later.
+ */
+export const UPLOAD_PHOTO_PREFIX = 'uploads/';
+export const UPLOAD_EXPIRE_AFTER_DAYS = 1;
+export const UPLOAD_NONCURRENT_DAYS = 1;
+/** Stripped label photos of unverified beans (ADR 0016); they never expire by lifecycle. */
+export const LABEL_PHOTO_PREFIX = 'labels/';
+
 export interface CupmarkDataProps {
   readonly stage: StageName;
 }
@@ -113,9 +125,19 @@ export class CupmarkData extends Construct {
       projectionType: dynamodb.ProjectionType.ALL,
     });
 
-    // Label photos (docs/04 F1): uploaded with presigned URLs (M1-T4), read only by the
-    // operator's review tooling, never shown to other users. Also the catalogue's copies
-    // of Open Food Facts images under `catalogue/` (ADR 0011), which never expire.
+    // What lives here, by prefix (no CORS: the iOS app is not a browser):
+    // - `uploads/`: raw label photo uploads (presigned POST, ADR 0016), metadata not yet
+    //   stripped. Read only by the API's completion call; expire after 1 day, and their
+    //   noncurrent version 1 day after that.
+    // - `labels/`: stripped label photos of unverified beans (docs/04 F1, ADR 0016),
+    //   read only by the operator's review tooling, never shown to other users. Never
+    //   expire by lifecycle while the bean is in review.
+    // - `verified/`: photos of verified beans, expired 90 days after the copy.
+    // - `catalogue/`: the catalogue's copies of Open Food Facts images (ADR 0011), which
+    //   never expire.
+    // The whole-bucket `expire-noncurrent-versions` rule (30 days) also matches
+    // `uploads/`; where two rules expire the same object S3 applies the shorter period,
+    // so noncurrent versions under `uploads/` go after 1 day.
     this.photoBucket = new s3.Bucket(this, 'PhotoBucket', {
       ...privateBucketProps(),
       bucketName: bucketName(stage, 'photos'),
@@ -131,6 +153,12 @@ export class CupmarkData extends Construct {
           abortIncompleteMultipartUploadAfter: Duration.days(1),
         },
         { id: 'remove-expired-delete-markers', expiredObjectDeleteMarker: true },
+        {
+          id: 'expire-raw-uploads',
+          prefix: UPLOAD_PHOTO_PREFIX,
+          expiration: Duration.days(UPLOAD_EXPIRE_AFTER_DAYS),
+          noncurrentVersionExpiration: Duration.days(UPLOAD_NONCURRENT_DAYS),
+        },
       ],
     });
 
