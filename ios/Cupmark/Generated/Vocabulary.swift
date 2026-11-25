@@ -142,7 +142,7 @@ enum Vocabulary {
     enum MilkType: String, CaseIterable, Codable, Sendable, VocabularyItem {
         static let namespace: Vocabulary.Namespace = .milkTypes
 
-        case none = "none"
+        case noMilk = "none"
         case dairy = "dairy"
         case oat = "oat"
         case soy = "soy"

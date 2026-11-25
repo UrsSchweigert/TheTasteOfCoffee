@@ -139,6 +139,19 @@ final class VocabularyBundleTests: XCTestCase {
         }
     }
 
+    /// The milk id `none` is the case `noMilk`, so `.none` on an optional
+    /// milk type always means nil; the raw value is still the contract id.
+    func testMilkIdNoneIsTheCaseNoMilkWithRawValueNone() throws {
+        XCTAssertEqual(Vocabulary.MilkType.noMilk.rawValue, "none")
+        XCTAssertEqual(Vocabulary.MilkType(rawValue: "none"), .noMilk)
+        let unset: Vocabulary.MilkType? = .none
+        XCTAssertNil(unset)
+        let decoded = try JSONDecoder().decode([Vocabulary.MilkType].self, from: Data(#"["none"]"#.utf8))
+        XCTAssertEqual(decoded, [.noMilk])
+        let label = try loadStore().label(for: Vocabulary.MilkType.noMilk, language: .en)
+        XCTAssertFalse(label.isEmpty)
+    }
+
     private func listObjects(_ store: VocabularyStore, file: String, key: String) throws -> [JSONValue] {
         guard case .array(let items)? = store.value(at: "\(file).\(key)") else {
             throw MissingList(path: "\(file).\(key)")
