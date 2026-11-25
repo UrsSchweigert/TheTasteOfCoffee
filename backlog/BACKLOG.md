@@ -182,7 +182,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - `contracts/openapi.yaml`: `NotFound` no longer says "in the caller's partition" for the shared catalogue routes (it also covers a rejected bean), and `BadRequest` mentions a bad barcode check digit. No schema change.
 
 ### M1-T4b Server-side Open Food Facts lookup
-- status: todo
+- status: in-progress
 - owner: backend-engineer
 - depends: M1-T4a
 - implements: docs/decisions/0005, docs/05 Barcode lookup
