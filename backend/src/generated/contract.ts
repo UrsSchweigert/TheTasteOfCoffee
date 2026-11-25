@@ -19,7 +19,7 @@ export type CalendarDate = z.infer<typeof CalendarDateSchema>;
 export const TimestampSchema = z.string().refine(isDateTime, { error: 'Invalid date-time' });
 export type Timestamp = z.infer<typeof TimestampSchema>;
 
-export const VocabularyVersionSchema = z.int().min(1).max(1);
+export const VocabularyVersionSchema = z.int().min(1).max(2);
 export type VocabularyVersion = z.infer<typeof VocabularyVersionSchema>;
 
 export const HealthStatusSchema = z.strictObject({
@@ -82,6 +82,109 @@ export type Process = z.infer<typeof ProcessSchema>;
 
 export const RoastLevelSchema = z.enum(['light', 'medium_light', 'medium', 'medium_dark', 'dark']);
 export type RoastLevel = z.infer<typeof RoastLevelSchema>;
+
+export const OriginSchema = z.enum([
+  'ethiopia',
+  'kenya',
+  'rwanda',
+  'burundi',
+  'tanzania',
+  'uganda',
+  'democratic_republic_of_the_congo',
+  'malawi',
+  'zambia',
+  'zimbabwe',
+  'madagascar',
+  'cameroon',
+  'cote_d_ivoire',
+  'togo',
+  'yemen',
+  'brazil',
+  'colombia',
+  'peru',
+  'ecuador',
+  'bolivia',
+  'venezuela',
+  'guatemala',
+  'honduras',
+  'el_salvador',
+  'nicaragua',
+  'costa_rica',
+  'panama',
+  'mexico',
+  'jamaica',
+  'dominican_republic',
+  'cuba',
+  'haiti',
+  'puerto_rico',
+  'usa',
+  'hawaii',
+  'india',
+  'indonesia',
+  'sumatra',
+  'java',
+  'sulawesi',
+  'bali',
+  'flores',
+  'papua_new_guinea',
+  'vietnam',
+  'laos',
+  'thailand',
+  'myanmar',
+  'china',
+  'timor_leste',
+  'philippines',
+  'nepal',
+  'taiwan',
+  'australia',
+  'blend',
+  'other',
+  'unknown',
+]);
+export type Origin = z.infer<typeof OriginSchema>;
+
+export const SpeciesSchema = z.enum(['arabica', 'robusta', 'liberica', 'excelsa', 'arabica_robusta_blend', 'unknown']);
+export type Species = z.infer<typeof SpeciesSchema>;
+
+export const VarietySchema = z.enum([
+  'typica',
+  'bourbon',
+  'red_bourbon',
+  'yellow_bourbon',
+  'pink_bourbon',
+  'caturra',
+  'catuai',
+  'catucai',
+  'mundo_novo',
+  'pacas',
+  'villa_sarchi',
+  'maragogipe',
+  'pacamara',
+  'geisha',
+  'java',
+  'sl14',
+  'sl28',
+  'sl34',
+  'ruiru_11',
+  'batian',
+  'castillo',
+  'catimor',
+  'sarchimor',
+  'parainema',
+  'obata',
+  'marsellesa',
+  'heirloom',
+  'ethiopia_74110',
+  'ethiopia_74112',
+  's795',
+  'wush_wush',
+  'sidra',
+  'laurina',
+  'mixed',
+  'other',
+  'unknown',
+]);
+export type Variety = z.infer<typeof VarietySchema>;
 
 export const BagSizeSchema = z.enum(['g_250', 'g_500', 'g_1000']);
 export type BagSize = z.infer<typeof BagSizeSchema>;
@@ -198,6 +301,9 @@ export type Score = z.infer<typeof ScoreSchema>;
 export const BeanAttributesSchema = z.strictObject({
   process: ProcessSchema.optional(),
   roast_level: RoastLevelSchema.optional(),
+  origin: OriginSchema.optional(),
+  species: SpeciesSchema.optional(),
+  variety: VarietySchema.optional(),
 });
 export type BeanAttributes = z.infer<typeof BeanAttributesSchema>;
 
@@ -216,7 +322,7 @@ export type BeanCreate = z.infer<typeof BeanCreateSchema>;
 export const OpenFoodFactsProductSchema = z.strictObject({
   name: z.string().refine((value) => codePointLength(value) >= 1, { error: 'Too short' }).refine((value) => codePointLength(value) <= 150, { error: 'Too long' }).optional(),
   brand: z.string().refine((value) => codePointLength(value) >= 1, { error: 'Too short' }).refine((value) => codePointLength(value) <= 100, { error: 'Too long' }).optional(),
-  image_ref: z.string().regex(new RegExp('^https://images\\.openfoodfacts\\.org/images/products/[0-9]{3}/[0-9]{3}/[0-9]{3}/[0-9]{4}/front_[a-z]{2}\\.[0-9]{1,6}\\.(100|200|400|full)\\.jpg$', 'u')).optional(),
+  image_id: IdSchema.optional(),
 });
 export type OpenFoodFactsProduct = z.infer<typeof OpenFoodFactsProductSchema>;
 
@@ -364,6 +470,9 @@ export const componentSchemas = {
   WaterTempSpecial: WaterTempSpecialSchema,
   Process: ProcessSchema,
   RoastLevel: RoastLevelSchema,
+  Origin: OriginSchema,
+  Species: SpeciesSchema,
+  Variety: VarietySchema,
   BagSize: BagSizeSchema,
   PriceBand: PriceBandSchema,
   IntensityLevel: IntensityLevelSchema,
