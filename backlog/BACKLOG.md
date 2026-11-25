@@ -140,8 +140,12 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
 - acceptance:
   - Cognito user pool (Lite plan, Sign in with Apple only) and an HTTP API with JWT authorizer and throttling are in the stack.
   - A test asserts every route except the App Store notifications route has the authorizer.
-  - The Cognito domain prefixes are exactly `cupmark-dev` and `cupmark-prod`, and the Apple identity provider uses the Services ID `app.cupmark.signin`. The owner registered both in Apple's portal with the return URL `https://cupmark-<stage>.auth.eu-central-1.amazoncognito.com/oauth2/idpresponse`. A test pins the prefixes.
+  - The Cognito domain prefixes are exactly `cupmark-dev` and `cupmark-prod`, and the Apple identity provider uses the Services ID `app.cupmark.signin`. The Sign in with Apple key id is `3WKKAZFM6M`. This is configuration, not a secret; the `.p8` private key goes only into a Parameter Store SecureString created by the owner. The owner registered both in Apple's portal with the return URL `https://cupmark-<stage>.auth.eu-central-1.amazoncognito.com/oauth2/idpresponse`. A test pins the prefixes.
   - From the M1-T1 review: the user pool is RETAIN with `DeletionProtection: ACTIVE`, and `AWS::Cognito::UserPool` joins the stateful guard. Losing the pool would orphan every `USER#<sub>` partition.
+  - From the M1-T5 review (ADR 0013):
+    - the HTTP API uses the `$default` stage, because the router matches on `rawPath`;
+    - the API Lambda gets `TABLE_NAME` and `CURSOR_KEY_PARAMETER=/cupmark/<stage>/cursor-key`, plus `ssm:GetParameter` on exactly that parameter ARN;
+    - the owner creates the SecureString by hand (at least 32 random bytes, base64), because CloudFormation cannot create a SecureString, and the README gives the exact command.
   - From the M1-T8 review: the table gets `TimeToLiveSpecification` on a named attribute (`expires_at`), docs/05 names it, and the "no TTL" assertion in `infra/test/data.test.ts` changes accordingly. The API Lambda gets outbound HTTPS to Open Food Facts, with no VPC and no NAT.
   - From the M1-T1 review: a test snapshots the logical ids of the table, the buckets and the pool, so a construct rename that would replace them fails at test time.
 
@@ -172,18 +176,19 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
     - the server checks that the `image_ref` digits equal the canonical EAN-13;
     - `POST /beans` with `open_food_facts_confirmed` copies from the cache and returns 409 when there is no cached hit;
     - repository keys exist for both new items.
+  - From the M1-T5 review: `createBean` can now throw `WriteConflictError`, so the route retries it like the other writes. Operator verify and reject also use `rethrowConflict`.
   - Rejecting a bean frees its barcode: the `BARCODE#` pointer is removed in the same write, so the next scan can submit a fresh entry. The rejected bean stays recorded for the operator (owner decision, 2026-11-25).
   - The uploader of each label photo is recorded, so account deletion (M1-T6) can find that user's photos. Photo handling follows D10 to D12 in `docs/07-open-questions.md`.
 
 ### M1-T5 Shelf, brew and recipe routes
-- status: todo
+- status: done
 - owner: backend-engineer
 - depends: M1-T3, M0-T2
 - implements: docs/04-specification.md, F2, F3
 - acceptance:
   - Create, list, update and delete for shelf entries, brews with ratings, and recipes.
   - Every field is validated against the vocabulary version sent with the request; unknown properties are rejected.
-  - Tests cover range limits, half-step scores, the five-note maximum and method-dependent fields.
+  - Tests cover range limits, half-step scores and the five-note maximum. The method-dependent rule hook exists and is tested, but holds no rules until the spec defines them (D13). Acceptance reworded by the owner on 2026-11-25.
 
 ### M1-T6 Profile, consent, export and deletion
 - status: todo
@@ -220,7 +225,10 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - docs/05 Barcode lookup describes the server-side lookup (User-Agent, catalogue cache, per-user cap), and docs/04 F1 step 3 matches it.
   - The backend regenerates its schemas, and the no-drift check passes.
   - Status: the contract part (D7, D9, draft v2) was merged on 2026-11-25. Still open:
-    - the owner approves v2, then v2 is published and locked, and origin and variety are bound in openapi (the `addV2Fields` steps in contracts/README.md);
+    - apply the owner's amendments from ADR 0011: region entries carry their parent country (with Bali, Flores and `usa` added), a new `species` list, `robusta` removed from varieties, and the added origins and varieties;
+    - then publish and lock v2 (owner-approved with those amendments on 2026-11-25), and bind origin, variety and species in openapi (the `addV2Fields` steps in contracts/README.md, extended for species);
+    - replace the Open Food Facts `image_ref` pattern with a reference to our stored copy (ADR 0011);
+    - start after M1-T5 merges, because publishing regenerates the backend code M1-T5 builds on;
     - from the review, the lint pins HealthStatus to exactly `{status}` (required, no additional properties) and `/health` to `get` only.
 
 ### M1-T9 GitHub OIDC deploy stack and IAM policy guards
@@ -237,6 +245,17 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - `scripts/aws/apply-guardrails.sh` step 3 (`put-role-policy` on `CupmarkGitHubDeploy`) is reconciled with ADR 0009, because the stack owns the role and the script must no longer write its policy.
   - The stack deploys with the caller's credentials, not through `CupmarkCfnExecution`. The README gives the one-time manual deploy steps, including how to check whether a provider or a role named `CupmarkGitHubDeploy` already exists.
   - The guards add the M0-T4 review findings: IAM policies with `*` actions or resources, or with ARNs outside `cupmark-`, fail, and so do stateful resources without RETAIN. Tests show each guard failing.
+
+
+### M1-T10 Block changing the bean of a shelf entry that has brews
+- status: todo
+- owner: contract-keeper, then backend-engineer
+- depends: M1-T5
+- implements: docs/07-open-questions.md D14
+- acceptance:
+  - `contracts/openapi.yaml`: `PUT /shelf/{shelf_entry_id}` documents a 409 response when `bean_id` would change while brews reference the entry. The lint and drift tests pass.
+  - The backend replaces the entry conditionally, so a `bean_id` change fails when `brewCount` > 0 and the API answers 409 with no body. Any other change, and a `bean_id` change with no brews, still succeeds.
+  - Unit and DynamoDB Local tests cover both cases, plus the race with a concurrent brew create.
 
 ---
 

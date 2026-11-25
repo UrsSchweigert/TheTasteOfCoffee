@@ -53,8 +53,8 @@ One DynamoDB table holds everything. The partition key decides who can reach an 
 | Item | Partition key | Sort key | Holds |
 | --- | --- | --- | --- |
 | User profile | `USER#<id>` | `PROFILE` | Entitlement and expiry, consent flags, locale |
-| Shelf entry | `USER#<id>` | `SHELF#<shelfEntryId>` | Bean, purchase date, roast date, bag size, price band |
-| Brew with rating | `USER#<id>` | `BREW#<brewedAt UTC>#<brewId>` | Method, parameters, 8 scores, intensities, notes, buy again, schema version |
+| Shelf entry | `USER#<id>` | `SHELF#<shelfEntryId>` | Bean, purchase date, roast date, bag size, price band; count of the brews that reference it (ADR 0012) |
+| Brew with rating | `USER#<id>` | `BREW#<brewedAt UTC>#<brewId>` | Method, parameters, 8 scores, intensities, notes, buy again, schema version; its shelf entry and that entry's bean (ADR 0012) |
 | Brew pointer | `USER#<id>` | `BREWID#<brewId>` | The brew's current sort key, for reads by id |
 | Recipe | `USER#<id>` | `RECIPE#<id>` | Saved parameter set |
 | Bean | `BEAN#<beanId>` | `META` | Picked attributes (process, roast level; origin and variety from vocabulary v2), operator attributes including the curated roaster, Open Food Facts name, brand and image reference, each group tagged with its source; status |
@@ -66,7 +66,7 @@ One DynamoDB table holds everything. The partition key decides who can reach an 
 | Rater marker | `BEAN#<beanId>` | `RATER#<id>` | Proves a distinct rater; drives give-to-get |
 | Ranking | `RANK#<facet>` | `<period>` | Precomputed top list; facet and period formats in ADR 0010 |
 
-Ids in keys are server-generated ULIDs; `brewedAt` is fixed-width UTC (`toISOString()`), so brews list newest first. A brew and its pointer are always written in one transaction (ADR 0010). `backend/src/repository/` builds every key and is the only code that talks to the table.
+Ids in keys are server-generated ULIDs; `brewedAt` is fixed-width UTC (`toISOString()`), so brews list newest first. A brew, its pointer and the brew count of its shelf entry are always written in one transaction (ADR 0010, ADR 0012), so a shelf entry with brews cannot be deleted. `backend/src/repository/` builds every key and is the only code that talks to the table.
 
 One sparse index (`gsi1`) lists unverified beans for the review queue: only an unverified bean's `META` item carries `gsi1pk=REVIEW#UNVERIFIED` and `gsi1sk=<createdAt UTC>#<beanId>`, and verifying or rejecting the bean removes both (infra/README.md). The user id always comes from the verified token, never from the request body, so a user can only ever address their own `USER#` partition.
 
@@ -109,7 +109,7 @@ The phone sends only the barcode and, later, the user's confirmation. The backen
 | Authorisation | Partition key derived from the token; paid and give-to-get checks in the API function |
 | Input | Every field validated server-side against a closed list or a numeric range. With no text fields there is nothing to inject or moderate |
 | Abuse | API Gateway throttling; per-user daily write cap; App Attest on write routes |
-| Encryption | TLS in transit; DynamoDB encrypted at rest with the AWS-owned key and S3 with SSE-S3, both at no charge and with no KMS key (owner decision, 2026-11-25) |
+| Encryption | TLS in transit; DynamoDB encrypted at rest with the AWS-owned key and S3 with SSE-S3, both at no charge and with no KMS key (owner decision, 2026-11-25). The only KMS use is the AWS-managed `aws/ssm` key behind the cursor-signing SecureString (ADR 0013, owner-approved): no monthly fee, and decryption stays in the free tier |
 | Access to AWS | Shared account isolated by ADR 0002 and 0009 (a separate account remains the later option); root with MFA and no keys; least-privilege role per function; CloudTrail on |
 | Privacy | Aggregates only above 5 raters; in-app export and account deletion; no third-party SDKs; data stays in the EU |
 | Cost attack | AWS Budgets alarm at 10 USD; Lambda concurrency cap; throttling limits the worst case |

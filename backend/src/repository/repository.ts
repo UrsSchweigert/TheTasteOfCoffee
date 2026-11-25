@@ -9,8 +9,16 @@
 //   the item existing. A failed condition becomes a typed error from errors.ts.
 // - Values are parsed with the generated contract schemas on the way in and on
 //   the way out, so nothing outside the contract is stored or returned.
+// - References are kept in the same transaction as the write: a shelf entry
+//   needs its bean in the catalogue, a brew needs its shelf entry in the
+//   caller's partition, and each shelf entry counts the brews that reference it
+//   (`brewCount`, ADR 0012), so a shelf entry with brews cannot be deleted.
 // - The aggregation pipeline (M3) is not here; keys.ts has its key builders.
-import { ConditionalCheckFailedException, TransactionCanceledException } from '@aws-sdk/client-dynamodb';
+import {
+  ConditionalCheckFailedException,
+  TransactionCanceledException,
+  TransactionConflictException,
+} from '@aws-sdk/client-dynamodb';
 import {
   DeleteCommand,
   GetCommand,
@@ -49,12 +57,15 @@ import { newUlid } from '../ids/ulid.ts';
 import { decodeCursor, encodeCursor } from './cursor.ts';
 import {
   BarcodeTakenError,
+  BeanNotFoundError,
   BeanNotUnverifiedError,
   CorruptItemError,
   InvalidKeyError,
   InvalidValuesError,
   ItemExistsError,
   ItemNotFoundError,
+  ShelfEntryInUseError,
+  ShelfEntryNotFoundError,
   WriteConflictError,
 } from './errors.ts';
 import {
@@ -135,8 +146,22 @@ const MAX_LIMIT = 100;
 const KeyAttributes = z.object({ pk: z.string(), sk: z.string() });
 
 const ProfileItem = KeyAttributes.extend({ values: ProfileSchema });
-const ShelfItem = KeyAttributes.extend({ shelfEntryId: IdSchema, values: ShelfEntryInputSchema });
-const BrewItem = KeyAttributes.extend({ brewId: IdSchema, values: BrewInputSchema });
+const ShelfItem = KeyAttributes.extend({
+  shelfEntryId: IdSchema,
+  beanId: IdSchema,
+  values: ShelfEntryInputSchema,
+}).refine((item) => item.beanId === item.values.bean_id);
+/**
+ * `shelfEntryId` and `beanId` are copies of the brew's shelf entry and of that
+ * entry's bean at the time of the write: the reference count needs the first,
+ * and the aggregator (M3) reads the bean of a removed brew from its old image.
+ */
+const BrewItem = KeyAttributes.extend({
+  brewId: IdSchema,
+  shelfEntryId: IdSchema,
+  beanId: IdSchema,
+  values: BrewInputSchema,
+}).refine((item) => item.shelfEntryId === item.values.shelf_entry_id);
 const BrewRefItem = KeyAttributes.extend({ brewId: IdSchema, brewSk: z.string(), createdAt: z.string() });
 const RecipeItem = KeyAttributes.extend({ recipeId: IdSchema, values: RecipeInputSchema });
 const BeanItem = KeyAttributes.extend({
@@ -181,11 +206,29 @@ function isConditionFailure(error: unknown): boolean {
   return error instanceof ConditionalCheckFailedException;
 }
 
-/** Index of each item whose condition failed in a cancelled transaction; undefined if not a cancellation. */
+/**
+ * Index of each item whose condition failed in a cancelled transaction; undefined if not a cancellation.
+ *
+ * A transaction cancelled only because another transaction was writing one of
+ * its items at the same time (reason `TransactionConflict`, for example two
+ * brews counted on one shelf entry, ADR 0012) wrote nothing and is safe to
+ * repeat: it throws WriteConflictError, which the API retries.
+ */
 function failedConditions(error: unknown): number[] | undefined {
   if (!(error instanceof TransactionCanceledException)) return undefined;
   const reasons = error.CancellationReasons ?? [];
-  return reasons.flatMap((reason, index) => (reason.Code === 'ConditionalCheckFailed' ? [index] : []));
+  const failed = reasons.flatMap((reason, index) => (reason.Code === 'ConditionalCheckFailed' ? [index] : []));
+  if (failed.length === 0 && reasons.some((reason) => reason.Code === 'TransactionConflict')) {
+    throw new WriteConflictError('a concurrent transaction wrote the same item', { cause: error });
+  }
+  return failed;
+}
+
+/** A single-item write that met an item inside an ongoing transaction: nothing was written; safe to repeat. */
+function rethrowConflict(error: unknown): void {
+  if (error instanceof TransactionConflictException) {
+    throw new WriteConflictError('a concurrent transaction wrote the same item', { cause: error });
+  }
 }
 
 function limitOf(options: ListOptions): number {
@@ -258,15 +301,32 @@ export class Repository {
     const shelfEntryId = this.#newId(now);
     const key = shelfEntryKey(user, shelfEntryId);
     const at = utcOf(now);
-    await this.#create(key, {
+    const item = {
+      ...key,
       type: ITEM_TYPE.shelfEntry,
       shelfEntryId,
       beanId: values.bean_id,
       purchaseDate: values.purchase_date,
       values,
+      brewCount: 0,
       createdAt: at,
       updatedAt: at,
-    });
+    };
+    try {
+      await this.#client.send(
+        new TransactWriteCommand({
+          TransactItems: [
+            { ConditionCheck: this.#beanExists(values.bean_id) },
+            { Put: { TableName: this.#table, Item: item, ConditionExpression: 'attribute_not_exists(pk)' } },
+          ],
+        }),
+      );
+    } catch (error) {
+      const failed = failedConditions(error);
+      if (failed?.includes(0)) throw new BeanNotFoundError('no such bean');
+      if (failed?.length) throw new ItemExistsError('shelf entry exists');
+      throw error;
+    }
     return { shelf_entry_id: shelfEntryId, values };
   }
 
@@ -281,18 +341,56 @@ export class Repository {
   public async replaceShelfEntry(user: UserId, shelfEntryId: string, input: ShelfEntryInput): Promise<ShelfEntry> {
     const key = shelfEntryKey(user, shelfEntryId);
     const values = validValues(ShelfEntryInputSchema, input, 'shelf entry');
-    const item = await this.#update(key, {
-      beanId: values.bean_id,
-      purchaseDate: values.purchase_date,
-      values,
-      updatedAt: utcOf(this.#now()),
-    });
-    const stored = storedItem(ShelfItem, item, key.pk, 'shelf entry');
-    return { shelf_entry_id: stored.shelfEntryId, values: stored.values };
+    try {
+      await this.#client.send(
+        new TransactWriteCommand({
+          TransactItems: [
+            { ConditionCheck: this.#beanExists(values.bean_id) },
+            {
+              Update: {
+                TableName: this.#table,
+                Key: key,
+                UpdateExpression: 'SET beanId = :bean, purchaseDate = :date, #values = :values, updatedAt = :now',
+                ConditionExpression: 'attribute_exists(pk)',
+                ExpressionAttributeNames: { '#values': 'values' },
+                ExpressionAttributeValues: {
+                  ':bean': values.bean_id,
+                  ':date': values.purchase_date,
+                  ':values': values,
+                  ':now': utcOf(this.#now()),
+                },
+              },
+            },
+          ],
+        }),
+      );
+    } catch (error) {
+      const failed = failedConditions(error);
+      if (failed?.includes(1)) throw new ItemNotFoundError('no such shelf entry');
+      if (failed?.includes(0)) throw new BeanNotFoundError('no such bean');
+      throw error;
+    }
+    return { shelf_entry_id: parseShelfSortKey(key.sk) ?? shelfEntryId, values };
   }
 
+  /** Deletes a shelf entry that no brew references; ShelfEntryInUseError otherwise (ADR 0012). */
   public async deleteShelfEntry(user: UserId, shelfEntryId: string): Promise<void> {
-    await this.#delete(shelfEntryKey(user, shelfEntryId));
+    const key = shelfEntryKey(user, shelfEntryId);
+    try {
+      await this.#client.send(
+        new DeleteCommand({
+          TableName: this.#table,
+          Key: key,
+          ConditionExpression: 'attribute_exists(pk) AND (attribute_not_exists(brewCount) OR brewCount = :zero)',
+          ExpressionAttributeValues: { ':zero': 0 },
+        }),
+      );
+    } catch (error) {
+      rethrowConflict(error);
+      if (!isConditionFailure(error)) throw error;
+      if ((await this.#get(key)) === undefined) throw new ItemNotFoundError('no such shelf entry');
+      throw new ShelfEntryInUseError('brews reference the shelf entry');
+    }
   }
 
   /** The caller's shelf entries, newest first. */
@@ -306,13 +404,21 @@ export class Repository {
 
   // ---- brews (two items per brew, ADR 0010) ----
 
+  /**
+   * Logs a brew. Its shelf entry must be in the caller's partition; the same
+   * transaction counts the brew on that entry, on the condition that the entry
+   * still exists and still names the bean that was read.
+   */
   public async createBrew(user: UserId, input: BrewInput): Promise<Brew> {
     const values = validValues(BrewInputSchema, input, 'brew');
+    const shelf = await this.#shelfItem(user, values.shelf_entry_id);
+    if (shelf === undefined) throw new ShelfEntryNotFoundError('no such shelf entry');
     const now = this.#now();
     const brewId = this.#newId(now);
     const key = brewKey(user, values.brewed_at, brewId);
     const ref = brewRefKey(user, brewId);
     const at = utcOf(now);
+    const references = { shelfEntryId: shelf.shelfEntryId, beanId: shelf.beanId };
     try {
       await this.#client.send(
         new TransactWriteCommand({
@@ -320,7 +426,7 @@ export class Repository {
             {
               Put: {
                 TableName: this.#table,
-                Item: { ...key, type: ITEM_TYPE.brew, brewId, values, createdAt: at, updatedAt: at },
+                Item: { ...key, type: ITEM_TYPE.brew, brewId, ...references, values, createdAt: at, updatedAt: at },
                 ConditionExpression: 'attribute_not_exists(pk)',
               },
             },
@@ -331,11 +437,17 @@ export class Repository {
                 ConditionExpression: 'attribute_not_exists(pk)',
               },
             },
+            { Update: this.#countBrew(shelf, 1) },
           ],
         }),
       );
     } catch (error) {
-      if (failedConditions(error)?.length) throw new ItemExistsError('brew exists');
+      const failed = failedConditions(error);
+      if (failed?.includes(2)) {
+        if ((await this.#shelfItem(user, values.shelf_entry_id)) === undefined) throw new ShelfEntryNotFoundError('no such shelf entry');
+        throw new WriteConflictError('the shelf entry changed during the write');
+      }
+      if (failed?.length) throw new ItemExistsError('brew exists');
       throw error;
     }
     return { brew_id: brewId, values };
@@ -365,22 +477,32 @@ export class Repository {
   /**
    * Replaces a brew. When `brewed_at` moves, the brew item moves to its new sort
    * key in one transaction (delete old, put new, repoint), which the aggregator
-   * sees as a remove and an insert: the correct difference.
+   * sees as a remove and an insert: the correct difference. When the shelf
+   * entry changes, the same transaction moves the count from the old entry to
+   * the new one, which must exist in the caller's partition.
    */
   public async replaceBrew(user: UserId, brewId: string, input: BrewInput): Promise<Brew> {
     const values = validValues(BrewInputSchema, input, 'brew');
-    const ref = await this.#brewRef(user, brewId);
-    if (ref === undefined) throw new ItemNotFoundError('no such brew');
+    const current = await this.#brewWithRef(user, brewId);
+    const shelf = await this.#shelfItem(user, values.shelf_entry_id);
+    if (shelf === undefined) throw new ShelfEntryNotFoundError('no such shelf entry');
+    const { ref, brew } = current;
     const refKey = brewRefKey(user, brewId);
     const newSk = brewSortKey(values.brewed_at, brewId);
     const at = utcOf(this.#now());
+    const references = { shelfEntryId: shelf.shelfEntryId, beanId: shelf.beanId };
     const pointerUnchanged = {
       TableName: this.#table,
       Key: refKey,
       ConditionExpression: 'brewSk = :old',
       ExpressionAttributeValues: { ':old': ref.brewSk },
     };
-    const transactItems: NonNullable<TransactWriteCommandInput['TransactItems']> =
+    // The brew item must still reference the shelf entry read above, or the counts would drift.
+    const brewUnchanged = {
+      ConditionExpression: 'attribute_exists(pk) AND shelfEntryId = :oldShelf',
+      ExpressionAttributeValues: { ':oldShelf': brew.shelfEntryId },
+    };
+    const brewItems: NonNullable<TransactWriteCommandInput['TransactItems']> =
       newSk === ref.brewSk
         ? [
             { ConditionCheck: pointerUnchanged },
@@ -388,25 +510,34 @@ export class Repository {
               Update: {
                 TableName: this.#table,
                 Key: { pk: ref.pk, sk: ref.brewSk },
-                UpdateExpression: 'SET #values = :values, updatedAt = :now',
-                ConditionExpression: 'attribute_exists(pk)',
+                UpdateExpression: 'SET #values = :values, shelfEntryId = :shelf, beanId = :bean, updatedAt = :now',
+                ConditionExpression: brewUnchanged.ConditionExpression,
                 ExpressionAttributeNames: { '#values': 'values' },
-                ExpressionAttributeValues: { ':values': values, ':now': at },
+                ExpressionAttributeValues: {
+                  ...brewUnchanged.ExpressionAttributeValues,
+                  ':values': values,
+                  ':shelf': references.shelfEntryId,
+                  ':bean': references.beanId,
+                  ':now': at,
+                },
               },
             },
           ]
         : [
-            {
-              Delete: {
-                TableName: this.#table,
-                Key: { pk: ref.pk, sk: ref.brewSk },
-                ConditionExpression: 'attribute_exists(pk)',
-              },
-            },
+            { Delete: { TableName: this.#table, Key: { pk: ref.pk, sk: ref.brewSk }, ...brewUnchanged } },
             {
               Put: {
                 TableName: this.#table,
-                Item: { pk: ref.pk, sk: newSk, type: ITEM_TYPE.brew, brewId, values, createdAt: ref.createdAt, updatedAt: at },
+                Item: {
+                  pk: ref.pk,
+                  sk: newSk,
+                  type: ITEM_TYPE.brew,
+                  brewId,
+                  ...references,
+                  values,
+                  createdAt: ref.createdAt,
+                  updatedAt: at,
+                },
                 ConditionExpression: 'attribute_not_exists(pk)',
               },
             },
@@ -418,20 +549,36 @@ export class Repository {
               },
             },
           ];
-    await this.#transactOnExisting(transactItems, () => this.#brewRef(user, brewId));
+    const newShelfIndex = brewItems.length;
+    const shelfItems: NonNullable<TransactWriteCommandInput['TransactItems']> =
+      shelf.shelfEntryId === brew.shelfEntryId
+        ? [{ ConditionCheck: this.#shelfUnchanged(shelf) }]
+        : [{ Update: this.#countBrew(shelf, 1) }, { Update: this.#uncountBrew(user, brew.shelfEntryId) }];
+    try {
+      await this.#client.send(new TransactWriteCommand({ TransactItems: [...brewItems, ...shelfItems] }));
+    } catch (error) {
+      const failed = failedConditions(error);
+      if (!failed?.length) throw error;
+      if ((await this.#brewRef(user, brewId)) === undefined) throw new ItemNotFoundError('no such brew');
+      if (failed.includes(newShelfIndex) && (await this.#shelfItem(user, values.shelf_entry_id)) === undefined) {
+        throw new ShelfEntryNotFoundError('no such shelf entry');
+      }
+      throw new WriteConflictError('the brew or its shelf entry changed during the write');
+    }
     return { brew_id: brewId, values };
   }
 
+  /** Deletes a brew, its pointer and its count on the shelf entry, in one transaction. */
   public async deleteBrew(user: UserId, brewId: string): Promise<void> {
-    const ref = await this.#brewRef(user, brewId);
-    if (ref === undefined) throw new ItemNotFoundError('no such brew');
+    const { ref, brew } = await this.#brewWithRef(user, brewId);
     await this.#transactOnExisting(
       [
         {
           Delete: {
             TableName: this.#table,
             Key: { pk: ref.pk, sk: ref.brewSk },
-            ConditionExpression: 'attribute_exists(pk)',
+            ConditionExpression: 'attribute_exists(pk) AND shelfEntryId = :shelf',
+            ExpressionAttributeValues: { ':shelf': brew.shelfEntryId },
           },
         },
         {
@@ -442,6 +589,7 @@ export class Repository {
             ExpressionAttributeValues: { ':sk': ref.brewSk },
           },
         },
+        { Update: this.#uncountBrew(user, brew.shelfEntryId) },
       ],
       () => this.#brewRef(user, brewId),
     );
@@ -625,6 +773,76 @@ export class Repository {
   }
 
   // ---- internals ----
+
+  /** ConditionCheck: the bean is in the catalogue. */
+  #beanExists(beanId: string): { TableName: string; Key: Key; ConditionExpression: string } {
+    return { TableName: this.#table, Key: beanMetaKey(beanId), ConditionExpression: 'attribute_exists(pk)' };
+  }
+
+  async #shelfItem(user: UserId, shelfEntryId: string): Promise<z.infer<typeof ShelfItem> | undefined> {
+    const key = shelfEntryKey(user, shelfEntryId);
+    const item = await this.#get(key);
+    if (item === undefined) return undefined;
+    const stored = storedItem(ShelfItem, item, key.pk, 'shelf entry');
+    if (stored.sk !== key.sk || stored.shelfEntryId !== parseShelfSortKey(key.sk)) {
+      throw new CorruptItemError('stored shelf entry does not match its key');
+    }
+    return stored;
+  }
+
+  /** Condition: the shelf entry exists and still names the bean that was read. */
+  #shelfUnchanged(shelf: z.infer<typeof ShelfItem>): {
+    TableName: string;
+    Key: Key;
+    ConditionExpression: string;
+    ExpressionAttributeValues: Record<string, unknown>;
+  } {
+    return {
+      TableName: this.#table,
+      Key: { pk: shelf.pk, sk: shelf.sk },
+      ConditionExpression: 'attribute_exists(pk) AND beanId = :bean',
+      ExpressionAttributeValues: { ':bean': shelf.beanId },
+    };
+  }
+
+  /** Update: one more brew references the shelf entry (atomic ADD; ADR 0012). */
+  #countBrew(shelf: z.infer<typeof ShelfItem>, by: 1): NonNullable<NonNullable<TransactWriteCommandInput['TransactItems']>[number]['Update']> {
+    const condition = this.#shelfUnchanged(shelf);
+    return {
+      ...condition,
+      UpdateExpression: 'ADD brewCount :by',
+      ExpressionAttributeValues: { ...condition.ExpressionAttributeValues, ':by': by },
+    };
+  }
+
+  /** Update: one brew fewer references the shelf entry. Never creates the entry, never goes below 0. */
+  #uncountBrew(user: UserId, shelfEntryId: string): NonNullable<NonNullable<TransactWriteCommandInput['TransactItems']>[number]['Update']> {
+    return {
+      TableName: this.#table,
+      Key: shelfEntryKey(user, shelfEntryId),
+      UpdateExpression: 'ADD brewCount :by',
+      ConditionExpression: 'attribute_exists(pk) AND brewCount > :zero',
+      ExpressionAttributeValues: { ':by': -1, ':zero': 0 },
+    };
+  }
+
+  /** The pointer and the brew it names; ItemNotFoundError if either is gone. */
+  async #brewWithRef(
+    user: UserId,
+    brewId: string,
+  ): Promise<{ ref: z.infer<typeof BrewRefItem>; brew: z.infer<typeof BrewItem> }> {
+    const ref = await this.#brewRef(user, brewId);
+    if (ref === undefined) throw new ItemNotFoundError('no such brew');
+    const item = await this.#get({ pk: ref.pk, sk: ref.brewSk });
+    if (item === undefined) {
+      // Deleted or moved between the two reads.
+      if ((await this.#brewRef(user, brewId)) === undefined) throw new ItemNotFoundError('no such brew');
+      throw new WriteConflictError('the brew moved during the read');
+    }
+    const brew = storedItem(BrewItem, item, ref.pk, 'brew');
+    if (brew.brewId !== brewId) throw new CorruptItemError('stored brew does not match its pointer');
+    return { ref, brew };
+  }
 
   async #get(key: Key): Promise<unknown> {
     const result = await this.#client.send(new GetCommand({ TableName: this.#table, Key: key, ConsistentRead: true }));

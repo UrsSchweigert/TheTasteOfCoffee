@@ -1,16 +1,24 @@
 // The repository without a database: a stub client returns crafted items, to show
 // that reads refuse items outside the caller's partition or outside the contract,
 // and that bad input is refused before any request is sent.
+import { ConditionalCheckFailedException, TransactionCanceledException, TransactionConflictException } from '@aws-sdk/client-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { describe, expect, it } from 'vitest';
 import type { UserId } from '../../src/auth/user-id.ts';
 import { BrewInputSchema } from '../../src/generated/contract.ts';
+import type { BrewInput } from '../../src/generated/contract.ts';
 import {
+  BeanNotFoundError,
   CorruptItemError,
   InvalidCursorError,
   InvalidKeyError,
   InvalidValuesError,
+  ItemExistsError,
+  ItemNotFoundError,
   Repository,
+  ShelfEntryInUseError,
+  ShelfEntryNotFoundError,
+  WriteConflictError,
   brewSortKey,
   userPk,
 } from '../../src/repository/index.ts';
@@ -90,7 +98,7 @@ describe('getBrew under a concurrent move', () => {
   }
 
   it('follows the pointer again when the brew moved between the two reads', async () => {
-    const moved = { Item: { pk: userPk(ALICE), sk: newSk, brewId: ID, values: brew } };
+    const moved = { Item: { pk: userPk(ALICE), sk: newSk, brewId: ID, shelfEntryId: brew.shelf_entry_id, beanId: ID, values: brew } };
     const { repo, sent } = scripted([ref(oldSk), {}, ref(newSk), moved]);
     expect(await repo.getBrew(ALICE, ID)).toEqual({ brew_id: ID, values: brew });
     expect(sent.map((input) => (input.Key as { sk: string }).sk)).toEqual([`BREWID#${ID}`, oldSk, `BREWID#${ID}`, newSk]);
@@ -135,5 +143,126 @@ describe('Repository input checks happen before any request', () => {
 
   it('needs a table name', () => {
     expect(() => new Repository({ client: {} as unknown as DynamoDBDocumentClient, tableName: '' })).toThrow(InvalidValuesError);
+  });
+});
+
+describe('references under a race (ADR 0012)', () => {
+  const shelfItem = { Item: { pk: userPk(ALICE), sk: `SHELF#${ID}`, shelfEntryId: ID, beanId: ID, values: shelfValues } };
+  const cancelled = (failedIndex: number, count: number): TransactionCanceledException =>
+    new TransactionCanceledException({
+      message: 'cancelled',
+      $metadata: {},
+      CancellationReasons: Array.from({ length: count }, (_, i) => ({ Code: i === failedIndex ? 'ConditionalCheckFailed' : 'None' })),
+    });
+
+  /** Answers GetItem from `gets` in order and fails every transaction with `error`. */
+  function racing(gets: unknown[], error: Error): { repo: Repository; sent: Record<string, unknown>[] } {
+    let i = 0;
+    return stub((input) => {
+      if ('TransactItems' in input) throw error;
+      return gets[i++] ?? {};
+    });
+  }
+
+  const brew = (): BrewInput => BrewInputSchema.parse({ ...validBrewInput(), shelf_entry_id: ID });
+
+  it('a brew whose shelf entry was deleted during the write is ShelfEntryNotFoundError', async () => {
+    const { repo } = racing([shelfItem, {}], cancelled(2, 3));
+    await expect(repo.createBrew(ALICE, brew())).rejects.toThrow(ShelfEntryNotFoundError);
+  });
+
+  it('a brew whose shelf entry changed its bean during the write is WriteConflictError', async () => {
+    const { repo } = racing([shelfItem, shelfItem], cancelled(2, 3));
+    await expect(repo.createBrew(ALICE, brew())).rejects.toThrow(WriteConflictError);
+  });
+
+  it('the count update is in the same transaction as the brew and conditional on the bean read', async () => {
+    const { repo, sent } = racing([shelfItem], cancelled(0, 3));
+    await expect(repo.createBrew(ALICE, brew())).rejects.toThrow(ItemExistsError);
+    const items = (sent.find((input) => 'TransactItems' in input)?.TransactItems ?? []) as Record<string, Record<string, unknown>>[];
+    expect(items[2]?.Update).toMatchObject({
+      Key: { pk: userPk(ALICE), sk: `SHELF#${ID}` },
+      UpdateExpression: 'ADD brewCount :by',
+      ConditionExpression: 'attribute_exists(pk) AND beanId = :bean',
+      ExpressionAttributeValues: { ':bean': ID, ':by': 1 },
+    });
+  });
+
+  it('a shelf entry for a missing bean is BeanNotFoundError; on replace a missing entry wins', async () => {
+    const values = { ...shelfValues, bean_id: ID };
+    await expect(racing([], cancelled(0, 2)).repo.createShelfEntry(ALICE, values)).rejects.toThrow(BeanNotFoundError);
+    await expect(racing([], cancelled(0, 2)).repo.replaceShelfEntry(ALICE, ID, values)).rejects.toThrow(BeanNotFoundError);
+    await expect(racing([], cancelled(1, 2)).repo.replaceShelfEntry(ALICE, ID, values)).rejects.toThrow(ItemNotFoundError);
+  });
+
+  it('a failed shelf delete is 404 if the entry is gone and in use if it is there', async () => {
+    const condition = new ConditionalCheckFailedException({ message: 'failed', $metadata: {} });
+    const gone = stub((input) => {
+      if (!('ConditionExpression' in input)) return {};
+      throw condition;
+    });
+    await expect(gone.repo.deleteShelfEntry(ALICE, ID)).rejects.toThrow(ItemNotFoundError);
+    const there = stub((input) => {
+      if (!('ConditionExpression' in input)) return shelfItem;
+      throw condition;
+    });
+    await expect(there.repo.deleteShelfEntry(ALICE, ID)).rejects.toThrow(ShelfEntryInUseError);
+  });
+});
+
+describe('concurrent transactions on a hot shelf entry (ADR 0012)', () => {
+  const shelfItem = { Item: { pk: userPk(ALICE), sk: `SHELF#${ID}`, shelfEntryId: ID, beanId: ID, values: shelfValues } };
+  const brewSk = brewSortKey('2026-11-25T07:00:00Z', ID);
+  const refItem = { Item: { pk: userPk(ALICE), sk: `BREWID#${ID}`, brewId: ID, brewSk, createdAt: 'x' } };
+  const brewValues = BrewInputSchema.parse({ ...validBrewInput(), shelf_entry_id: ID, brewed_at: '2026-11-25T07:00:00Z' });
+  const brewItem = { Item: { pk: userPk(ALICE), sk: brewSk, brewId: ID, shelfEntryId: ID, beanId: ID, values: brewValues } };
+
+  const cancelledWith = (codes: string[]): TransactionCanceledException =>
+    new TransactionCanceledException({ message: 'cancelled', $metadata: {}, CancellationReasons: codes.map((Code) => ({ Code })) });
+
+  /** GetItem answers from `gets` in order; every transaction fails with `error`. */
+  function racing(gets: unknown[], error: Error): Repository {
+    let i = 0;
+    return stub((input) => {
+      if ('TransactItems' in input) throw error;
+      return gets[i++] ?? {};
+    }).repo;
+  }
+
+  const conflict = (count: number, at: number): TransactionCanceledException =>
+    cancelledWith(Array.from({ length: count }, (_, i) => (i === at ? 'TransactionConflict' : 'None')));
+
+  it('a brew create cancelled by TransactionConflict is WriteConflictError (retryable), not a 500', async () => {
+    await expect(racing([shelfItem], conflict(3, 2)).createBrew(ALICE, brewValues)).rejects.toThrow(WriteConflictError);
+  });
+
+  it('a brew replace and delete cancelled by TransactionConflict are WriteConflictError', async () => {
+    await expect(racing([refItem, brewItem, shelfItem], conflict(3, 2)).replaceBrew(ALICE, ID, brewValues)).rejects.toThrow(
+      WriteConflictError,
+    );
+    await expect(racing([refItem, brewItem], conflict(3, 2)).deleteBrew(ALICE, ID)).rejects.toThrow(WriteConflictError);
+  });
+
+  it('shelf create and replace cancelled by TransactionConflict are WriteConflictError', async () => {
+    await expect(racing([], conflict(2, 1)).createShelfEntry(ALICE, shelfValues)).rejects.toThrow(WriteConflictError);
+    await expect(racing([], conflict(2, 1)).replaceShelfEntry(ALICE, ID, shelfValues)).rejects.toThrow(WriteConflictError);
+  });
+
+  it('a failed condition still wins over a conflict in the same cancellation', async () => {
+    const mixed = cancelledWith(['ConditionalCheckFailed', 'TransactionConflict']);
+    await expect(racing([], mixed).createShelfEntry(ALICE, shelfValues)).rejects.toThrow(BeanNotFoundError);
+  });
+
+  it('a cancellation for another reason is not turned into a retry', async () => {
+    const other = cancelledWith(['None', 'ValidationError']);
+    const error = await racing([], other).createShelfEntry(ALICE, shelfValues).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(TransactionCanceledException);
+  });
+
+  it('a shelf delete that meets a counting transaction is WriteConflictError', async () => {
+    const { repo } = stub(() => {
+      throw new TransactionConflictException({ message: 'conflict', $metadata: {} });
+    });
+    await expect(repo.deleteShelfEntry(ALICE, ID)).rejects.toThrow(WriteConflictError);
   });
 });

@@ -10,6 +10,7 @@ import type { BrewInput, RecipeInput, ShelfEntryInput } from '../../src/generate
 import { newUlid } from '../../src/ids/ulid.ts';
 import {
   BarcodeTakenError,
+  BeanNotFoundError,
   BeanNotUnverifiedError,
   CorruptItemError,
   InvalidCursorError,
@@ -20,6 +21,8 @@ import {
   REVIEW_QUEUE_INDEX,
   REVIEW_QUEUE_PK,
   Repository,
+  ShelfEntryInUseError,
+  ShelfEntryNotFoundError,
   aggregateAllKey,
   aggregateMethodKey,
   barcodeKey,
@@ -38,7 +41,8 @@ const local = await connectDynamoDbLocal();
 
 const ALICE = verifiedUserId('3f1c2b4a-9d8e-4f70-a1b2-c3d4e5f60718');
 const BOB = verifiedUserId('0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d');
-const BEAN_ID = '01JDQ8Z6V3W4X5Y6Z7A8B9C0DF';
+/** A catalogue bean, created in beforeAll: a shelf entry needs its bean to exist. */
+let BEAN_ID = '';
 
 function shelfInput(overrides: Partial<ShelfEntryInput> = {}): ShelfEntryInput {
   return ShelfEntryInputSchema.parse({
@@ -52,11 +56,11 @@ function shelfInput(overrides: Partial<ShelfEntryInput> = {}): ShelfEntryInput {
   });
 }
 
-function brewInput(brewedAt: string, overall = 8): BrewInput {
+function brewInput(shelfEntryId: string, brewedAt: string, overall = 8): BrewInput {
   const input = validBrewInput();
   const rating = input.rating as { scores: Record<string, number> };
   rating.scores.overall = overall;
-  return BrewInputSchema.parse({ ...input, brewed_at: brewedAt });
+  return BrewInputSchema.parse({ ...input, shelf_entry_id: shelfEntryId, brewed_at: brewedAt });
 }
 
 function recipeInput(dose = 150): RecipeInput {
@@ -101,6 +105,7 @@ describe.skipIf(!local.reachable)('repository on DynamoDB Local', () => {
   beforeAll(async () => {
     tableName = await createTestTable(client);
     repo = new Repository({ client: documentClient, tableName });
+    BEAN_ID = (await repo.createBean({ vocabularyVersion: 1, openFoodFactsMatch: false, pickedAttributes: {} })).bean.bean_id;
   });
 
   afterAll(async () => {
@@ -204,26 +209,30 @@ describe.skipIf(!local.reachable)('repository on DynamoDB Local', () => {
   describe('brews', () => {
     it('round-trip: create, get by id, replace, delete; brew and pointer move together', async () => {
       const user = verifiedUserId('88888888-8888-4888-8888-888888888888');
-      const created = await repo.createBrew(user, brewInput('2026-11-25T07:30:00.250+01:00'));
+      const shelf = (await repo.createShelfEntry(user, shelfInput())).shelf_entry_id;
+      const shelfSk = `SHELF#${shelf}`;
+      const created = await repo.createBrew(user, brewInput(shelf, '2026-11-25T07:30:00.250+01:00'));
       expect(await repo.getBrew(user, created.brew_id)).toEqual(created);
 
       const items = await partition(userPk(user));
       expect(items.map((i) => i.sk).sort()).toEqual(
-        [`BREW#2026-11-25T06:30:00.250Z#${created.brew_id}`, `BREWID#${created.brew_id}`].sort(),
+        [`BREW#2026-11-25T06:30:00.250Z#${created.brew_id}`, `BREWID#${created.brew_id}`, shelfSk].sort(),
       );
-      expect(items.find((i) => i.type === 'BREW')?.values).toEqual(created.values);
+      expect(items.find((i) => i.type === 'BREW')).toMatchObject({ values: created.values, shelfEntryId: shelf, beanId: BEAN_ID });
+      expect((await raw(shelfEntryKey(user, shelf)))?.brewCount).toBe(1);
 
       // Same time: updated in place.
-      const sameTime = await repo.replaceBrew(user, created.brew_id, brewInput('2026-11-25T07:30:00.250+01:00', 9));
+      const sameTime = await repo.replaceBrew(user, created.brew_id, brewInput(shelf, '2026-11-25T07:30:00.250+01:00', 9));
       expect((await repo.getBrew(user, created.brew_id))?.values.rating?.scores.overall).toBe(9);
       expect(sameTime.brew_id).toBe(created.brew_id);
 
       // New time: the brew item moves to its new sort key, the pointer follows.
-      await repo.replaceBrew(user, created.brew_id, brewInput('2026-11-26T08:00:00Z', 6));
+      await repo.replaceBrew(user, created.brew_id, brewInput(shelf, '2026-11-26T08:00:00Z', 6));
       const moved = await partition(userPk(user));
       expect(moved.map((i) => i.sk).sort()).toEqual(
-        [`BREW#2026-11-26T08:00:00.000Z#${created.brew_id}`, `BREWID#${created.brew_id}`].sort(),
+        [`BREW#2026-11-26T08:00:00.000Z#${created.brew_id}`, `BREWID#${created.brew_id}`, shelfSk].sort(),
       );
+      expect((await raw(shelfEntryKey(user, shelf)))?.brewCount).toBe(1);
       expect((await raw(brewRefKey(user, created.brew_id)))?.brewSk).toBe(`BREW#2026-11-26T08:00:00.000Z#${created.brew_id}`);
       const read = await repo.getBrew(user, created.brew_id);
       expect(read?.values.brewed_at).toBe('2026-11-26T08:00:00Z');
@@ -231,14 +240,16 @@ describe.skipIf(!local.reachable)('repository on DynamoDB Local', () => {
 
       await repo.deleteBrew(user, created.brew_id);
       expect(await repo.getBrew(user, created.brew_id)).toBeUndefined();
-      expect(await partition(userPk(user))).toEqual([]);
+      expect((await partition(userPk(user))).map((i) => i.sk)).toEqual([shelfSk]);
+      expect((await raw(shelfEntryKey(user, shelf)))?.brewCount).toBe(0);
     });
 
     it('lists newest brewed_at first, whatever the creation order or offset, and pages', async () => {
       const user = verifiedUserId('99999999-9999-4999-8999-999999999999');
+      const shelf = (await repo.createShelfEntry(user, shelfInput())).shelf_entry_id;
       const times = ['2026-11-20T10:00:00Z', '2026-11-25T10:00:00+05:00', '2026-11-22T10:00:00Z', '2026-11-25T06:00:00Z'];
       const ids = new Map<string, string>();
-      for (const t of times) ids.set(t, (await repo.createBrew(user, brewInput(t))).brew_id);
+      for (const t of times) ids.set(t, (await repo.createBrew(user, brewInput(shelf, t))).brew_id);
       const order = ['2026-11-25T06:00:00Z', '2026-11-25T10:00:00+05:00', '2026-11-22T10:00:00Z', '2026-11-20T10:00:00Z'];
       const all = await repo.listBrews(user);
       expect(all.items.map((b) => b.values.brewed_at)).toEqual(order);
@@ -256,17 +267,92 @@ describe.skipIf(!local.reachable)('repository on DynamoDB Local', () => {
 
     it('create is conditional; replace and delete need the brew to exist', async () => {
       const user = verifiedUserId('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+      const shelf = (await repo.createShelfEntry(user, shelfInput())).shelf_entry_id;
       const fixed = newUlid();
       const sameId = repoWith({ newId: () => fixed });
-      await sameId.createBrew(user, brewInput('2026-11-25T07:00:00Z'));
-      // Same id at another time: the pointer exists, so nothing is written.
-      await expect(sameId.createBrew(user, brewInput('2026-11-24T07:00:00Z'))).rejects.toThrow(ItemExistsError);
-      expect(await partition(userPk(user))).toHaveLength(2);
+      await sameId.createBrew(user, brewInput(shelf, '2026-11-25T07:00:00Z'));
+      // Same id at another time: the pointer exists, so nothing is written, and the count stays.
+      await expect(sameId.createBrew(user, brewInput(shelf, '2026-11-24T07:00:00Z'))).rejects.toThrow(ItemExistsError);
+      expect(await partition(userPk(user))).toHaveLength(3);
+      expect((await raw(shelfEntryKey(user, shelf)))?.brewCount).toBe(1);
 
       const missing = newUlid();
-      await expect(repo.replaceBrew(user, missing, brewInput('2026-11-25T07:00:00Z'))).rejects.toThrow(ItemNotFoundError);
+      await expect(repo.replaceBrew(user, missing, brewInput(shelf, '2026-11-25T07:00:00Z'))).rejects.toThrow(ItemNotFoundError);
       await expect(repo.deleteBrew(user, missing)).rejects.toThrow(ItemNotFoundError);
-      expect(await partition(userPk(user))).toHaveLength(2);
+      expect(await partition(userPk(user))).toHaveLength(3);
+    });
+  });
+
+  describe('references (ADR 0012)', () => {
+    it('a shelf entry needs its bean in the catalogue, on create and on replace', async () => {
+      const user = verifiedUserId('d1d1d1d1-d1d1-4d1d-8d1d-d1d1d1d1d1d1');
+      await expect(repo.createShelfEntry(user, shelfInput({ bean_id: newUlid() }))).rejects.toThrow(BeanNotFoundError);
+      expect(await partition(userPk(user))).toEqual([]);
+      const entry = await repo.createShelfEntry(user, shelfInput());
+      await expect(repo.replaceShelfEntry(user, entry.shelf_entry_id, shelfInput({ bean_id: newUlid() }))).rejects.toThrow(
+        BeanNotFoundError,
+      );
+      expect((await repo.getShelfEntry(user, entry.shelf_entry_id))?.values.bean_id).toBe(BEAN_ID);
+    });
+
+    it('a brew needs a shelf entry in the caller’s own partition', async () => {
+      const user = verifiedUserId('d2d2d2d2-d2d2-4d2d-8d2d-d2d2d2d2d2d2');
+      await expect(repo.createBrew(user, brewInput(newUlid(), '2026-11-25T07:00:00Z'))).rejects.toThrow(ShelfEntryNotFoundError);
+      const alices = await repo.createShelfEntry(ALICE, shelfInput());
+      await expect(repo.createBrew(user, brewInput(alices.shelf_entry_id, '2026-11-25T07:00:00Z'))).rejects.toThrow(
+        ShelfEntryNotFoundError,
+      );
+      expect(await partition(userPk(user))).toEqual([]);
+      expect((await raw(shelfEntryKey(ALICE, alices.shelf_entry_id)))?.brewCount).toBe(0);
+    });
+
+    it('a shelf entry with brews cannot be deleted; once they are gone it can', async () => {
+      const user = verifiedUserId('d3d3d3d3-d3d3-4d3d-8d3d-d3d3d3d3d3d3');
+      const entry = (await repo.createShelfEntry(user, shelfInput())).shelf_entry_id;
+      const a = await repo.createBrew(user, brewInput(entry, '2026-11-25T07:00:00Z'));
+      const b = await repo.createBrew(user, brewInput(entry, '2026-11-25T08:00:00Z'));
+      expect((await raw(shelfEntryKey(user, entry)))?.brewCount).toBe(2);
+      await expect(repo.deleteShelfEntry(user, entry)).rejects.toThrow(ShelfEntryInUseError);
+      await repo.deleteBrew(user, a.brew_id);
+      await expect(repo.deleteShelfEntry(user, entry)).rejects.toThrow(ShelfEntryInUseError);
+      await repo.deleteBrew(user, b.brew_id);
+      await repo.deleteShelfEntry(user, entry);
+      expect(await partition(userPk(user))).toEqual([]);
+    });
+
+    it('moving a brew to another shelf entry moves the count; a missing target changes nothing', async () => {
+      const user = verifiedUserId('d4d4d4d4-d4d4-4d4d-8d4d-d4d4d4d4d4d4');
+      const first = (await repo.createShelfEntry(user, shelfInput())).shelf_entry_id;
+      const second = (await repo.createShelfEntry(user, shelfInput())).shelf_entry_id;
+      const brew = await repo.createBrew(user, brewInput(first, '2026-11-25T07:00:00Z'));
+      const before = await partition(userPk(user));
+      await expect(repo.replaceBrew(user, brew.brew_id, brewInput(newUlid(), '2026-11-25T07:00:00Z'))).rejects.toThrow(
+        ShelfEntryNotFoundError,
+      );
+      expect(await partition(userPk(user))).toEqual(before);
+
+      // Same time, other entry.
+      await repo.replaceBrew(user, brew.brew_id, brewInput(second, '2026-11-25T07:00:00Z'));
+      expect((await raw(shelfEntryKey(user, first)))?.brewCount).toBe(0);
+      expect((await raw(shelfEntryKey(user, second)))?.brewCount).toBe(1);
+      // Other time, back to the first entry: the brew item moves and so does the count.
+      await repo.replaceBrew(user, brew.brew_id, brewInput(first, '2026-11-26T07:00:00Z'));
+      expect((await raw(shelfEntryKey(user, first)))?.brewCount).toBe(1);
+      expect((await raw(shelfEntryKey(user, second)))?.brewCount).toBe(0);
+      const stored = (await partition(userPk(user))).find((i) => i.type === 'BREW');
+      expect(stored).toMatchObject({ shelfEntryId: first, beanId: BEAN_ID });
+      await repo.deleteShelfEntry(user, second);
+      await expect(repo.deleteShelfEntry(user, first)).rejects.toThrow(ShelfEntryInUseError);
+    });
+
+    it('the brew records the bean of its shelf entry at the time of the write', async () => {
+      const user = verifiedUserId('d5d5d5d5-d5d5-4d5d-8d5d-d5d5d5d5d5d5');
+      const other = (await repo.createBean({ vocabularyVersion: 1, openFoodFactsMatch: false, pickedAttributes: {} })).bean.bean_id;
+      const entry = (await repo.createShelfEntry(user, shelfInput())).shelf_entry_id;
+      const brew = await repo.createBrew(user, brewInput(entry, '2026-11-25T07:00:00Z'));
+      await repo.replaceShelfEntry(user, entry, shelfInput({ bean_id: other }));
+      await repo.replaceBrew(user, brew.brew_id, brewInput(entry, '2026-11-25T07:00:00Z', 9));
+      expect((await partition(userPk(user))).find((i) => i.type === 'BREW')).toMatchObject({ beanId: other });
     });
   });
 
@@ -452,7 +538,7 @@ describe.skipIf(!local.reachable)('repository on DynamoDB Local', () => {
   describe('cross-user isolation', () => {
     it('Bob cannot read, replace, delete or list any of Alice’s items', async () => {
       const shelf = await repo.createShelfEntry(ALICE, shelfInput());
-      const brew = await repo.createBrew(ALICE, brewInput('2026-11-25T07:00:00Z'));
+      const brew = await repo.createBrew(ALICE, brewInput(shelf.shelf_entry_id, '2026-11-25T07:00:00Z'));
       const recipe = await repo.createRecipe(ALICE, recipeInput());
       await repo.putProfile(ALICE, { locale: 'de', consent: { contribute_to_aggregates: true } });
       const before = await partition(userPk(ALICE));
@@ -465,7 +551,9 @@ describe.skipIf(!local.reachable)('repository on DynamoDB Local', () => {
       await expect(repo.replaceShelfEntry(BOB, shelf.shelf_entry_id, shelfInput({ price_band: 'from_80' }))).rejects.toThrow(
         ItemNotFoundError,
       );
-      await expect(repo.replaceBrew(BOB, brew.brew_id, brewInput('2026-11-26T07:00:00Z'))).rejects.toThrow(ItemNotFoundError);
+      await expect(repo.replaceBrew(BOB, brew.brew_id, brewInput(shelf.shelf_entry_id, '2026-11-26T07:00:00Z'))).rejects.toThrow(
+        ItemNotFoundError,
+      );
       await expect(repo.replaceRecipe(BOB, recipe.recipe_id, recipeInput(999))).rejects.toThrow(ItemNotFoundError);
       await expect(repo.deleteShelfEntry(BOB, shelf.shelf_entry_id)).rejects.toThrow(ItemNotFoundError);
       await expect(repo.deleteBrew(BOB, brew.brew_id)).rejects.toThrow(ItemNotFoundError);
