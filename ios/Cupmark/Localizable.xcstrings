@@ -3,6 +3,7 @@
   "strings" : {
     "app.title" : {
       "comment" : "App name, shown as the title of the root screen.",
+      "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -20,6 +21,7 @@
     },
     "root.methods.header" : {
       "comment" : "Section header above the list of brew methods on the root screen.",
+      "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -37,6 +39,7 @@
     },
     "root.vocabulary_error.message" : {
       "comment" : "Shown when the bundled vocabulary cannot be loaded.",
+      "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -54,6 +57,7 @@
     },
     "root.vocabulary_error.title" : {
       "comment" : "Title shown when the bundled vocabulary cannot be loaded.",
+      "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {

@@ -83,6 +83,32 @@ export function swiftMember(snake) {
   return SWIFT_KEYWORDS.has(name) ? `\`${name}\`` : name;
 }
 
+// Ids that compile as an enum case but read as Optional's own cases, so
+// `let milk: MilkType? = .none` would silently mean nil. Such an id becomes
+// `<prefix><Subject>`, where the subject is the list's singular name without a
+// trailing `_type` or `_kind`: `none` in `milk_types` -> `noMilk`. The raw
+// value stays the contract id.
+const OPTIONAL_LOOKALIKES = new Map([
+  ['none', 'no'],
+  ['some', 'some'],
+]);
+
+/** `milk_types` -> `Milk`, `methods` -> `Method`, `water_temp_special` -> `WaterTempSpecial`. */
+export function listSubject(namespace) {
+  return upperCamel(singular(namespace).replace(/_(type|kind)$/, ''));
+}
+
+/**
+ * The Swift case name for an id of a list. Usually `swiftMember(id)`; an id
+ * that would shadow `Optional.none` or `Optional.some` is renamed (see
+ * OPTIONAL_LOOKALIKES), so `.none` in app code always means nil.
+ */
+export function swiftCase(namespace, id) {
+  const prefix = OPTIONAL_LOOKALIKES.get(lowerCamel(id));
+  if (prefix === undefined) return swiftMember(id);
+  return `${prefix}${listSubject(namespace)}`;
+}
+
 /** Swift string literal. JSON escapes differ from Swift's for \u, so escape by hand. */
 export function swiftString(text) {
   let out = '"';
@@ -302,7 +328,7 @@ export function generateSwift({ version, files, languages }) {
     const childNamespaces = [...new Set(list.items.flatMap((item) => Object.keys(item.children)))];
     const cases = new Map();
     for (const item of list.items) {
-      const member = swiftMember(item.id);
+      const member = swiftCase(list.namespace, item.id);
       if ([...cases.values()].includes(member)) throw new Error(`${list.namespace}: two ids become case ${member}`);
       cases.set(item.id, member);
     }
@@ -334,7 +360,7 @@ export function generateSwift({ version, files, languages }) {
     for (const childNs of childNamespaces) {
       const childType = types.get(childNs);
       const childList = lists.find((l) => l.namespace === childNs);
-      const childCases = new Map(childList.items.map((i) => [i.id, swiftMember(i.id)]));
+      const childCases = new Map(childList.items.map((i) => [i.id, swiftCase(childNs, i.id)]));
       line('');
       line(`        /// The \`${childNs}\` listed under each entry, in file order.`);
       line(`        var ${swiftMember(childNs)}: [Vocabulary.${childType}] {`);
@@ -357,7 +383,7 @@ export function generateSwift({ version, files, languages }) {
       line('            switch self {');
       for (const item of list.items) {
         const owner = parentList.items.find((p) => (p.children[list.namespace] ?? []).includes(item.id));
-        line(`            case .${cases.get(item.id)}: return .${swiftMember(owner.id)}`);
+        line(`            case .${cases.get(item.id)}: return .${swiftCase(list.parent, owner.id)}`);
       }
       line('            }');
       line('        }');

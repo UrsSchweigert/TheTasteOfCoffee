@@ -25,6 +25,69 @@ defaults:
   run:
     shell: bash
 jobs:
+  # Decides whether the change can affect the app, so the macOS `ios` job can
+  # be skipped when it cannot (M0-T9). No third-party action: a plain
+  # `git diff --name-only --no-renames` against the PR base (a file moved out
+  # of ios/ counts as a change to ios/). Pushes to main always run ios.
+  # Any doubt (unknown event, missing base, failed diff) means ios=true.
+  # ios=true when a changed path starts with one of IOS_PATHS; a path ending
+  # in `/` is a directory prefix.
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      ios: ${{ steps.diff.outputs.ios }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Full history, so the PR base commit is present for the diff.
+          fetch-depth: 0
+      - name: Paths that affect the app
+        id: diff
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          IOS_PATHS: >-
+            ios/
+            contracts/vocabulary/
+            contracts/i18n/
+            scripts/generate-ios-vocabulary.mjs
+            scripts/check-ios-strings.mjs
+            .github/workflows/ci.yml
+        # GitHub runs this with bash -eo pipefail; every check that may fail is
+        # an `if` condition, so a failed git command falls through to ios=true.
+        run: |
+          set -euo pipefail
+          ios=true
+          reason="fail-safe default"
+          if [ "$EVENT_NAME" = "push" ]; then
+            reason="push: always run ios"
+          elif [ "$EVENT_NAME" != "pull_request" ]; then
+            reason="event $EVENT_NAME: always run ios"
+          elif [ -z "$BASE_SHA" ] || ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            reason="base commit ${BASE_SHA:-<none>} not available"
+          elif ! list="$(mktemp)" || ! git diff --name-only --no-renames -z "$BASE_SHA" HEAD > "$list"; then
+            reason="git diff failed"
+          else
+            ios=false
+            reason="no changed path affects the app"
+            # -z: NUL-separated, so no path is quoted or split.
+            while IFS= read -r -d '' path; do
+              [ -n "$path" ] || continue
+              for prefix in $IOS_PATHS; do
+                if [[ "$path" == "$prefix" ]] || [[ "$prefix" == */ && "$path" == "$prefix"* ]]; then
+                  ios=true
+                  reason="$path changed"
+                  break 2
+                fi
+              done
+            done < "$list"
+          fi
+          echo "ios=$ios ($reason)"
+          echo "ios=$ios" >> "$GITHUB_OUTPUT"
+
   workflow-lint:
     name: workflow-lint
     runs-on: ubuntu-latest
@@ -80,8 +143,11 @@ jobs:
   # Builds the app and runs its unit tests on the iOS Simulator (M0-T6).
   # The runner image and the Xcode version are pinned, so an upgrade is a
   # deliberate change here. Signing is off; no certificates or secrets.
+  # Skipped when `changes` finds nothing that can affect the app (M0-T9).
   ios:
     name: ios
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
     runs-on: macos-15
     timeout-minutes: 30
     env:
@@ -181,22 +247,42 @@ jobs:
       - name: Synth
         run: npm run synth
 
+  # Every job must succeed. The one exception: `ios` may be skipped, but only
+  # when `changes` succeeded and said ios=false. A failed or cancelled ios, or
+  # a skip for any other reason, fails ci-ok.
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [workflow-lint, contracts, ios, backend, infra]
+    needs: [changes, workflow-lint, contracts, ios, backend, infra]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
       - name: All jobs passed
         env:
-          RESULTS: ${{ join(needs.*.result, ' ') }}
+          CHANGES_IOS: ${{ needs.changes.outputs.ios }}
+          IOS_RESULT: ${{ needs.ios.result }}
+          OTHER_RESULTS: >-
+            changes=${{ needs.changes.result }}
+            workflow-lint=${{ needs.workflow-lint.result }}
+            contracts=${{ needs.contracts.result }}
+            backend=${{ needs.backend.result }}
+            infra=${{ needs.infra.result }}
         run: |
           set -euo pipefail
-          echo "Job results: $RESULTS"
-          for r in $RESULTS; do
-            if [ "$r" != "success" ]; then
-              echo "A required job did not succeed ($r)"
-              exit 1
+          echo "Job results: $OTHER_RESULTS ios=$IOS_RESULT (changes said ios=$CHANGES_IOS)"
+          failed=0
+          for pair in $OTHER_RESULTS; do
+            if [ "${pair#*=}" != "success" ]; then
+              echo "A required job did not succeed: $pair"
+              failed=1
             fi
           done
+          if [ "$IOS_RESULT" = "success" ]; then
+            :
+          elif [ "$IOS_RESULT" = "skipped" ] && [ "$CHANGES_IOS" = "false" ]; then
+            echo "ios skipped: no changed path affects the app"
+          else
+            echo "ios did not succeed: $IOS_RESULT (changes said ios=$CHANGES_IOS)"
+            failed=1
+          fi
+          exit "$failed"
