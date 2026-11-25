@@ -23,7 +23,8 @@ Record each answer as an ADR in `docs/decisions/`.
 
 ## Things only a human can do
 
-- [ ] Enrol in the Apple Developer Program and the Small Business Program.
+- [x] Enrol in the Apple Developer Program. The owner is already a member (2026-11-25).
+- [ ] Join the Small Business Program (15% commission; needed before the paid launch).
 - [ ] Create the App ID, the Sign in with Apple service and key, and the subscription products in App Store Connect.
 - [x] In the shared AWS account (ADR 0009): run `scripts/aws/apply-guardrails.sh --apply` and the `cupmark` CDK bootstrap. Done by the owner on 2026-11-25; both match the repo.
 - [x] Check whether a GitHub OIDC provider already exists. It does, so `cupmark-github-oidc` uses `reference` (owner, 2026-11-25).

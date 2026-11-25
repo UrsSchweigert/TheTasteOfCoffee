@@ -73,7 +73,7 @@ Goal: the repo builds, tests and checks itself; the shared contract exists.
 - needs: human
 - depends: none
 - acceptance:
-  - Apple Developer Program membership active; App ID and Sign in with Apple key created.
+  - Apple Developer Program membership active (done, 2026-11-25). App ID `app.cupmark.Cupmark` with Sign in with Apple, a Services ID, and a Sign in with Apple key created; the key is stored only in Parameter Store as a SecureString, never in the repo (open).
   - In the shared AWS account (ADR 0009), checked read-only by the owner on 2026-11-25:
     - root MFA is on (done);
     - `CupmarkBoundary` and `CupmarkCfnExecution` match `scripts/aws/*.json` (done);
@@ -196,7 +196,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - A smoke test calls the health route after deploy.
 
 ### M1-T8 Contract update for D7 to D9
-- status: todo
+- status: in-progress
 - owner: contract-keeper
 - depends: M0-T3
 - implements: docs/decisions/0005, 0006, 0007
