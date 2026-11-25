@@ -26,6 +26,9 @@
 		C0FFEE000000000000000005 /* CupmarkTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CupmarkTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C0FFEE000000000000000008 /* v2 */ = {isa = PBXFileReference; lastKnownFileType = folder; name = v2; path = ../contracts/vocabulary/v2; sourceTree = SOURCE_ROOT; };
 		C0FFEE000000000000000009 /* i18n */ = {isa = PBXFileReference; lastKnownFileType = folder; name = i18n; path = ../contracts/i18n; sourceTree = SOURCE_ROOT; };
+		C0FFEE000000000000000051 /* Dev.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Dev.xcconfig; path = Config/Dev.xcconfig; sourceTree = SOURCE_ROOT; };
+		C0FFEE000000000000000052 /* Prod.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Prod.xcconfig; path = Config/Prod.xcconfig; sourceTree = SOURCE_ROOT; };
+		C0FFEE000000000000000053 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = Info.plist; path = Config/Info.plist; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -65,6 +68,7 @@
 				C0FFEE000000000000000006 /* Cupmark */,
 				C0FFEE000000000000000007 /* CupmarkTests */,
 				C0FFEE00000000000000000C /* Contracts */,
+				C0FFEE000000000000000050 /* Config */,
 				C0FFEE000000000000000003 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -85,6 +89,16 @@
 				C0FFEE000000000000000009 /* i18n */,
 			);
 			name = Contracts;
+			sourceTree = "<group>";
+		};
+		C0FFEE000000000000000050 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				C0FFEE000000000000000051 /* Dev.xcconfig */,
+				C0FFEE000000000000000052 /* Prod.xcconfig */,
+				C0FFEE000000000000000053 /* Info.plist */,
+			);
+			name = Config;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -284,12 +298,15 @@
 		};
 		C0FFEE000000000000000044 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = C0FFEE000000000000000051 /* Dev.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Config/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Cupmark;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Cupmark uses the camera to read the barcode on a coffee bag.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -311,12 +328,15 @@
 		};
 		C0FFEE000000000000000045 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = C0FFEE000000000000000051 /* Dev.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Config/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Cupmark;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Cupmark uses the camera to read the barcode on a coffee bag.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

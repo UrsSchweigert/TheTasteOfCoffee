@@ -1,0 +1,24 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "NSCameraUsageDescription" : {
+      "comment" : "Camera permission prompt. The camera only reads the barcode on a coffee bag (M2-T13); the English value must match INFOPLIST_KEY_NSCameraUsageDescription in project.pbxproj.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cupmark nutzt die Kamera, um den Barcode auf einer Kaffeepackung zu lesen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cupmark uses the camera to read the barcode on a coffee bag."
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

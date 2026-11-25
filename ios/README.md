@@ -6,11 +6,13 @@ SwiftUI app, iOS 17 or later, no third-party packages. Builds only on macOS with
 
 ```
 Cupmark.xcodeproj/        hand-written project (see "Project file")
+Config/                   stage configuration: Dev.xcconfig, Prod.xcconfig, Info.plist
 Cupmark/                  app target sources and resources
   Generated/Vocabulary.swift   generated from contracts/vocabulary, never edit
   Generated/API.swift          generated from contracts/openapi.yaml, never edit
   Networking/             APIClient, TokenProvider, APIError, CatalogueImageCache
   Vocabulary/             VocabularyStore (runtime loader) and helpers
+  Configuration/          StageConfig and the "not configured" screen
   L10n.swift              keys of the String Catalog
   Localizable.xcstrings   String Catalog, English (source) and German
 CupmarkTests/             XCTest unit tests (hosted in the app)
@@ -66,6 +68,30 @@ node scripts/generate-ios-api.mjs
 - Label photo bytes are not sent by this client: the presigned S3 POST of `createLabelPhotoUpload` is M2-T24.
 - Tests (`APIClientTests`) use a `URLProtocol` stub (`CupmarkTests/Support/StubURLProtocol.swift`), one fake host per server.
 
+## Stage configuration
+
+`Configuration/StageConfig.swift` (M2-T9) holds the endpoints of the backend stage the app was built for. They are not secrets: the Cognito app client is public and has no secret (infra/src/identity.ts).
+
+- `Config/Dev.xcconfig` and `Config/Prod.xcconfig` set `CUPMARK_STAGE`, `CUPMARK_HOSTED_DOMAIN` (`https://cupmark-<stage>.auth.eu-central-1.amazoncognito.com`), `CUPMARK_APP_CLIENT_ID` (stack output `IdentityAppClientId...`), `CUPMARK_API_URL` (stack output `ApiUrl`), `CUPMARK_REDIRECT_URL` (`cupmark://auth`) and `CUPMARK_SIGN_OUT_URL` (`cupmark://signout`). `//` starts a comment in an xcconfig, so URLs are written `https:/$()/...`; `$()` expands to nothing.
+- `Config/Info.plist` maps them to the keys `CupmarkStage`, `CupmarkHostedDomain`, `CupmarkAppClientID`, `CupmarkAPIURL`, `CupmarkRedirectURL` and `CupmarkSignOutURL`. Xcode merges it with the generated Info.plist (`GENERATE_INFOPLIST_FILE` stays on, `INFOPLIST_FILE = Config/Info.plist`). It sits outside the synchronized `Cupmark/` folder, so it is not also copied as a resource.
+- Debug and Release of the app target both use `Dev.xcconfig` until prod is deployed in M6 (ADR 0023). `Prod.xcconfig` is not referenced yet.
+- `StageConfig(info:)` checks every key and throws `StageConfigError.missing`, `.malformed` or `.wrongRegion` with the key, never the value. The hosted domain must be exactly `cupmark-<stage>` in eu-central-1; the API URL must be `https://<10-character api id>.execute-api.eu-central-1.amazonaws.com` with no path; the app client id letters and digits; the two callback URLs exactly the registered ones. Any region but eu-central-1 is `wrongRegion` (invariant 6). Nothing traps.
+- `StageConfigLoadState.load(from: .main)` runs at launch. `.notConfigured` shows `NotConfiguredView`, and the app calls no backend. `apiBaseURL` is what `APIClient(baseURL:)` gets.
+- Until M2-T10 the dev app client id and API URL are `PLACEHOLDER-SET-IN-M2-T10`, and prod's are `PLACEHOLDER-SET-IN-M6`. Uppercase letters and hyphens are invalid in both ids, so the built app shows "not configured" instead of calling a wrong host. M2-T10 puts the owner's dev outputs in `Dev.xcconfig` and changes `testTheBuiltAppIsNotConfiguredUntilM2T10` to expect `.configured`.
+- Tests: `StageConfigTests` (valid, missing, malformed and wrong-region values, and the keys in the built app). `scripts/ios-scripts.test.mjs` checks on Linux that both xcconfigs, `Info.plist`, `identity.ts` and the project agree.
+
+## Barcode scanner
+
+`Scanner/` (M2-T13) implements F1 step 1. It never offers a way to type a barcode (invariant 1).
+
+- `CanonicalBarcode` is pure Swift and matches the backend's `canonicalBarcode` (backend/src/repository/keys.ts) exactly: 13 ASCII digits are kept, 12 get a leading 0 (UPC-A to EAN-13), and the GS1 check digit (weights 1, 3 from the left) must be right. Anything else, including whitespace and non-ASCII digits, is ignored, so no request is made for it. `lookupBarcode` gives the `LookupBarcode` path value for M2-T14.
+- `BarcodeScanSession` lets the first valid code through once; every later report, duplicate or not, is ignored.
+- `ScannerViewModel` checks a `ScannerEnvironment`, then reads a `BarcodeSource` (an `AsyncStream` of payloads), stops the source at the first valid code and calls `onScanned` once. Tests use `FakeBarcodeSource` and `FakeScannerEnvironment`, without VisionKit.
+- `DataScannerView` wraps VisionKit's `DataScannerViewController` with `recognizedDataTypes: [.barcode(symbologies: [.ean13])]`. VisionKit has no UPC-A symbology: a UPC-A code is an EAN-13 with a leading 0 and is reported under `.ean13` as 13 digits. EAN-8 and UPC-E are not read (the contract's `Barcode` is 12 or 13 digits). `LiveScannerEnvironment` uses `DataScannerViewController.isSupported` (false on the simulator) and `isAvailable`, and asks for camera access once if it was never asked.
+- When scanning is unsupported, denied or not available, `ScannerScreen` offers the pick-list entry (`onPickListEntry`, connected in M2-T22) and a Settings link (`UIApplication.openSettingsURLString`). `onScanned` is connected to the lookup in M2-T14; until then the root screen's "Scan a bag" row passes placeholders.
+- The camera permission prompt is `INFOPLIST_KEY_NSCameraUsageDescription` in the app target's build settings, localised in `Cupmark/InfoPlist.xcstrings` (en, de).
+- Only a device can run the camera: unit tests cover the logic, the real scan is checked in M2-T34.
+
 ## Strings
 
 - Every UI string is a key in `L10n.swift` with English and German in `Localizable.xcstrings`. Vocabulary labels come from `contracts/i18n` and are shown with `Text(verbatim:)`.
@@ -75,6 +101,7 @@ node scripts/generate-ios-api.mjs
   - any string literal inside `Text(verbatim: ...)`, including a fallback such as `?? "n/a"`;
   - a name bound to a string literal in the same file (`let title = "Hi"`) passed as the first argument of one of those calls.
   Literals that are not shown text, such as `Image(systemName:)` or `systemImage:`, are allowed.
+- `InfoPlist.xcstrings` localises the Info.plist permission strings. `check-ios-strings.mjs` checks it with the same rules and requires exactly the `INFOPLIST_KEY_NS...UsageDescription` settings of `project.pbxproj`, with the English value equal to the build setting.
 - `scripts/check-no-free-text.sh` fails on any control that accepts typed text.
 
 ## Project file

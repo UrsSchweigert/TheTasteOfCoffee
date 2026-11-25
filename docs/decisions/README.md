@@ -48,3 +48,4 @@ What this costs, what it rules out, when to revisit.
 - [0020 No local-only mode without sign-in for now](0020-no-local-only-mode-for-now.md)
 - [0021 Brew fields depend on the method, and grinders get their own scales](0021-method-dependent-brew-fields-and-grinders.md)
 - [0022 Swift API types come from an in-repo generator](0022-swift-api-types-from-an-in-repo-generator.md)
+- [0023 Debug builds and the M2 TestFlight builds use the dev stage](0023-debug-and-testflight-builds-use-dev.md)

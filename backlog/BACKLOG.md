@@ -451,7 +451,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T9 Stage configuration
-- status: todo
+- status: needs-mac-verification
 - owner: ios-engineer
 - depends: M2-T8
 - implements: docs/05-system-design.md, Components, Security; infra/src/identity.ts (`cupmark://auth`, `cupmark://signout`); infra/README.md (stack outputs)
@@ -525,7 +525,7 @@ Planning notes (planned 2026-11-25):
   - Mac: ends `needs-mac-verification` until the owner reports a TestFlight build installed on a device.
 
 ### M2-T13 Barcode scanner
-- status: todo
+- status: needs-mac-verification
 - owner: ios-engineer
 - depends: M0-T6
 - implements: docs/04-specification.md, F1 step 1, Input model (camera scan, EAN-13 and UPC-A)
