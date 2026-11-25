@@ -339,6 +339,19 @@ test('parent check fails: unknown parent, a region as parent, self reference, an
   ]);
 });
 
+test('parent check fails: a catch-all id (blend, other, unknown) as a country', () => {
+  const files = clone(loadVocabulary(2));
+  const origin = (id) => files.bean.origins.find((entry) => entry.id === id);
+  origin('sumatra').country = 'unknown';
+  origin('java').country = 'blend';
+  origin('bali').country = 'other';
+  assert.deepEqual(checkParentReferences(files), [
+    'origins.sumatra: country unknown is a catch-all entry, not a parent',
+    'origins.java: country blend is a catch-all entry, not a parent',
+    'origins.bali: country other is a catch-all entry, not a parent',
+  ]);
+});
+
 test('schema check: bean.json needs origins, species and varieties from v2 on, and v1 has none of them', () => {
   const missing = (name) => {
     const v2 = clone(loadVocabulary(2));

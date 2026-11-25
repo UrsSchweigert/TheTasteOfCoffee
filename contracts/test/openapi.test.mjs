@@ -724,6 +724,35 @@ test('raw body check fails: another media type, a JPEG body with more than its m
   assertProblem(lint, '/content/application~1json/schema: string without enum, pattern or format');
 });
 
+test('raw body check fails: a JPEG or CSV body anywhere a client sends data (requestBodies, callbacks, webhooks)', () => {
+  const op = () => ({ operationId: 'x', responses: { 204: { description: 'x' }, 401: { $ref: '#/components/responses/Unauthorized' } } });
+  for (const mediaType of ['image/jpeg', 'text/csv']) {
+    const raw = () => ({ required: true, content: { [mediaType]: { schema: { type: 'string', contentMediaType: mediaType } } } });
+    const cases = [
+      ['an unused components.requestBodies entry', (d) => { d.components.requestBodies = { Upload: raw() }; },
+        '#/components/requestBodies/Upload/content/'],
+      ['a callback requestBody', (d) => {
+        d.paths['/brews'].post.callbacks = { done: { '{$request.body#/url}': { post: { ...op(), requestBody: raw() } } } };
+      }, '#/paths/~1brews/post/callbacks/done/'],
+      ['a webhook requestBody', (d) => { d.webhooks = { photo: { post: { ...op(), operationId: 'photoHook', requestBody: raw() } } }; },
+        '#/webhooks/photo/post/requestBody/content/'],
+      ['a components.responses body', (d) => {
+        d.components.responses.Raw = { description: 'x', content: { [mediaType]: { schema: { type: 'string', contentMediaType: mediaType } } } };
+      }, '#/components/responses/Raw/content/'],
+    ];
+    for (const [name, mutate, where] of cases) {
+      const changed = broken(mutate);
+      const problems = checkOpenApi(changed, context);
+      assert.ok(
+        problems.some((p) => p.startsWith(where) && p.endsWith(': string without enum, pattern or format')),
+        `${mediaType} in ${name}:\n${problems.join('\n')}`,
+      );
+    }
+  }
+  // The real raw bodies, directly under an operation's response, still pass.
+  assert.deepEqual(lintSchemas(doc), []);
+});
+
 // ---- Vocabulary v2: published on 2026-11-25 and bound (ADR 0004, 0006, 0011) ----
 
 test('v2 is bound: origin, species and variety are in BeanAttributes, and the version allows 2', () => {

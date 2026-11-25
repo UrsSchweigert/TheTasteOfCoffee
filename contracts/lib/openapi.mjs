@@ -150,7 +150,11 @@ export function resolveRef(doc, ref) {
 /**
  * Every schema root in the document: each entry of components.schemas and
  * every `schema` property anywhere else (parameters, request bodies,
- * responses, headers). `mediaType` is set when the root sits in a
+ * responses, headers). `inOperationResponse` is true only for the body of a
+ * response of an operation under `paths`
+ * (`paths.<route>.<method>.responses.<code>.content.<type>.schema`): not
+ * `components.responses`, not a callback (whose responses come from the
+ * client), not a webhook. `mediaType` is set when the root sits in a
  * `content` map.
  */
 export function schemaRoots(doc) {
@@ -168,7 +172,10 @@ export function schemaRoots(doc) {
       if (path.length === 2 && path[0] === 'components' && path[1] === 'schemas') continue;
       if (key === 'schema') {
         const mediaType = path.length >= 2 && path[path.length - 2] === 'content' ? path[path.length - 1] : undefined;
-        roots.push({ schema: child, path: [...path, key], mediaType });
+        const full = [...path, key];
+        const inOperationResponse =
+          full.length === 8 && full[0] === 'paths' && HTTP_METHODS.includes(full[2]) && full[3] === 'responses' && full[5] === 'content';
+        roots.push({ schema: child, path: full, mediaType, inOperationResponse });
         continue;
       }
       walk(child, [...path, key]);
@@ -193,16 +200,16 @@ export function forEachSchema(doc, visit) {
     if (typeof schema.$ref === 'string' && !seenRefs.has(schema.$ref)) {
       seenRefs.add(schema.$ref);
       const target = resolveRef(doc, schema.$ref);
-      if (target !== undefined) walk(target, [schema.$ref], { ...context, mediaType: undefined, inNot: false });
+      if (target !== undefined) walk(target, [schema.$ref], { ...context, mediaType: undefined, inOperationResponse: false, inNot: false });
     }
     if (isMap(schema.properties)) {
-      for (const [name, child] of Object.entries(schema.properties)) walk(child, [...path, 'properties', name], { ...context, mediaType: undefined });
+      for (const [name, child] of Object.entries(schema.properties)) walk(child, [...path, 'properties', name], { ...context, mediaType: undefined, inOperationResponse: false });
     }
-    if (schema.items !== undefined) walk(schema.items, [...path, 'items'], { ...context, mediaType: undefined });
+    if (schema.items !== undefined) walk(schema.items, [...path, 'items'], { ...context, mediaType: undefined, inOperationResponse: false });
     for (const key of ['oneOf', 'anyOf', 'allOf']) {
-      if (Array.isArray(schema[key])) schema[key].forEach((child, i) => walk(child, [...path, key, i], { ...context, mediaType: undefined }));
+      if (Array.isArray(schema[key])) schema[key].forEach((child, i) => walk(child, [...path, key, i], { ...context, mediaType: undefined, inOperationResponse: false }));
     }
-    if (schema.not !== undefined) walk(schema.not, [...path, 'not'], { ...context, mediaType: undefined, inNot: true });
+    if (schema.not !== undefined) walk(schema.not, [...path, 'not'], { ...context, mediaType: undefined, inOperationResponse: false, inNot: true });
   };
   for (const root of schemaRoots(doc)) {
     // Roots in components.schemas are walked under their $ref name, so a
@@ -214,7 +221,7 @@ export function forEachSchema(doc, visit) {
       seenRefs.add(ref);
       walk(root.schema, [ref], { inNot: false });
     } else {
-      walk(root.schema, root.path, { inNot: false, mediaType: root.mediaType });
+      walk(root.schema, root.path, { inNot: false, mediaType: root.mediaType, inOperationResponse: root.inOperationResponse });
     }
   }
 }
@@ -334,7 +341,11 @@ export function lintSchemas(doc) {
         if (hasFormat && !STRING_FORMATS.includes(schema.format)) {
           add(path, `format ${schema.format} is not one of ${STRING_FORMATS.join(', ')}`);
         }
-        const isRawBody = RAW_RESPONSE_MEDIA_TYPES.includes(context.mediaType) && schema.contentMediaType === context.mediaType;
+        // Only the direct body of an operation's response: a raw body anywhere a
+        // client sends data (request bodies, components.requestBodies,
+        // callbacks, webhooks) would be an unconstrained string.
+        const isRawBody = context.inOperationResponse === true &&
+          RAW_RESPONSE_MEDIA_TYPES.includes(context.mediaType) && schema.contentMediaType === context.mediaType;
         const isFreeText = FREE_TEXT_KEYWORD in schema;
         if (isFreeText) {
           const source = schema[FREE_TEXT_KEYWORD];

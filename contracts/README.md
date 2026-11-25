@@ -46,7 +46,7 @@ Generators and tests rely on these rules.
 - Every array in a vocabulary file is a list: a non-empty array of objects with an `id`. An array of strings, numbers, arrays or id-less objects is an error, whatever the schema says.
 - The property name that holds the array is the list's namespace, and a namespace lives in exactly one file. Ids are lowercase snake_case and unique within their namespace; the same id may appear in two namespaces (`acidity` is a criterion and an intensity dimension).
 - A range is `{ "minimum", "maximum", "multipleOf" }`, all three required, bounds inclusive.
-- An entry may name a parent entry of its own list only where `PARENT_REFERENCES` in `lib/vocabulary.mjs` says so: today only `origins`, with `country`. The parent is an id of the same list, never the entry itself, and has no parent of its own, so the hierarchy has two levels. The schema allows the attribute on `origins` entries only. Generators emit it as a typed reference (`Vocabulary.Origin.country` in Swift).
+- An entry may name a parent entry of its own list only where `PARENT_REFERENCES` in `lib/vocabulary.mjs` says so: today only `origins`, with `country`. The parent is an id of the same list, never the entry itself, never a catch-all id (`NON_PARENT_IDS`: `blend`, `mixed`, `other`, `unknown`), and has no parent of its own, so the hierarchy has two levels. The schema allows the attribute on `origins` entries only. Generators emit it as a typed reference (`Vocabulary.Origin.country` in Swift).
 - A language file is `{ "language", "labels": { <namespace>: { <id>: text } }, "questions": { "criteria": { <id>: text } } }`.
 
 ## What the tests enforce
@@ -84,7 +84,7 @@ Adding a list means: add it to a vocabulary file, extend that file's schema, add
 
 `lib/openapi.mjs` walks every schema: components, parameters, request and response bodies, nested properties, `items`, `oneOf`, `anyOf`, `not`, and every `$ref` target. It fails on:
 
-- a string without `enum`, an anchored `pattern` (`^...$`) or a `format` of `date` or `date-time`. The only other strings are the two raw response bodies (`RAW_RESPONSE_MEDIA_TYPES`), each exactly `{ type: string, contentMediaType: <its media type> }`: the CSV export under `text/csv` and a catalogue image under `image/jpeg`; and response-only Open Food Facts text (see "Exceptions");
+- a string without `enum`, an anchored `pattern` (`^...$`) or a `format` of `date` or `date-time`. The only other strings are the two raw response bodies (`RAW_RESPONSE_MEDIA_TYPES`), each exactly `{ type: string, contentMediaType: <its media type> }` and only directly in the response of an operation under `paths` (never in `components.requestBodies`, `components.responses`, a callback or a webhook, where it would be an unconstrained string a client sends): the CSV export under `text/csv` and a catalogue image under `image/jpeg`; and response-only Open Food Facts text (see "Exceptions");
 - a `pattern` that is wide or unbounded: `.`, `\S`, `\s`, `\w`, `\W`, `\D`, `\p{...}`, `\P{...}`, a negated class `[^...]`, or a `*`, `+` or `{n,}` quantifier. A pattern must name its characters and bound its length, like `^[0-9]{12,13}$`;
 - any schema keyword outside an allowlist (`SCHEMA_KEYWORDS` in `lib/openapi.mjs`), so `prefixItems`, `contains`, `if`/`then`/`else`, `dependentSchemas`, `propertyNames`, `unevaluated*`, `patternProperties`, `const` and exclusive bounds cannot slip in unchecked;
 - a number or integer without `minimum` and `maximum`, or with a `multipleOf` that is not exact in binary floating point (see "Decimal steps");

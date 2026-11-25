@@ -25,6 +25,8 @@ export const QUESTION_NAMESPACES = ['criteria'];
  * this to emit a typed reference instead of a plain string.
  */
 export const PARENT_REFERENCES = { origins: 'country' };
+/** Catch-all ids that are never a real place, so never a parent (`blend`, `other`, `unknown`). */
+export const NON_PARENT_IDS = ['blend', 'mixed', 'other', 'unknown'];
 
 const SCHEMA_SUFFIX = '.schema.json';
 const SHARED_SCHEMA = 'common';
@@ -194,9 +196,9 @@ function collectEntries(files) {
 
 /**
  * Checks the parent references of PARENT_REFERENCES: every value names an
- * entry of the same list, never the entry itself, and that entry has no
- * parent of its own. The attribute may not appear on an entry of any other
- * list. Returns a list of problems.
+ * entry of the same list, never the entry itself, never a catch-all id of
+ * NON_PARENT_IDS, and that entry has no parent of its own. The attribute may
+ * not appear on an entry of any other list. Returns a list of problems.
  */
 export function checkParentReferences(files, references = PARENT_REFERENCES) {
   const problems = [];
@@ -218,6 +220,7 @@ export function checkParentReferences(files, references = PARENT_REFERENCES) {
       const parent = typeof parentId === 'string' ? byId.get(parentId) : undefined;
       if (parent === undefined) problems.push(`${namespace}.${entry.id}: ${attribute} ${JSON.stringify(parentId)} is not an entry of ${namespace}`);
       else if (parent === entry) problems.push(`${namespace}.${entry.id}: ${attribute} names the entry itself`);
+      else if (NON_PARENT_IDS.includes(parentId)) problems.push(`${namespace}.${entry.id}: ${attribute} ${parentId} is a catch-all entry, not a parent`);
       else if (attribute in parent) problems.push(`${namespace}.${entry.id}: ${attribute} ${parentId} has a ${attribute} itself; a parent must be top level`);
     }
   }
