@@ -611,7 +611,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T17 Pull and reconcile
-- status: todo
+- status: in-progress
 - owner: ios-engineer
 - depends: M2-T16
 - implements: docs/04-specification.md, Non-functional (Offline); docs/05-system-design.md, Persistence and recovery ("each phone keeps a full copy")
@@ -689,7 +689,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T22 Pick-list bean entry
-- status: todo
+- status: in-progress
 - owner: ios-engineer
 - depends: M2-T14
 - implements: docs/04-specification.md, F1 step 4; ADR 0006, ADR 0011
