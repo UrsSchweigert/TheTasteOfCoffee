@@ -1,0 +1,60 @@
+# Dependabot version updates (backlog M0-T8).
+#
+# github-actions keeps the commit SHAs pinned in .github/workflows current and
+# rewrites the trailing version comment with them. All action updates arrive as
+# one grouped pull request a week.
+#
+# npm: one grouped pull request a week per package for minor and patch updates;
+# a major update arrives on its own, so it can be reviewed by itself. The open
+# PR limits stay low so the queue does not fill up. Every Dependabot PR runs CI
+# (ci.yml needs no secrets), and a human reviews and merges it: an update can
+# change a licence or pull in a new transitive dependency (see CLAUDE.md).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+    groups:
+      github-actions:
+        patterns: ['*']
+    commit-message:
+      prefix: ci
+
+  - package-ecosystem: npm
+    directory: /contracts
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+    groups:
+      contracts-minor-and-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: deps
+
+  - package-ecosystem: npm
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+    groups:
+      backend-minor-and-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: deps
+
+  - package-ecosystem: npm
+    directory: /infra
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+    groups:
+      infra-minor-and-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: deps

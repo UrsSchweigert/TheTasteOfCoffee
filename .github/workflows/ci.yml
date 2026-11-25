@@ -14,9 +14,12 @@ on:
     branches: [main]
 permissions:
   contents: read
+# A group holds one running and one pending run; a newer run replaces the
+# pending one. PR runs share a group per pull request, so superseded runs are
+# cancelled. Each push gets its own group (by commit SHA), so every push to main
+# runs to completion and none is dropped while pending.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
-  # Superseded PR runs are cancelled; every push to main runs to completion.
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 defaults:
   run:

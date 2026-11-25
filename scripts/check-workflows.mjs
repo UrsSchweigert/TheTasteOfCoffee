@@ -3,17 +3,19 @@
 //
 // Rules, per workflow file:
 // - every `uses:` is pinned to a full 40-hex commit SHA (local `./` actions and
-//   `docker://...@sha256:<digest>` images are allowed), with the version in a
-//   trailing comment (`# v6.1.0`);
+//   `docker://...@sha256:<digest>` images are allowed), and every `uses:` line
+//   that names a SHA carries the version in a trailing comment (`# v6.1.0`);
 // - no `pull_request_target` trigger;
 // - top-level `permissions` is present and grants no write scope;
 // - every job has `timeout-minutes` (reusable-workflow call jobs excepted);
 // - `actions/checkout` runs with `persist-credentials: false`.
-// Strict files (ci.yml) additionally must have top-level permissions of exactly
-// `contents: read`, no job-level permissions, and no reference to secrets.
 //
-// Strict files fail the run (exit 1). Every other workflow file is reported as
-// advisory only (exit 0), so pre-existing workflows are listed as follow-ups.
+// Strict files (STRICT_FILES) fail the run (exit 1). In a strict file a job may
+// only grant the write scopes listed for that job in its policy (`jobWrites`);
+// anything else is a finding. A policy with `readOnly: true` (ci.yml)
+// additionally needs top-level permissions of exactly `contents: read`, no
+// job-level permissions at all, and no reference to secrets.
+// Every other workflow file is reported as advisory only (exit 0).
 //
 // Needs Node 22 and `npm ci` in contracts/ (for the `yaml` package).
 // Usage: node scripts/check-workflows.mjs [workflow-dir]
@@ -24,7 +26,21 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-export const STRICT_FILES = new Set(['ci.yml']);
+/**
+ * Strict workflow files and the narrow exceptions each one needs.
+ * jobWrites: job id -> write scopes that job may grant. Each entry is justified
+ * in a comment in the workflow file itself.
+ * @type {Map<string, { readOnly?: boolean, jobWrites?: Record<string, string[]> }>}
+ */
+export const STRICT_FILES = new Map([
+  // Untrusted PR code runs here: read-only token, no secrets.
+  ['ci.yml', { readOnly: true }],
+  // claude-code-action fetches a GitHub OIDC token and exchanges it for the
+  // Claude GitHub App token, which does all of its writes.
+  ['claude.yml', { jobWrites: { claude: ['id-token'] } }],
+  // configure-aws-credentials assumes the deploy role through GitHub OIDC.
+  ['aws-oidc-check.yml', { jobWrites: { check: ['id-token'] } }],
+]);
 
 function loadYaml() {
   const contractsPkg = join(root, 'contracts', 'package.json');
@@ -51,15 +67,20 @@ function triggers(on) {
   return [];
 }
 
+// Names of the scopes granted write; `write-all` is reported as itself.
 function writeScopes(permissions) {
   if (permissions === 'write-all') return ['write-all'];
   if (!isObject(permissions)) return [];
   return Object.entries(permissions)
     .filter(([, level]) => level === 'write')
-    .map(([scope]) => `${scope}: write`);
+    .map(([scope]) => scope);
 }
 
-function checkUses(ref, where, lines, findings) {
+function describe(scope) {
+  return scope === 'write-all' ? 'write-all' : `${scope}: write`;
+}
+
+function checkUses(ref, where, findings) {
   if (typeof ref !== 'string') {
     findings.push(`${where}: uses is not a string`);
     return;
@@ -71,29 +92,51 @@ function checkUses(ref, where, lines, findings) {
   }
   if (!SHA_REF.test(ref)) {
     findings.push(`${where}: "${ref}" is not pinned to a full 40-character commit SHA`);
-    return;
   }
-  const line = lines.find((l) => l.includes(`uses: ${ref}`) || l.includes(`uses: "${ref}"`) || l.includes(`uses: '${ref}'`));
-  if (!line || !/#\s*v?\d/.test(line)) {
-    findings.push(`${where}: "${ref}" has no trailing version comment (for example "# v1.2.3")`);
-  }
+}
+
+/**
+ * Checks the version comment on every `uses:` value in the document, each at
+ * its own position, so a repeated ref cannot borrow the comment of an earlier
+ * line. Refs that are not SHA-pinned are reported by checkUses instead.
+ */
+function checkVersionComments(doc, text, yaml, findings) {
+  yaml.visit(doc, {
+    Pair(_, pair) {
+      if (!yaml.isScalar(pair.key) || pair.key.value !== 'uses') return;
+      if (!yaml.isScalar(pair.value) || !Array.isArray(pair.value.range)) return;
+      const ref = pair.value.value;
+      if (typeof ref !== 'string' || !SHA_REF.test(ref)) return;
+      const end = pair.value.range[1];
+      const eol = text.indexOf('\n', end);
+      const rest = text.slice(end, eol === -1 ? text.length : eol);
+      if (!/^\s*#\s*v?\d/.test(rest)) {
+        const line = text.slice(0, end).split('\n').length;
+        findings.push(`line ${line}: "${ref}" has no trailing version comment (for example "# v1.2.3")`);
+      }
+    },
+  });
 }
 
 /**
  * Returns the findings for one workflow file. An empty array means it is safe.
  * @param {string} text workflow YAML
- * @param {{ strict: boolean, yaml?: { parse(text: string): unknown } }} options
+ * @param {{ strict: boolean, readOnly?: boolean, jobWrites?: Record<string, string[]>, yaml?: typeof import('yaml') }} options
  */
-export function checkWorkflow(text, { strict, yaml = loadYaml() }) {
+export function checkWorkflow(text, { strict, readOnly = false, jobWrites = {}, yaml = loadYaml() }) {
   const findings = [];
   let wf;
+  let doc;
   try {
-    wf = yaml.parse(text);
+    doc = yaml.parseDocument(text);
+    if (doc.errors.length > 0) throw doc.errors[0];
+    wf = doc.toJS();
   } catch (err) {
     return [`not valid YAML: ${err instanceof Error ? err.message : String(err)}`];
   }
   if (!isObject(wf)) return ['not a workflow (top level is not a mapping)'];
-  const lines = text.split(/\r?\n/);
+  checkVersionComments(doc, text, yaml, findings);
+  const ciRules = strict && readOnly;
 
   if (triggers(wf.on).includes('pull_request_target')) {
     findings.push('uses the pull_request_target trigger');
@@ -102,15 +145,15 @@ export function checkWorkflow(text, { strict, yaml = loadYaml() }) {
   if (wf.permissions === undefined) {
     findings.push('no top-level permissions (the token defaults to the repository setting, often write)');
   } else {
-    for (const scope of writeScopes(wf.permissions)) findings.push(`top-level permissions grant ${scope}`);
-    if (strict) {
+    for (const scope of writeScopes(wf.permissions)) findings.push(`top-level permissions grant ${describe(scope)}`);
+    if (ciRules) {
       const p = wf.permissions;
       const exact = isObject(p) && Object.keys(p).length === 1 && p.contents === 'read';
       if (!exact) findings.push('top-level permissions must be exactly "contents: read"');
     }
   }
 
-  if (strict && SECRETS_EXPR.test(text)) findings.push('references secrets');
+  if (ciRules && SECRETS_EXPR.test(text)) findings.push('references secrets');
 
   const jobs = isObject(wf.jobs) ? wf.jobs : {};
   if (Object.keys(jobs).length === 0) findings.push('has no jobs');
@@ -120,12 +163,20 @@ export function checkWorkflow(text, { strict, yaml = loadYaml() }) {
       continue;
     }
     if (job.permissions !== undefined) {
-      if (strict) findings.push(`job ${id}: sets job-level permissions (only the top-level contents: read is allowed)`);
-      else for (const scope of writeScopes(job.permissions)) findings.push(`job ${id}: permissions grant ${scope}`);
+      if (ciRules) {
+        findings.push(`job ${id}: sets job-level permissions (only the top-level contents: read is allowed)`);
+      } else {
+        const allowed = strict && Array.isArray(jobWrites[id]) ? jobWrites[id] : [];
+        for (const scope of writeScopes(job.permissions)) {
+          if (!allowed.includes(scope)) {
+            findings.push(`job ${id}: permissions grant ${describe(scope)}${strict ? ' (not in the allowlist for this file)' : ''}`);
+          }
+        }
+      }
     }
-    if (strict && job.secrets !== undefined) findings.push(`job ${id}: passes secrets to a reusable workflow`);
+    if (ciRules && job.secrets !== undefined) findings.push(`job ${id}: passes secrets to a reusable workflow`);
     if (job.uses !== undefined) {
-      checkUses(job.uses, `job ${id}`, lines, findings);
+      checkUses(job.uses, `job ${id}`, findings);
       continue;
     }
     if (job['timeout-minutes'] === undefined) findings.push(`job ${id}: no timeout-minutes`);
@@ -133,7 +184,7 @@ export function checkWorkflow(text, { strict, yaml = loadYaml() }) {
     steps.forEach((step, i) => {
       if (!isObject(step) || step.uses === undefined) return;
       const where = `job ${id}, step ${i + 1}`;
-      checkUses(step.uses, where, lines, findings);
+      checkUses(step.uses, where, findings);
       if (typeof step.uses === 'string' && step.uses.startsWith('actions/checkout@')) {
         const persist = isObject(step.with) ? step.with['persist-credentials'] : undefined;
         if (persist !== false && persist !== 'false') {
@@ -152,7 +203,7 @@ function main() {
   const inGitHub = process.env.GITHUB_ACTIONS === 'true';
   let failed = false;
 
-  for (const name of STRICT_FILES) {
+  for (const name of STRICT_FILES.keys()) {
     if (!files.includes(name)) {
       console.log(`check-workflows: FAILED. ${name} is missing from ${dir}`);
       failed = true;
@@ -160,8 +211,9 @@ function main() {
   }
 
   for (const file of files) {
-    const strict = STRICT_FILES.has(file);
-    const findings = checkWorkflow(readFileSync(join(dir, file), 'utf8'), { strict, yaml });
+    const policy = STRICT_FILES.get(file);
+    const strict = policy !== undefined;
+    const findings = checkWorkflow(readFileSync(join(dir, file), 'utf8'), { strict, ...policy, yaml });
     if (findings.length === 0) {
       console.log(`check-workflows: ${file} ok${strict ? ' (strict)' : ''}`);
       continue;
