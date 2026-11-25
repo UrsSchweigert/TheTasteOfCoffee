@@ -9,6 +9,7 @@ Cupmark.xcodeproj/        hand-written project (see "Project file")
 Cupmark/                  app target sources and resources
   Generated/Vocabulary.swift   generated from contracts/vocabulary, never edit
   Generated/API.swift          generated from contracts/openapi.yaml, never edit
+  Networking/             APIClient, TokenProvider, APIError, CatalogueImageCache
   Vocabulary/             VocabularyStore (runtime loader) and helpers
   L10n.swift              keys of the String Catalog
   Localizable.xcstrings   String Catalog, English (source) and German
@@ -29,6 +30,7 @@ CupmarkTests/             XCTest unit tests (hosted in the app)
 - When a new vocabulary version is published, the check fails until the folder reference in `project.pbxproj` points at the new `v<N>` directory and the Swift file is regenerated.
 - Raw values are always the contract ids. Case names are the ids in lowerCamelCase, with one exception: an id that would read as `Optional.none` or `Optional.some` is named after its list, so `none` in `milk_types` is `Vocabulary.MilkType.noMilk` (raw value `"none"`). `.none` on an optional vocabulary value therefore always means nil.
 - A region in `origins` names its country (ADR 0011). The generator emits that as a typed property, `Vocabulary.Origin.country: Vocabulary.Origin?` (`.sumatra.country == .indonesia`, nil for a country), not as a string. Lists with the same id in different namespaces, such as `java` in `origins` and `varieties`, are separate enums (`Vocabulary.Origin.java`, `Vocabulary.Variety.java`).
+- From vocabulary v3 on (M2-T3, ADR 0021), two more shapes are generated, and only when the bundled version has them, so the v2 output is unchanged. A grinder's own dial (`ENTRY_RANGES` in `contracts/lib/vocabulary.mjs`) becomes `Vocabulary.Grinder.scale: VocabularyRange?`, nil for a grinder without a scale. The method field rules (`brew.json`, `field_rules`) become a typed table: `Vocabulary.BrewField` (every BrewParameters field of `contracts/openapi.yaml` but `method`, raw value = API property; `scaledBy` names the field whose picked entry's scale a value lies on, `grind_setting` on `grinder`), `Vocabulary.Method.fieldRules`, `allows(_:)` and `allowedFields`. A field without a rule is allowed with every method. The rules are never constants, and generation fails on a rule that names an unknown method or field, or a scale off its step. The app reads scales and rules through these types only; `VocabularyStore.entryRanges` keeps the bundled entry ranges by `<namespace>.<id>.<attribute>` for checks, never in `ranges` and never by index.
 - `VocabularyStore.load(from:)` decodes the bundled JSON at runtime and resolves labels with `label(namespace:id:language:)`. Errors are thrown, never trapped.
 
 ## API types
@@ -40,15 +42,29 @@ CupmarkTests/             XCTest unit tests (hosted in the app)
 node scripts/generate-ios-api.mjs
 ```
 
-`node scripts/generate-ios-api.mjs --check` fails if the file is out of date; CI runs it in the `contracts` job.
+`node scripts/generate-ios-api.mjs --check` fails if the file is out of date; CI runs it in the `contracts` job. `--file=<path>` checks or writes another file; the script tests use it.
 
-- Every operation the app calls is covered: beans, barcodes, Open Food Facts, catalogue images, label photos, shelf, brews, recipes, profile, export and account. `API.Endpoint` lists them with method, path, success status, request and response schema, and media type (`image/jpeg` for catalogue images, `text/csv` for the export). Only `GET /health` is left out (`EXCLUDED_OPERATIONS`), because only the deploy smoke test calls it.
+- Every operation the app calls is covered: beans, barcodes, Open Food Facts, catalogue images, label photos, shelf, brews, recipes, profile, export and account. `API.Endpoint` lists them with method, path, success status, request and response schema, and media type (`image/jpeg` for catalogue images, `text/csv` for the export), and the error statuses the contract lists (`documentedErrorStatuses`). Only `GET /health` is left out (`EXCLUDED_OPERATIONS`), because only the deploy smoke test calls it.
 - Each object schema is a `Codable`, `Hashable`, `Sendable` struct in `enum API` (`API.Brew`, `API.BrewInput`, ...), conforming to `APIObject`. It has explicit snake_case `CodingKeys` and nothing else, and it never encodes null. `API.Schemas` lists every schema's properties, which the tests use to check encoded JSON.
 - Vocabulary values use the generated `Vocabulary.*` enums and `VocabularyLanguage`, so no list exists twice. The generator fails if an `x-vocabulary` enum and the bundled vocabulary disagree.
 - `dose_dg` is an integer (`API.DoseDg`, ADR 0004). `doseGrams` reads and sets it in grams, rounding to 0.1 g, and never traps.
 - `API.CalendarDate` is a day (`YYYY-MM-DD`) without a time zone. `API.Timestamp` is RFC 3339, sent in UTC with milliseconds (`2026-11-25T08:30:00.123Z`), and held as whole milliseconds, so it survives a JSON round trip exactly.
 - `water_temp_c` and `water_temp_special` are one optional `API.WaterTemperature` (`.celsius(94)` or `.special(...)`), so both can never be set. A response with both fails to decode.
 - In a page (`ShelfEntryPage`, `BrewPage`, `RecipePage`), each item decodes on its own. An item that fails, for example because it holds an id the bundled vocabulary does not know, is left out of `items` and listed in `undecodableItems`. A single resource that fails throws a `DecodingError`. Nothing traps.
+
+## API client
+
+`Networking/APIClient.swift` (M2-T8) calls the API with `URLSession` and async/await, one method per operation of `API.Endpoint`. It needs no package.
+
+- The base URL is injected (M2-T9). The default session is ephemeral, with no URL cache and no cookies.
+- Method, path, success status and `Accept` come from `API.Endpoint`. Path parameters are `ResourceID` (a ULID, checked against the contract's `Id` pattern) or `LookupBarcode` (12 or 13 digits) only, so no path is built from other text. `cursor` and `limit` are checked too.
+- Every request carries `Authorization: Bearer <token>` from a `TokenProvider` (`currentAccessToken()`, `refresh()`; M2-T11 implements it). No path, query or body names a user (invariant 3). On a 401 the client calls `refresh()` once and sends the request once more; a second 401, a failed refresh or no token is `APIError.unauthorized`.
+- Any status other than the route's success status throws `APIError`: `badRequest`, `unauthorized`, `notFound`, `conflict`, `tooManyRequests`, `serviceUnavailable`, `server(status:)`, `unexpectedStatus` (also a 2xx other than the documented one), plus `transport(URLError.Code)`, `undecodable` and `invalidResponse`. Error bodies are not read. The client logs nothing, so no body, token or Open Food Facts text reaches a log (docs/05, Security).
+- `allShelfEntries()`, `allBrews()` and `allRecipes()` follow `next_cursor` with `limit=100` until it is absent. Items that do not decode are collected in `undecodableItems`. A repeated or malformed cursor, or more than 1,000 pages (`APIClient.maxPages`), stops with `invalidResponse`.
+- Cancelling the calling task throws `CancellationError`, never `transport(.cancelled)`, and nothing is refreshed or retried after it.
+- `catalogueImage(_:)` loads `GET /catalogue_images/{image_id}` with the token (never `AsyncImage`), checks that the body is a JPEG and caches it in `Library/Caches/CatalogueImages/<image_id>.jpg` (`CatalogueImageCache`). An image never changes under its id, so a cached one is never fetched again. The cache is bounded at 50 MiB and drops the least recently used files first.
+- Label photo bytes are not sent by this client: the presigned S3 POST of `createLabelPhotoUpload` is M2-T24.
+- Tests (`APIClientTests`) use a `URLProtocol` stub (`CupmarkTests/Support/StubURLProtocol.swift`), one fake host per server.
 
 ## Strings
 

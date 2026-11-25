@@ -38,8 +38,14 @@ struct VocabularyStore: Sendable {
     let ids: [String: [String]]
     /// The file that defines each namespace.
     let namespaceFiles: [String: String]
-    /// Every `{ minimum, maximum, multipleOf }` object by JSON path (`brew.ranges.dose_g`).
+    /// Every `{ minimum, maximum, multipleOf }` object outside a list, by JSON
+    /// path (`brew.ranges.dose_g`). Ranges of list entries are not here.
     let ranges: [String: VocabularyRange]
+    /// The ranges of list entries (vocabulary v3 on: a grinder's `scale`), by
+    /// `<namespace>.<id>.<attribute>` (`grinders.niche_zero.scale`), never by
+    /// index. For checks against the generated types only; the app reads a
+    /// scale through the generated types (`Vocabulary.Grinder.scale`).
+    let entryRanges: [String: VocabularyRange]
 
     private let labels: [VocabularyLanguage: [String: [String: String]]]
     private let questions: [VocabularyLanguage: [String: [String: String]]]
@@ -89,6 +95,7 @@ struct VocabularyStore: Sendable {
         self.ids = walker.ids
         self.namespaceFiles = walker.owners
         self.ranges = walker.ranges
+        self.entryRanges = walker.entryRanges
 
         var labels: [VocabularyLanguage: [String: [String: String]]] = [:]
         var questions: [VocabularyLanguage: [String: [String: String]]] = [:]
@@ -191,25 +198,35 @@ private struct LanguageFile: Decodable {
 /// every array is a non-empty list of objects with an `id`, its namespace is
 /// the property name that holds it, a namespace lives in one file, and ids
 /// are unique within a namespace. Nested lists are merged per namespace.
+/// A range inside a list entry goes to `entryRanges`, keyed by namespace and
+/// id. Booleans (the method field rules, `field_rules`) are not recorded.
 private struct ListWalker {
     var ids: [String: [String]] = [:]
     var owners: [String: String] = [:]
     var ranges: [String: VocabularyRange] = [:]
+    var entryRanges: [String: VocabularyRange] = [:]
 
     private static let rangeKeys: Set<String> = ["minimum", "maximum", "multipleOf"]
 
-    mutating func walk(_ members: [String: JSONValue], file: String, path: [String]) throws {
+    /// `entry` is `[namespace, id, keys below the entry...]` inside a list
+    /// entry, nil outside every list.
+    mutating func walk(_ members: [String: JSONValue], file: String, path: [String], entry: [String]? = nil) throws {
         for key in members.keys.sorted() {
             guard let child = members[key] else { continue }
             let childPath = path + [key]
+            let entryPath = entry.map { $0 + [key] }
             switch child {
             case .array(let items):
                 try addList(key, items: items, file: file, path: childPath)
             case .object(let object):
                 if let range = Self.range(object) {
-                    ranges[([file] + childPath).joined(separator: ".")] = range
+                    if let entryPath {
+                        entryRanges[entryPath.joined(separator: ".")] = range
+                    } else {
+                        ranges[([file] + childPath).joined(separator: ".")] = range
+                    }
                 } else {
-                    try walk(object, file: file, path: childPath)
+                    try walk(object, file: file, path: childPath, entry: entryPath)
                 }
             case .null, .bool, .number, .string:
                 continue
@@ -236,7 +253,7 @@ private struct ListWalker {
             }
             known.append(id)
             ids[namespace] = known
-            try walk(object, file: file, path: path + [String(index)])
+            try walk(object, file: file, path: path + [String(index)], entry: [namespace, id])
             known = ids[namespace] ?? known
         }
         ids[namespace] = known

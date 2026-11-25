@@ -27,7 +27,7 @@
 //   fails (for example an id the bundled vocabulary does not know) is left
 //   out and recorded in `undecodableItems`, so one item never fails a page.
 //
-// Usage: node scripts/generate-ios-api.mjs [--check]
+// Usage: node scripts/generate-ios-api.mjs [--check] [--file=<path>]
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -162,6 +162,14 @@ export function describeOperations(doc, excluded = EXCLUDED_OPERATIONS) {
         }
       }
 
+      const errorStatuses = Object.keys(op.responses ?? {})
+        .filter((c) => !/^2[0-9][0-9]$/.test(c))
+        .map((c) => {
+          if (!/^[45][0-9][0-9]$/.test(c)) throw new Error(`${where}: response ${c} is not a 2xx, 4xx or 5xx status`);
+          return Number(c);
+        })
+        .sort((a, b) => a - b);
+
       const parameterSchemas = [];
       for (const parameter of op.parameters ?? []) {
         const resolved = parameter.$ref !== undefined ? resolveRef(doc, parameter.$ref) : parameter;
@@ -178,6 +186,7 @@ export function describeOperations(doc, excluded = EXCLUDED_OPERATIONS) {
         requestSchema,
         responseSchema,
         responseContentType,
+        errorStatuses,
         parameterSchemas,
       });
     }
@@ -567,10 +576,7 @@ const TIMESTAMP_SWIFT = `
                 seconds -= 1
                 milliseconds += 1000
             }
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime]
-            formatter.timeZone = TimeZone(secondsFromGMT: 0)
-            let whole = formatter.string(from: Date(timeIntervalSince1970: TimeInterval(seconds)))
+            let whole = Timestamp.wholeSeconds.string(from: Date(timeIntervalSince1970: TimeInterval(seconds)))
             return "\\(whole.dropLast()).\\(API.zeroPadded(milliseconds, width: 3))Z"
         }
 
@@ -578,14 +584,25 @@ const TIMESTAMP_SWIFT = `
             lhs.millisecondsSince1970 < rhs.millisecondsSince1970
         }
 
-        private static func parse(_ text: String) -> Date? {
+        /// RFC 3339 with fractional seconds. Created once: an \`ISO8601DateFormatter\` is costly to
+        /// make, and it is thread-safe once configured, which is why \`nonisolated(unsafe)\` is sound.
+        nonisolated(unsafe) private static let fractionalSeconds: ISO8601DateFormatter = {
             let formatter = ISO8601DateFormatter()
             formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            if let date = formatter.date(from: text) {
-                return date
-            }
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            return formatter
+        }()
+
+        /// RFC 3339 in whole seconds, in UTC. Created once, like \`fractionalSeconds\`.
+        nonisolated(unsafe) private static let wholeSeconds: ISO8601DateFormatter = {
+            let formatter = ISO8601DateFormatter()
             formatter.formatOptions = [.withInternetDateTime]
-            return formatter.date(from: text)
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            return formatter
+        }()
+
+        private static func parse(_ text: String) -> Date? {
+            fractionalSeconds.date(from: text) ?? wholeSeconds.date(from: text)
         }
 
         init(from decoder: Decoder) throws {
@@ -899,6 +916,7 @@ export function generateSwift({ doc, vocabularyVersion, vocabularyFiles, options
   switchProperty('`schemaName` of the JSON request body, or nil when the request has no body.', 'requestSchema', 'String?', (op) => optionalString(op.requestSchema));
   switchProperty('`schemaName` of the JSON success body, or nil when it is not JSON or empty.', 'responseSchema', 'String?', (op) => optionalString(op.responseSchema));
   switchProperty('Media type of the success body, or nil when it has none.', 'responseContentType', 'String?', (op) => optionalString(op.responseContentType));
+  switchProperty('The error statuses the contract lists for the route, ascending. Any 5xx can also occur.', 'documentedErrorStatuses', '[Int]', (op) => `[${op.errorStatuses.join(', ')}]`);
   line('    }');
 
   line('');
@@ -958,19 +976,22 @@ export function generateSwift({ doc, vocabularyVersion, vocabularyFiles, options
 
 function main() {
   const check = process.argv.includes('--check');
+  // --file=<path> compares or writes another file than GENERATED_FILE; the script tests use it.
+  const fileArgument = process.argv.find((a) => a.startsWith('--file='));
+  const file = fileArgument === undefined ? GENERATED_FILE : resolve(fileArgument.slice('--file='.length));
   const vocabularyVersion = latestPublishedVersion();
   const source = generateSwift({ doc: loadOpenApi(), vocabularyVersion, vocabularyFiles: loadVocabulary(vocabularyVersion) });
-  const target = relative(root, GENERATED_FILE);
+  const target = relative(root, file);
 
   if (!check) {
-    mkdirSync(dirname(GENERATED_FILE), { recursive: true });
-    writeFileSync(GENERATED_FILE, source);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, source);
     console.log(`generate-ios-api: wrote ${target} from contracts/openapi.yaml and vocabulary v${vocabularyVersion}`);
     return;
   }
   let committed;
   try {
-    committed = readFileSync(GENERATED_FILE, 'utf8').replace(/\r\n/g, '\n');
+    committed = readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
   } catch {
     committed = undefined;
   }

@@ -154,6 +154,25 @@ final class VocabularyStoreTests: XCTestCase {
         XCTAssertEqual(store.ranges["things.scale"], VocabularyRange(minimum: 0, maximum: 10, multipleOf: 1))
     }
 
+    /// Vocabulary v3 shapes (M2-T3): a range on a list entry is recorded by
+    /// namespace and id, never by index and never among the file's ranges;
+    /// rule objects of booleans are neither ranges nor lists.
+    func testEntryRangesAreKeyedByIdAndRulesAreNotRanges() throws {
+        let file = data(#"""
+        {"version": \#(version),
+         "tools": [{"id": "t1", "scale": {"minimum": 0, "maximum": 50, "multipleOf": 0.5}}, {"id": "t2"}],
+         "ranges": {"x": {"minimum": 1, "maximum": 2, "multipleOf": 1}},
+         "rules": {"field_a": {"allowed": {"t1": true}}}}
+        """#)
+        let store = try VocabularyStore(files: ["things": file], languages: [:])
+        XCTAssertEqual(store.ids["tools"], ["t1", "t2"])
+        XCTAssertEqual(store.entryRanges, ["tools.t1.scale": VocabularyRange(minimum: 0, maximum: 50, multipleOf: 0.5)])
+        XCTAssertEqual(store.ranges, ["things.ranges.x": VocabularyRange(minimum: 1, maximum: 2, multipleOf: 1)])
+        XCTAssertNil(store.ids["rules"])
+        XCTAssertNil(store.ids["allowed"])
+        XCTAssertEqual(store.value(at: "things.rules.field_a.allowed.t1"), .bool(true))
+    }
+
     func testLanguageFileForTheWrongLanguageThrows() throws {
         guard let other = VocabularyLanguage.allCases.first(where: { $0 != .fallback }) else {
             throw XCTSkip("only one language")
