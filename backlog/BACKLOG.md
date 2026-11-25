@@ -34,7 +34,7 @@ Goal: the repo builds, tests and checks itself; the shared contract exists.
   - A lint test fails on any string property without `enum`, `pattern` or `format`, and on any number without bounds.
 
 ### M0-T3 Backend workspace
-- status: in-progress
+- status: done
 - owner: backend-engineer
 - depends: M0-T2
 - acceptance:
