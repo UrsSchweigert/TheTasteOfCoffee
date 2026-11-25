@@ -558,7 +558,9 @@ components:
       pattern: '^[0-9]{12,13}$'
 
     Cursor:
-      description: Opaque pagination cursor issued by the server.
+      description: >-
+        Opaque pagination cursor. The server issues cursors HMAC-signed and
+        rejects any cursor it did not issue (implemented in M1-T5).
       type: string
       pattern: '^[A-Za-z0-9_-]{1,512}$'
 
@@ -767,7 +769,8 @@ components:
     BeanAttributes:
       description: >-
         Catalogue attributes picked from the vocabulary. Roaster, origin and
-        variety are not in vocabulary v1 yet and so cannot be sent.
+        variety are not in vocabulary v1, so they cannot be sent until a
+        version with those lists exists (open question D8).
       type: object
       additionalProperties: false
       properties:
@@ -781,7 +784,10 @@ components:
         Creates an unverified bean. Every value in attributes is stored with
         source "user". open_food_facts_confirmed records that the user
         confirmed an Open Food Facts hit for the barcode; it needs the
-        barcode. No Open Food Facts text crosses this API.
+        barcode. Open Food Facts name and brand are not sent: whether such
+        text may be stored and returned is open question D7, and roaster,
+        origin and variety wait for vocabulary lists (open question D8).
+        See docs/07-open-questions.md.
       type: object
       additionalProperties: false
       required: [vocabulary_version, attributes]
@@ -804,7 +810,7 @@ components:
         operator's value wins where both exist.
       type: object
       additionalProperties: false
-      required: [bean_id, vocabulary_version, verified, open_food_facts_match, user_attributes, operator_attributes]
+      required: [bean_id, vocabulary_version, verified, open_food_facts_match, picked_attributes, operator_attributes]
       properties:
         bean_id:
           $ref: '#/components/schemas/Id'
@@ -815,9 +821,12 @@ components:
         barcode:
           $ref: '#/components/schemas/Barcode'
         open_food_facts_match:
-          description: True if the catalogue holds Open Food Facts data for this barcode (attribution required, ODbL).
+          description: >-
+            True if a user confirmed an Open Food Facts hit for this barcode
+            (attribution required, ODbL). Whether Open Food Facts text may be
+            returned is open question D7.
           type: boolean
-        user_attributes:
+        picked_attributes:
           $ref: '#/components/schemas/BeanAttributes'
         operator_attributes:
           $ref: '#/components/schemas/BeanAttributes'

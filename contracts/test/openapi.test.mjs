@@ -6,10 +6,12 @@ import {
   checkVocabularyBindings,
   compileComponentSchemas,
   findIdentityFields,
+  isIdentityName,
   lintSchemas,
   loadOpenApi,
   loadVocabularyContext,
   parseOpenApi,
+  patternProblems,
 } from '../lib/openapi.mjs';
 import { loadVocabulary } from '../lib/vocabulary.mjs';
 
@@ -380,4 +382,80 @@ test('vocabulary binding fails on a request without its vocabulary version, and 
 test('schema compile fails on a misspelt JSON Schema keyword', () => {
   const problems = checkOpenApi(broken((d) => { schemas(d).WaterG.maximun = 1500; }), context);
   assertProblem(problems, 'schemas do not compile as JSON Schema 2020-12');
+});
+
+test('lint fails: wide or unbounded string patterns', () => {
+  const cases = [
+    ['^.*$', 'wide class .'],
+    ['^.{1,10}$', 'wide class .'],
+    ['^\\S{1,10}$', 'wide class \\S'],
+    ['^\\w{1,10}$', 'wide class \\w'],
+    ['^\\D{1,10}$', 'wide class \\D'],
+    ['^[\\s]{1,10}$', 'wide class \\s'],
+    ['^\\p{L}{1,10}$', 'wide class \\p'],
+    ['^[^<>]{1,10}$', 'negated class'],
+    ['^[a-z]*$', 'unbounded quantifier *'],
+    ['^[a-z]+$', 'unbounded quantifier +'],
+    ['^[a-z]{3,}$', 'unbounded quantifier {n,}'],
+    ['^[a-z$', 'not a valid regular expression'],
+  ];
+  for (const [pattern, fragment] of cases) assertProblem(patternProblems(pattern), fragment);
+  // Escaped or in-class characters are literal and fine.
+  assert.deepEqual(patternProblems('^[.+*]{1,3}\\.[0-9]{2}$'), []);
+  // The patterns in openapi.yaml pass.
+  const s = schemas(doc);
+  for (const name of ['Id', 'Barcode', 'Cursor']) assert.deepEqual(patternProblems(s[name].pattern), [], name);
+  // And lintSchemas reports them on the schema.
+  const problems = lintSchemas(broken((d) => { schemas(d).Cursor.pattern = '^.*$'; }));
+  assertProblem(problems, '#/components/schemas/Cursor: pattern ^.*$ uses the wide class .');
+  assertProblem(problems, '#/components/schemas/Cursor: pattern ^.*$ has the unbounded quantifier *');
+});
+
+test('lint fails: any schema keyword outside the allowlist', () => {
+  const problems = lintSchemas(broken((d) => {
+    const s = schemas(d);
+    s.Rating.properties.flavour_notes.prefixItems = [{ type: 'string' }];
+    s.Rating.properties.flavour_notes.contains = { type: 'string' };
+    s.BrewParameters.if = { required: ['method'] };
+    s.BrewParameters.then = { properties: { free: { type: 'string' } } };
+    s.BrewParameters.else = {};
+    s.BeanCreate.dependentSchemas = { barcode: { properties: { name: { type: 'string' } } } };
+    s.Profile.propertyNames = { pattern: '^.*$' };
+    s.Consent.unevaluatedProperties = { type: 'string' };
+    s.Scores.patternProperties = { '^x': { type: 'string' } };
+    s.Barcode.const = '4006381333931';
+    s.WaterG.exclusiveMaximum = 1501;
+  }));
+  for (const [where, keyword] of [
+    ['Rating/properties/flavour_notes', 'prefixItems'],
+    ['Rating/properties/flavour_notes', 'contains'],
+    ['BrewParameters', 'if'],
+    ['BrewParameters', 'then'],
+    ['BrewParameters', 'else'],
+    ['BeanCreate', 'dependentSchemas'],
+    ['Profile', 'propertyNames'],
+    ['Consent', 'unevaluatedProperties'],
+    ['Scores', 'patternProperties'],
+    ['Barcode', 'const'],
+    ['WaterG', 'exclusiveMaximum'],
+  ]) assertProblem(problems, `#/components/schemas/${where}: keyword ${keyword} is not allowed`);
+});
+
+test('identity check matches user, owner, sub and uid as whole tokens, after camelCase', () => {
+  for (const name of ['user', 'userId', 'userID', 'user_id', 'UserId', 'ownerId', 'owner', 'cognito_sub', 'cognitoSub', 'sub', 'uid', 'apple-uid', 'userid', 'subject', 'account_id', 'users']) {
+    assert.ok(isIdentityName(name), `${name} must be rejected`);
+  }
+  for (const name of ['subscription', 'subscription_status', 'substitute', 'fluid', 'guide', 'bean_id', 'shelf_entry_id', 'cursor', 'account', 'vocabulary_version', 'next_cursor', 'buy_again', 'water_temp_special']) {
+    assert.ok(!isIdentityName(name), `${name} must be allowed`);
+  }
+  const problems = findIdentityFields(broken((d) => {
+    schemas(d).BrewInput.properties.ownerId = { $ref: '#/components/schemas/Id' };
+    schemas(d).Profile.properties.cognito_sub = { $ref: '#/components/schemas/Id' };
+    d.components.parameters.CursorQuery.name = 'uid';
+    schemas(d).Profile.properties.subscription = { type: 'boolean' };
+  }));
+  assertProblem(problems, '#/components/schemas/BrewInput: property ownerId');
+  assertProblem(problems, '#/components/schemas/Profile: property cognito_sub');
+  assertProblem(problems, 'components.parameters.CursorQuery: parameter uid');
+  assert.ok(!hasProblem(problems, 'subscription'), 'subscription is not an identity field');
 });

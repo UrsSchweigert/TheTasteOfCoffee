@@ -5,9 +5,7 @@
   "description": "Cupmark shared contract: closed vocabulary, i18n labels, OpenAPI and their checks",
   "license": "UNLICENSED",
   "type": "module",
-  "engines": {
-    "node": ">=22"
-  },
+  "engines": { "node": ">=22" },
   "scripts": {
     "test": "node --test",
     "lock": "node bin/lock-version.mjs"

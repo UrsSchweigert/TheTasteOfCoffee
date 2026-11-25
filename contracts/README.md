@@ -59,18 +59,20 @@ Adding a list means: add it to a vocabulary file, extend that file's schema, add
 
 ## The API
 
-`openapi.yaml` holds the free-tier routes: barcode lookup, bean create and read, shelf, brews with ratings, recipes, profile, CSV export and account deletion. Paid and aggregate routes, the label-photo upload URL (task M1-T4) and a health route are not in it yet. The reasons for the choices below are in `docs/decisions/0004-api-representation-of-vocabulary-values.md`.
+`openapi.yaml` holds the free-tier routes: barcode lookup, bean create and read, shelf, brews with ratings, recipes, profile, CSV export and account deletion. Paid and aggregate routes, the label-photo upload URL (task M1-T4) and a health route (open question D9) are not in it yet. Every route requires the bearer token; an unauthenticated route would need an explicit, documented exception in the lint. The reasons for the choices below are in `docs/decisions/0004-api-representation-of-vocabulary-values.md`.
 
 ### Rules the lint enforces
 
 `lib/openapi.mjs` walks every schema: components, parameters, request and response bodies, nested properties, `items`, `oneOf`, `anyOf`, `not`, and every `$ref` target. It fails on:
 
 - a string without `enum`, an anchored `pattern` (`^...$`) or a `format` of `date` or `date-time`. The only other string is the CSV export body, `{ type: string, contentMediaType: text/csv }` under `text/csv`;
+- a `pattern` that is wide or unbounded: `.`, `\S`, `\s`, `\w`, `\W`, `\D`, `\p{...}`, `\P{...}`, a negated class `[^...]`, or a `*`, `+` or `{n,}` quantifier. A pattern must name its characters and bound its length, like `^[0-9]{12,13}$`;
+- any schema keyword outside an allowlist (`SCHEMA_KEYWORDS` in `lib/openapi.mjs`), so `prefixItems`, `contains`, `if`/`then`/`else`, `dependentSchemas`, `propertyNames`, `unevaluated*`, `patternProperties`, `const` and exclusive bounds cannot slip in unchecked;
 - a number or integer without `minimum` and `maximum`, or with a `multipleOf` that is not exact in binary floating point (see "Decimal steps");
 - an object without `additionalProperties: false`, or with `required` names it does not define;
 - an array without `items` or `maxItems`;
 - a schema without one `type` (unless it is a `$ref`, `oneOf` or `anyOf`), any `allOf` (it defeats `additionalProperties: false`; nest objects instead), a `$ref` with sibling keywords other than `description`, a non-local or dangling `$ref`, `patternProperties`, and a `not` other than `{ required: [...] }`;
-- a property, parameter or path segment that would name a user (`user_id`, `sub`, `owner` and so on). The user is always the token's subject.
+- a property, parameter or path segment that would name a user. The name is turned into snake_case (`ownerId` becomes `owner_id`) and fails if any whole token is `user`, `users`, `owner`, `owners`, `sub` or `uid`, or if it is one of a few exact names such as `subject` or `account_id`. So `cognito_sub` fails and `subscription` does not. The user is always the token's subject.
 
 The structural check covers: OpenAPI `3.1.x`, `info`, lowercase paths with `{snake_case}` parameters, unique camelCase `operationId`, path parameters that match the template, a 2xx and a 401 response on every operation, request bodies that are required and `application/json` only, responses that are `application/json` or `text/csv` only, no body on 204, the `bearerAuth` scheme (HTTP bearer, JWT) required at the top level and never overridden, every `$ref` resolving, and no unused component schema. The component schemas are also compiled with ajv in strict mode, so a misspelt keyword fails. This is not a full OpenAPI validator; it checks what the generators and the gateway rely on.
 
@@ -100,5 +102,5 @@ A step that is exact in binary (whole numbers, 0.5) stays a JSON number with `mu
 
 - Ids are server-generated ULIDs: `^[0-9A-HJKMNP-TV-Z]{26}$`. Barcodes are 12 or 13 digits (UPC-A, EAN-13); the server checks the check digit and stores the 13-digit form. List pages hold at most 100 items and an opaque `cursor`.
 - A response wraps the stored request in `values` next to its id (`{ brew_id, values: BrewInput }`), so request and response cannot drift and no `allOf` is needed.
-- A bean's attributes are grouped by source: `user_attributes` (picked in the app) and `operator_attributes` (set when the operator verifies). `open_food_facts_match` says whether Open Food Facts data exists for the barcode. No Open Food Facts text (name, brand) crosses the API.
+- A bean's attributes are grouped by source: `picked_attributes` (picked in the app) and `operator_attributes` (set when the operator verifies). `open_food_facts_match` says whether a user confirmed an Open Food Facts hit for the barcode. Open Food Facts name and brand are not sent or returned until open question D7 in `docs/07-open-questions.md` is answered, and roaster, origin and variety stay out until a vocabulary version has those lists (D8). This is the conservative default, not a settled rule.
 - Error responses have no body; the status code is the answer.

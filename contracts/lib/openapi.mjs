@@ -31,12 +31,46 @@ export const VOCABULARY_KEYWORDS = [
 
 /**
  * Names that would let a client say who the user is. The user id comes from
- * the token only (CLAUDE.md, invariant 3), so no property or parameter may
- * carry one of these names.
+ * the token only (CLAUDE.md, invariant 3). A name is normalised to
+ * snake_case (camelCase split, `-` and `.` as `_`) and fails if it equals one
+ * of IDENTITY_NAMES or contains one of IDENTITY_TOKENS as a whole token, so
+ * `cognito_sub` and `ownerId` fail but `subscription` does not.
  */
 export const IDENTITY_NAMES = [
-  'user', 'user_id', 'userid', 'sub', 'subject', 'owner', 'owner_id',
-  'account_id', 'cognito_id', 'apple_id', 'identity_id',
+  'userid', 'ownerid', 'subject', 'account_id', 'cognito_id', 'apple_id', 'identity_id',
+];
+export const IDENTITY_TOKENS = ['user', 'users', 'owner', 'owners', 'sub', 'uid'];
+
+/** `ownerId` -> `owner_id`, `userID` -> `user_id`, `cognito-sub` -> `cognito_sub`. */
+export function toSnakeCase(name) {
+  return String(name)
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+    .toLowerCase()
+    .replace(/[-.\s]+/g, '_');
+}
+
+/** True if the name would let a client name a user. */
+export function isIdentityName(name) {
+  const snake = toSnakeCase(name);
+  if (IDENTITY_NAMES.includes(snake)) return true;
+  return snake.split('_').some((token) => IDENTITY_TOKENS.includes(token));
+}
+
+/**
+ * Keywords a schema may use. Anything else fails, so no keyword can carry an
+ * unchecked subschema (prefixItems, contains, if/then/else,
+ * dependentSchemas, propertyNames, unevaluated*) or a loose shape
+ * (patternProperties, allOf, const, exclusive bounds).
+ */
+export const SCHEMA_KEYWORDS = [
+  '$ref', 'description', 'title', 'default',
+  'type', 'enum', 'pattern', 'format', 'contentMediaType', 'minLength', 'maxLength',
+  'minimum', 'maximum', 'multipleOf',
+  'properties', 'required', 'additionalProperties', 'dependentRequired',
+  'items', 'minItems', 'maxItems', 'uniqueItems',
+  'oneOf', 'anyOf', 'not',
+  ...VOCABULARY_KEYWORDS,
 ];
 
 /** Parses YAML strictly: duplicate keys and other errors throw. */
@@ -138,6 +172,45 @@ export function forEachSchema(doc, visit) {
 
 const isDyadic = (step) => Number.isFinite(step) && step > 0 && Number.isInteger(step * 2 ** 20);
 const isAnchored = (pattern) => pattern.startsWith('^') && pattern.endsWith('$') && !pattern.endsWith('\\$');
+const WIDE_ESCAPES = ['S', 's', 'W', 'w', 'D', 'P', 'p'];
+
+/**
+ * Problems with a string pattern beyond anchoring. A pattern must name its
+ * characters and its length: no `.`, no wide escape (`\S`, `\s`, `\w`,
+ * `\W`, `\D`, `\p{...}`, `\P{...}`), no negated class `[^...]`, and no
+ * unbounded quantifier (`*`, `+`, `{n,}`). It must also compile.
+ */
+export function patternProblems(pattern) {
+  const problems = [];
+  try {
+    new RegExp(pattern, 'u');
+  } catch {
+    return [`pattern ${pattern} is not a valid regular expression`];
+  }
+  let inClass = false;
+  for (let i = 0; i < pattern.length; i += 1) {
+    const char = pattern[i];
+    if (char === '\\') {
+      const next = pattern[i + 1];
+      if (WIDE_ESCAPES.includes(next)) problems.push(`pattern ${pattern} uses the wide class \\${next}`);
+      i += 1;
+      continue;
+    }
+    if (inClass) {
+      if (char === ']') inClass = false;
+      continue;
+    }
+    if (char === '[') {
+      inClass = true;
+      if (pattern[i + 1] === '^') problems.push(`pattern ${pattern} uses a negated class [^...]`);
+      continue;
+    }
+    if (char === '.') problems.push(`pattern ${pattern} uses the wide class .`);
+    if (char === '*' || char === '+') problems.push(`pattern ${pattern} has the unbounded quantifier ${char}`);
+    if (char === '{' && /^\{\d+,\}/.test(pattern.slice(i))) problems.push(`pattern ${pattern} has an unbounded quantifier {n,}`);
+  }
+  return problems;
+}
 
 /**
  * The no-free-text lint. Fails on:
@@ -153,7 +226,9 @@ const isAnchored = (pattern) => pattern.startsWith('^') && pattern.endsWith('$')
  * - a schema without a single `type` (unless it is a `$ref` or `oneOf` /
  *   `anyOf`), `allOf` (it defeats additionalProperties: false), a `$ref`
  *   that does not resolve or is not local, `patternProperties`, and a `not`
- *   that is anything but `{ required: [...] }`.
+ *   that is anything but `{ required: [...] }`;
+ * - any keyword not in SCHEMA_KEYWORDS;
+ * - a pattern that is wide or unbounded (see patternProblems).
  */
 export function lintSchemas(doc) {
   const problems = [];
@@ -171,6 +246,10 @@ export function lintSchemas(doc) {
       }
       return;
     }
+    for (const key of Object.keys(schema)) {
+      if (key === 'allOf') add(path, 'allOf is not allowed (it defeats additionalProperties: false); nest objects instead');
+      else if (!SCHEMA_KEYWORDS.includes(key)) add(path, `keyword ${key} is not allowed`);
+    }
     if ('$ref' in schema) {
       if (typeof schema.$ref !== 'string' || !schema.$ref.startsWith('#/')) add(path, `$ref ${JSON.stringify(schema.$ref)} is not local`);
       else if (resolveRef(doc, schema.$ref) === undefined) add(path, `$ref ${schema.$ref} does not resolve`);
@@ -178,8 +257,6 @@ export function lintSchemas(doc) {
       if (extra.length > 0) add(path, `$ref has sibling keywords ${extra.join(', ')}`);
       return;
     }
-    if ('allOf' in schema) add(path, 'allOf is not allowed (it defeats additionalProperties: false); nest objects instead');
-    if ('patternProperties' in schema) add(path, 'patternProperties is not allowed');
     const composed = Array.isArray(schema.oneOf) || Array.isArray(schema.anyOf);
     if (schema.type === undefined) {
       if (!composed) add(path, 'schema has no type');
@@ -198,6 +275,7 @@ export function lintSchemas(doc) {
         }
         const hasPattern = typeof schema.pattern === 'string';
         if (hasPattern && !isAnchored(schema.pattern)) add(path, `pattern ${schema.pattern} is not anchored with ^ and $`);
+        if (hasPattern) for (const problem of patternProblems(schema.pattern)) add(path, problem);
         const hasFormat = typeof schema.format === 'string';
         if (hasFormat && !STRING_FORMATS.includes(schema.format)) {
           add(path, `format ${schema.format} is not one of ${STRING_FORMATS.join(', ')}`);
@@ -404,7 +482,7 @@ export function checkStructure(doc) {
 /** Property and parameter names that would carry a user id. */
 export function findIdentityFields(doc) {
   const problems = [];
-  const forbidden = (name) => IDENTITY_NAMES.includes(String(name).toLowerCase().replaceAll('-', '_'));
+  const forbidden = isIdentityName;
   forEachSchema(doc, (schema, path) => {
     if (!isMap(schema?.properties)) return;
     for (const name of Object.keys(schema.properties)) {
