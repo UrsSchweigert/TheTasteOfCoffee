@@ -22,8 +22,11 @@
 // AWS deploy role (M1-T9, ADR 0018): CupmarkGitHubDeploy trusts only the `sub`
 // values `environment:dev` and `environment:prod`, and those environments are
 // limited to `main`. So:
-// - in every file, a job that runs aws-actions/configure-aws-credentials must
-//   declare the literal environment `dev` or `prod`;
+// - a job that runs aws-actions/configure-aws-credentials must declare the
+//   literal environment `dev` or `prod`. This fails the run in strict files
+//   and is reported as advisory elsewhere, like every other finding; the
+//   deploy workflow (M1-T7) is added to STRICT_FILES. The trust and the
+//   environments' branch limits are the real control;
 // - in a strict file, every job that grants `id-token: write` must declare one
 //   too, unless its policy lists it in `oidcWithoutEnvironment` (with a reason).
 //
