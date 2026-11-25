@@ -1,0 +1,161 @@
+// The stateful core of a stage (docs/05-system-design.md, Data model and Persistence
+// and recovery): one DynamoDB table and two private S3 buckets. Every resource here is
+// RETAIN: deleting the stack, or a change that would replace a resource, never deletes
+// data. Deleting data is a human decision (CLAUDE.md, stop-and-ask rules).
+
+import { Aws, CfnOutput, Duration, Fn, RemovalPolicy } from 'aws-cdk-lib';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as s3 from 'aws-cdk-lib/aws-s3';
+import { Construct } from 'constructs';
+import { NAME_PREFIX } from './config.ts';
+import type { StageName } from './config.ts';
+
+/** Attribute names of the table. Generic, because one table holds every item type. */
+export const TABLE_KEYS = {
+  partitionKey: 'pk',
+  sortKey: 'sk',
+} as const;
+
+/**
+ * The sparse review-queue index. Only unverified bean items (`BEAN#<beanId>` / `META`
+ * with status unverified) carry these attributes; verifying a bean removes them, so the
+ * index holds exactly the review queue. See infra/README.md.
+ */
+export const REVIEW_QUEUE_INDEX = {
+  indexName: 'gsi1',
+  partitionKey: 'gsi1pk',
+  sortKey: 'gsi1sk',
+} as const;
+
+/** Days after which a weekly export moves to S3 Glacier Flexible Retrieval. */
+export const BACKUP_ARCHIVE_AFTER_DAYS = 30;
+/** Days after which a weekly export is deleted. */
+export const BACKUP_EXPIRE_AFTER_DAYS = 365;
+/** Days a deleted or overwritten backup object is kept as a noncurrent version. */
+export const BACKUP_NONCURRENT_DAYS = 30;
+
+/**
+ * docs/06-cost-estimate.md: "delete label photos 90 days after the bean is verified".
+ * A lifecycle rule counts from the object's creation, so verification copies the photo
+ * to this prefix (a new object, new creation date) and deletes the original.
+ */
+export const VERIFIED_PHOTO_PREFIX = 'verified/';
+export const VERIFIED_PHOTO_EXPIRE_AFTER_DAYS = 90;
+/** Days a deleted or overwritten photo is kept as a noncurrent version. */
+export const PHOTO_NONCURRENT_DAYS = 30;
+
+export interface CupmarkDataProps {
+  readonly stage: StageName;
+}
+
+/** `cupmark-<stage>-<part>`, the name every resource of a stage must carry. */
+function resourceName(stage: StageName, part: string): string {
+  return `${NAME_PREFIX}${stage}-${part}`;
+}
+
+/**
+ * Bucket names are global, so they carry the account id: `cupmark-<stage>-<part>-<account>`.
+ * The literal prefix keeps the name inside CupmarkCfnExecution's `cupmark-*` resources.
+ */
+function bucketName(stage: StageName, part: string): string {
+  return Fn.join('', [`${resourceName(stage, part)}-`, Aws.ACCOUNT_ID]);
+}
+
+/** Properties both buckets share: private, versioned, TLS only, S3-managed keys, RETAIN. */
+function privateBucketProps(): s3.BucketProps {
+  return {
+    blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+    objectOwnership: s3.ObjectOwnership.BUCKET_OWNER_ENFORCED,
+    encryption: s3.BucketEncryption.S3_MANAGED,
+    enforceSSL: true,
+    minimumTLSVersion: 1.2,
+    versioned: true,
+    removalPolicy: RemovalPolicy.RETAIN,
+  };
+}
+
+export class CupmarkData extends Construct {
+  public readonly table: dynamodb.Table;
+  public readonly photoBucket: s3.Bucket;
+  public readonly backupBucket: s3.Bucket;
+
+  public constructor(scope: Construct, id: string, props: CupmarkDataProps) {
+    super(scope, id);
+    const { stage } = props;
+
+    this.table = new dynamodb.Table(this, 'Table', {
+      tableName: resourceName(stage, 'main'),
+      partitionKey: { name: TABLE_KEYS.partitionKey, type: dynamodb.AttributeType.STRING },
+      sortKey: { name: TABLE_KEYS.sortKey, type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      // AWS-owned key: encrypted at rest, no KMS key and no KMS charges (invariant 5).
+      encryption: dynamodb.TableEncryption.DEFAULT,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true, recoveryPeriodInDays: 35 },
+      deletionProtection: true,
+      // The aggregator applies the difference between old and new brew (docs/05).
+      stream: dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,
+      tableClass: dynamodb.TableClass.STANDARD,
+      removalPolicy: RemovalPolicy.RETAIN,
+      // No TTL: no item in the data model expires.
+    });
+    this.table.addGlobalSecondaryIndex({
+      indexName: REVIEW_QUEUE_INDEX.indexName,
+      partitionKey: { name: REVIEW_QUEUE_INDEX.partitionKey, type: dynamodb.AttributeType.STRING },
+      sortKey: { name: REVIEW_QUEUE_INDEX.sortKey, type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    // Label photos (docs/04 F1): uploaded with presigned URLs (M1-T4), read only by the
+    // operator's review tooling, never shown to other users.
+    this.photoBucket = new s3.Bucket(this, 'PhotoBucket', {
+      ...privateBucketProps(),
+      bucketName: bucketName(stage, 'photos'),
+      lifecycleRules: [
+        {
+          id: 'expire-verified-label-photos',
+          prefix: VERIFIED_PHOTO_PREFIX,
+          expiration: Duration.days(VERIFIED_PHOTO_EXPIRE_AFTER_DAYS),
+        },
+        {
+          id: 'expire-noncurrent-versions',
+          noncurrentVersionExpiration: Duration.days(PHOTO_NONCURRENT_DAYS),
+          abortIncompleteMultipartUploadAfter: Duration.days(1),
+        },
+        { id: 'remove-expired-delete-markers', expiredObjectDeleteMarker: true },
+      ],
+    });
+
+    // Weekly full table export (docs/05, Persistence and recovery): archive after 30
+    // days, keep for a year.
+    this.backupBucket = new s3.Bucket(this, 'BackupBucket', {
+      ...privateBucketProps(),
+      bucketName: bucketName(stage, 'backups'),
+      lifecycleRules: [
+        {
+          id: 'archive-then-expire-exports',
+          transitions: [
+            { storageClass: s3.StorageClass.GLACIER, transitionAfter: Duration.days(BACKUP_ARCHIVE_AFTER_DAYS) },
+          ],
+          expiration: Duration.days(BACKUP_EXPIRE_AFTER_DAYS),
+        },
+        {
+          id: 'expire-noncurrent-versions',
+          noncurrentVersionExpiration: Duration.days(BACKUP_NONCURRENT_DAYS),
+          abortIncompleteMultipartUploadAfter: Duration.days(7),
+        },
+        { id: 'remove-expired-delete-markers', expiredObjectDeleteMarker: true },
+      ],
+    });
+
+    // Outputs of this stack only; no exports, nothing is imported elsewhere.
+    const streamArn = this.table.tableStreamArn;
+    if (streamArn === undefined) throw new Error('the table must have a stream');
+    new CfnOutput(this, 'TableName', { value: this.table.tableName, description: 'DynamoDB table' });
+    new CfnOutput(this, 'TableStreamArn', {
+      value: streamArn,
+      description: 'DynamoDB stream (NEW_AND_OLD_IMAGES) for the aggregator',
+    });
+    new CfnOutput(this, 'PhotoBucketName', { value: this.photoBucket.bucketName, description: 'Label photo bucket' });
+    new CfnOutput(this, 'BackupBucketName', { value: this.backupBucket.bucketName, description: 'Weekly export bucket' });
+  }
+}

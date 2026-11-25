@@ -124,7 +124,7 @@ Goal: the repo builds, tests and checks itself; the shared contract exists.
 Goal: a signed-in user can store and read their own shelf, brews and recipes through the API, in the dev account.
 
 ### M1-T1 Table, buckets and safety properties
-- status: todo
+- status: done
 - owner: infra-engineer
 - depends: M0-T4
 - implements: docs/05-system-design.md, Data model, Persistence and recovery
@@ -140,6 +140,8 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
 - acceptance:
   - Cognito user pool (Lite plan, Sign in with Apple only) and an HTTP API with JWT authorizer and throttling are in the stack.
   - A test asserts every route except the App Store notifications route has the authorizer.
+  - From the M1-T1 review: the user pool is RETAIN with `DeletionProtection: ACTIVE`, and `AWS::Cognito::UserPool` joins the stateful guard. Losing the pool would orphan every `USER#<sub>` partition.
+  - From the M1-T1 review: a test snapshots the logical ids of the table, the buckets and the pool, so a construct rename that would replace them fails at test time.
 
 ### M1-T3 Repository module
 - status: todo
@@ -149,6 +151,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
 - acceptance:
   - One module builds every key format in the data model and exposes typed reads and writes.
   - Tests against DynamoDB Local cover each item type and prove one user cannot address another user's partition.
+  - Unverified bean `META` items set the sparse index keys documented in `infra/README.md`: `gsi1pk=REVIEW#UNVERIFIED`, and `gsi1sk=<createdAt>#<beanId>` with `createdAt` always fixed-width UTC (`toISOString()`). Verifying or rejecting a bean removes both.
 
 ### M1-T4 Bean catalogue and barcode routes
 - status: todo
@@ -159,6 +162,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - Look up a barcode; create an unverified bean from pick-list attributes or a confirmed Open Food Facts hit, with the source tagged per field.
   - Issue a presigned upload URL for a label photo (size and content-type limited).
   - Tests cover known, unknown and malformed barcodes.
+  - The uploader of each label photo is recorded, so account deletion (M1-T6) can find that user's photos. Photo handling follows D10 to D12 in `docs/07-open-questions.md`.
 
 ### M1-T5 Shelf, brew and recipe routes
 - status: todo
@@ -178,6 +182,8 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
 - acceptance:
   - Profile holds consent and locale; export returns all of a user's items as CSV; delete removes the whole user partition and the label photos.
   - Tests prove nothing of the user remains after deletion.
+  - Deleting photos removes every object version, not just adding a delete marker, and a test asserts no version remains (see D10).
+  - The boundary policy lacks `s3:DeleteObject`, `s3:DeleteObjectVersion` and `s3:ListBucketVersions` on the photo bucket. The policy change goes into `scripts/aws/`, and the owner re-applies it before deploy.
 
 ### M1-T7 Deploy pipeline to dev
 - status: todo
