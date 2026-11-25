@@ -3,7 +3,13 @@
 // VersionId, across pages; a longer key that shares the prefix is never
 // touched; a repeat deletes nothing.
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_DELETE_TIMEOUT_MS, MAX_VERSION_PAGES, TooManyVersionsError, s3PhotoDeletionStore } from '../../src/images/photo-deletion-store.ts';
+import {
+  DEFAULT_DELETE_TIMEOUT_MS,
+  IncompleteVersionListError,
+  MAX_VERSION_PAGES,
+  TooManyVersionsError,
+  s3PhotoDeletionStore,
+} from '../../src/images/photo-deletion-store.ts';
 import type { PhotoDeletionStore } from '../../src/images/photo-deletion-store.ts';
 import { InvalidPhotoIdError } from '../../src/images/label-photo-store.ts';
 import { VersionedBucket, awsError } from '../s3-fakes.ts';
@@ -112,5 +118,17 @@ describe('s3PhotoDeletionStore', () => {
     const photos = s3PhotoDeletionStore(endless as never, BUCKET);
     await expect(photos?.deleteLabel(PHOTO)).rejects.toThrow(TooManyVersionsError);
     expect(MAX_VERSION_PAGES).toBeGreaterThan(1);
+  });
+
+  it('a truncated list without a next marker fails instead of leaving versions behind', async () => {
+    const sent: string[] = [];
+    const client = {
+      send: (command: { constructor: { name: string } }) => {
+        sent.push(command.constructor.name);
+        return Promise.resolve({ Versions: [{ Key: `labels/${PHOTO}.jpg`, VersionId: 'v1' }], IsTruncated: true });
+      },
+    };
+    await expect(s3PhotoDeletionStore(client as never, BUCKET)?.deleteLabel(PHOTO)).rejects.toThrow(IncompleteVersionListError);
+    expect(sent).toEqual(['ListObjectVersionsCommand']);
   });
 });

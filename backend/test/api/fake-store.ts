@@ -497,6 +497,13 @@ export class FakeStore implements ApiStore {
     return Promise.resolve(tombstone !== undefined && tombstone.expiresAt > this.#seconds());
   }
 
+  public getAccountTombstone(user: UserId): Promise<AccountTombstone | undefined> {
+    this.calls.push('getAccountTombstone');
+    const tombstone = this.tombstones.get(userPk(user));
+    if (tombstone === undefined || tombstone.expiresAt <= this.#seconds()) return Promise.resolve(undefined);
+    return Promise.resolve({ deletedAt: tombstone.deletedAt, photoIds: [...tombstone.photoIds].sort(), logged: tombstone.logged });
+  }
+
   public markAccountDeleted(user: UserId): Promise<AccountTombstone> {
     this.calls.push('markAccountDeleted');
     const pk = userPk(user);

@@ -21,7 +21,9 @@
 //    deleted; the user-side item goes with the partition, which drops the
 //    only link to the caller. For each pending upload (`PHOTO_PENDING#`)
 //    every version of both keys is deleted too (a `labels/` copy exists if a
-//    completion wrote it and then failed), and the id is recorded.
+//    completion wrote it and then failed), and the id is recorded. Ids
+//    already on the tombstone without an item (a completion that raced the
+//    deletion and could not clean up, label-photos.ts) get the same.
 // 3. Every item of `USER#<sub>` (Repository.deleteUserPartition): profile,
 //    shelf entries, brews and pointers, recipes, label photo items, pending
 //    uploads, counters. The aggregator (M3) subtracts each deleted brew from
@@ -136,7 +138,13 @@ export async function deleteAccount(
   await forEachLimited(linkOnly, PHOTO_DELETION_CONCURRENCY, async ({ photoId }) => {
     await photos.deleteUpload(photoId);
   });
-  await forEachLimited(pendingPhotoIds, PHOTO_DELETION_CONCURRENCY, async (photoId) => {
+  // Pending uploads, and ids on the tombstone with no item left: a completion
+  // that raced an earlier attempt records its photo there when it could not
+  // delete its copy itself (label-photos.ts, step 8). Deleting a key with no
+  // versions left costs one list call.
+  const known = new Set([...completed.map((photo) => photo.photoId), ...pendingPhotoIds]);
+  const uploadsOnly = [...pendingPhotoIds, ...[...recorded].filter((photoId) => !known.has(photoId))];
+  await forEachLimited(uploadsOnly, PHOTO_DELETION_CONCURRENCY, async (photoId) => {
     await photos.deleteLabel(photoId);
     await photos.deleteUpload(photoId);
   });

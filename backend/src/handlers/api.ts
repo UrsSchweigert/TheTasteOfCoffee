@@ -33,9 +33,10 @@ function optionalImages(s3: S3Client): Pick<ApiDependencies, 'catalogueImages' |
   const bucket = process.env[ENV.photoBucket];
   const catalogueImages = s3CatalogueImageStore(s3, bucket);
   const labelPhotos = s3LabelPhotoStore(s3, bucket);
+  const cleanup = s3PhotoDeletionStore(s3, bucket);
   return {
     ...(catalogueImages === undefined ? {} : { catalogueImages }),
-    ...(labelPhotos === undefined ? {} : { labelPhotos: { store: labelPhotos } }),
+    ...(labelPhotos === undefined ? {} : { labelPhotos: { store: labelPhotos, ...(cleanup === undefined ? {} : { cleanup }) } }),
   };
 }
 

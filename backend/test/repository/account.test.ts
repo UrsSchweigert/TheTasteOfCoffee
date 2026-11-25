@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import {
   AccountDeletedError,
   BATCH_WRITE_ATTEMPTS,
+  BATCH_WRITE_CONCURRENCY,
   BATCH_WRITE_SIZE,
   CorruptItemError,
   DeletionIncompleteError,
@@ -186,6 +187,44 @@ describe('deleteUserPartition', () => {
     expect(batches.map((b) => b.length)).toEqual([25, 25, 10]);
     expect(BATCH_WRITE_SIZE).toBe(25);
     expect(batches.flat()).toEqual(all.map((key) => ({ DeleteRequest: { Key: key } })));
+  });
+
+  it('runs at most BATCH_WRITE_CONCURRENCY batches at once, and every key is deleted once', async () => {
+    const all = keys(25 * 30);
+    let inFlight = 0;
+    let peak = 0;
+    const deleted: unknown[] = [];
+    const client = {
+      send: async (command: { input: Input; constructor: { name: string } }) => {
+        if (command.constructor.name === 'QueryCommand') return { Items: all };
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 2));
+        deleted.push(...((command.input.RequestItems as Record<string, unknown[]>)['cupmark-test-main'] ?? []));
+        inFlight -= 1;
+        return {};
+      },
+    } as unknown as DynamoDBDocumentClient;
+    const repo = new Repository({ client, tableName: 'cupmark-test-main' });
+    expect(await repo.deleteUserPartition(ALICE)).toBe(750);
+    expect(peak).toBe(BATCH_WRITE_CONCURRENCY);
+    expect(BATCH_WRITE_CONCURRENCY).toBeGreaterThanOrEqual(4);
+    expect(BATCH_WRITE_CONCURRENCY).toBeLessThanOrEqual(8);
+    expect(deleted).toHaveLength(750);
+    expect(new Set(deleted.map((request) => JSON.stringify(request))).size).toBe(750);
+  });
+
+  it('a batch that fails stops the others from starting new batches', async () => {
+    const all = keys(25 * 40);
+    let batches = 0;
+    const { repo } = stub((_input, name) => {
+      if (name === 'QueryCommand') return { Items: all };
+      batches += 1;
+      if (batches === 3) throw new Error('throttled');
+      return {};
+    });
+    await expect(repo.deleteUserPartition(ALICE)).rejects.toThrow('throttled');
+    expect(batches).toBeLessThan(40);
   });
 
   it('retries unprocessed items with a growing wait, then succeeds', async () => {

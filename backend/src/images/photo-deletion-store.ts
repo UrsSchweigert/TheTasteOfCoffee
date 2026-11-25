@@ -30,6 +30,10 @@ export class TooManyVersionsError extends Error {
   public override readonly name = 'TooManyVersionsError';
 }
 
+export class IncompleteVersionListError extends Error {
+  public override readonly name = 'IncompleteVersionListError';
+}
+
 export interface PhotoDeletionStore {
   /** Deletes every version and delete marker of `labels/<photoId>.jpg`. Returns how many were deleted. */
   deleteLabel(photoId: string): Promise<number>;
@@ -74,7 +78,8 @@ export function s3PhotoDeletionStore(
       if (result.IsTruncated !== true) return versionIds;
       keyMarker = result.NextKeyMarker;
       versionIdMarker = result.NextVersionIdMarker;
-      if (keyMarker === undefined) return versionIds;
+      // A truncated list without a marker cannot be continued; returning would leave versions behind.
+      if (keyMarker === undefined) throw new IncompleteVersionListError('a truncated version list has no next marker');
     }
   };
 

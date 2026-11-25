@@ -5,6 +5,7 @@ export * from './keys.ts';
 export { decodeCursor, encodeCursor } from './cursor.ts';
 export {
   BATCH_WRITE_ATTEMPTS,
+  BATCH_WRITE_CONCURRENCY,
   BATCH_WRITE_SIZE,
   ITEM_TYPE,
   LABEL_PHOTOS_PER_BEAN,

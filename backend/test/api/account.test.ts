@@ -53,7 +53,34 @@ interface World extends Harness {
   readonly pool: FakeUserPool;
   /** Every store call, S3 command (`photos:`, `log:`) and Cognito call, in order. */
   readonly journal: string[];
+  /** The label photo store of the completion route, writing to `photos`. */
+  readonly labels: RacingLabels;
   del(options?: RequestOptions): Promise<number>;
+}
+
+/**
+ * The label photo store of the completion route on the versioned photo
+ * bucket. `beforePut` runs inside putLabel, before the stripped copy is
+ * written, so a test can run an account deletion exactly there.
+ */
+class RacingLabels implements LabelPhotoStore {
+  public readonly bucket = PHOTO_BUCKET;
+  public beforePut: (() => Promise<void>) | undefined;
+  readonly #photos: VersionedBucket;
+  public constructor(photos: VersionedBucket) {
+    this.#photos = photos;
+  }
+  public presignUpload(): Promise<PresignedUpload> {
+    return Promise.reject(new Error('not used'));
+  }
+  public getUpload(photoId: string): Promise<UploadRead> {
+    const found = (this.#photos.objects.get(`uploads/${photoId}.jpg`) ?? []).some((version) => !version.deleteMarker);
+    return Promise.resolve(found ? { kind: 'found', bytes: minimalJpeg() } : { kind: 'missing', reason: 'NoSuchKey' });
+  }
+  public async putLabel(photoId: string): Promise<void> {
+    await this.beforePut?.();
+    this.#photos.put(`labels/${photoId}.jpg`, 'stripped');
+  }
 }
 
 function world(options: { config?: Partial<Record<keyof AccountDeletionConfig, null>> } = {}): World {
@@ -74,8 +101,10 @@ function world(options: { config?: Partial<Record<keyof AccountDeletionConfig, n
   const photoStore = s3PhotoDeletionStore(photos.client, PHOTO_BUCKET);
   const logStore = s3DeletionLogStore(log.client, LOG_BUCKET);
   const users = cognitoUserDirectory(pool.client, POOL);
+  const labels = new RacingLabels(photos);
   const h = harness({
     store,
+    labelPhotos: { store: labels, ...(photoStore === undefined ? {} : { cleanup: photoStore }) },
     accountDeletion: {
       ...(parts.photos === null || photoStore === undefined ? {} : { photos: photoStore }),
       ...(parts.deletionLog === null || logStore === undefined ? {} : { deletionLog: logStore }),
@@ -88,6 +117,7 @@ function world(options: { config?: Partial<Record<keyof AccountDeletionConfig, n
     log,
     pool,
     journal,
+    labels,
     async del(request: RequestOptions = {}) {
       const response = await h.call('DELETE', '/account', { username: USERNAME, ...request });
       if (response.result.body !== undefined) throw new Error('DELETE /account must have no body');
@@ -585,5 +615,88 @@ describe('DELETE /account', () => {
       ['getProfile', 404, undefined],
       ['putProfile', 401, 'AccountDeletedError'],
     ]);
+  });
+});
+
+describe('a label photo completion that races DELETE /account (M1-T6 review)', () => {
+  /** Alice has a pending upload with its raw file in the bucket. */
+  function racing(): World {
+    const w = world();
+    w.store.pendingPhotos.set(id(pendingLabelPhotoKey(ALICE, PHOTO_PENDING)), { beanId: BEAN, expiresAt: 2_000_000_000 });
+    w.photos.put(`uploads/${PHOTO_PENDING}.jpg`, 'raw');
+    return w;
+  }
+  const complete = (w: World): ReturnType<World['call']> => w.call('POST', `/label_photos/${PHOTO_PENDING}/complete`);
+  const leftovers = (w: World): string[] => w.photos.keys().filter((key) => key.includes(PHOTO_PENDING));
+
+  it('the deletion runs between the tombstone check and the S3 write: the late copy is deleted, 401', async () => {
+    const w = racing();
+    let deletion = 0;
+    w.labels.beforePut = async () => {
+      // The whole deletion: it finds labels/<id>.jpg not there yet, deletes the upload, empties the partition.
+      deletion = await w.del();
+    };
+    const response = await complete(w);
+    expect(deletion).toBe(204);
+    expect(response.status).toBe(401);
+    expect(w.logs.at(-1)).toEqual({ operation: 'completeLabelPhoto', status: 401, request_id: 'request-1', error: 'AccountDeletedError', reason: 'label_deleted' });
+    expect(leftovers(w)).toEqual([]);
+    expect(w.store.partitionIsEmpty(ALICE)).toBe(true);
+    // The copy was deleted by the completion, after the deletion had finished (Cognito is its last step).
+    const labelDeletes = w.journal.flatMap((entry, index) => (entry === 'photos:DeleteObject' ? [index] : []));
+    expect(labelDeletes.at(-1) ?? -1).toBeGreaterThan(w.journal.indexOf('cognito:AdminDeleteUser'));
+  });
+
+  it('any transaction failure while the tombstone is in force cleans up too', async () => {
+    const w = racing();
+    w.labels.beforePut = () => {
+      w.store.tombstones.set(userPk(ALICE), { deletedAt: 'x', expiresAt: 2_000_000_000, photoIds: new Set(), logged: false });
+      return Promise.resolve();
+    };
+    w.store.failComplete = Object.assign(new Error('gone'), { name: 'ItemNotFoundError' });
+    const response = await complete(w);
+    expect(response.status).toBe(401);
+    expect(leftovers(w)).toEqual([]);
+  });
+
+  it('a cleanup that fails is 500, records the id on the tombstone, and the retry of the completion deletes the copy', async () => {
+    const w = racing();
+    w.labels.beforePut = async () => {
+      expect(await w.del()).toBe(204);
+      w.photos.failWith = (c) => (c.name === 'DeleteObject' ? awsError('InternalError') : undefined);
+    };
+    const response = await complete(w);
+    expect(response.status).toBe(500);
+    expect(w.logs.at(-1)).toMatchObject({ operation: 'completeLabelPhoto', status: 500, error: 'LabelCleanupFailed', reason: 'label_cleanup_failed' });
+    expect(w.store.tombstones.get(userPk(ALICE))?.photoIds.has(PHOTO_PENDING)).toBe(true);
+    expect(leftovers(w)).toEqual([`labels/${PHOTO_PENDING}.jpg`]);
+    w.photos.failWith = undefined;
+    w.labels.beforePut = undefined;
+    const retried = await complete(w);
+    expect(retried.status).toBe(401);
+    expect(w.logs.at(-1)?.reason).toBe('label_deleted');
+    expect(leftovers(w)).toEqual([]);
+  });
+
+  it('or the retry of DELETE /account deletes it', async () => {
+    const w = racing();
+    w.labels.beforePut = async () => {
+      expect(await w.del()).toBe(204);
+      w.photos.failWith = (c) => (c.name === 'DeleteObject' ? awsError('InternalError') : undefined);
+    };
+    expect((await complete(w)).status).toBe(500);
+    w.photos.failWith = undefined;
+    expect(await w.del()).toBe(204);
+    expect(leftovers(w)).toEqual([]);
+  });
+
+  it('a tombstone that does not list the photo is a plain 401 with no S3 call (another user’s photo id is never deleted)', async () => {
+    const w = world();
+    w.photos.put(`labels/${PHOTO_BOB}.jpg`, 'bob');
+    w.store.tombstones.set(userPk(ALICE), { deletedAt: 'x', expiresAt: 2_000_000_000, photoIds: new Set([PHOTO_PENDING]), logged: true });
+    const response = await w.call('POST', `/label_photos/${PHOTO_BOB}/complete`);
+    expect(response.status).toBe(401);
+    expect(w.photos.sent).toEqual([]);
+    expect(w.photos.keys()).toEqual([`labels/${PHOTO_BOB}.jpg`]);
   });
 });

@@ -47,6 +47,7 @@ export type ApiStore = Pick<
   | 'putProfile'
   | 'exportItems'
   | 'isAccountDeleted'
+  | 'getAccountTombstone'
   | 'markAccountDeleted'
   | 'accountPhotos'
   | 'recordDeletedPhotos'

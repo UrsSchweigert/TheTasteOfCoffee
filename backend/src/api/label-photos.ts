@@ -24,6 +24,8 @@
 // 2. 500 without a usable PHOTO_BUCKET.
 // 2a. 401 if the caller's account tombstone is in force (M1-T6; a strongly
 //    consistent read, before any S3 work; the transaction checks it again).
+//    If the tombstone lists this photo id (a cleanup that failed below), every
+//    version of its objects is deleted first; 500 if that fails again.
 // 3. The caller's pending item. None (unknown, another caller's, expired, or
 //    rejected before): 409 if the caller has a completed photo with this id,
 //    else 404. Another caller's id is never read, so it looks unknown.
@@ -43,6 +45,17 @@
 //    of a failed transaction is left unreferenced (an orphan, logged with
 //    reason `label_orphaned`); no route ever serves label photos, and the
 //    operator's tooling only follows `BEAN#` / `PHOTO#` items. 204.
+// 8. Except when the account is being deleted: an account deletion that
+//    started after step 2a may already have deleted this photo's objects and
+//    then emptied the partition, so the copy written in step 7 would never be
+//    found again. So when the transaction fails and the tombstone is in force
+//    (AccountDeletedError, or any failure with the tombstone present on a
+//    fresh read), every version of `labels/<id>.jpg` and `uploads/<id>.jpg`
+//    is deleted: 401 `label_deleted`. If that fails, the photo id is recorded
+//    on the tombstone (the caller's own, so it proves the photo was theirs),
+//    and the answer is 500 `LabelCleanupFailed` with reason
+//    `label_cleanup_failed`: the app's retry of this call (2a) and a retry of
+//    DELETE /account both delete the objects of every id on the tombstone.
 //
 // Nothing here logs. The router logs operation, status, request id and a
 // fixed error and reason code; never the user, photo or bean id, a key, the
@@ -52,6 +65,7 @@ import { LabelPhotoUploadSchema } from '../generated/contract.ts';
 import type { LabelPhotoUpload } from '../generated/contract.ts';
 import { stripJpeg } from '../images/jpeg.ts';
 import type { LabelPhotoStore, PresignedUpload } from '../images/label-photo-store.ts';
+import type { PhotoDeletionStore } from '../images/photo-deletion-store.ts';
 import { MAX_LABEL_PHOTO_BYTES, UPLOAD_EXPIRES_SECONDS, uploadKey } from '../images/label-photo-store.ts';
 import {
   AccountDeletedError,
@@ -82,11 +96,18 @@ export type LabelPhotoRepository = Pick<
   | 'discardPendingLabelPhoto'
   | 'hasLabelPhoto'
   | 'completeLabelPhoto'
-  | 'isAccountDeleted'
+  | 'getAccountTombstone'
+  | 'recordDeletedPhotos'
 >;
 
 export interface LabelPhotoConfig {
   readonly store: LabelPhotoStore;
+  /**
+   * Deletes every version of a photo's objects. Used when a completion races
+   * an account deletion (below); without it such a race answers 500
+   * `LabelCleanupFailed`. The handler always sets it with the photo bucket.
+   */
+  readonly cleanup?: PhotoDeletionStore;
   /** New uploads per user and UTC day; default LABEL_PHOTO_DAILY_CAP. */
   readonly dailyCap?: number;
   /** Clock for `expires_at`; for tests. */
@@ -186,7 +207,11 @@ export async function completeLabelPhoto(
   if (config === undefined) return NOT_CONFIGURED;
   // A deleted account (ADR 0017, Addendum): refused before any S3 work, so no
   // labels/ object is written for it. The transaction checks the tombstone again.
-  if (await store.isAccountDeleted(user)) return { result: empty(401), error: 'AccountDeletedError' };
+  const tombstone = await store.getAccountTombstone(user);
+  if (tombstone !== undefined) {
+    if (!tombstone.photoIds.includes(photoId)) return { result: empty(401), error: 'AccountDeletedError' };
+    return cleanUp(store, config, user, photoId);
+  }
   const pending = await store.getPendingLabelPhoto(user, photoId);
   if (pending === undefined) {
     return (await store.hasLabelPhoto(user, photoId))
@@ -223,12 +248,43 @@ export async function completeLabelPhoto(
     await retry(() => store.completeLabelPhoto(user, photoId, beanId));
   } catch (error) {
     const orphaned = { reason: 'label_orphaned' };
+    // An account deletion may have run in between (step 8). Checked before any other answer.
+    let deleted = error instanceof AccountDeletedError;
+    if (!deleted) {
+      try {
+        deleted = (await store.getAccountTombstone(user)) !== undefined;
+      } catch {
+        // The tombstone cannot be read: keep the original answer; the copy stays an orphan as before M1-T6.
+      }
+    }
+    if (deleted) return cleanUp(store, config, user, photoId);
     if (error instanceof LabelPhotoCompletedError || error instanceof LabelPhotoCapReachedError || error instanceof BeanNotUnverifiedError) {
       return { result: empty(409), error: error.name, ...orphaned };
     }
     if (error instanceof ItemNotFoundError) return { result: empty(404), error: 'LabelPhotoNotPending', ...orphaned };
-    if (error instanceof AccountDeletedError) return { result: empty(401), error: error.name, ...orphaned };
     return { result: empty(500), error: errorName(error), ...orphaned };
   }
   return { result: empty(204) };
+}
+
+/**
+ * A completion that met an account deletion: deletes every version of the
+ * photo's stored and uploaded copy. 401 when done; otherwise the id is
+ * recorded on the tombstone, so a retry (of this call or of DELETE /account)
+ * deletes it, and the answer is 500 so the app retries.
+ */
+async function cleanUp(store: LabelPhotoRepository, config: LabelPhotoConfig, user: UserId, photoId: string): Promise<LabelPhotoOutcome> {
+  try {
+    if (config.cleanup === undefined) throw new Error('no cleanup store');
+    await config.cleanup.deleteLabel(photoId);
+    await config.cleanup.deleteUpload(photoId);
+    return { result: empty(401), error: 'AccountDeletedError', reason: 'label_deleted' };
+  } catch {
+    try {
+      await store.recordDeletedPhotos(user, [photoId]);
+    } catch {
+      // Best effort; the 500 below still makes the app retry.
+    }
+    return { result: empty(500), error: 'LabelCleanupFailed', reason: 'label_cleanup_failed' };
+  }
 }

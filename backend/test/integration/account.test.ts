@@ -33,6 +33,8 @@ const CAROL_SUB = '7c7c7c7c-1111-4222-8333-944444444444';
 const ALICE_USERNAME = 'SignInWithApple_000001.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.0001';
 const ALICIA_USERNAME = 'SignInWithApple_000002.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.0002';
 const BOB_USERNAME = 'SignInWithApple_000003.cccccccccccccccccccccccccccccccc.0003';
+const DAVE_SUB = '8d8d8d8d-4444-4555-8666-977777777777';
+const DAVE_USERNAME = 'SignInWithApple_000004.dddddddddddddddddddddddddddddddd.0004';
 
 /** A label photo store for the upload routes; nothing it writes is expected in these tests. */
 class StubLabelPhotos implements LabelPhotoStore {
@@ -73,7 +75,7 @@ describe.skipIf(!local.reachable)('account deletion on DynamoDB Local', () => {
   const labelPhotos = new StubLabelPhotos();
   const photos = new VersionedBucket(PHOTO_BUCKET, 3);
   const deletionLog = new VersionedBucket(LOG_BUCKET);
-  const pool = new FakeUserPool(POOL, [ALICE_USERNAME, ALICIA_USERNAME, BOB_USERNAME]);
+  const pool = new FakeUserPool(POOL, [ALICE_USERNAME, ALICIA_USERNAME, BOB_USERNAME, DAVE_USERNAME]);
   const { client, documentClient } = local;
 
   async function call(method: string, path: string, options: RequestOptions = {}): Promise<{ status: number; body: unknown; text: string | undefined }> {
@@ -237,7 +239,8 @@ describe.skipIf(!local.reachable)('account deletion on DynamoDB Local', () => {
     expect(entry).toEqual({ sub: ALICE_SUB, photo_ids: [alice.unverified, alice.pending].sort(), deleted_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/) as unknown });
     // Cognito: Alice only.
     expect(pool.sent).toEqual([{ UserPoolId: POOL, Username: ALICE_USERNAME }]);
-    expect([...pool.users].sort()).toEqual([ALICIA_USERNAME, BOB_USERNAME].sort());
+    expect(pool.users.has(ALICE_USERNAME)).toBe(false);
+    expect(pool.users.has(ALICIA_USERNAME) && pool.users.has(BOB_USERNAME)).toBe(true);
     // The tombstone, in its own partition, about 2 hours ahead.
     const tombstone = (await documentClient.send(new GetCommand({ TableName: tableName, Key: tombstoneKey(verifiedUserId(ALICE_SUB)), ConsistentRead: true }))).Item;
     expect(tombstone).toMatchObject({ type: 'ACCOUNT_TOMBSTONE', loggedAt: expect.any(String) as unknown });
@@ -322,5 +325,45 @@ describe.skipIf(!local.reachable)('account deletion on DynamoDB Local', () => {
       await expired.markAccountDeleted(verifiedUserId(other));
       expect((await call('POST', '/recipes', { sub: other, json: recipeBody() })).status).toBe(201);
     });
+  });
+
+  it('a completion that races the deletion leaves no labels/ copy behind', async () => {
+    const dave = verifiedUserId(DAVE_SUB);
+    const photoId = await repository.createPendingLabelPhoto(dave, unverifiedBean);
+    photos.put(`uploads/${photoId}.jpg`, 'raw');
+    let deletion = 0;
+    const racing: { api?: ReturnType<typeof createApi> } = {};
+    // The photo bucket as the completion sees it; the deletion runs inside putLabel, before the copy is written.
+    const racingLabels: LabelPhotoStore = {
+      bucket: PHOTO_BUCKET,
+      presignUpload: () => Promise.reject(new Error('not used')),
+      getUpload: () => Promise.resolve({ kind: 'found', bytes: minimalJpeg() }),
+      putLabel: async (id) => {
+        const result = await racing.api?.(apiEvent('DELETE', '/account', { sub: DAVE_SUB, username: DAVE_USERNAME }));
+        deletion = result?.statusCode ?? 0;
+        photos.put(`labels/${id}.jpg`, 'stripped');
+      },
+    };
+    const photoStore = s3PhotoDeletionStore(photos.client, PHOTO_BUCKET);
+    const logStore = s3DeletionLogStore(deletionLog.client, LOG_BUCKET);
+    const users = cognitoUserDirectory(pool.client, POOL);
+    if (photoStore === undefined || logStore === undefined || users === undefined) throw new Error('configuration');
+    const raceLogs: LogEntry[] = [];
+    const racingApi = createApi({
+      store: repository,
+      cursorSigner: () => Promise.resolve(testSigner()),
+      labelPhotos: { store: racingLabels, cleanup: photoStore },
+      accountDeletion: { photos: photoStore, deletionLog: logStore, users },
+      log: (entry) => raceLogs.push(entry),
+      retryDelayMs: () => 0,
+    });
+    racing.api = racingApi;
+    const result = await racingApi(apiEvent('POST', `/label_photos/${photoId}/complete`, { sub: DAVE_SUB }));
+    expect(deletion).toBe(204);
+    expect(result.statusCode).toBe(401);
+    expect(raceLogs.at(-1)).toEqual({ operation: 'completeLabelPhoto', status: 401, request_id: 'request-1', error: 'AccountDeletedError', reason: 'label_deleted' });
+    expect(photos.keys().filter((key) => key.includes(photoId))).toEqual([]);
+    expect(await partition(DAVE_SUB)).toEqual([]);
+    expect((await documentClient.send(new GetCommand({ TableName: tableName, Key: beanLabelPhotoKey(unverifiedBean, photoId), ConsistentRead: true }))).Item).toBeUndefined();
   });
 });

@@ -195,6 +195,12 @@ export const TOMBSTONE_TTL_SECONDS = 2 * 60 * 60;
 
 /** BatchWriteItem takes at most 25 requests. */
 export const BATCH_WRITE_SIZE = 25;
+/**
+ * Batches of deletes in flight at once. About 26,000 items (13,000 brews, the
+ * export limit) are 1,040 batches; at 8 at a time and 20 to 40 ms each that is
+ * about 3 to 5 s, inside the 10 s timeout (backend/README.md, Account deletion).
+ */
+export const BATCH_WRITE_CONCURRENCY = 8;
 /** Attempts of one batch of deletes, the first one included, before unprocessed items fail the deletion. */
 export const BATCH_WRITE_ATTEMPTS = 8;
 
@@ -1351,8 +1357,14 @@ export class Repository {
    * the table; the write itself still carries the tombstone check.
    */
   public async isAccountDeleted(user: UserId): Promise<boolean> {
+    return (await this.getAccountTombstone(user)) !== undefined;
+  }
+
+  /** The caller's tombstone if it is in force (strongly consistent read), else undefined. */
+  public async getAccountTombstone(user: UserId): Promise<AccountTombstone | undefined> {
     const stored = await this.#tombstone(user);
-    return stored !== undefined && stored.expires_at > epochSeconds(this.#now());
+    if (stored === undefined || stored.expires_at <= epochSeconds(this.#now())) return undefined;
+    return { deletedAt: stored.deletedAt, photoIds: [...(stored.photoIds ?? [])].sort(), logged: stored.loggedAt !== undefined };
   }
 
   /**
@@ -1472,20 +1484,39 @@ export class Repository {
       if (!parsed.success || parsed.data.pk !== pk) throw new CorruptItemError('stored item is outside the expected partition');
       return { pk: parsed.data.pk, sk: parsed.data.sk };
     });
-    for (let index = 0; index < keys.length; index += BATCH_WRITE_SIZE) {
-      let requests = keys.slice(index, index + BATCH_WRITE_SIZE).map((key) => ({ DeleteRequest: { Key: key } }));
-      for (let attempt = 1; requests.length > 0; attempt += 1) {
-        if (attempt > BATCH_WRITE_ATTEMPTS) throw new DeletionIncompleteError('items of the partition are left after retries');
-        if (attempt > 1) await this.#sleep(Math.min(1000, 25 * 2 ** (attempt - 1)) * (0.5 + Math.random() / 2));
-        const result = await this.#client.send(new BatchWriteCommand({ RequestItems: { [this.#table]: requests } }));
-        requests = (result.UnprocessedItems?.[this.#table] ?? []).map((request) => {
-          const key = KeyAttributes.safeParse(request.DeleteRequest?.Key);
-          if (!key.success || key.data.pk !== pk) throw new CorruptItemError('an unprocessed delete is outside the expected partition');
-          return { DeleteRequest: { Key: { pk: key.data.pk, sk: key.data.sk } } };
-        });
+    const pages: Key[][] = [];
+    for (let index = 0; index < keys.length; index += BATCH_WRITE_SIZE) pages.push(keys.slice(index, index + BATCH_WRITE_SIZE));
+    let next = 0;
+    let failed = false;
+    const worker = async (): Promise<void> => {
+      while (!failed && next < pages.length) {
+        const page = pages[next] ?? [];
+        next += 1;
+        try {
+          await this.#deleteBatch(pk, page);
+        } catch (error) {
+          failed = true;
+          throw error;
+        }
       }
-    }
+    };
+    await Promise.all(Array.from({ length: Math.min(BATCH_WRITE_CONCURRENCY, pages.length) }, worker));
     return keys.length;
+  }
+
+  /** One page of at most BATCH_WRITE_SIZE deletes, with its retries of unprocessed items. */
+  async #deleteBatch(pk: string, page: readonly Key[]): Promise<void> {
+    let requests = page.map((key) => ({ DeleteRequest: { Key: key } }));
+    for (let attempt = 1; requests.length > 0; attempt += 1) {
+      if (attempt > BATCH_WRITE_ATTEMPTS) throw new DeletionIncompleteError('items of the partition are left after retries');
+      if (attempt > 1) await this.#sleep(Math.min(1000, 25 * 2 ** (attempt - 1)) * (0.5 + Math.random() / 2));
+      const result = await this.#client.send(new BatchWriteCommand({ RequestItems: { [this.#table]: requests } }));
+      requests = (result.UnprocessedItems?.[this.#table] ?? []).map((request) => {
+        const key = KeyAttributes.safeParse(request.DeleteRequest?.Key);
+        if (!key.success || key.data.pk !== pk) throw new CorruptItemError('an unprocessed delete is outside the expected partition');
+        return { DeleteRequest: { Key: { pk: key.data.pk, sk: key.data.sk } } };
+      });
+    }
   }
 
   // ---- internals ----
