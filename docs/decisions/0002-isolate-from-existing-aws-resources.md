@@ -1,8 +1,8 @@
 # 0002 Isolate Cupmark from existing AWS resources
 
-- Status: proposed
+- Status: accepted (2026-11-25), amended by ADR 0009
 - Date: 2026-11-25
-- Decided by: owner (rule), pending apply of the guardrails
+- Decided by: owner
 
 ## Context
 
@@ -13,7 +13,7 @@ Cupmark deploys into an AWS account that already hosts other projects (sites, bu
 - Invariant 9 in `CLAUDE.md`: this repo never touches resources it did not create. Names start with `cupmark-`, tagged `project=cupmark`.
 - A separate CDK bootstrap with qualifier `cupmark` (stack `CDKToolkit-cupmark`). The shared `CDKToolkit` stack is used by nobody here and never modified.
 - That bootstrap runs CloudFormation with the customer-managed policy `CupmarkCfnExecution`, not AdministratorAccess. It allows only `cupmark-*` resources in eu-central-1, requires the `CupmarkBoundary` permissions boundary on every role a stack creates, and explicitly denies Route 53, CloudFront, fixed-fee services and the named existing roles.
-- The GitHub OIDC role `CupmarkGitHubDeploy` may assume only the `cdk-cupmark-*` bootstrap roles.
+- The GitHub OIDC role `CupmarkGitHubDeploy` may assume only the `cdk-cupmark-*` bootstrap roles. It is created by the separate stack `cupmark-github-oidc` (ADR 0009), which a human deploys with their own credentials. It is the only Cupmark stack that does not run under `CupmarkCfnExecution`.
 - The CDK app uses `new DefaultStackSynthesizer({ qualifier: 'cupmark' })` and applies the permissions boundary to every role (`PermissionsBoundary.of(app).apply(...)`).
 - Files: `scripts/aws/`. A human runs `scripts/aws/apply-guardrails.sh --apply` as a non-root identity.
 

@@ -99,7 +99,7 @@ This keeps the paid tier's read cost flat no matter how many brews exist. If ad 
 | Input | Every field validated server-side against a closed list or a numeric range. With no text fields there is nothing to inject or moderate |
 | Abuse | API Gateway throttling; per-user daily write cap; App Attest on write routes |
 | Encryption | TLS in transit; DynamoDB and S3 encrypted at rest with AWS-managed keys at no charge |
-| Access to AWS | Separate production account; root with MFA and no keys; least-privilege role per function; CloudTrail on |
+| Access to AWS | Shared account isolated by ADR 0002 and 0009 (a separate account remains the later option); root with MFA and no keys; least-privilege role per function; CloudTrail on |
 | Privacy | Aggregates only above 5 raters; in-app export and account deletion; no third-party SDKs; data stays in the EU |
 | Cost attack | AWS Budgets alarm at 10 USD; Lambda concurrency cap; throttling limits the worst case |
 
