@@ -18,6 +18,8 @@ struct ShelfEntryEditorScreen: View {
     let onFinished: @MainActor (UUID?) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var confirmingDelete = false
+    /// The brew form of this entry, while open (M2-T19).
+    @State private var brewing: BrewRoute?
 
     init(
         store: AccountStore,
@@ -34,6 +36,21 @@ struct ShelfEntryEditorScreen: View {
 
     var body: some View {
         Form {
+            if let route = brewRoute {
+                Section {
+                    Button {
+                        brewing = route
+                    } label: {
+                        Label {
+                            Text(L10n.brewStart)
+                        } icon: {
+                            Image(systemName: "cup.and.saucer")
+                                .accessibilityHidden(true)
+                        }
+                    }
+                    .accessibilityIdentifier("shelf-entry-brew")
+                }
+            }
             beanSection
             datesSection
             bagSection
@@ -92,6 +109,11 @@ struct ShelfEntryEditorScreen: View {
                 delete()
             } label: {
                 Text(L10n.shelfEntryDelete)
+            }
+        }
+        .sheet(item: $brewing) { route in
+            NavigationStack {
+                BrewFormScreen(store: model.store, shelfEntry: route.shelfEntryLocalID, vocabulary: vocabulary, language: language)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: AccountStore.didSaveNotification, object: model.store)) { _ in
@@ -186,6 +208,14 @@ struct ShelfEntryEditorScreen: View {
     }
 
     // MARK: - Bindings and actions
+
+    /// The brew form of a stored entry that still exists; nil while adding (M2-T19).
+    private var brewRoute: BrewRoute? {
+        guard case .edit(let localID) = model.mode, model.failure != .notFound, !model.didDelete else {
+            return nil
+        }
+        return BrewRoute(shelfEntryLocalID: localID)
+    }
 
     private var purchaseDate: Binding<Date> {
         Binding(
