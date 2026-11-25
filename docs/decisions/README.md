@@ -45,3 +45,4 @@ What this costs, what it rules out, when to revisit.
 - [0017 Account deletion runs in the request and writes a deletion log outside the table](0017-account-deletion-and-deletion-log.md)
 - [0018 The GitHub deploy role trusts only the dev and prod environments, is imported as it is, then tagged; no boundary](0018-github-deploy-role-import-tags-and-trust.md)
 - [0019 Deploys run after CI through workflow_run; the operator mailbox comes from context in an explicit deploy mode](0019-deploy-pipeline-workflow-run-and-deploy-mode.md)
+- [0020 No local-only mode without sign-in for now](0020-no-local-only-mode-for-now.md)
