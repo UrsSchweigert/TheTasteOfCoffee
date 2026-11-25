@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CupmarkAPIURL</key>
+	<string>$(CUPMARK_API_URL)</string>
+	<key>CupmarkAppClientID</key>
+	<string>$(CUPMARK_APP_CLIENT_ID)</string>
+	<key>CupmarkHostedDomain</key>
+	<string>$(CUPMARK_HOSTED_DOMAIN)</string>
+	<key>CupmarkRedirectURL</key>
+	<string>$(CUPMARK_REDIRECT_URL)</string>
+	<key>CupmarkSignOutURL</key>
+	<string>$(CUPMARK_SIGN_OUT_URL)</string>
+	<key>CupmarkStage</key>
+	<string>$(CUPMARK_STAGE)</string>
+</dict>
+</plist>

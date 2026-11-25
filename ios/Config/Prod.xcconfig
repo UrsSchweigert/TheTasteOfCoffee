@@ -1,0 +1,21 @@
+// Stage configuration of the Cupmark app: the prod stage (M2-T9, ADR 0023).
+//
+// Not secrets: the Cognito app client is public and has no secret (infra/src/identity.ts).
+// The values reach the app through the CupmarkStage... keys of Config/Info.plist and are
+// checked by StageConfig (Cupmark/Configuration/StageConfig.swift). A missing, malformed
+// or non-eu-central-1 value shows the "not configured" screen.
+//
+// "//" starts a comment in an xcconfig file, so every URL writes "/$()/" for "//". $() expands
+// to nothing, which leaves "https://..." in the built Info.plist.
+//
+// PLACEHOLDER values fail StageConfig on purpose (uppercase letters and hyphens are not
+// valid in a Cognito app client id or an API Gateway id), so the app shows "not configured"
+// instead of calling a wrong host. They are replaced with the outputs AppClientId
+// (IdentityAppClientId...) and ApiUrl of the stack cupmark-prod-core: dev in M2-T10, prod in M6.
+
+CUPMARK_STAGE = prod
+CUPMARK_HOSTED_DOMAIN = https:/$()/cupmark-prod.auth.eu-central-1.amazoncognito.com
+CUPMARK_APP_CLIENT_ID = PLACEHOLDER-SET-IN-M6
+CUPMARK_API_URL = https:/$()/PLACEHOLDER-SET-IN-M6.execute-api.eu-central-1.amazonaws.com
+CUPMARK_REDIRECT_URL = cupmark:/$()/auth
+CUPMARK_SIGN_OUT_URL = cupmark:/$()/signout
