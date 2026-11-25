@@ -68,7 +68,7 @@ Goal: the repo builds, tests and checks itself; the shared contract exists.
   - A macOS CI job builds and tests the app.
 
 ### M0-T7 Accounts and secrets
-- status: todo
+- status: blocked
 - owner: human
 - needs: human
 - depends: none
