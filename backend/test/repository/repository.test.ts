@@ -227,6 +227,77 @@ describe('references under a race (ADR 0012)', () => {
     await expect(racing([{}], both).repo.replaceShelfEntry(ALICE, ID, values)).rejects.toThrow(ItemNotFoundError);
   });
 
+  const usable = {
+    Key: { pk: `BEAN#${ID}`, sk: 'META' },
+    ConditionExpression: 'attribute_exists(pk) AND #status <> :rejected',
+    ExpressionAttributeNames: { '#status': 'status' },
+    ExpressionAttributeValues: { ':rejected': 'rejected' },
+  };
+
+  it('a new shelf entry and a replace check, in the same transaction, that the bean exists and is not rejected (M1-T11)', async () => {
+    const { repo, sent } = stub(() => ({}));
+    await repo.createShelfEntry(ALICE, shelfValues);
+    await repo.replaceShelfEntry(ALICE, ID, shelfValues);
+    expect(sent).toHaveLength(2);
+    for (const input of sent) {
+      const items = (input.TransactItems ?? []) as Record<string, Record<string, unknown>>[];
+      expect(items).toHaveLength(2);
+      expect(items[0]?.ConditionCheck).toMatchObject(usable);
+    }
+  });
+
+  /** Answers transactions from `transactions` in order (an Error is thrown) and GetItem from `gets` in order. */
+  function scripted(transactions: (Error | undefined)[], gets: unknown[]): { repo: Repository; sent: Record<string, unknown>[] } {
+    let t = 0;
+    let g = 0;
+    return stub((input) => {
+      if ('TransactItems' in input) {
+        const outcome = transactions[t++];
+        if (outcome !== undefined) throw outcome;
+        return {};
+      }
+      return gets[g++] ?? {};
+    });
+  }
+
+  it('a replace that keeps a bean rejected later is written again, requiring the entry to still name that bean', async () => {
+    const values = { ...shelfValues, bean_id: ID, price_band: 'from_80' as const };
+    const { repo, sent } = scripted([cancelled(0, 2), undefined], [shelfItem]);
+    await expect(repo.replaceShelfEntry(ALICE, ID, values)).resolves.toEqual({ shelf_entry_id: ID, values });
+    expect(sent.map((input) => ('TransactItems' in input ? 'transact' : 'get'))).toEqual(['transact', 'get', 'transact']);
+    const items = (sent[2]?.TransactItems ?? []) as Record<string, Record<string, unknown>>[];
+    expect(items[0]?.ConditionCheck).toEqual({
+      TableName: 'cupmark-test-main',
+      Key: { pk: `BEAN#${ID}`, sk: 'META' },
+      ConditionExpression: 'attribute_exists(pk)',
+    });
+    expect(items[1]?.Update).toMatchObject({
+      Key: { pk: userPk(ALICE), sk: `SHELF#${ID}` },
+      ConditionExpression: 'attribute_exists(pk) AND beanId = :bean',
+      ExpressionAttributeValues: { ':bean': ID, ':values': values },
+    });
+  });
+
+  it('a replace that switches to a rejected bean is BeanNotFoundError, with no second write', async () => {
+    const other = '01JDQ8Z6V3W4X5Y6Z7A8B9C0DG';
+    const { repo, sent } = scripted([cancelled(0, 2), undefined], [shelfItem]);
+    await expect(repo.replaceShelfEntry(ALICE, ID, { ...shelfValues, bean_id: other })).rejects.toThrow(BeanNotFoundError);
+    expect(sent.map((input) => ('TransactItems' in input ? 'transact' : 'get'))).toEqual(['transact', 'get']);
+  });
+
+  it('the second write of a same-bean replace: gone is 404, a bean changed meanwhile is a conflict, a missing bean is 404', async () => {
+    const values = { ...shelfValues, bean_id: ID };
+    await expect(scripted([cancelled(0, 2), cancelled(1, 2)], [shelfItem, {}]).repo.replaceShelfEntry(ALICE, ID, values)).rejects.toThrow(
+      ItemNotFoundError,
+    );
+    await expect(
+      scripted([cancelled(0, 2), cancelled(1, 2)], [shelfItem, shelfItem]).repo.replaceShelfEntry(ALICE, ID, values),
+    ).rejects.toThrow(WriteConflictError);
+    await expect(scripted([cancelled(0, 2), cancelled(0, 2)], [shelfItem]).repo.replaceShelfEntry(ALICE, ID, values)).rejects.toThrow(
+      BeanNotFoundError,
+    );
+  });
+
   it('a failed shelf delete is 404 if the entry is gone and in use if it is there', async () => {
     const condition = new ConditionalCheckFailedException({ message: 'failed', $metadata: {} });
     const gone = stub((input) => {

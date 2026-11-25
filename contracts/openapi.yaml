@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Cupmark API
-  version: 0.3.1
+  version: 0.3.2
   description: >-
     Free-tier API of Cupmark (tasks M0-T2 and M1-T8). No request carries free
     text: every string a client sends is an id from the closed vocabulary in
@@ -40,7 +40,7 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           description: >-
-            Unknown barcode. The app then asks GET
+            Unknown barcode, or its bean was rejected. The app then asks GET
             /barcodes/{barcode}/open_food_facts (docs/05-system-design.md,
             Barcode lookup).
         '429':
@@ -204,7 +204,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
-          description: The bean does not exist.
+          description: The bean does not exist or was rejected.
         '429':
           $ref: '#/components/responses/TooManyRequests'
 
@@ -591,11 +591,19 @@ components:
 
   responses:
     BadRequest:
-      description: A field is outside its list or range, an unknown property was sent, or the vocabulary version is not published.
+      description: >-
+        A field is outside its list or range, an unknown property was sent, the
+        vocabulary version is not published, or a barcode is malformed or has a
+        bad check digit.
     Unauthorized:
       description: Missing, invalid or expired token.
     NotFound:
-      description: No such item in the caller's partition.
+      description: >-
+        No such item. On the caller's own routes (shelf, brews, recipes) the
+        item is not in the caller's partition, or the bean_id a shelf entry
+        write names newly is unknown or rejected. On the shared catalogue
+        routes (GET /beans/{bean_id}, GET /barcodes/{barcode}) the bean is not
+        in the catalogue. A rejected bean counts as not found everywhere.
     TooManyRequests:
       description: Throttled.
 

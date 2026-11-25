@@ -529,6 +529,64 @@ describe.skipIf(!local.reachable)('repository on DynamoDB Local', () => {
     });
   });
 
+  describe('rejected beans on shelves (M1-T11)', () => {
+    async function newBean(): Promise<string> {
+      return (await repo.createBean({ vocabularyVersion: 1, openFoodFactsMatch: false, pickedAttributes: {} })).bean.bean_id;
+    }
+
+    it('a new shelf entry for a rejected bean is BeanNotFoundError and writes nothing; a verified bean passes', async () => {
+      const user = verifiedUserId('f1f1f1f1-f1f1-4f1f-8f1f-f1f1f1f1f1f1');
+      const rejected = await newBean();
+      await repo.rejectBean(rejected);
+      await expect(repo.createShelfEntry(user, shelfInput({ bean_id: rejected }))).rejects.toThrow(BeanNotFoundError);
+      expect(await partition(userPk(user))).toEqual([]);
+      const verified = await newBean();
+      await repo.verifyBean(verified);
+      expect((await repo.createShelfEntry(user, shelfInput({ bean_id: verified }))).values.bean_id).toBe(verified);
+    });
+
+    it('an entry whose bean is rejected later can be listed, read, brewed on and replaced keeping that bean', async () => {
+      const user = verifiedUserId('f2f2f2f2-f2f2-4f2f-8f2f-f2f2f2f2f2f2');
+      const bean = await newBean();
+      const entry = await repo.createShelfEntry(user, shelfInput({ bean_id: bean }));
+      await repo.createBrew(user, brewInput(entry.shelf_entry_id, '2026-11-25T07:00:00Z'));
+      await repo.rejectBean(bean);
+
+      expect((await repo.listShelfEntries(user)).items).toEqual([entry]);
+      expect(await repo.getShelfEntry(user, entry.shelf_entry_id)).toEqual(entry);
+      const brew = await repo.createBrew(user, brewInput(entry.shelf_entry_id, '2026-11-25T08:00:00Z'));
+      expect(await repo.getBrew(user, brew.brew_id)).toEqual(brew);
+
+      // Same bean, other fields, while brews reference the entry: the fallback write passes.
+      const replaced = await repo.replaceShelfEntry(user, entry.shelf_entry_id, shelfInput({ bean_id: bean, price_band: 'from_80' }));
+      expect(replaced).toEqual({ shelf_entry_id: entry.shelf_entry_id, values: shelfInput({ bean_id: bean, price_band: 'from_80' }) });
+      expect(await repo.getShelfEntry(user, entry.shelf_entry_id)).toEqual(replaced);
+      expect(await raw(shelfEntryKey(user, entry.shelf_entry_id))).toMatchObject({ beanId: bean, brewCount: 2 });
+    });
+
+    it('a replace that switches to a rejected bean is BeanNotFoundError and writes nothing; leaving one passes', async () => {
+      const user = verifiedUserId('f3f3f3f3-f3f3-4f3f-8f3f-f3f3f3f3f3f3');
+      const kept = await newBean();
+      const rejected = await newBean();
+      const entry = (await repo.createShelfEntry(user, shelfInput({ bean_id: kept }))).shelf_entry_id;
+      const onRejected = (await repo.createShelfEntry(user, shelfInput({ bean_id: rejected }))).shelf_entry_id;
+      await repo.rejectBean(rejected);
+      const before = await partition(userPk(user));
+      await expect(repo.replaceShelfEntry(user, entry, shelfInput({ bean_id: rejected }))).rejects.toThrow(BeanNotFoundError);
+      expect(await partition(userPk(user))).toEqual(before);
+      // An entry on a rejected bean, with no brews, may move to a bean that is not rejected.
+      await repo.replaceShelfEntry(user, onRejected, shelfInput({ bean_id: kept }));
+      expect((await raw(shelfEntryKey(user, onRejected)))?.beanId).toBe(kept);
+    });
+
+    it('a same-bean replace on a missing entry is still ItemNotFoundError', async () => {
+      const user = verifiedUserId('f4f4f4f4-f4f4-4f4f-8f4f-f4f4f4f4f4f4');
+      const rejected = await newBean();
+      await repo.rejectBean(rejected);
+      await expect(repo.replaceShelfEntry(user, newUlid(), shelfInput({ bean_id: rejected }))).rejects.toThrow(ItemNotFoundError);
+    });
+  });
+
   describe('recipes', () => {
     it('round-trip and conditions', async () => {
       const user = verifiedUserId('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');

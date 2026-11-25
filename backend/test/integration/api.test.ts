@@ -154,6 +154,35 @@ describe.skipIf(!local.reachable)('API routes on DynamoDB Local', () => {
     expect(ShelfEntrySchema.parse(moved.body).values.bean_id).toBe(other);
   });
 
+  it('a rejected bean: 404 on a new shelf entry or a switch to it; an entry already on it keeps working (M1-T11)', async () => {
+    const repository = new Repository({ client: documentClient, tableName });
+    const newBean = async (): Promise<string> =>
+      (await repository.createBean({ vocabularyVersion: 1, openFoodFactsMatch: false, pickedAttributes: {} })).bean.bean_id;
+    const sub = 'c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1';
+    const shelved = await newBean();
+    const other = await newBean();
+    const shelf = ShelfEntrySchema.parse((await call('POST', '/shelf', { sub, json: shelfBody({ bean_id: shelved }) })).body);
+    const onOther = ShelfEntrySchema.parse((await call('POST', '/shelf', { sub, json: shelfBody({ bean_id: other }) })).body);
+    const path = `/shelf/${shelf.shelf_entry_id}`;
+    await repository.rejectBean(shelved);
+
+    const before = await partition(sub);
+    const created = await api(apiEvent('POST', '/shelf', { sub, json: shelfBody({ bean_id: shelved }) }));
+    expect(created.statusCode).toBe(404);
+    expect(created.body).toBeUndefined();
+    expect(logs.at(-1)).toMatchObject({ operation: 'createShelfEntry', status: 404, error: 'BeanNotFoundError' });
+    expect((await call('PUT', `/shelf/${onOther.shelf_entry_id}`, { sub, json: shelfBody({ bean_id: shelved }) })).status).toBe(404);
+    expect(await partition(sub)).toEqual(before);
+
+    expect(ShelfEntryPageSchema.parse((await call('GET', '/shelf', { sub })).body).items).toContainEqual(shelf);
+    expect((await call('GET', path, { sub })).body).toEqual(shelf);
+    expect((await call('POST', '/brews', { sub, json: brewBody(shelf.shelf_entry_id) })).status).toBe(201);
+    const replaced = await call('PUT', path, { sub, json: shelfBody({ bean_id: shelved, bag_size: 'g_1000' }) });
+    expect(replaced.status).toBe(200);
+    expect(ShelfEntrySchema.parse(replaced.body).values).toMatchObject({ bean_id: shelved, bag_size: 'g_1000' });
+    expect((await call('GET', path, { sub })).body).toEqual(replaced.body);
+  });
+
   it('bean catalogue: create, look up by barcode, reject, then the barcode is free for a new entry', async () => {
     const repository = new Repository({ client: documentClient, tableName });
     const raw = async (key: { pk: string; sk: string }): Promise<Record<string, unknown> | undefined> =>

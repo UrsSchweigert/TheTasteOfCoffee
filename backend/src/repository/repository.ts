@@ -318,7 +318,7 @@ export class Repository {
       await this.#client.send(
         new TransactWriteCommand({
           TransactItems: [
-            { ConditionCheck: this.#beanExists(values.bean_id) },
+            { ConditionCheck: this.#beanUsable(values.bean_id) },
             { Put: { TableName: this.#table, Item: item, ConditionExpression: 'attribute_not_exists(pk)' } },
           ],
         }),
@@ -349,6 +349,13 @@ export class Repository {
    * the brew (WriteConflictError, retried against the new bean).
    * A failed condition reads the item once: gone is ItemNotFoundError, an
    * unknown bean is BeanNotFoundError, otherwise ShelfEntryBeanLockedError.
+   *
+   * The bean must exist and not be rejected (M1-T11), checked in the same
+   * transaction. A ConditionCheck cannot see the entry, so an entry that keeps
+   * a bean rejected after it was shelved fails that check alone; then the entry
+   * is read once and, if it names that bean, the replace is written again with
+   * the bean only required to exist and the entry required to still name it
+   * (#replaceKeepingBean). A user can always edit a bag they already have.
    */
   public async replaceShelfEntry(user: UserId, shelfEntryId: string, input: ShelfEntryInput): Promise<ShelfEntry> {
     const key = shelfEntryKey(user, shelfEntryId);
@@ -357,23 +364,14 @@ export class Repository {
       await this.#client.send(
         new TransactWriteCommand({
           TransactItems: [
-            { ConditionCheck: this.#beanExists(values.bean_id) },
+            { ConditionCheck: this.#beanUsable(values.bean_id) },
             {
-              Update: {
-                TableName: this.#table,
-                Key: key,
-                UpdateExpression: 'SET beanId = :bean, purchaseDate = :date, #values = :values, updatedAt = :now',
-                ConditionExpression:
-                  'attribute_exists(pk) AND (beanId = :bean OR attribute_not_exists(brewCount) OR brewCount = :zero)',
-                ExpressionAttributeNames: { '#values': 'values' },
-                ExpressionAttributeValues: {
-                  ':bean': values.bean_id,
-                  ':date': values.purchase_date,
-                  ':values': values,
-                  ':now': utcOf(this.#now()),
-                  ':zero': 0,
-                },
-              },
+              Update: this.#shelfReplaceUpdate(
+                key,
+                values,
+                'attribute_exists(pk) AND (beanId = :bean OR attribute_not_exists(brewCount) OR brewCount = :zero)',
+                { ':zero': 0 },
+              ),
             },
           ],
         }),
@@ -386,10 +384,73 @@ export class Repository {
         if (failed.includes(0)) throw new BeanNotFoundError('no such bean');
         throw new ShelfEntryBeanLockedError('brews reference the shelf entry');
       }
-      if (failed?.includes(0)) throw new BeanNotFoundError('no such bean');
+      if (failed?.includes(0)) {
+        // Only the bean check failed: the bean is unknown or rejected. If the entry already names it, keep it.
+        const shelf = await this.#shelfItem(user, shelfEntryId);
+        if (shelf?.beanId !== values.bean_id) throw new BeanNotFoundError('no such bean');
+        await this.#replaceKeepingBean(key, values);
+        return { shelf_entry_id: shelf.shelfEntryId, values };
+      }
       throw error;
     }
     return { shelf_entry_id: parseShelfSortKey(key.sk) ?? shelfEntryId, values };
+  }
+
+  /**
+   * The second attempt of a replace that keeps a bean rejected after it was
+   * shelved: the bean need only exist, and the entry must still name it, so a
+   * concurrent bean change cannot slip a rejected bean in. That race is
+   * WriteConflictError, and the router retries the whole replace.
+   */
+  async #replaceKeepingBean(key: Key, values: ShelfEntryInput): Promise<void> {
+    try {
+      await this.#client.send(
+        new TransactWriteCommand({
+          TransactItems: [
+            { ConditionCheck: this.#beanExists(values.bean_id) },
+            { Update: this.#shelfReplaceUpdate(key, values, 'attribute_exists(pk) AND beanId = :bean', {}) },
+          ],
+        }),
+      );
+    } catch (error) {
+      const failed = failedConditions(error);
+      if (failed?.includes(1)) {
+        if ((await this.#get(key)) === undefined) throw new ItemNotFoundError('no such shelf entry');
+        throw new WriteConflictError('the shelf entry changed its bean during the write');
+      }
+      if (failed?.includes(0)) throw new BeanNotFoundError('no such bean');
+      throw error;
+    }
+  }
+
+  /** The Update of a shelf replace, under `condition`. */
+  #shelfReplaceUpdate(
+    key: Key,
+    values: ShelfEntryInput,
+    condition: string,
+    extraValues: Record<string, unknown>,
+  ): {
+    TableName: string;
+    Key: Key;
+    UpdateExpression: string;
+    ConditionExpression: string;
+    ExpressionAttributeNames: Record<string, string>;
+    ExpressionAttributeValues: Record<string, unknown>;
+  } {
+    return {
+      TableName: this.#table,
+      Key: key,
+      UpdateExpression: 'SET beanId = :bean, purchaseDate = :date, #values = :values, updatedAt = :now',
+      ConditionExpression: condition,
+      ExpressionAttributeNames: { '#values': 'values' },
+      ExpressionAttributeValues: {
+        ':bean': values.bean_id,
+        ':date': values.purchase_date,
+        ':values': values,
+        ':now': utcOf(this.#now()),
+        ...extraValues,
+      },
+    };
   }
 
   /** Deletes a shelf entry that no brew references; ShelfEntryInUseError otherwise (ADR 0012). */
@@ -815,9 +876,26 @@ export class Repository {
 
   // ---- internals ----
 
-  /** ConditionCheck: the bean is in the catalogue. */
+  /** ConditionCheck: the bean is in the catalogue, whatever its status. */
   #beanExists(beanId: string): { TableName: string; Key: Key; ConditionExpression: string } {
     return { TableName: this.#table, Key: beanMetaKey(beanId), ConditionExpression: 'attribute_exists(pk)' };
+  }
+
+  /** ConditionCheck: the bean is in the catalogue and not rejected, so a shelf entry may newly name it (M1-T11). */
+  #beanUsable(beanId: string): {
+    TableName: string;
+    Key: Key;
+    ConditionExpression: string;
+    ExpressionAttributeNames: Record<string, string>;
+    ExpressionAttributeValues: Record<string, unknown>;
+  } {
+    return {
+      TableName: this.#table,
+      Key: beanMetaKey(beanId),
+      ConditionExpression: 'attribute_exists(pk) AND #status <> :rejected',
+      ExpressionAttributeNames: { '#status': 'status' },
+      ExpressionAttributeValues: { ':rejected': 'rejected' },
+    };
   }
 
   async #shelfItem(user: UserId, shelfEntryId: string): Promise<z.infer<typeof ShelfItem> | undefined> {

@@ -2,7 +2,7 @@
 // the repository's observable rules: one partition per UserId, newest first,
 // the repository's own cursor format (base64url sort key, checked on use),
 // references (a shelf entry needs a known bean, a brew needs the caller's
-// shelf entry) and the 409 on deleting a shelf entry that brews reference or
+// shelf entry; a rejected bean may stay on an entry but not be newly put on one) and the 409 on deleting a shelf entry that brews reference or
 // changing its bean (D14); the shared bean catalogue with its barcode
 // pointers (canonical EAN-13, one bean per barcode, a reject frees the barcode).
 // The real repository is tested against DynamoDB Local.
@@ -95,7 +95,7 @@ export class FakeStore implements ApiStore {
 
   public createShelfEntry(user: UserId, input: ShelfEntryInput): Promise<ShelfEntry> {
     this.calls.push('createShelfEntry');
-    if (!this.beans.has(input.bean_id)) return Promise.reject(new BeanNotFoundError('no such bean'));
+    if (!this.#beanUsable(input.bean_id)) return Promise.reject(new BeanNotFoundError('no such bean'));
     const entry = { shelf_entry_id: this.#newId(), values: structuredClone(input) };
     this.#of(user).shelf.set(entry.shelf_entry_id, entry);
     return Promise.resolve(structuredClone(entry));
@@ -111,7 +111,10 @@ export class FakeStore implements ApiStore {
     this.calls.push('replaceShelfEntry');
     const p = this.#of(user);
     if (!p.shelf.has(id)) return Promise.reject(new ItemNotFoundError('no such item'));
-    if (!this.beans.has(input.bean_id)) return Promise.reject(new BeanNotFoundError('no such bean'));
+    const keepsBean = p.shelf.get(id)?.values.bean_id === input.bean_id;
+    if (!(keepsBean ? this.beans.has(input.bean_id) : this.#beanUsable(input.bean_id))) {
+      return Promise.reject(new BeanNotFoundError('no such bean'));
+    }
     if (p.shelf.get(id)?.values.bean_id !== input.bean_id && this.#brewCount(p, id) > 0) {
       return Promise.reject(new ShelfEntryBeanLockedError('bean locked'));
     }
@@ -233,6 +236,11 @@ export class FakeStore implements ApiStore {
     this.calls.push('getBeanByBarcode');
     const beanId = this.barcodes.get(canonicalBarcode(barcode));
     return Promise.resolve(beanId === undefined ? undefined : structuredClone(this.catalogue.get(beanId)));
+  }
+
+  /** A shelf entry may newly name the bean: known, and not rejected (M1-T11). */
+  #beanUsable(beanId: string): boolean {
+    return this.beans.has(beanId) && this.catalogue.get(beanId)?.status !== 'rejected';
   }
 
   /** The operator's reject (not an API route): status rejected, and the barcode pointer goes if it names this bean. */
