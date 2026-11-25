@@ -1,0 +1,53 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "RuntimeAccessToCupmarkResourcesOnly",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:BatchGetItem",
+        "dynamodb:Query",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:BatchWriteItem",
+        "dynamodb:DescribeStream",
+        "dynamodb:GetRecords",
+        "dynamodb:GetShardIterator",
+        "dynamodb:ListStreams",
+        "dynamodb:ExportTableToPointInTime",
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:ListBucket",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "ssm:GetParameter",
+        "ssm:GetParameters"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:${REGION}:${ACCOUNT}:table/cupmark-*",
+        "arn:aws:dynamodb:${REGION}:${ACCOUNT}:table/cupmark-*/*",
+        "arn:aws:s3:::cupmark-*",
+        "arn:aws:s3:::cupmark-*/*",
+        "arn:aws:logs:${REGION}:${ACCOUNT}:log-group:/aws/lambda/cupmark-*:*",
+        "arn:aws:logs:${REGION}:${ACCOUNT}:log-group:/cupmark/*:*",
+        "arn:aws:ssm:${REGION}:${ACCOUNT}:parameter/cupmark/*"
+      ]
+    },
+    {
+      "Sid": "DenyIamAndForeignServices",
+      "Effect": "Deny",
+      "Action": [
+        "iam:*",
+        "route53:*",
+        "cloudfront:*",
+        "secretsmanager:*",
+        "kms:CreateKey",
+        "organizations:*",
+        "account:*"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
