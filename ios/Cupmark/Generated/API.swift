@@ -279,6 +279,38 @@ enum API {
             case .deleteAccount: return nil
             }
         }
+
+        /// The error statuses the contract lists for the route, ascending. Any 5xx can also occur.
+        var documentedErrorStatuses: [Int] {
+            switch self {
+            case .lookupBarcode: return [400, 401, 404, 429]
+            case .lookupOpenFoodFacts: return [400, 401, 404, 409, 429, 503]
+            case .createBean: return [400, 401, 409, 429]
+            case .getBean: return [400, 401, 404, 429]
+            case .createLabelPhotoUpload: return [400, 401, 404, 409, 429]
+            case .getCatalogueImage: return [400, 401, 404, 429]
+            case .completeLabelPhoto: return [400, 401, 404, 409, 429]
+            case .listShelfEntries: return [400, 401, 429]
+            case .createShelfEntry: return [400, 401, 404, 429]
+            case .getShelfEntry: return [400, 401, 404, 429]
+            case .replaceShelfEntry: return [400, 401, 404, 409, 429]
+            case .deleteShelfEntry: return [400, 401, 404, 409, 429]
+            case .listBrews: return [400, 401, 429]
+            case .createBrew: return [400, 401, 404, 429]
+            case .getBrew: return [400, 401, 404, 429]
+            case .replaceBrew: return [400, 401, 404, 429]
+            case .deleteBrew: return [400, 401, 404, 429]
+            case .listRecipes: return [400, 401, 429]
+            case .createRecipe: return [400, 401, 429]
+            case .getRecipe: return [400, 401, 404, 429]
+            case .replaceRecipe: return [400, 401, 404, 429]
+            case .deleteRecipe: return [400, 401, 404, 429]
+            case .getProfile: return [401, 404, 429]
+            case .putProfile: return [400, 401, 429]
+            case .exportData: return [401, 429]
+            case .deleteAccount: return [401, 429]
+            }
+        }
     }
 
     // MARK: - Plain values
@@ -1453,10 +1485,7 @@ enum API {
                 seconds -= 1
                 milliseconds += 1000
             }
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime]
-            formatter.timeZone = TimeZone(secondsFromGMT: 0)
-            let whole = formatter.string(from: Date(timeIntervalSince1970: TimeInterval(seconds)))
+            let whole = Timestamp.wholeSeconds.string(from: Date(timeIntervalSince1970: TimeInterval(seconds)))
             return "\(whole.dropLast()).\(API.zeroPadded(milliseconds, width: 3))Z"
         }
 
@@ -1464,14 +1493,25 @@ enum API {
             lhs.millisecondsSince1970 < rhs.millisecondsSince1970
         }
 
-        private static func parse(_ text: String) -> Date? {
+        /// RFC 3339 with fractional seconds. Created once: an `ISO8601DateFormatter` is costly to
+        /// make, and it is thread-safe once configured, which is why `nonisolated(unsafe)` is sound.
+        nonisolated(unsafe) private static let fractionalSeconds: ISO8601DateFormatter = {
             let formatter = ISO8601DateFormatter()
             formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            if let date = formatter.date(from: text) {
-                return date
-            }
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            return formatter
+        }()
+
+        /// RFC 3339 in whole seconds, in UTC. Created once, like `fractionalSeconds`.
+        nonisolated(unsafe) private static let wholeSeconds: ISO8601DateFormatter = {
+            let formatter = ISO8601DateFormatter()
             formatter.formatOptions = [.withInternetDateTime]
-            return formatter.date(from: text)
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            return formatter
+        }()
+
+        private static func parse(_ text: String) -> Date? {
+            fractionalSeconds.date(from: text) ?? wholeSeconds.date(from: text)
         }
 
         init(from decoder: Decoder) throws {

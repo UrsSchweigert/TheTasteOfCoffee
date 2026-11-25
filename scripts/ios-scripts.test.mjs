@@ -11,6 +11,7 @@ import { loadOpenApi } from '../contracts/lib/openapi.mjs';
 import {
   GENERATED_FILE,
   PROJECT_FILE,
+  brewParameterFields,
   checkProject,
   describeVocabulary,
   generateSwift,
@@ -198,8 +199,152 @@ test('generateSwift output changes when an id is added (the drift check can see 
 
 test('the committed Vocabulary.swift matches the latest published vocabulary', () => {
   const version = latestPublishedVersion();
-  const fresh = generateSwift({ version, files: loadVocabulary(version), languages: LANGUAGES });
+  const brewFields = brewParameterFields(loadOpenApi());
+  const fresh = generateSwift({ version, files: loadVocabulary(version), languages: LANGUAGES, brewFields });
   assert.equal(readFileSync(GENERATED_FILE, 'utf8').replace(/\r\n/g, '\n'), fresh);
+});
+
+// ---- Vocabulary v3 (draft, M2-T3): grinders with a scale, and the method field rules. ----
+
+/**
+ * Fields the v3 rules name that BrewParameters gets when v3 is published
+ * (M2-T4); the same list as V3_FIELDS_NOT_IN_API_YET in
+ * contracts/test/vocabulary.test.mjs. Until then the draft is generated
+ * with them added, as the contract test checks it.
+ */
+const V3_FIELDS_NOT_IN_API_YET = ['grinder', 'grind_setting'];
+const v3BrewFields = () => [...new Set([...brewParameterFields(loadOpenApi()), ...V3_FIELDS_NOT_IN_API_YET])];
+const v3Files = () => structuredClone(loadVocabulary(3));
+const generateV3 = (files = v3Files(), brewFields = v3BrewFields()) =>
+  generateSwift({ version: 3, files, languages: LANGUAGES, brewFields });
+/** The body of a generated Swift switch property or table, from its declaration to the next blank line. */
+const swiftBlock = (swift, declaration) => {
+  const start = swift.indexOf(declaration);
+  assert.ok(start >= 0, `no ${declaration}`);
+  const end = swift.indexOf('\n\n', start);
+  return swift.slice(start, end < 0 ? undefined : end);
+};
+
+test('v3 draft: the generator describes it instead of throwing on grinders.<id>.scale', () => {
+  const swift = generateV3();
+  assert.match(swift, /static let version = 3/);
+  assert.match(swift, /enum Grinder: String, CaseIterable, Codable, Sendable, VocabularyItem \{/);
+  assert.match(swift, /case grinders = "grinders"/);
+  assert.match(swift, /case \.grinders: return "brew"/);
+});
+
+test('v3 draft: Grinder.scale is a typed optional range, read from every grinder in the file', () => {
+  const swift = generateV3();
+  const block = swiftBlock(swift, 'var scale: VocabularyRange? {');
+  for (const grinder of loadVocabulary(3).brew.grinders) {
+    const member = swiftCase('grinders', grinder.id);
+    const value = grinder.scale === undefined
+      ? 'nil'
+      : `VocabularyRange(minimum: ${grinder.scale.minimum.toFixed(1)}, maximum: ${grinder.scale.maximum.toFixed(1)}, multipleOf: ${grinder.scale.multipleOf.toFixed(1)})`;
+    assert.ok(block.includes(`case .${member}: return ${value}\n`), `${grinder.id}: ${value}`);
+  }
+  assert.match(block, /case \.nicheZero: return VocabularyRange\(minimum: 0\.0, maximum: 50\.0, multipleOf: 0\.5\)/);
+  assert.match(block, /case \.preGround: return nil/);
+  assert.match(block, /case \.other: return nil/);
+  // A scale is no global range and no constant; the scale attribute is not a plain property.
+  assert.doesNotMatch(swift, /"brew\.grinders/);
+  assert.doesNotMatch(swift, /static let (comandanteC40|nicheZero)/);
+});
+
+test('v3 draft: field_rules become a typed method table, never Bool constants', () => {
+  const swift = generateV3();
+  assert.doesNotMatch(swift, /: Bool = /, 'no Bool constant');
+  assert.doesNotMatch(swift, /\.bool\(/, 'no Bool in Constants.all');
+  assert.doesNotMatch(swift, /field_rules\./, 'no rule under a JSON path');
+  assert.doesNotMatch(swift, /allowedMethods/);
+  // The constants of v3 are those of v2: the rules add none.
+  const constants = (text) => swiftBlock(text, 'enum Constants {');
+  const v2 = generateSwift({ version: 2, files: loadVocabulary(2), languages: LANGUAGES });
+  assert.equal(constants(swift), constants(v2));
+  // The table holds exactly the file's rules, in file order, as typed cases.
+  const table = swiftBlock(swift, 'static let fieldRules: [Vocabulary.BrewField: [Vocabulary.Method]] = [');
+  const rules = Object.entries(loadVocabulary(3).brew.field_rules);
+  const rows = table.split('\n').slice(1).map((row) => row.trim());
+  assert.deepEqual(rows, [
+    ...rules.map(([field, rule]) =>
+      `.${swiftMember(field)}: [${Object.keys(rule.allowed_methods).map((id) => `.${swiftCase('methods', id)}`).join(', ')}],`),
+    ']',
+  ]);
+  assert.match(swift, /extension Vocabulary\.Method \{/);
+  assert.match(swift, /func allows\(_ field: Vocabulary\.BrewField\) -> Bool \{\n {8}guard let methods = Self\.fieldRules\[field\] else \{ return true \}\n {8}return methods\.contains\(self\)/);
+  assert.match(swift, /var allowedFields: \[Vocabulary\.BrewField\] \{/);
+});
+
+test('v3 draft: BrewField is every BrewParameters field but method, and grind_setting lies on the grinder scale', () => {
+  const swift = generateV3();
+  const block = swiftBlock(swift, 'enum BrewField: String, CaseIterable, Codable, Sendable {');
+  const cases = [...block.matchAll(/^ {8}case (\w+) = "(\w+)"$/gm)].map((m) => m[2]);
+  assert.deepEqual(cases, v3BrewFields().filter((field) => field !== 'method'));
+  for (const field of ['dose_dg', 'water_temp_c', 'water_temp_special', 'milk', 'grinder', 'grind_setting']) assert.ok(cases.includes(field), field);
+  const scaledBy = swiftBlock(swift, 'var scaledBy: Vocabulary.BrewField? {');
+  assert.match(scaledBy, /case \.grindSetting: return \.grinder\n/);
+  assert.match(scaledBy, /case \.grinder: return nil\n/);
+  assert.equal((scaledBy.match(/return \./g) ?? []).length, 1);
+});
+
+test('v3 draft: the rules come from the file, so a changed rule changes the output', () => {
+  const files = v3Files();
+  delete files.brew.field_rules.water_temp_c.allowed_methods.siphon;
+  const changed = generateV3(files);
+  assert.notEqual(changed, generateV3());
+  assert.match(changed, /\.waterTempC: \[\.espresso, \.v60, \.chemex, \.kalita, \.batchFilter, \.aeropress, \.frenchPress, \.fullyAutomatic\],/);
+});
+
+test('v3 draft: generation fails on a rule that names an unknown method or field', () => {
+  const unknownMethod = v3Files();
+  unknownMethod.brew.field_rules.water_temp_special.allowed_methods.turbo_press = true;
+  assert.throws(() => generateV3(unknownMethod), /field_rules\.water_temp_special: turbo_press is not a method/);
+  const unknownField = v3Files();
+  unknownField.brew.field_rules.grind_size = { allowed_methods: { espresso: true } };
+  assert.throws(() => generateV3(unknownField), /field_rules\.grind_size: grind_size is not a BrewParameters field/);
+  // The fields come from BrewParameters: without the v3 fields the draft does not generate.
+  assert.throws(() => generateV3(v3Files(), brewParameterFields(loadOpenApi())), /grinder is not a BrewParameters field/);
+  // Rules need the field list; the method itself is never ruled.
+  assert.throws(() => generateSwift({ version: 3, files: v3Files(), languages: LANGUAGES }), /needs brewFields/);
+  const methodRule = v3Files();
+  methodRule.brew.field_rules.method = { allowed_methods: { espresso: true } };
+  assert.throws(() => generateV3(methodRule), /the method is never ruled by a method/);
+  // Rules belong at the top of brew.json only.
+  const elsewhere = v3Files();
+  elsewhere.shelf.field_rules = structuredClone(elsewhere.brew.field_rules);
+  assert.throws(() => generateV3(elsewhere), /field rules belong at the top of brew\.json/);
+});
+
+test('v3 draft: generation fails on a scale off its step or with an inexact step', () => {
+  const offStep = v3Files();
+  offStep.brew.grinders.find((g) => g.id === 'comandante_c40').scale.maximum = 50.5;
+  assert.throws(() => generateV3(offStep), /grinders\.comandante_c40: scale minimum and maximum are not on the step 1/);
+  const inexact = v3Files();
+  inexact.brew.grinders.find((g) => g.id === 'niche_zero').scale.multipleOf = 0.1;
+  assert.throws(() => generateV3(inexact), /grinders\.niche_zero: scale step 0\.1 is not exact/);
+  const notARange = v3Files();
+  notARange.brew.grinders[0].scale = { minimum: 0, maximum: 50 };
+  assert.throws(() => generateV3(notARange), /comandante_c40: scale is not a range/);
+  const unscaled = v3Files();
+  unscaled.brew.grinders.find((g) => g.id === 'pre_ground').scale = { minimum: 0, maximum: 10, multipleOf: 1 };
+  assert.throws(() => generateV3(unscaled), /pre_ground has no scale/);
+  // A scale on an entry of another list is no attribute the generator accepts.
+  const otherList = v3Files();
+  otherList.brew.methods[0].scale = { minimum: 0, maximum: 10, multipleOf: 1 };
+  assert.throws(() => generateV3(otherList), /methods\.espresso: scale is only allowed in grinders/);
+});
+
+test('the v3 fields are in BrewParameters exactly when v3 is published', () => {
+  const published = Object.values(loadVocabulary(3)).every((file) => file.status === 'published');
+  for (const field of V3_FIELDS_NOT_IN_API_YET) {
+    assert.equal(brewParameterFields(loadOpenApi()).includes(field), published, field);
+  }
+});
+
+test('the bundled v2 has no grinders and no rules, so its output is unchanged', () => {
+  const swift = generateSwift({ version: 2, files: loadVocabulary(2), languages: LANGUAGES, brewFields: brewParameterFields(loadOpenApi()) });
+  assert.equal(swift, generateSwift({ version: 2, files: loadVocabulary(2), languages: LANGUAGES }));
+  assert.doesNotMatch(swift, /Grinder|BrewField|fieldRules/);
 });
 
 test('checkProject requires folder references to the generated version and i18n', () => {
@@ -592,4 +737,52 @@ test('generate-ios-api: the generated Swift is balanced and has no force unwraps
   assert.doesNotMatch(masked, /\btry!|\bas!|fatalError|preconditionFailure/);
   assert.doesNotMatch(masked, /\b(TextField|TextEditor|SecureField)\b/);
   assert.deepEqual(literalUiStrings(swift), []);
+});
+
+test('generate-ios-api: --check exits 1 on a stale or missing file and 0 on a fresh one (M2-T8)', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const script = fileURLToPath(new URL('./generate-ios-api.mjs', import.meta.url));
+  const dir = mkdtempSync(join(tmpdir(), 'cupmark-api-check-'));
+  const check = (file) => spawnSync(process.execPath, [script, '--check', `--file=${file}`], { encoding: 'utf8' });
+  try {
+    const fresh = join(dir, 'fresh.swift');
+    writeFileSync(fresh, realApi().swift);
+    assert.equal(check(fresh).status, 0, check(fresh).stderr);
+
+    const stale = join(dir, 'stale.swift');
+    writeFileSync(stale, realApi().swift.replace('case .deleteAccount: return 204', 'case .deleteAccount: return 200'));
+    const staleRun = check(stale);
+    assert.equal(staleRun.status, 1);
+    assert.match(staleRun.stderr, /out of date/);
+
+    const missingRun = check(join(dir, 'missing.swift'));
+    assert.equal(missingRun.status, 1);
+    assert.match(missingRun.stderr, /is missing/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('generate-ios-api: each route lists its documented error statuses, and Timestamp caches its formatters (M2-T8)', () => {
+  const ops = describeOperations(apiFixture(), apiOptions.excluded);
+  assert.deepEqual(ops.map((o) => [o.operationId, o.errorStatuses]), [
+    ['listThings', []],
+    ['createThing', [400]],
+    ['deleteThing', []],
+    ['getPicture', []],
+  ]);
+  const bad = apiFixture();
+  bad.paths['/things/{id}'].delete.responses.default = { description: 'any' };
+  assert.throws(() => describeOperations(bad, apiOptions.excluded), /response default is not a 2xx, 4xx or 5xx status/);
+
+  const { swift } = realApi();
+  assert.match(swift, /case \.lookupOpenFoodFacts: return \[400, 401, 404, 409, 429, 503\]/);
+  assert.match(swift, /case \.deleteAccount: return \[401, 429\]/);
+  const timestamp = swift.slice(swift.indexOf('struct Timestamp'), swift.indexOf('// MARK: - Support'));
+  assert.equal(timestamp.match(/ISO8601DateFormatter\(\)/g)?.length, 2, 'one formatter per format');
+  assert.match(timestamp, /private static let fractionalSeconds: ISO8601DateFormatter = \{/);
+  assert.match(timestamp, /private static let wholeSeconds: ISO8601DateFormatter = \{/);
 });

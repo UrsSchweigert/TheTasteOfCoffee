@@ -435,7 +435,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T8 API client
-- status: in-progress
+- status: needs-mac-verification
 - owner: ios-engineer
 - depends: M2-T7
 - implements: contracts/openapi.yaml 0.5.0 (0.6.0 after M2-T4); docs/05-system-design.md, Security
