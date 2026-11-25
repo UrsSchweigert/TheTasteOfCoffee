@@ -59,7 +59,7 @@ Goal: the repo builds, tests and checks itself; the shared contract exists.
   - Third-party actions are pinned; the workflow has read-only permissions.
 
 ### M0-T6 iOS project skeleton
-- status: todo
+- status: in-progress
 - owner: ios-engineer
 - depends: M0-T1
 - acceptance:
