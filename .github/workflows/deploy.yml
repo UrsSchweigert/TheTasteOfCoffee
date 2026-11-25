@@ -104,7 +104,13 @@ jobs:
           case "$EVENT_NAME" in
             workflow_run)
               [ "$RUN_CONCLUSION" = "success" ] || refuse "CI concluded $RUN_CONCLUSION"
-              [ "$RUN_EVENT" = "push" ] || refuse "the CI run's event is $RUN_EVENT, not push"
+              # A pull request's CI run (a fork's branch may also be called main) is not a
+              # deploy: skip it quietly, without a red run.
+              if [ "$RUN_EVENT" != "push" ]; then
+                echo "deploy=false (the CI run's event is $RUN_EVENT, not push: nothing to deploy)"
+                echo "deploy=false" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
               [ "$RUN_BRANCH" = "main" ] || refuse "the CI run's branch is $RUN_BRANCH, not main"
               [ "$RUN_REPO" = "$REPO" ] || refuse "the CI run is from $RUN_REPO, not $REPO"
               [ "$RUN_PATH" = ".github/workflows/ci.yml" ] || refuse "the run is from $RUN_PATH, not ci.yml"
@@ -149,6 +155,31 @@ jobs:
       id-token: write
       contents: read
     steps:
+      # "Re-run failed jobs" reuses the gate's old outputs. So check the switch again,
+      # and for workflow_run that the commit is still the tip of main, before anything
+      # else and before credentials. Use "Re-run all jobs" to run the gate again.
+      - name: Re-check the gate
+        env:
+          DEPLOY_ENABLED: ${{ vars.CUPMARK_DEPLOY_ENABLED }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          SHA: ${{ needs.gate.outputs.sha }}
+        run: |
+          set -euo pipefail
+          if [ "${DEPLOY_ENABLED:-}" != "true" ]; then
+            echo "::error title=Deploys are off::CUPMARK_DEPLOY_ENABLED is not 'true'; refusing to deploy."
+            exit 1
+          fi
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::The gate gave no commit."; exit 1; }
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            tip="$(gh api "repos/$REPO/git/ref/heads/main" --jq .object.sha)"
+            if [ "$tip" != "$SHA" ]; then
+              echo "::error title=Superseded::main is at $tip, not $SHA; the newer commit deploys after its own CI. Use Re-run all jobs, never Re-run failed jobs."
+              exit 1
+            fi
+          fi
+          echo "Still deploying $SHA."
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.gate.outputs.sha }}
@@ -173,7 +204,9 @@ jobs:
           role-session-name: cupmark-deploy-dev
       - name: Diff and deploy cupmark-dev-core
         env:
-          OFF_CONTACT: ${{ vars.OFF_CONTACT }}
+          # An environment secret: GitHub masks it in the log. A variable would be
+          # printed in clear in the step's env header.
+          OFF_CONTACT: ${{ secrets.OFF_CONTACT }}
           OFF_LOOKUP_CAP: ${{ vars.OFF_LOOKUP_CAP }}
         run: scripts/deploy/deploy-stage.sh dev
       - name: Smoke test GET /health
@@ -195,6 +228,31 @@ jobs:
       id-token: write
       contents: read
     steps:
+      # "Re-run failed jobs" reuses the gate's old outputs. So check the switch again,
+      # and for workflow_run that the commit is still the tip of main, before anything
+      # else and before credentials. Use "Re-run all jobs" to run the gate again.
+      - name: Re-check the gate
+        env:
+          DEPLOY_ENABLED: ${{ vars.CUPMARK_DEPLOY_ENABLED }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          SHA: ${{ needs.gate.outputs.sha }}
+        run: |
+          set -euo pipefail
+          if [ "${DEPLOY_ENABLED:-}" != "true" ]; then
+            echo "::error title=Deploys are off::CUPMARK_DEPLOY_ENABLED is not 'true'; refusing to deploy."
+            exit 1
+          fi
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::The gate gave no commit."; exit 1; }
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            tip="$(gh api "repos/$REPO/git/ref/heads/main" --jq .object.sha)"
+            if [ "$tip" != "$SHA" ]; then
+              echo "::error title=Superseded::main is at $tip, not $SHA; the newer commit deploys after its own CI. Use Re-run all jobs, never Re-run failed jobs."
+              exit 1
+            fi
+          fi
+          echo "Still deploying $SHA."
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.gate.outputs.sha }}
@@ -219,7 +277,9 @@ jobs:
           role-session-name: cupmark-deploy-prod
       - name: Diff and deploy cupmark-prod-core
         env:
-          OFF_CONTACT: ${{ vars.OFF_CONTACT }}
+          # An environment secret: GitHub masks it in the log. A variable would be
+          # printed in clear in the step's env header.
+          OFF_CONTACT: ${{ secrets.OFF_CONTACT }}
           OFF_LOOKUP_CAP: ${{ vars.OFF_LOOKUP_CAP }}
         run: scripts/deploy/deploy-stage.sh prod
       - name: Smoke test GET /health

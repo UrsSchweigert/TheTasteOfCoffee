@@ -47,7 +47,8 @@ export function stackName(stage: StageName, part: string): string {
  * Context key of the operator mailbox for the Open Food Facts User-Agent (docs/05,
  * Barcode lookup): `-c cupmark:offContact=<address>`. It becomes the API function's
  * `OFF_CONTACT`. Not a secret, but kept out of the repository: the deploy workflow
- * passes it from the GitHub environment variable `OFF_CONTACT` (ADR 0019).
+ * passes it from the GitHub environment secret `OFF_CONTACT`, which GitHub masks in the
+ * public log (ADR 0019).
  */
 export const OFF_CONTACT_CONTEXT_KEY = 'cupmark:offContact';
 

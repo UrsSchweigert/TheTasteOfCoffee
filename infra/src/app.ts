@@ -107,7 +107,7 @@ export function checkDeployMode(app: App, settings: OpenFoodFactsSettings): Stag
   }
   if (settings.contact === undefined) {
     throw new Error(
-      `Deploy mode for ${value} needs -c ${OFF_CONTACT_CONTEXT_KEY}=<operator mailbox> (the GitHub environment variable OFF_CONTACT)`,
+      `Deploy mode for ${value} needs -c ${OFF_CONTACT_CONTEXT_KEY}=<operator mailbox> (the GitHub environment secret OFF_CONTACT)`,
     );
   }
   return value;

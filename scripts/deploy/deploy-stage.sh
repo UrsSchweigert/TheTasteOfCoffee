@@ -10,7 +10,8 @@
 # 1. checks the stage, the region (eu-central-1) and that OFF_CONTACT is set;
 # 2. reads the account from the assumed identity (`aws sts get-caller-identity`) and
 #    checks that the identity is CupmarkGitHubDeploy. The account id is never committed;
-#    in GitHub Actions it and the mailbox are masked in the log;
+#    in GitHub Actions it is masked (::add-mask::) before any CDK output. OFF_CONTACT is
+#    an environment secret, which GitHub masks itself;
 # 3. `cdk diff` of the one stack, for the log;
 # 4. `cdk deploy` of the one stack, named explicitly (selector `<stage>/core`), never --all, in deploy mode
 #    (-c cupmark:deploy=<stage>), on the Cupmark bootstrap (qualifier cupmark, stack
@@ -48,12 +49,13 @@ if [[ "${AWS_REGION:-}" != "$REGION" ]]; then
   exit 2
 fi
 if [[ -z "${OFF_CONTACT:-}" ]]; then
-  echo "OFF_CONTACT is not set. Set the variable OFF_CONTACT in the GitHub environment '$STAGE' (infra/README.md)." >&2
+  echo "OFF_CONTACT is not set. Set the secret OFF_CONTACT in the GitHub environment '$STAGE' (infra/README.md)." >&2
   exit 2
 fi
 
 in_actions() { [[ "${GITHUB_ACTIONS:-}" == "true" ]]; }
-# Not secrets, but kept out of this public repository and its public logs.
+# OFF_CONTACT comes from an environment secret, so GitHub already masks it; this mask only
+# covers a run where it was passed some other way. The account is masked below.
 if in_actions; then echo "::add-mask::$OFF_CONTACT"; fi
 
 identity="$(aws sts get-caller-identity --region "$REGION" --query '[Account,Arn]' --output text)"

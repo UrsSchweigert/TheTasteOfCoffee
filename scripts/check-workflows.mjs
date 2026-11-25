@@ -117,12 +117,31 @@ function environmentName(job) {
 }
 
 const STAGE_SCRIPT = /\bscripts\/(?:deploy|smoke)\/[A-Za-z0-9_.-]+\.sh(?:[ \t]+([^\s;&|]+))?/g;
-const CDK_COMMAND = /\bcdk[ \t]+(deploy|destroy|bootstrap)\b[^\n]*/g;
+// A guard against accidents (a stray --all, a stack of the other stage, a destroy), not
+// the security control: that is the role's trust plus the environments' branch limits and
+// reviewers (ADR 0018). It knows the usual forms: `cdk ...`, `npx cdk ...`,
+// `npx cdk@<version> ...`, `npm run cdk -- ...` and a path ending in `/cdk`, with options
+// before the verb (`npx cdk -c stage=dev deploy`) and `\` line continuations.
+const CDK_INVOCATION = /(?:^|[^\w.-])cdk(?:@[^\s]*)?(?=\s|$)/;
+const CDK_VERBS = ['deploy', 'destroy', 'bootstrap'];
+
+/** For each cdk invocation in a script: the verb (deploy, destroy, bootstrap) and the rest of its line. */
+function cdkCommands(run) {
+  const commands = [];
+  for (const line of run.replace(/\\\r?\n/g, ' ').split('\n')) {
+    const m = CDK_INVOCATION.exec(line);
+    if (m === null) continue;
+    const rest = line.slice(m.index + m[0].length);
+    const tokens = rest.split(/\s+/).map((t) => t.replace(/^['"]|['"]$/g, ''));
+    const verb = tokens.find((t) => CDK_VERBS.includes(t));
+    if (verb !== undefined) commands.push({ verb, line: rest });
+  }
+  return commands;
+}
 
 /** Findings for the stage commands of one `run` script in a job with literal environment `env`. */
 function checkStageCommands(run, env, where, findings) {
-  for (const m of run.matchAll(CDK_COMMAND)) {
-    const [line, verb] = m;
+  for (const { verb, line } of cdkCommands(run)) {
     if (verb !== 'deploy') {
       findings.push(`${where}: runs cdk ${verb}, which never runs in a workflow`);
       continue;
@@ -130,7 +149,7 @@ function checkStageCommands(run, env, where, findings) {
     if (/(^|\s)--all\b/.test(line)) findings.push(`${where}: cdk deploy --all (name the stage stack)`);
     // A stage stack is selected by its hierarchical id, `<stage>/core` (the CLI does not
     // match stack names inside a Stage); `cupmark-<stage>-core` is counted too.
-    const stacks = [...line.matchAll(/(?:\bcupmark-[a-z0-9-]+|\b[a-z0-9-]+\/[a-z0-9-]+)/g)].map((s) => s[0]);
+    const stacks = [...line.matchAll(/(?:\bcupmark-[a-z0-9-]+|\b[a-z0-9-]+\/[a-z0-9*-]+)/g)].map((x) => x[0]);
     const ok = env !== undefined && stacks.length === 1 && [`${env}/core`, `cupmark-${env}-core`].includes(stacks[0]);
     if (!ok) {
       findings.push(`${where}: cdk deploy must name exactly the stack <environment>/core of the job's environment (${env ?? 'none'})`);

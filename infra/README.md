@@ -360,9 +360,11 @@ ADR 0019. No agent and no laptop deploys a stage stack: only this workflow does,
   5. runs `scripts/deploy/deploy-stage.sh <stage>`, which:
      - checks the region and that `OFF_CONTACT` is set;
      - takes the account from `aws sts get-caller-identity` and checks that it is `CupmarkGitHubDeploy`;
-     - masks the account and the mailbox in the log;
+     - masks the account id (`::add-mask::`) before any CDK output. The mailbox needs no step of its own: it is an environment secret, which GitHub masks;
      - runs `npx cdk diff <stage>/core`, then `npx cdk deploy <stage>/core --exclusively --require-approval never --ci`, both with `-c stage=<stage> -c cupmark:deploy=<stage> -c cupmark:<stage>:account=<id> -c cupmark:offContact=...` (and `-c cupmark:offLookupCap=...` if set), `--toolkit-stack-name CDKToolkit-cupmark` and `--no-lookups`. The synthesizer is `DefaultStackSynthesizer` with qualifier `cupmark`, so the CLI uses the `cdk-cupmark-*` roles;
   6. runs `scripts/smoke/health.sh <stage>`. It reads the output `ApiUrl` of `cupmark-<stage>-core` with `aws cloudformation describe-stacks`, as the bootstrap's read-only lookup role (the GitHub role may only assume bootstrap roles). It then expects `GET /health` to answer 200 `application/json` `{"status":"ok"}`, with 5 attempts 3, 6, 12 and 24 seconds apart.
+- **Re-runs.** Use **Re-run all jobs**, never "Re-run failed jobs": the latter reuses the gate's old outputs. As a backstop, each deploy job's first step, before checkout and credentials, checks the switch again, and for a `workflow_run` that its commit is still the tip of `main`. Otherwise it fails.
+- **Pull requests.** A CI run of a pull request (a fork's branch may also be called `main`) makes the gate decide `deploy=false` quietly, with a green run.
 - `scripts/check-workflows.mjs` treats `deploy.yml` as a strict file. Only the two deploy jobs may grant `id-token: write`. A `cdk deploy` with `--all`, or one that names another stack than `<environment>/core`, fails it. So do any `cdk destroy` or `cdk bootstrap`, and a deploy or smoke script that names another stage than its job's environment. Its tests run the gate's shell against a fake `gh`. `test/deploy-scripts.test.ts` runs the deploy and smoke scripts against fake `aws`, `npx` and `curl`.
 
 **What the owner sets in GitHub** (Settings → Environments and Settings → Secrets and variables → Actions):
@@ -370,7 +372,7 @@ ADR 0019. No agent and no laptop deploys a stage stack: only this workflow does,
 | Where | Name | Value |
 | --- | --- | --- |
 | Environments | `dev`, `prod` | Both: deployment branches limited to `main` only (issue #46). `prod`: you as required reviewer. For the first deploy, `dev` too (below). |
-| Environment variable, in `dev` and in `prod` | `OFF_CONTACT` | The operator mailbox for the Open Food Facts User-Agent, for example a dedicated address. Not a secret, but never committed (docs/05). Missing or invalid: the deploy fails at synth. |
+| Environment secret, in `dev` and in `prod` | `OFF_CONTACT` | The operator mailbox for the Open Food Facts User-Agent, for example a dedicated address. Never committed (docs/05). It is a secret, not a variable, because GitHub prints a step's variables in clear in the public log header; a secret is masked everywhere, the `cdk diff` of the function's environment included. Missing or invalid: the deploy fails at synth. |
 | Environment variable, optional, per environment | `OFF_LOOKUP_CAP` | Open Food Facts fetches per user and UTC day, 0 to 10000. Unset means the backend's default of 50. |
 | Repository variable | `CUPMARK_DEPLOY_ENABLED` | `true`, and only once every other prerequisite is done (the last step below). Unset or any other value: nothing deploys. |
 | Repository secret | `AWS_DEPLOY_ROLE_ARN` | `arn:aws:iam::<account>:role/CupmarkGitHubDeploy`. Repository level, because both environments use the one role (ADR 0018). The same secret serves the AWS OIDC check. The `AWS_REGION` secret is not used by the deploy: its region is written in the workflow. |
@@ -383,7 +385,7 @@ ADR 0019. No agent and no laptop deploys a stage stack: only this workflow does,
    Steps 1 to 3 on the AWS side are one script: "First-deploy setup (one script)" above.
 4. The four SecureStrings, `/cupmark/{dev,prod}/cursor-key` and `/cupmark/{dev,prod}/apple-sign-in-key` (done 2026-11-25, docs/07).
 5. The Lambda concurrency quota of at least 120 (done: 1000).
-6. The secret `AWS_DEPLOY_ROLE_ARN` and the variable `OFF_CONTACT` in both environments (table above).
+6. The repository secret `AWS_DEPLOY_ROLE_ARN`, and the environment secret `OFF_CONTACT` in both `dev` and `prod` (table above).
 7. Last: the repository variable `CUPMARK_DEPLOY_ENABLED` = `true`. Until then, merges and pushes to `main` deploy nothing.
 
 **Approving the first deploy.** Two safeguards keep the first dev deploy from running before you are ready.
@@ -391,7 +393,7 @@ ADR 0019. No agent and no laptop deploys a stage stack: only this workflow does,
 - The off switch: nothing deploys until you set `CUPMARK_DEPLOY_ENABLED` to `true`.
 - A reviewer on `dev`: add yourself as a required reviewer of `dev` too, before you set the switch.
 
-With the switch set, the next push to `main` that passes CI starts a deploy. To start one without a push, use Run workflow with stage `dev`. The run then shows "Waiting for review" at the job `deploy dev`. Open the run, read the gate's line ("deploy=true stage=dev sha=..."), and approve with Review deployments → `dev` → Approve and deploy, once the prerequisites above are done. Watch the `cdk diff` and the deploy in the log; the smoke test must end with `GET /health: 200`. Afterwards you may remove yourself as reviewer of `dev`; `prod` keeps you. If the deploy fails, nothing is retried on its own: fix it in a pull request, or re-run the job.
+With the switch set, the next push to `main` that passes CI starts a deploy. To start one without a push, use Run workflow with stage `dev`. The run then shows "Waiting for review" at the job `deploy dev`. Open the run, read the gate's line ("deploy=true stage=dev sha=..."), and approve with Review deployments → `dev` → Approve and deploy, once the prerequisites above are done. Watch the `cdk diff` and the deploy in the log; the smoke test must end with `GET /health: 200`. Afterwards you may remove yourself as reviewer of `dev`; `prod` keeps you. If the deploy fails, nothing is retried on its own: fix it in a pull request, or use Re-run all jobs.
 
 **Deploying prod.** Actions → Deploy → Run workflow, branch `main`, stage `prod`, commit empty (the tip of `main`) or a SHA. Approve the `deploy prod` job when it waits.
 

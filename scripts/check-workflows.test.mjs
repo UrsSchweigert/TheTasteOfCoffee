@@ -465,18 +465,32 @@ for (const [stage, id] of Object.entries(DEPLOY_JOBS)) {
       'role-session-name': `cupmark-deploy-${stage}`,
     });
     // Order: install and build before any credentials, then deploy, then the smoke test.
-    const order = [uses('actions/checkout@'), uses('actions/setup-node@'), runs('npm ci'), runs('npm run build'), uses('aws-actions/configure-aws-credentials@'), runs('scripts/deploy/deploy-stage.sh'), runs('scripts/smoke/health.sh')];
+    const order = [steps.findIndex((st) => st.name === 'Re-check the gate'), uses('actions/checkout@'), uses('actions/setup-node@'), runs('npm ci'), runs('npm run build'), uses('aws-actions/configure-aws-credentials@'), runs('scripts/deploy/deploy-stage.sh'), runs('scripts/smoke/health.sh')];
     assert.ok(order.every((i) => i >= 0), JSON.stringify(order));
     assert.deepEqual([...order].sort((a, b) => a - b), order);
     assert.equal(steps.filter((st) => typeof st.run === 'string' && st.run.includes('npm ci')).length, 2);
     assert.deepEqual(steps.filter((st) => st['working-directory'] !== undefined).map((st) => st['working-directory']), ['backend', 'backend', 'infra']);
     const deployStep = steps[runs('scripts/deploy/deploy-stage.sh')];
     assert.equal(deployStep.run, `scripts/deploy/deploy-stage.sh ${stage}`);
-    assert.deepEqual(deployStep.env, { OFF_CONTACT: '${{ vars.OFF_CONTACT }}', OFF_LOOKUP_CAP: '${{ vars.OFF_LOOKUP_CAP }}' });
+    // The mailbox is an environment secret (masked); a variable would be printed in clear.
+    assert.deepEqual(deployStep.env, { OFF_CONTACT: '${{ secrets.OFF_CONTACT }}', OFF_LOOKUP_CAP: '${{ vars.OFF_LOOKUP_CAP }}' });
+    assert.equal(steps[0].name, 'Re-check the gate', 'the re-check is the first step');
+    assert.deepEqual(steps[0].env, {
+      DEPLOY_ENABLED: '${{ vars.CUPMARK_DEPLOY_ENABLED }}',
+      GH_TOKEN: '${{ github.token }}',
+      REPO: '${{ github.repository }}',
+      EVENT_NAME: '${{ github.event_name }}',
+      SHA: '${{ needs.gate.outputs.sha }}',
+    });
     assert.equal(steps[runs('scripts/smoke/health.sh')].run, `scripts/smoke/health.sh ${stage}`);
     // No secret or variable other than these reaches the job.
     const text = JSON.stringify(job);
-    assert.deepEqual([...new Set(text.match(/\b(?:secrets|vars)\.[A-Z_]+/g))].sort(), ['secrets.AWS_DEPLOY_ROLE_ARN', 'vars.OFF_CONTACT', 'vars.OFF_LOOKUP_CAP']);
+    assert.deepEqual([...new Set(text.match(/\b(?:secrets|vars)\.[A-Z_]+/g))].sort(), [
+      'secrets.AWS_DEPLOY_ROLE_ARN',
+      'secrets.OFF_CONTACT',
+      'vars.CUPMARK_DEPLOY_ENABLED',
+      'vars.OFF_LOOKUP_CAP',
+    ]);
   });
 }
 
@@ -551,8 +565,6 @@ test('gate: a successful CI run of a push to main deploys exactly its head_sha t
 
 test('gate: a CI run that is not a successful push to main of this repository, from ci.yml, never deploys', () => {
   for (const [key, value] of [
-    ['RUN_EVENT', 'pull_request'],
-    ['RUN_EVENT', 'workflow_dispatch'],
     ['RUN_BRANCH', 'feature'],
     ['RUN_REPO', 'fork/r'],
     ['RUN_PATH', '.github/workflows/other.yml'],
@@ -620,7 +632,9 @@ test('gate: without CUPMARK_DEPLOY_ENABLED exactly true, nothing deploys and the
 test('deploy.yml: the switch is read from vars only, and every deploy job needs the gate to say deploy=true', () => {
   assert.equal(gateStep.env.DEPLOY_ENABLED, '${{ vars.CUPMARK_DEPLOY_ENABLED }}');
   const text = readWorkflow('deploy.yml');
-  assert.deepEqual(text.match(/CUPMARK_DEPLOY_ENABLED\b[^\n]*\}\}/g), ['CUPMARK_DEPLOY_ENABLED }}']);
+  // The gate and the re-check step of each deploy job: always vars.
+  assert.deepEqual(text.match(/[^\s]*CUPMARK_DEPLOY_ENABLED\b[^\n]*\}\}/g), Array(3).fill('vars.CUPMARK_DEPLOY_ENABLED }}'));
+  assert.doesNotMatch(text, /vars\.OFF_CONTACT/, 'the mailbox is a secret, never a variable');
   assert.doesNotMatch(text, /inputs\.[A-Za-z_]*(deploy|enable)/i);
   assert.deepEqual(Object.keys(deploy.on.workflow_dispatch.inputs).sort(), ['commit', 'stage']);
   // The off check comes before any other decision in the gate script.
@@ -633,4 +647,95 @@ test('deploy.yml: the switch is read from vars only, and every deploy job needs 
     assert.match(job.if, /needs\.gate\.outputs\.deploy == 'true'/, id);
     assert.ok(job.environment === 'dev' || job.environment === 'prod', id);
   }
+});
+
+test('gate: a CI run of a pull request (a fork branch may be called main) is skipped quietly, not failed', () => {
+  for (const event of ['pull_request', 'pull_request_review', 'workflow_dispatch']) {
+    const r = runGate({ ...RUN_OK, RUN_EVENT: event, RUN_REPO: 'fork/r' });
+    assert.equal(r.status, 0, `${event}: ${r.stdout}`);
+    assert.deepEqual(r.out, { deploy: 'false' });
+    assert.doesNotMatch(r.stdout, /Not deploying/);
+    assert.equal(r.calls, '');
+  }
+});
+
+// The re-check at the start of each deploy job: "Re-run failed jobs" reuses old gate outputs.
+function runRecheck(job, env, tip = HEAD) {
+  const step = deploy.jobs[job].steps.find((st) => st.name === 'Re-check the gate');
+  const dir = mkdtempSync(join(tmpdir(), 'deploy-recheck-'));
+  try {
+    const bin = join(dir, 'bin');
+    mkdirSync(bin);
+    const log = join(dir, 'gh.log');
+    writeFileSync(
+      join(bin, 'gh'),
+      `#!/usr/bin/env bash
+echo "gh $*" >> "${log}"
+case "$*" in
+  "api repos/o/r/git/ref/heads/main --jq .object.sha") echo "${tip}" ;;
+  *) echo "unexpected gh call: $*" >&2; exit 99 ;;
+esac
+`,
+      { mode: 0o755 },
+    );
+    const merged = Object.fromEntries(
+      Object.entries({ DEPLOY_ENABLED: 'true', GH_TOKEN: 'x', REPO: 'o/r', SHA: HEAD, PATH: `${bin}:${process.env.PATH}`, ...env }).filter(([, v]) => v !== undefined),
+    );
+    const r = runShell(step.run, merged, dir);
+    let calls = '';
+    try {
+      calls = readFileSync(log, 'utf8');
+    } catch {
+      calls = '';
+    }
+    return { ...r, calls };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+for (const job of Object.values(DEPLOY_JOBS)) {
+  test(`${job}: the re-check passes for the tip of main, and fails a re-run once deploys are off or main moved on`, () => {
+    assert.equal(runRecheck(job, { EVENT_NAME: 'workflow_run' }).status, 0);
+    assert.equal(runRecheck(job, { EVENT_NAME: 'workflow_dispatch', SHA: OLD }).status, 0, 'a rollback is not a tip');
+    for (const value of [undefined, 'false', 'TRUE']) {
+      const off = runRecheck(job, { EVENT_NAME: 'workflow_run', DEPLOY_ENABLED: value });
+      assert.equal(off.status, 1, String(value));
+      assert.match(off.stdout, /Deploys are off/);
+      assert.equal(off.calls, '');
+    }
+    const moved = runRecheck(job, { EVENT_NAME: 'workflow_run' }, OLD);
+    assert.equal(moved.status, 1);
+    assert.match(moved.stdout, /Superseded.*Re-run all jobs/);
+    assert.equal(runRecheck(job, { EVENT_NAME: 'workflow_run', SHA: '' }).status, 1);
+  });
+}
+
+test('stage commands: cdk is found with options before the verb, npx cdk@version, npm run cdk -- and continuations', () => {
+  const job = (env, run) => `
+name: d
+on: workflow_dispatch
+permissions: {}
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: ${env}
+    steps:
+      - run: |
+${run.split('\n').map((l) => `          ${l}`).join('\n')}
+`;
+  const check = (env, run) => checkWorkflow(job(env, run), { strict: true });
+  has(check('dev', 'npx cdk -c stage=dev deploy --all'), 'cdk deploy --all');
+  has(check('dev', 'npx cdk --app "node x" -c stage=prod deploy prod/core'), 'must name exactly the stack');
+  has(check('dev', 'npx cdk@2.1149.0 destroy dev/core'), 'runs cdk destroy');
+  has(check('dev', 'npm run cdk -- deploy cupmark-prod-core'), 'must name exactly the stack');
+  has(check('dev', 'npm run cdk -- bootstrap'), 'runs cdk bootstrap');
+  has(check('dev', './node_modules/.bin/cdk deploy --all'), 'cdk deploy --all');
+  has(check('dev', 'npx cdk \\\n  deploy \\\n  --all'), 'cdk deploy --all');
+  has(check('dev', 'cd infra && npx cdk -v "deploy" "prod/core"'), 'must name exactly the stack');
+  assert.deepEqual(check('dev', 'npx cdk -c stage=dev deploy dev/core --require-approval never'), []);
+  assert.deepEqual(check('dev', 'npx cdk@2.1149.0 \\\n  deploy dev/core'), []);
+  // Not cdk invocations: no finding.
+  assert.deepEqual(check('dev', 'npm i aws-cdk-lib\ncat cdk.json\nnpx cdk synth -c x=deploy\necho cdk-deploy'), []);
 });
