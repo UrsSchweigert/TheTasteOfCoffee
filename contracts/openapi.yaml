@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Cupmark API
-  version: 0.3.0
+  version: 0.3.1
   description: >-
     Free-tier API of Cupmark (tasks M0-T2 and M1-T8). No request carries free
     text: every string a client sends is an id from the closed vocabulary in
@@ -230,6 +230,11 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
     put:
       operationId: replaceShelfEntry
+      description: >-
+        Replaces the shelf entry. bean_id may change only while no brew
+        references the entry; otherwise the server answers 409 (D14 in
+        docs/07-open-questions.md). To correct the bean, delete the brews or
+        add a new shelf entry.
       parameters:
         - $ref: '#/components/parameters/ShelfEntryIdPath'
       requestBody:
@@ -251,6 +256,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          description: bean_id would change while brews reference this shelf entry (D14).
         '429':
           $ref: '#/components/responses/TooManyRequests'
     delete:

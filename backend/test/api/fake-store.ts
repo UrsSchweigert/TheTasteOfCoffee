@@ -2,7 +2,8 @@
 // the repository's observable rules: one partition per UserId, newest first,
 // the repository's own cursor format (base64url sort key, checked on use),
 // references (a shelf entry needs a known bean, a brew needs the caller's
-// shelf entry) and the 409 on deleting a shelf entry that brews reference.
+// shelf entry) and the 409 on deleting a shelf entry that brews reference or
+// changing its bean (D14).
 // The real repository is tested against DynamoDB Local.
 import type { UserId } from '../../src/auth/user-id.ts';
 import type { Brew, BrewInput, Recipe, RecipeInput, ShelfEntry, ShelfEntryInput } from '../../src/generated/contract.ts';
@@ -11,6 +12,7 @@ import { newUlid } from '../../src/ids/ulid.ts';
 import {
   BeanNotFoundError,
   ItemNotFoundError,
+  ShelfEntryBeanLockedError,
   ShelfEntryInUseError,
   ShelfEntryNotFoundError,
   brewSortKey,
@@ -100,6 +102,9 @@ export class FakeStore implements ApiStore {
     const p = this.#of(user);
     if (!p.shelf.has(id)) return Promise.reject(new ItemNotFoundError('no such item'));
     if (!this.beans.has(input.bean_id)) return Promise.reject(new BeanNotFoundError('no such bean'));
+    if (p.shelf.get(id)?.values.bean_id !== input.bean_id && this.#brewCount(p, id) > 0) {
+      return Promise.reject(new ShelfEntryBeanLockedError('bean locked'));
+    }
     const entry = { shelf_entry_id: id, values: structuredClone(input) };
     p.shelf.set(id, entry);
     return Promise.resolve(structuredClone(entry));

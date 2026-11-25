@@ -246,7 +246,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
 
 
 ### M1-T10 Block changing the bean of a shelf entry that has brews
-- status: todo
+- status: done
 - owner: contract-keeper, then backend-engineer
 - depends: M1-T5
 - implements: docs/07-open-questions.md D14

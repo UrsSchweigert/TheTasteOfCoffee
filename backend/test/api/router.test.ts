@@ -177,6 +177,55 @@ describe('references', () => {
   });
 });
 
+describe('changing the bean of a shelf entry (D14)', () => {
+  const OTHER_BEAN = '01JDQ8Z6V3W4X5Y6Z7A8B9C0DG';
+
+  it('is 200 while no brew references the entry', async () => {
+    const h = harness();
+    h.store.beans.add(OTHER_BEAN);
+    const shelf = await newShelf(h);
+    const response = await h.call('PUT', `/shelf/${shelf}`, { json: shelfBody({ bean_id: OTHER_BEAN }) });
+    expect(response.status).toBe(200);
+    expect(ShelfEntrySchema.parse(response.body).values.bean_id).toBe(OTHER_BEAN);
+  });
+
+  it('is 409 with no body while brews reference the entry, and changes nothing', async () => {
+    const h = harness();
+    h.store.beans.add(OTHER_BEAN);
+    const shelf = await newShelf(h);
+    const brew = BrewSchema.parse((await h.call('POST', '/brews', { json: brewBody(shelf) })).body);
+    const before = h.store.snapshot(verifiedUserId(ALICE_SUB));
+    const conflict = await h.call('PUT', `/shelf/${shelf}`, { json: shelfBody({ bean_id: OTHER_BEAN }) });
+    expect(conflict.status).toBe(409);
+    expect(conflict.result.body).toBeUndefined();
+    expect(h.store.snapshot(verifiedUserId(ALICE_SUB))).toEqual(before);
+    expect(h.logs.at(-1)).toMatchObject({ operation: 'replaceShelfEntry', status: 409, error: 'ShelfEntryBeanLockedError' });
+
+    // Any other change still succeeds; after the brews are gone the bean may change.
+    expect((await h.call('PUT', `/shelf/${shelf}`, { json: shelfBody({ price_band: 'from_80' }) })).status).toBe(200);
+    await h.call('DELETE', `/brews/${brew.brew_id}`);
+    expect((await h.call('PUT', `/shelf/${shelf}`, { json: shelfBody({ bean_id: OTHER_BEAN }) })).status).toBe(200);
+  });
+
+  it('a missing entry and an unknown bean stay 404', async () => {
+    const h = harness();
+    expect((await h.call('PUT', `/shelf/${ID}`, { json: shelfBody() })).status).toBe(404);
+    const shelf = await newShelf(h);
+    await h.call('POST', '/brews', { json: brewBody(shelf) });
+    expect((await h.call('PUT', `/shelf/${shelf}`, { json: shelfBody({ bean_id: ID }) })).status).toBe(404);
+  });
+
+  it('is not retried', async () => {
+    const h = harness();
+    h.store.beans.add(OTHER_BEAN);
+    const shelf = await newShelf(h);
+    await h.call('POST', '/brews', { json: brewBody(shelf) });
+    const calls = h.store.calls.length;
+    expect((await h.call('PUT', `/shelf/${shelf}`, { json: shelfBody({ bean_id: OTHER_BEAN }) })).status).toBe(409);
+    expect(h.store.calls.slice(calls)).toEqual(['replaceShelfEntry']);
+  });
+});
+
 describe('another user’s data is unreachable', () => {
   it('Bob can neither read, replace, delete, list nor reference Alice’s items', async () => {
     const h = harness();

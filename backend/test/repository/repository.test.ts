@@ -16,6 +16,7 @@ import {
   ItemExistsError,
   ItemNotFoundError,
   Repository,
+  ShelfEntryBeanLockedError,
   ShelfEntryInUseError,
   ShelfEntryNotFoundError,
   WriteConflictError,
@@ -193,6 +194,36 @@ describe('references under a race (ADR 0012)', () => {
     await expect(racing([], cancelled(0, 2)).repo.createShelfEntry(ALICE, values)).rejects.toThrow(BeanNotFoundError);
     await expect(racing([], cancelled(0, 2)).repo.replaceShelfEntry(ALICE, ID, values)).rejects.toThrow(BeanNotFoundError);
     await expect(racing([], cancelled(1, 2)).repo.replaceShelfEntry(ALICE, ID, values)).rejects.toThrow(ItemNotFoundError);
+  });
+
+  it('a shelf replace may change the bean only while no brew is counted, in one condition (D14)', async () => {
+    const { repo, sent } = stub(() => ({}));
+    const other = '01JDQ8Z6V3W4X5Y6Z7A8B9C0DG';
+    await repo.replaceShelfEntry(ALICE, ID, { ...shelfValues, bean_id: other });
+    expect(sent).toHaveLength(1);
+    const items = (sent[0]?.TransactItems ?? []) as Record<string, Record<string, unknown>>[];
+    expect(items[1]?.Update).toMatchObject({
+      Key: { pk: userPk(ALICE), sk: `SHELF#${ID}` },
+      ConditionExpression: 'attribute_exists(pk) AND (beanId = :bean OR attribute_not_exists(brewCount) OR brewCount = :zero)',
+      ExpressionAttributeValues: { ':bean': other, ':zero': 0 },
+    });
+  });
+
+  it('a failed shelf replace condition: gone is 404, an unknown bean is 404, otherwise the bean is locked', async () => {
+    const values = { ...shelfValues, bean_id: ID };
+    await expect(racing([{}], cancelled(1, 2)).repo.replaceShelfEntry(ALICE, ID, values)).rejects.toThrow(ItemNotFoundError);
+    const locked = racing([shelfItem], cancelled(1, 2));
+    await expect(locked.repo.replaceShelfEntry(ALICE, ID, values)).rejects.toThrow(ShelfEntryBeanLockedError);
+    // One transaction, then one consistent read of the entry; no write after the read.
+    expect(locked.sent.map((input) => ('TransactItems' in input ? 'transact' : 'get'))).toEqual(['transact', 'get']);
+    expect(locked.sent[1]).toMatchObject({ Key: { pk: userPk(ALICE), sk: `SHELF#${ID}` }, ConsistentRead: true });
+    const both = new TransactionCanceledException({
+      message: 'cancelled',
+      $metadata: {},
+      CancellationReasons: [{ Code: 'ConditionalCheckFailed' }, { Code: 'ConditionalCheckFailed' }],
+    });
+    await expect(racing([shelfItem], both).repo.replaceShelfEntry(ALICE, ID, values)).rejects.toThrow(BeanNotFoundError);
+    await expect(racing([{}], both).repo.replaceShelfEntry(ALICE, ID, values)).rejects.toThrow(ItemNotFoundError);
   });
 
   it('a failed shelf delete is 404 if the entry is gone and in use if it is there', async () => {
