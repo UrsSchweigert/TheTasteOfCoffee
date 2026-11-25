@@ -30,3 +30,7 @@ What this costs, what it rules out, when to revisit.
 - [0002 Isolate from existing AWS resources](0002-isolate-from-existing-aws-resources.md)
 - [0003 Milk is a pick list of dairy, plant and nut drinks](0003-milk-as-pick-list.md)
 - [0004 How the API represents vocabulary values](0004-api-representation-of-vocabulary-values.md)
+- [0005 Open Food Facts text is stored and shown; the server fetches it](0005-open-food-facts-text-in-the-catalogue.md)
+- [0006 Origin and variety pick lists in vocabulary v2; roaster comes from Open Food Facts](0006-origin-variety-lists-and-roaster-from-open-food-facts.md)
+- [0007 The health route needs no token](0007-unauthenticated-health-route.md)
+- [0008 MPL-2.0 is allowed in dev-only tooling](0008-mpl-licensed-dev-tooling.md)
