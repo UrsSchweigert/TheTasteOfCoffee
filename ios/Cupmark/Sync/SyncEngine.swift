@@ -33,6 +33,9 @@ extension StoredRecipe: ServerIdentified {}
 ///   app was ended mid-request) is checked first: the engine lists the resource and adopts a
 ///   server item that matches and has no local counterpart, instead of creating a duplicate.
 ///
+/// - When the outbox is empty the run loop runs `onIdle` in the drain's slot: `SyncHost`
+///   pulls there (M2-T17), so a pull never overlaps a drain and local writes go out first.
+///
 /// It runs on the main actor, where the app's `AccountStore` and its `ModelContext` live, so
 /// the screens and the engine work on one context and never see stale copies of each
 /// other's changes. Only the requests leave the main actor. Every item and operation is
@@ -66,6 +69,23 @@ final class SyncEngine {
 
     /// Called once when the engine stops because the user must sign in again.
     var onSignInRequired: (@MainActor () -> Void)?
+
+    /// What `onIdle` asks the engine to do next.
+    enum IdleOutcome: Equatable, Sendable {
+        /// Rest until a `kick()`, the backoff or `idleWait`, as usual.
+        case done
+        /// The server refused the token: stop like a drain that got `unauthorized`.
+        case signInRequired
+    }
+
+    /// Work that must not overlap a drain, run by the run loop each time the outbox is empty
+    /// (`SyncHost` pulls here, M2-T17). While it runs, `drain()` answers `.busy`; a `kick()`
+    /// meanwhile makes the loop drain again as soon as it returns.
+    var onIdle: (@MainActor () async -> IdleOutcome)?
+
+    /// How many operations the engine finished (sent, parked or dropped) since it was made.
+    /// `SyncHost` pulls again when this has changed since its last pull.
+    private(set) var finishedOperations = 0
 
     private(set) var isStopped = false
     private(set) var needsSignIn = false
@@ -126,6 +146,9 @@ final class SyncEngine {
         while !Task.isCancelled, !isStopped {
             switch await drain() {
             case .idle:
+                guard await runIdleWork() else {
+                    return
+                }
                 await rest(for: idleWait)
             case .waiting(let until):
                 await rest(for: max(0, until.timeIntervalSince(now())))
@@ -135,6 +158,22 @@ final class SyncEngine {
                 return
             }
         }
+    }
+
+    /// Runs `onIdle` in the drain's slot. False when the engine must stop: sign-in required.
+    private func runIdleWork() async -> Bool {
+        guard let onIdle, !isStopped, !Task.isCancelled, !isDraining else {
+            return true
+        }
+        isDraining = true
+        let outcome = await onIdle()
+        isDraining = false
+        if outcome == .signInRequired, !isStopped {
+            needsSignIn = true
+            onSignInRequired?()
+            return false
+        }
+        return true
     }
 
     private func rest(for seconds: TimeInterval) async {
@@ -201,6 +240,7 @@ final class SyncEngine {
             }
             switch outcome {
             case .next:
+                finishedOperations += 1
                 continue
             case .retry:
                 guard let retried = try? store.outboxOperation(sequence: sequence) else {
