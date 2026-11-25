@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "status": "draft",
+  "status": "published",
   "processes": [
     { "id": "washed" },
     { "id": "natural" },

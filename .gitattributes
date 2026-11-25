@@ -1,0 +1,3 @@
+# Published vocabulary versions are locked by sha256 (contracts/vocabulary/v<N>.lock.json).
+# Keep LF in every checkout so the bytes on disk match the lock.
+contracts/vocabulary/** text eol=lf

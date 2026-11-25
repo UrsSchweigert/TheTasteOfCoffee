@@ -2,9 +2,15 @@
 
 A published version is immutable. Every change to a list goes into the next `v<N>/` directory and is recorded here. Removing or renaming an id is a breaking change and needs an ADR in `docs/decisions/`.
 
-## v1 (draft, not published)
+## 2026-11-25: v1 published
 
-First version, task M0-T1. Status stays `draft` in every file until the owner approves the flavour-note list (`docs/07-open-questions.md`, "Things only a human can do"). While it is `draft`, v1 may still be edited in place.
+- The owner approved v1 as proposed: the flavour notes, processes, roast levels, the EUR-per-kg price bands, and the ranges and steps. No id, value or range changed; only `"status"` went from `draft` to `published` in all five files.
+- v1 is now immutable. Its files are locked by sha256 in `v1.lock.json`, and the tests fail if any file in `v1/` is changed, added or removed, or if a published version has no lock. See `../README.md`, "Publishing a version".
+- Not breaking: no id was added, removed or renamed.
+
+## v1
+
+First version, task M0-T1. Published on 2026-11-25 (see above); before that it was `draft` and could be edited in place.
 
 Taken from `docs/04-specification.md`:
 

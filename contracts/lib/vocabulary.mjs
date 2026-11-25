@@ -38,8 +38,30 @@ export function listVersions(vocabularyDir = VOCABULARY_DIR) {
     .sort((a, b) => a - b);
 }
 
-/** `{ <file name without .json>: parsed content }` for one version. */
+/**
+ * Problems with the entries of one `v<N>/` directory. Only regular files
+ * named `<name>.json` with a snake_case name belong there: a subdirectory,
+ * a symlink, a hidden file or any other file name is a problem, so nothing
+ * can sit in a version without being checked.
+ */
+export function checkVersionEntries(version, vocabularyDir = VOCABULARY_DIR) {
+  const problems = [];
+  const dir = join(vocabularyDir, `v${version}`);
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const isVocabularyFile =
+      entry.isFile() && entry.name.endsWith('.json') && ID_PATTERN.test(entry.name.slice(0, -'.json'.length));
+    if (!isVocabularyFile) problems.push(`v${version}/${entry.name}: unexpected entry, only <name>.json files belong here`);
+  }
+  return problems.sort();
+}
+
+/**
+ * `{ <file name without .json>: parsed content }` for one version.
+ * Throws if the directory holds anything but vocabulary files.
+ */
 export function loadVocabulary(version, vocabularyDir = VOCABULARY_DIR) {
+  const problems = checkVersionEntries(version, vocabularyDir);
+  if (problems.length > 0) throw new Error(problems.join('\n'));
   return readJsonDir(join(vocabularyDir, `v${version}`), '.json');
 }
 
@@ -88,30 +110,35 @@ export function validateVocabulary(files, schemas, expectedVersion) {
 }
 
 /**
- * Finds every id list in the vocabulary. An id list is any array of objects
- * that carry an `id`; its namespace is the property name that holds it.
- * Nested lists (flavour notes inside categories) are merged per namespace.
+ * Finds every id list in the vocabulary. Every array in a vocabulary file
+ * must be an id list: a non-empty array of objects that each carry an `id`.
+ * Its namespace is the property name that holds it. Nested lists (flavour
+ * notes inside categories) are merged per namespace.
  * Returns `{ lists: { <namespace>: [ids in file order] }, problems }`.
- * Problems: a namespace defined in two files, a duplicate id in a namespace,
- * an id that is not lowercase snake_case.
+ * Problems: an array that is not an id list (empty, nested arrays, strings,
+ * numbers, or objects without `id`), a namespace defined in two files,
+ * a duplicate id in a namespace, an id that is not lowercase snake_case.
  */
 export function collectIds(files) {
   const lists = {};
   const owner = {};
   const problems = [];
+  const isIdItem = (item) => item !== null && typeof item === 'object' && !Array.isArray(item) && 'id' in item;
 
-  const walk = (value, fileName) => {
+  const walk = (value, fileName, path) => {
     if (Array.isArray(value)) {
-      for (const item of value) walk(item, fileName);
+      value.forEach((item, index) => walk(item, fileName, `${path}/${index}`));
       return;
     }
     if (value === null || typeof value !== 'object') return;
     for (const [key, child] of Object.entries(value)) {
-      const isIdList =
-        Array.isArray(child) &&
-        child.length > 0 &&
-        child.every((item) => item !== null && typeof item === 'object' && 'id' in item);
-      if (isIdList) {
+      const childPath = `${path}/${key}`;
+      if (Array.isArray(child) && (child.length === 0 || !child.every(isIdItem))) {
+        problems.push(`${fileName}.json: ${childPath} is not a list of objects with an id`);
+        walk(child, fileName, childPath);
+        continue;
+      }
+      if (Array.isArray(child)) {
         if (owner[key] !== undefined && owner[key] !== fileName) {
           problems.push(`${key}: defined in both ${owner[key]}.json and ${fileName}.json`);
         }
@@ -127,11 +154,14 @@ export function collectIds(files) {
           }
         }
       }
-      walk(child, fileName);
+      walk(child, fileName, childPath);
     }
   };
 
-  for (const [fileName, content] of Object.entries(files)) walk(content, fileName);
+  for (const [fileName, content] of Object.entries(files)) {
+    if (Array.isArray(content)) problems.push(`${fileName}.json: top level is an array, not an object`);
+    walk(content, fileName, '');
+  }
   return { lists, problems };
 }
 
@@ -200,7 +230,7 @@ export function checkI18n(lang, i18n, lists) {
 /**
  * Checks that go beyond shape: ranges are consistent with their step,
  * bag sizes are distinct, price bands tile the axis without gap or overlap,
- * and the flavour notes are still marked draft or published as a whole.
+ * and all files of one version share one status (draft or published).
  */
 export function checkSemantics(files) {
   const problems = [];

@@ -22,7 +22,7 @@ Record each answer as an ADR in `docs/decisions/`.
 - [ ] Create the AWS accounts (dev, prod), enable MFA on root, set up the GitHub OIDC deploy role.
 - [ ] Add repository secrets: `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`, and the AWS role ARN.
 - [ ] Approve every production deployment.
-- [ ] Review and approve version 1 of the flavour vocabulary before it ships (it is expensive to change later).
+- [x] Review and approve version 1 of the flavour vocabulary before it ships (it is expensive to change later). Approved by the owner on 2026-11-25.
 - [ ] Write and publish the privacy policy and terms.
 
 ## Suggested order of work
