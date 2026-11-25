@@ -1,0 +1,15 @@
+{
+  "name": "cupmark-contracts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Cupmark shared contract: closed vocabulary, i18n labels and their checks",
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "ajv": "^8.17.1"
+  }
+}

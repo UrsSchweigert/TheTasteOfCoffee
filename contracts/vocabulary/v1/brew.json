@@ -2,26 +2,39 @@
   "version": 1,
   "status": "draft",
   "methods": [
-    "espresso",
-    "moka_pot",
-    "v60",
-    "chemex",
-    "kalita",
-    "batch_filter",
-    "aeropress",
-    "french_press",
-    "cold_brew",
-    "cezve",
-    "siphon",
-    "fully_automatic"
+    { "id": "espresso" },
+    { "id": "moka_pot" },
+    { "id": "v60" },
+    { "id": "chemex" },
+    { "id": "kalita" },
+    { "id": "batch_filter" },
+    { "id": "aeropress" },
+    { "id": "french_press" },
+    { "id": "cold_brew" },
+    { "id": "cezve" },
+    { "id": "siphon" },
+    { "id": "fully_automatic" }
   ],
-  "water_types": ["tap", "filtered", "bottled", "remineralised"],
-  "milk_types": ["none", "dairy", "oat", "soy", "other_plant"],
-  "bag_sizes_g": [250, 500, 1000],
+  "water_types": [
+    { "id": "tap" },
+    { "id": "filtered" },
+    { "id": "bottled" },
+    { "id": "remineralised" }
+  ],
+  "milk_types": [
+    { "id": "none" },
+    { "id": "dairy" },
+    { "id": "oat" },
+    { "id": "soy" },
+    { "id": "other_plant" }
+  ],
+  "water_temp_special": [
+    { "id": "cold" }
+  ],
   "ranges": {
     "dose_g": { "minimum": 5, "maximum": 100, "multipleOf": 0.1 },
     "water_g": { "minimum": 10, "maximum": 1500, "multipleOf": 1 },
-    "water_temp_c": { "minimum": 80, "maximum": 100, "multipleOf": 1, "special": ["cold"] },
+    "water_temp_c": { "minimum": 80, "maximum": 100, "multipleOf": 1 },
     "brew_time_s": { "minimum": 1, "maximum": 172800, "multipleOf": 1 },
     "grind_normalised": { "minimum": 1, "maximum": 10, "multipleOf": 0.5 }
   }

@@ -1,0 +1,153 @@
+{
+  "version": 1,
+  "status": "draft",
+  "max_picks": 5,
+  "flavour_categories": [
+    {
+      "id": "fruity",
+      "flavour_notes": [
+        { "id": "berry" },
+        { "id": "cherry" },
+        { "id": "plum" },
+        { "id": "peach" },
+        { "id": "apricot" },
+        { "id": "apple" },
+        { "id": "pear" },
+        { "id": "grape" }
+      ]
+    },
+    {
+      "id": "citrus",
+      "flavour_notes": [
+        { "id": "lemon" },
+        { "id": "lime" },
+        { "id": "orange" },
+        { "id": "grapefruit" },
+        { "id": "mandarin" },
+        { "id": "bergamot" }
+      ]
+    },
+    {
+      "id": "tropical",
+      "flavour_notes": [
+        { "id": "pineapple" },
+        { "id": "mango" },
+        { "id": "passion_fruit" },
+        { "id": "banana" },
+        { "id": "coconut" },
+        { "id": "lychee" }
+      ]
+    },
+    {
+      "id": "dried_fruit",
+      "flavour_notes": [
+        { "id": "raisin" },
+        { "id": "prune" },
+        { "id": "date" },
+        { "id": "fig" }
+      ]
+    },
+    {
+      "id": "floral",
+      "flavour_notes": [
+        { "id": "jasmine" },
+        { "id": "rose" },
+        { "id": "lavender" },
+        { "id": "orange_blossom" },
+        { "id": "elderflower" },
+        { "id": "chamomile" },
+        { "id": "hibiscus" }
+      ]
+    },
+    {
+      "id": "herbal",
+      "flavour_notes": [
+        { "id": "black_tea" },
+        { "id": "green_tea" },
+        { "id": "mint" },
+        { "id": "fresh_herbs" },
+        { "id": "grass" }
+      ]
+    },
+    {
+      "id": "sweet",
+      "flavour_notes": [
+        { "id": "honey" },
+        { "id": "caramel" },
+        { "id": "toffee" },
+        { "id": "brown_sugar" },
+        { "id": "maple_syrup" },
+        { "id": "molasses" },
+        { "id": "vanilla" }
+      ]
+    },
+    {
+      "id": "chocolate",
+      "flavour_notes": [
+        { "id": "milk_chocolate" },
+        { "id": "dark_chocolate" },
+        { "id": "cocoa" },
+        { "id": "nougat" }
+      ]
+    },
+    {
+      "id": "nutty",
+      "flavour_notes": [
+        { "id": "hazelnut" },
+        { "id": "almond" },
+        { "id": "walnut" },
+        { "id": "peanut" },
+        { "id": "pecan" },
+        { "id": "marzipan" }
+      ]
+    },
+    {
+      "id": "spicy",
+      "flavour_notes": [
+        { "id": "cinnamon" },
+        { "id": "clove" },
+        { "id": "nutmeg" },
+        { "id": "cardamom" },
+        { "id": "black_pepper" },
+        { "id": "anise" },
+        { "id": "ginger" },
+        { "id": "liquorice" }
+      ]
+    },
+    {
+      "id": "roasted",
+      "flavour_notes": [
+        { "id": "toasted_bread" },
+        { "id": "biscuit" },
+        { "id": "malt" },
+        { "id": "cereal" },
+        { "id": "smoke" },
+        { "id": "tobacco" },
+        { "id": "burnt" }
+      ]
+    },
+    {
+      "id": "fermented",
+      "flavour_notes": [
+        { "id": "red_wine" },
+        { "id": "white_wine" },
+        { "id": "rum" },
+        { "id": "whisky" },
+        { "id": "overripe_fruit" }
+      ]
+    },
+    {
+      "id": "earthy",
+      "flavour_notes": [
+        { "id": "forest_floor" },
+        { "id": "wood" },
+        { "id": "cedar" },
+        { "id": "leather" },
+        { "id": "mushroom" },
+        { "id": "musty" },
+        { "id": "cardboard" },
+        { "id": "rubber" }
+      ]
+    }
+  ]
+}

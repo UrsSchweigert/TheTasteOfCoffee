@@ -12,10 +12,15 @@
     { "id": "balance" },
     { "id": "overall" }
   ],
-  "intensities": {
-    "dimensions": ["acidity", "body", "bitterness"],
-    "levels": ["low", "medium", "high"]
-  },
-  "flavour_notes": { "max_picks": 5 },
+  "intensity_dimensions": [
+    { "id": "acidity" },
+    { "id": "body" },
+    { "id": "bitterness" }
+  ],
+  "intensity_levels": [
+    { "id": "low" },
+    { "id": "medium" },
+    { "id": "high" }
+  ],
   "buy_again": { "type": "boolean" }
 }

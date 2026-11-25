@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "criteria.schema.json",
+  "title": "Rating vocabulary: score scale, criteria, intensities, buy again",
+  "type": "object",
+  "required": ["version", "status", "scale", "criteria", "intensity_dimensions", "intensity_levels", "buy_again"],
+  "properties": {
+    "version": { "$ref": "common.schema.json#/$defs/version" },
+    "status": { "$ref": "common.schema.json#/$defs/status" },
+    "scale": { "$ref": "common.schema.json#/$defs/range" },
+    "criteria": { "$ref": "common.schema.json#/$defs/id_list" },
+    "intensity_dimensions": { "$ref": "common.schema.json#/$defs/id_list" },
+    "intensity_levels": { "$ref": "common.schema.json#/$defs/id_list" },
+    "buy_again": {
+      "type": "object",
+      "required": ["type"],
+      "properties": { "type": { "const": "boolean" } },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
