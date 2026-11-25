@@ -194,7 +194,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - Tests use a stubbed HTTP client; no test calls Open Food Facts.
 
 ### M1-T4c Open Food Facts image copy
-- status: in-progress
+- status: done
 - owner: backend-engineer
 - depends: M1-T4b
 - implements: docs/decisions/0011, D12
@@ -246,6 +246,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - A smoke test calls the health route after deploy.
   - From M1-T4b: the API function gets `OFF_CONTACT` (the operator's mailbox, as a plain environment variable) and optionally `OFF_LOOKUP_CAP`. Without them, uncached Open Food Facts lookups answer 503.
   - From M1-T4b review: after the first deploy to dev, look up one known barcode and one unknown one, and check that the answers match the response shape the client expects (`status`, `product.product_name`, `product.brands`). A shape mismatch answers 503 and caches nothing.
+  - From M1-T4c review: in the same check, a known barcode with a front image must return `image_id`, and `GET /catalogue_images/{image_id}` must serve it. A hit is never overwritten, so a missing or wrong `PHOTO_BUCKET` would leave every new hit without an image for good.
 
 ### M1-T8 Contract update for D7 to D9
 - status: done
