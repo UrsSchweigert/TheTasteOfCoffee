@@ -18,7 +18,7 @@ What the stack must contain, and nothing more:
 - EventBridge Scheduler entries for the nightly rankings job and the weekly table export.
 - AWS Budgets alerts at 10, 25 and 50 USD and alarms on Lambda errors and throttles.
 - Parameter Store SecureString parameters referenced by name; values are set by a human, never in code.
-- A GitHub OIDC role for deployments, limited to this repository and to the `main` branch for prod.
+- A GitHub OIDC role for deployments, limited to this repository and to the `main` branch for prod. It lives in its own stack, `cupmark-github-oidc`, which a human deploys once with their own credentials. It either creates the GitHub OIDC provider or references the existing one (ADR 0009).
 
 Rules:
 

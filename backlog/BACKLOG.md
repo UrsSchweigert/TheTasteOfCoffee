@@ -74,7 +74,7 @@ Goal: the repo builds, tests and checks itself; the shared contract exists.
 - depends: none
 - acceptance:
   - Apple Developer Program membership active; App ID and Sign in with Apple key created.
-  - AWS dev and prod accounts exist with MFA on root; CDK bootstrapped; GitHub OIDC deploy role created.
+  - In the shared AWS account (ADR 0009): root has MFA; `scripts/aws/apply-guardrails.sh --apply` has run; it is known whether a GitHub OIDC provider already exists; `cupmark-github-oidc` (M1-T9) has been deployed once by hand.
   - Repository secrets set for the Claude GitHub workflow.
 
 ---
@@ -142,7 +142,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
 ### M1-T7 Deploy pipeline to dev
 - status: todo
 - owner: infra-engineer
-- depends: M1-T2, M0-T5
+- depends: M1-T2, M0-T5, M1-T9
 - needs: human (approve the first deployment)
 - acceptance:
   - A workflow deploys to dev through OIDC on merge to `main`, and to prod only through a manually approved environment.
@@ -162,6 +162,17 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - The OpenAPI lint allows response-only Open Food Facts text and the one health route as explicit, documented exceptions. Any other text field or route without the bearer token still fails, and tests prove both.
   - docs/05 Barcode lookup describes the server-side lookup (User-Agent, catalogue cache, per-user cap), and docs/04 F1 step 3 matches it.
   - The backend regenerates its schemas, and the no-drift check passes.
+
+### M1-T9 GitHub OIDC deploy stack and IAM policy guards
+- status: todo
+- owner: infra-engineer
+- depends: M0-T4
+- implements: docs/decisions/0009
+- acceptance:
+  - A separate stack `cupmark-github-oidc` creates the role `CupmarkGitHubDeploy`, which GitHub Actions in this repository may assume, and the prod stage only from `main`. The role may assume only the `cdk-cupmark-*` bootstrap roles.
+  - The context flag `cupmark:githubOidcProvider` is `create` or `reference`. With `create`, the stack makes the provider for `token.actions.githubusercontent.com`. With `reference`, it trusts the existing provider by ARN and never modifies it. Tests cover both modes.
+  - The stack deploys with the caller's credentials, not through `CupmarkCfnExecution`. The README gives the one-time manual deploy steps, including how to check whether a provider or a role named `CupmarkGitHubDeploy` already exists.
+  - The guards add the M0-T4 review findings: IAM policies with `*` actions or resources, or with ARNs outside `cupmark-`, fail, and so do stateful resources without RETAIN. Tests show each guard failing.
 
 ---
 
