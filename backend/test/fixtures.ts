@@ -57,7 +57,7 @@ export function validBean(): Record<string, unknown> {
     open_food_facts: {
       name: 'Ethiopia Guji <b>natural</b>',
       brand: 'Rösterei Beispiel',
-      image_ref: 'https://images.openfoodfacts.org/images/products/400/638/133/3931/front_de.3.400.jpg',
+      image_id: OTHER_ULID,
     },
     picked_attributes: { process: 'natural' },
     operator_attributes: {},

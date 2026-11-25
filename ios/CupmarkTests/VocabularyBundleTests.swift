@@ -139,6 +139,31 @@ final class VocabularyBundleTests: XCTestCase {
         }
     }
 
+    /// A region names its country (ADR 0011): `Origin.country` matches the
+    /// bundled `country` of every entry, and every country is top level.
+    func testGeneratedOriginCountriesMatchBundledFile() throws {
+        let store = try loadStore()
+        let origins = try listObjects(store, file: Vocabulary.Namespace.origins.file, key: "origins")
+        XCTAssertEqual(origins.map { $0["id"]?.stringValue ?? "" }, Vocabulary.Origin.allCases.map(\.rawValue))
+        for (object, origin) in zip(origins, Vocabulary.Origin.allCases) {
+            XCTAssertEqual(object["country"]?.stringValue, origin.country?.rawValue, origin.rawValue)
+            XCTAssertNil(origin.country?.country, "\(origin.rawValue): a country has no country")
+        }
+        XCTAssertEqual(Vocabulary.Origin.hawaii.country, .usa)
+        XCTAssertEqual(Vocabulary.Origin.sumatra.country, .indonesia)
+        XCTAssertNil(Vocabulary.Origin.indonesia.country)
+    }
+
+    /// `java` is an origin and a variety; the enums keep them apart, and
+    /// robusta is a species only.
+    func testJavaIsAnOriginAndAVarietyAndRobustaIsASpecies() {
+        XCTAssertEqual(Vocabulary.Origin.java.rawValue, "java")
+        XCTAssertEqual(Vocabulary.Variety.java.rawValue, "java")
+        XCTAssertEqual(Vocabulary.Origin.java.country, .indonesia)
+        XCTAssertEqual(Vocabulary.Species(rawValue: "robusta"), .robusta)
+        XCTAssertNil(Vocabulary.Variety(rawValue: "robusta"))
+    }
+
     /// The milk id `none` is the case `noMilk`, so `.none` on an optional
     /// milk type always means nil; the raw value is still the contract id.
     func testMilkIdNoneIsTheCaseNoMilkWithRawValueNone() throws {

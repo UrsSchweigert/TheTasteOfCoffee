@@ -78,7 +78,7 @@ describe('BrewInput', () => {
     ['a timestamp without offset', (b: Mutable) => { b.brewed_at = '2026-11-25T07:30:00'; }],
     ['a timestamp on a day that does not exist', (b: Mutable) => { b.brewed_at = '2026-02-29T07:30:00Z'; }],
     ['a date where a timestamp belongs', (b: Mutable) => { b.brewed_at = '2026-11-25'; }],
-    ['an unpublished vocabulary version', (b: Mutable) => { b.vocabulary_version = 2; }],
+    ['an unpublished vocabulary version', (b: Mutable) => { b.vocabulary_version = 3; }],
     ['a missing method', (b: Mutable) => { delete child(b, 'parameters').method; }],
     [
       'both water_temp_c and water_temp_special',
@@ -139,6 +139,13 @@ describe('BeanCreate', () => {
     expect(BeanCreateSchema.safeParse({ ...validBeanCreate(), name: 'House blend' }).success).toBe(false);
     expect(BeanCreateSchema.safeParse({ ...validBeanCreate(), attributes: { roaster: 'x' } }).success).toBe(false);
   });
+  it('takes origin, species and variety as vocabulary v2 ids only', () => {
+    const attributes = { origin: 'sumatra', species: 'arabica', variety: 'java' };
+    expect(BeanCreateSchema.safeParse({ ...validBeanCreate(), vocabulary_version: 2, attributes }).success).toBe(true);
+    expect(BeanCreateSchema.safeParse({ ...validBeanCreate(), vocabulary_version: 2, attributes: { origin: 'Sumatra' } }).success).toBe(false);
+    expect(BeanCreateSchema.safeParse({ ...validBeanCreate(), vocabulary_version: 2, attributes: { variety: 'robusta' } }).success).toBe(false);
+    expect(BeanCreateSchema.safeParse({ ...validBeanCreate(), vocabulary_version: 2, attributes: { country: 'indonesia' } }).success).toBe(false);
+  });
 });
 
 describe('Bean', () => {
@@ -167,7 +174,9 @@ describe('Open Food Facts text (ADR 0005)', () => {
     ['a brand over 100', { brand: 'x'.repeat(101) }],
     ['an empty name', { name: '' }],
     ['an unknown field', { origin: 'Guji' }],
-    ['an image on another host', { image_ref: 'https://example.com/front_de.3.400.jpg' }],
+    ['an image URL instead of the stored copy id (ADR 0011)', { image_id: 'https://images.openfoodfacts.org/images/products/400/638/133/3931/front_de.3.400.jpg' }],
+    ['a lower-case image id', { image_id: '01arz3ndektsv4rrffq69g5fav' }],
+    ['the removed image_ref', { image_ref: 'https://images.openfoodfacts.org/images/products/400/638/133/3931/front_de.3.400.jpg' }],
   ])('rejects %s', (_name, fields) => {
     expect(BeanSchema.safeParse(beanWith(fields)).success).toBe(false);
   });

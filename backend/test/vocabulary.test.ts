@@ -12,15 +12,17 @@ import {
   parseOpenApi,
 } from '../scripts/codegen/paths.ts';
 import { VocabularyGenerationError, generateVocabularySource, readVocabularyDir } from '../scripts/codegen/vocabulary.ts';
-import { BrewInputSchema } from '../src/generated/contract.ts';
+import { BeanCreateSchema, BrewInputSchema } from '../src/generated/contract.ts';
 import { publishedVocabularies, vocabularyBindings } from '../src/generated/vocabulary.ts';
 import { conformsToVocabulary, publishedVocabulary } from '../src/vocabulary/check.ts';
 import type { PublishedVocabulary } from '../src/vocabulary/types.ts';
 import { validBrewInput } from './fixtures.ts';
 
 const contract = parseOpenApi(readFileSync(OPENAPI_FILE, 'utf8'));
-const v1 = (name: string): Record<string, unknown> =>
-  JSON.parse(readFileSync(join(VOCABULARY_DIR, 'v1', `${name}.json`), 'utf8')) as Record<string, unknown>;
+const vocabularyFile = (version: number, name: string): Record<string, unknown> =>
+  JSON.parse(readFileSync(join(VOCABULARY_DIR, `v${String(version)}`, `${name}.json`), 'utf8')) as Record<string, unknown>;
+const v1 = (name: string): Record<string, unknown> => vocabularyFile(1, name);
+const v2 = (name: string): Record<string, unknown> => vocabularyFile(2, name);
 const ids = (list: unknown): string[] => (list as { id: string }[]).map((item) => item.id);
 
 describe('src/generated/vocabulary.ts', () => {
@@ -29,8 +31,8 @@ describe('src/generated/vocabulary.ts', () => {
     expect(committed === generateVocabularyFromContract(), 'run `npm run generate` and commit the result').toBe(true);
   });
 
-  it('holds v1 as published, and not the draft v2', () => {
-    expect(Object.keys(publishedVocabularies)).toEqual(['1']);
+  it('holds v1 and v2, the published versions', () => {
+    expect(Object.keys(publishedVocabularies)).toEqual(['1', '2']);
     const lists = publishedVocabularies[1]?.lists ?? {};
     expect(lists.methods).toEqual(ids(v1('brew').methods));
     expect(lists.milk_types).toEqual(ids(v1('brew').milk_types));
@@ -43,6 +45,22 @@ describe('src/generated/vocabulary.ts', () => {
     expect(lists).not.toHaveProperty('origins');
   });
 
+  it('holds the v2 bean lists, ids only: a region\'s country is vocabulary data, not a request field', () => {
+    const lists = publishedVocabularies[2]?.lists ?? {};
+    expect(lists.origins).toEqual(ids(v2('bean').origins));
+    expect(lists.species).toEqual(ids(v2('bean').species));
+    expect(lists.varieties).toEqual(ids(v2('bean').varieties));
+    expect(lists.varieties).not.toContain('robusta');
+    // `java` is an origin and a variety; the lists are kept apart by namespace.
+    expect(lists.origins).toContain('java');
+    expect(lists.varieties).toContain('java');
+    expect(JSON.stringify(publishedVocabularies)).not.toContain('country');
+    // v1 and v2 share every other list.
+    for (const namespace of Object.keys(publishedVocabularies[1]?.lists ?? {})) {
+      expect(lists[namespace], namespace).toEqual(publishedVocabularies[1]?.lists[namespace]);
+    }
+  });
+
   it('binds every vocabulary field of the request bodies', () => {
     expect(vocabularyBindings.Method).toEqual({ list: 'methods' });
     expect(vocabularyBindings.Score).toEqual({ range: 'criteria.scale@1' });
@@ -50,6 +68,16 @@ describe('src/generated/vocabulary.ts', () => {
     expect(vocabularyBindings.Scores?.keys).toBe('criteria');
     expect(vocabularyBindings.Rating?.properties?.flavour_notes).toEqual({ items: { ref: 'FlavourNote' }, maxItems: 'flavour_notes.max_picks' });
     expect(vocabularyBindings.VocabularyVersion).toEqual({ version: true });
+    expect(vocabularyBindings.Origin).toEqual({ list: 'origins' });
+    expect(vocabularyBindings.Species).toEqual({ list: 'species' });
+    expect(vocabularyBindings.Variety).toEqual({ list: 'varieties' });
+    expect(vocabularyBindings.BeanAttributes?.properties).toEqual({
+      process: { ref: 'Process' },
+      roast_level: { ref: 'RoastLevel' },
+      origin: { ref: 'Origin' },
+      species: { ref: 'Species' },
+      variety: { ref: 'Variety' },
+    });
   });
 });
 
@@ -60,12 +88,37 @@ describe('conformsToVocabulary', () => {
     expect(conformsToVocabulary('BrewInput', brew, 1)).toBe(true);
   });
 
+  it('accepts the same brew under v2, which keeps every v1 list', () => {
+    expect(publishedVocabulary(2)).toBeDefined();
+    expect(conformsToVocabulary('BrewInput', { ...brew, vocabulary_version: 2 }, 2)).toBe(true);
+  });
+
   it('rejects an unpublished or unknown version', () => {
-    expect(publishedVocabulary(2)).toBeUndefined();
+    expect(publishedVocabulary(3)).toBeUndefined();
     expect(publishedVocabulary(0)).toBeUndefined();
     expect(publishedVocabulary(1.5)).toBeUndefined();
-    expect(conformsToVocabulary('BrewInput', { ...brew, vocabulary_version: 2 }, 2)).toBe(false);
+    expect(conformsToVocabulary('BrewInput', { ...brew, vocabulary_version: 3 }, 3)).toBe(false);
     expect(conformsToVocabulary('NoSuchSchema', brew, 1)).toBe(false);
+  });
+
+  it('accepts origin, species and variety with version 2 and rejects them with version 1 (v1 has no such lists)', () => {
+    const create = (version: number, attributes: Record<string, string>): unknown =>
+      BeanCreateSchema.parse({ vocabulary_version: version, barcode: '4006381333931', attributes });
+    const v2Attributes = { origin: 'hawaii', species: 'arabica', variety: 'java', process: 'washed', roast_level: 'light' };
+    expect(conformsToVocabulary('BeanCreate', create(2, v2Attributes), 2)).toBe(true);
+    expect(conformsToVocabulary('BeanCreate', create(2, { origin: 'java', variety: 'red_bourbon' }), 2)).toBe(true);
+    for (const attribute of ['origin', 'species', 'variety'] as const) {
+      const one = { [attribute]: v2Attributes[attribute] };
+      expect(conformsToVocabulary('BeanCreate', create(2, one), 2), attribute).toBe(true);
+      expect(conformsToVocabulary('BeanCreate', create(1, one), 1), attribute).toBe(false);
+    }
+    // v1 attributes alone stay valid under both versions.
+    expect(conformsToVocabulary('BeanCreate', create(1, { process: 'washed' }), 1)).toBe(true);
+    expect(conformsToVocabulary('BeanCreate', create(2, { process: 'washed' }), 2)).toBe(true);
+    // The version inside the value must match the version checked against.
+    expect(conformsToVocabulary('BeanCreate', create(1, { process: 'washed' }), 2)).toBe(false);
+    // A value that passed the union schema but is in no list of the version, as a backstop.
+    expect(conformsToVocabulary('BeanCreate', { vocabulary_version: 2, attributes: { variety: 'robusta' } }, 2)).toBe(false);
   });
 
   it('checks against the version named, not the union of versions', () => {
@@ -133,11 +186,27 @@ describe('the vocabulary generator', () => {
   });
 
   it('leaves out a draft version, and refuses one that is half published', () => {
+    // A draft v3, copied from v2 as contracts/README.md "Publishing a version" says.
     const root = copy();
-    expect(generateVocabularySource(contract, readVocabularyDir(root))).not.toContain('"2"');
-    const file = join(root, 'v2', 'bean.json');
+    cpSync(join(root, 'v2'), join(root, 'v3'), { recursive: true });
+    for (const name of ['bean', 'brew', 'criteria', 'flavour_notes', 'shelf']) {
+      const file = join(root, 'v3', `${name}.json`);
+      writeFileSync(file, readFileSync(file, 'utf8').replace('"version": 2', '"version": 3').replace('"status": "published"', '"status": "draft"'));
+    }
+    const source = generateVocabularySource(contract, readVocabularyDir(root));
+    expect(source).toContain('"2"');
+    expect(source).not.toContain('"3"');
+    expect(source).toBe(generateVocabularyFromContract());
+    const file = join(root, 'v3', 'bean.json');
     writeFileSync(file, readFileSync(file, 'utf8').replace('"status": "draft"', '"status": "published"'));
     expect(() => generateVocabularySource(contract, readVocabularyDir(root))).toThrow(/some files are published/);
+  });
+
+  it('refuses v2 once a published file is edited, for example a region\'s country', () => {
+    const root = copy();
+    const file = join(root, 'v2', 'bean.json');
+    writeFileSync(file, readFileSync(file, 'utf8').replace('"country": "usa"', '"country": "mexico"'));
+    expect(() => generateVocabularySource(contract, readVocabularyDir(root))).toThrow(/v2\/bean.json: does not match v2.lock.json/);
   });
 
   it('CRLF line endings do not change the lock check', () => {

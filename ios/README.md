@@ -27,6 +27,7 @@ CupmarkTests/             XCTest unit tests (hosted in the app)
   `node scripts/generate-ios-vocabulary.mjs --check` fails if the file is out of date or if the project bundles a different version. CI runs it on Linux.
 - When a new vocabulary version is published, the check fails until the folder reference in `project.pbxproj` points at the new `v<N>` directory and the Swift file is regenerated.
 - Raw values are always the contract ids. Case names are the ids in lowerCamelCase, with one exception: an id that would read as `Optional.none` or `Optional.some` is named after its list, so `none` in `milk_types` is `Vocabulary.MilkType.noMilk` (raw value `"none"`). `.none` on an optional vocabulary value therefore always means nil.
+- A region in `origins` names its country (ADR 0011). The generator emits that as a typed property, `Vocabulary.Origin.country: Vocabulary.Origin?` (`.sumatra.country == .indonesia`, nil for a country), not as a string. Lists with the same id in different namespaces, such as `java` in `origins` and `varieties`, are separate enums (`Vocabulary.Origin.java`, `Vocabulary.Variety.java`).
 - `VocabularyStore.load(from:)` decodes the bundled JSON at runtime and resolves labels with `label(namespace:id:language:)`. Errors are thrown, never trapped.
 
 ## Strings
