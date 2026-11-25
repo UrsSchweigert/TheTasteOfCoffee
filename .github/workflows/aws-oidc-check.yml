@@ -1,0 +1,39 @@
+# Manual check that GitHub Actions can assume the Cupmark deploy role through OIDC
+# and reach only the cdk-cupmark bootstrap roles. Read-only: it creates nothing.
+# Run it from main (the role trusts main and the dev environment only).
+name: AWS OIDC check
+on:
+  workflow_dispatch:
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: cupmark-oidc-check
+      - name: Caller identity
+        run: |
+          arn="$(aws sts get-caller-identity --query Arn --output text)"
+          echo "Assumed: $(echo "$arn" | sed -E 's/[0-9]{12}/<account>/')"
+          case "$arn" in *CupmarkGitHubDeploy*) ;; *) echo "Unexpected role"; exit 1;; esac
+      - name: Can assume the Cupmark CDK lookup role
+        run: |
+          acct="$(aws sts get-caller-identity --query Account --output text)"
+          aws sts assume-role \
+            --role-arn "arn:aws:iam::${acct}:role/cdk-cupmark-lookup-role-${acct}-eu-central-1" \
+            --role-session-name cupmark-oidc-check --query 'AssumedRoleUser.AssumedRoleId' --output text | sed -E 's/[0-9]{12}/<account>/'
+      - name: Cannot assume the shared CDK role
+        run: |
+          acct="$(aws sts get-caller-identity --query Account --output text)"
+          if aws sts assume-role \
+            --role-arn "arn:aws:iam::${acct}:role/cdk-hnb659fds-deploy-role-${acct}-eu-central-1" \
+            --role-session-name cupmark-oidc-check >/dev/null 2>&1; then
+            echo "Shared bootstrap role is reachable, guardrails are broken"; exit 1
+          fi
+          echo "Shared bootstrap role correctly denied"
