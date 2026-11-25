@@ -1,6 +1,7 @@
 // The bean catalogue routes (task M1-T4a; docs/04-specification.md F1,
 // docs/05-system-design.md Barcode lookup): GET /barcodes/{barcode},
-// POST /beans and GET /beans/{bean_id}.
+// POST /beans and GET /beans/{bean_id}. The Open Food Facts lookup is in
+// open-food-facts.ts (M1-T4b).
 //
 // The catalogue is shared: any signed-in user may read any bean that is not
 // rejected, verified or not (F1 step 3: unverified entries are shown right
@@ -10,14 +11,14 @@
 // response cannot carry another user's id because the bean holds none.
 import { z } from 'zod';
 import { BeanCreateSchema } from '../generated/contract.ts';
-import type { Bean, BeanCreate } from '../generated/contract.ts';
+import type { Bean, BeanCreate, OpenFoodFactsProduct } from '../generated/contract.ts';
 import { InvalidKeyError, OpenFoodFactsHitMissingError, canonicalBarcode } from '../repository/index.ts';
 import type { BeanRecord, Repository } from '../repository/index.ts';
 import { parseBody } from './http.ts';
 import type { ApiEvent } from './http.ts';
 
 /** The part of the repository the catalogue routes use. */
-export type CatalogueStore = Pick<Repository, 'createBean' | 'getBean' | 'getBeanByBarcode'>;
+export type CatalogueStore = Pick<Repository, 'createBean' | 'getBean' | 'getBeanByBarcode' | 'getOpenFoodFactsCache'>;
 
 function hasValidCheckDigit(value: string): boolean {
   try {
@@ -63,21 +64,32 @@ export async function getBean(store: CatalogueStore, beanId: string): Promise<Be
 
 /**
  * POST /beans: a new unverified bean. Every picked attribute goes into
- * `picked_attributes` (source "user"); `operator_attributes` starts empty and
- * there is no `open_food_facts` group.
+ * `picked_attributes` (source "user"); `operator_attributes` starts empty.
  *
- * `open_food_facts_confirmed: true` is OpenFoodFactsHitMissingError (409) for
- * now: the server's Open Food Facts cache arrives in M1-T4b, so there is never
- * a cached hit to copy from. `false` is the same as leaving it out. A barcode
- * that already points to a bean is BarcodeTakenError (409), from the
- * repository's transaction.
+ * With `open_food_facts_confirmed: true` (the schema makes it need a barcode)
+ * the server reads its own Open Food Facts cache for the barcode (M1-T4b) and
+ * copies the hit's name and brand into the `open_food_facts` group, whose name
+ * is the source tag of each field in it (D5, ODbL), with
+ * `open_food_facts_match: true`. No cached entry, or a cached miss, is
+ * OpenFoodFactsHitMissingError (409): the app must call GET
+ * /barcodes/{barcode}/open_food_facts first. Hits never expire and are never
+ * overwritten, so the copy cannot go stale between the read and the write.
+ * `false` is the same as leaving it out. A barcode that already points to a
+ * bean is BarcodeTakenError (409), from the repository's transaction.
  */
 export async function createBean(store: CatalogueStore, input: BeanCreate): Promise<Bean> {
-  if (input.open_food_facts_confirmed === true) throw new OpenFoodFactsHitMissingError('no cached Open Food Facts hit');
+  const barcode = input.barcode === undefined ? undefined : canonicalBarcode(input.barcode);
+  let openFoodFacts: OpenFoodFactsProduct | undefined;
+  if (input.open_food_facts_confirmed === true) {
+    const cached = barcode === undefined ? undefined : await store.getOpenFoodFactsCache(barcode);
+    if (cached?.kind !== 'hit') throw new OpenFoodFactsHitMissingError('no cached Open Food Facts hit');
+    openFoodFacts = cached.product;
+  }
   const record = await store.createBean({
     vocabularyVersion: input.vocabulary_version,
-    ...(input.barcode === undefined ? {} : { barcode: canonicalBarcode(input.barcode) }),
-    openFoodFactsMatch: false,
+    ...(barcode === undefined ? {} : { barcode }),
+    openFoodFactsMatch: openFoodFacts !== undefined,
+    ...(openFoodFacts === undefined ? {} : { openFoodFacts }),
     pickedAttributes: input.attributes,
   });
   return record.bean;

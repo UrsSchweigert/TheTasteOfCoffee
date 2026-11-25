@@ -1,14 +1,16 @@
 // The API Lambda (docs/05-system-design.md, Components: one API function).
 // Serves the routes in src/api/router.ts. Configuration comes from the
 // environment set by infra (src/api/config.ts); a missing table name fails
-// every request with 500, a missing cursor key fails the list routes only.
+// every request with 500, a missing cursor key fails the list routes only, a
+// missing Open Food Facts contact fails only lookups that would fetch (503).
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { SSMClient } from '@aws-sdk/client-ssm';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, APIGatewayProxyStructuredResultV2 } from 'aws-lambda';
-import { ENV, cursorSignerFromParameterStore } from '../api/config.ts';
+import { ENV, cursorSignerFromParameterStore, lookupCapFromEnv } from '../api/config.ts';
 import { empty } from '../api/http.ts';
 import { createApi } from '../api/router.ts';
+import { createOpenFoodFactsClient } from '../openfoodfacts/client.ts';
 import { Repository } from '../repository/index.ts';
 
 let api: ((event: APIGatewayProxyEventV2WithJWTAuthorizer) => Promise<APIGatewayProxyStructuredResultV2>) | undefined;
@@ -19,6 +21,10 @@ function build(): typeof api {
   return createApi({
     store: new Repository({ client: DynamoDBDocumentClient.from(new DynamoDBClient({})), tableName }),
     cursorSigner: cursorSignerFromParameterStore(process.env[ENV.cursorKeyParameter], new SSMClient({})),
+    openFoodFacts: {
+      client: createOpenFoodFactsClient({ contact: process.env[ENV.openFoodFactsContact] }),
+      dailyCap: lookupCapFromEnv(process.env[ENV.openFoodFactsLookupCap]),
+    },
   });
 }
 

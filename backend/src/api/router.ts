@@ -1,13 +1,14 @@
 // The router of the API Lambda: one function behind the HTTP API, a fixed
 // table of routes. It dispatches only the routes that have landed: shelf,
-// brews and recipes, five operations each (task M1-T5), and the bean
+// brews and recipes, five operations each (task M1-T5), the bean
 // catalogue: GET /barcodes/{barcode}, POST /beans, GET /beans/{bean_id}
-// (task M1-T4a, catalogue.ts).
+// (task M1-T4a, catalogue.ts), and the Open Food Facts lookup
+// GET /barcodes/{barcode}/open_food_facts (task M1-T4b, open-food-facts.ts).
 //
 // Order of checks for every request:
 // 1. Route: method and `rawPath` against the table. No match is 404 with no
 //    body. That includes the contract routes whose tasks have not landed yet
-//    (Open Food Facts lookup, catalogue images, profile, export, account; the
+//    (catalogue images, profile, export, account; the
 //    contract declares no 501 for them), /health (its own Lambda, ADR 0007), a
 //    trailing slash and any method a path does not declare (the contract
 //    declares no 405).
@@ -46,6 +47,8 @@ import {
   WriteConflictError,
 } from '../repository/index.ts';
 import { BarcodeParameterSchema, createBean, getBean, lookupBarcode, parseBeanCreate } from './catalogue.ts';
+import { lookupOpenFoodFacts } from './open-food-facts.ts';
+import type { LookupResult, OpenFoodFactsLookupConfig } from './open-food-facts.ts';
 import type { CursorSigner } from './cursor.ts';
 import { empty, hasNoBody, json, parseBody, parseLimit, parseQuery } from './http.ts';
 import type { ApiEvent, ApiResult } from './http.ts';
@@ -57,12 +60,16 @@ export interface LogEntry {
   readonly status: number;
   readonly request_id: string;
   readonly error?: string;
+  /** A fixed reason code with some errors (the Open Food Facts lookup's 503). Never input or upstream text. */
+  readonly reason?: string;
 }
 
 export interface ApiDependencies {
   readonly store: ApiStore;
   /** The cursor signer, or undefined if the key is unavailable (list routes then answer 500). */
   readonly cursorSigner: () => Promise<CursorSigner | undefined>;
+  /** The Open Food Facts client and the daily cap. Absent: the lookup answers from the cache only, else 503. */
+  readonly openFoodFacts?: OpenFoodFactsLookupConfig;
   readonly log?: (entry: LogEntry) => void;
   /** Wait before retry number `retry` (1, 2) of a write that raced; for tests. Default: 10 to 50 ms, then 20 to 100 ms. */
   readonly retryDelayMs?: (retry: number) => number;
@@ -89,6 +96,7 @@ interface Call {
 interface Outcome {
   readonly result: ApiResult;
   readonly error?: string;
+  readonly reason?: string;
 }
 
 interface Route {
@@ -258,6 +266,27 @@ const catalogueRoutes: Route[] = [
     },
   },
   {
+    method: 'GET',
+    segments: ['', 'barcodes', '{barcode}', 'open_food_facts'],
+    parameters: { barcode: BarcodeParameterSchema },
+    operation: 'lookupOpenFoodFacts',
+    handle: async ({ event, user, params, deps }) => {
+      if (!noQuery(event) || !hasNoBody(event)) return BAD_REQUEST;
+      let found: LookupResult;
+      try {
+        found = await lookupOpenFoodFacts(deps.store, deps.openFoodFacts, user, params.barcode ?? '');
+      } catch (error) {
+        return outcomeOf(error);
+      }
+      if (found.status === 200) return { result: json(200, found.product) };
+      return {
+        result: empty(found.status),
+        ...('error' in found ? { error: found.error } : {}),
+        ...('reason' in found ? { reason: found.reason } : {}),
+      };
+    },
+  },
+  {
     method: 'POST',
     segments: ['', 'beans'],
     parameters: {},
@@ -327,6 +356,7 @@ export function createApi(deps: ApiDependencies): (event: ApiEvent) => Promise<A
         status: outcome.result.statusCode ?? 500,
         request_id: requestId,
         ...(outcome.error === undefined ? {} : { error: outcome.error }),
+        ...(outcome.reason === undefined ? {} : { reason: outcome.reason }),
       });
       return outcome.result;
     };

@@ -33,6 +33,9 @@ export type ApiStore = Pick<
   | 'createBean'
   | 'getBean'
   | 'getBeanByBarcode'
+  | 'getOpenFoodFactsCache'
+  | 'cacheOpenFoodFactsResult'
+  | 'countLookup'
 >;
 
 export interface Resource<I extends { vocabulary_version: number }, O> {
