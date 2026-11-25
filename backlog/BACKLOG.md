@@ -98,7 +98,7 @@ Goal: the repo builds, tests and checks itself; the shared contract exists.
 
 
 ### M0-T9 Harden the iOS checks
-- status: todo
+- status: in-progress
 - owner: ios-engineer
 - depends: M0-T6
 - acceptance:
