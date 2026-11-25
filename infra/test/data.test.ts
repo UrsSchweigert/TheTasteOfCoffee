@@ -1,10 +1,17 @@
-// M1-T1: the table and both buckets of each stage, with the safety properties of
+// M1-T1: the table and the buckets of each stage (the deletion log from M1-T6, ADR 0017), with the safety properties of
 // docs/05-system-design.md (Data model, Persistence and recovery) pinned one by one.
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
 import { STAGES } from '../src/config.ts';
 import type { StageName } from '../src/config.ts';
-import { LABEL_PHOTO_PREFIX, TTL_ATTRIBUTE, UPLOAD_PHOTO_PREFIX } from '../src/data.ts';
+import {
+  BACKUP_EXPIRE_AFTER_DAYS,
+  DELETION_LOG_EXPIRE_AFTER_DAYS,
+  DELETION_LOG_PREFIX,
+  LABEL_PHOTO_PREFIX,
+  TTL_ATTRIBUTE,
+  UPLOAD_PHOTO_PREFIX,
+} from '../src/data.ts';
 import { testApp } from './helpers.ts';
 
 type Resource = { Type: string; Properties: Record<string, unknown> } & Record<string, unknown>;
@@ -131,7 +138,7 @@ describe.each(STAGES)('stage %s', (stage) => {
     });
   });
 
-  describe.each(['photos', 'backups'])('the %s bucket', (part) => {
+  describe.each(['photos', 'backups', 'deletion-log'])('the %s bucket', (part) => {
     const [bucketId, b] = bucket(template, stage, part);
     const props = b.Properties;
 
@@ -285,6 +292,21 @@ describe.each(STAGES)('stage %s', (stage) => {
     // The whole-bucket noncurrent rule (30 days) also matches uploads/; S3 applies the
     // shorter of two matching expirations, so the upload rule's 1 day wins there.
     expect(rules.filter((r) => r.Prefix === undefined && r.NoncurrentVersionExpiration !== undefined)).toHaveLength(1);
+  });
+
+  it('expires deletion log entries after 400 days, noncurrent versions after 30, and removes expired delete markers (ADR 0017)', () => {
+    const [, b] = bucket(template, stage, 'deletion-log');
+    expect(DELETION_LOG_PREFIX).toBe('entries/');
+    expect(b.Properties.LifecycleConfiguration).toEqual({
+      Rules: [
+        { Id: 'expire-entries', Status: 'Enabled', Prefix: 'entries/', ExpirationInDays: 400 },
+        { Id: 'expire-noncurrent-versions', Status: 'Enabled', NoncurrentVersionExpiration: { NoncurrentDays: 30 } },
+        { Id: 'remove-expired-delete-markers', Status: 'Enabled', ExpiredObjectDeleteMarker: true },
+      ],
+    });
+    // The log outlives the 365-day exports and the 35-day point-in-time recovery window.
+    expect(DELETION_LOG_EXPIRE_AFTER_DAYS).toBeGreaterThan(BACKUP_EXPIRE_AFTER_DAYS);
+    expect(DELETION_LOG_EXPIRE_AFTER_DAYS).toBeGreaterThan(35);
   });
 
   it('has no CORS configuration on the photo bucket (the iOS app is not a browser, ADR 0016)', () => {

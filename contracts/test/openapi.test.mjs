@@ -4,8 +4,11 @@ import {
   FREE_TEXT_MAX_LENGTH,
   UNAUTHENTICATED_ROUTES,
   buildVocabularyContext,
+  CSV_EXPORT,
+  checkCsvExport,
   checkOpenApi,
   checkStructure,
+  csvExportColumns,
   checkVocabularyBindings,
   compileComponentSchemas,
   findIdentityFields,
@@ -253,6 +256,124 @@ test('openapi.yaml: the export returns CSV only', () => {
   const content = doc.paths['/export'].get.responses['200'].content;
   assert.deepEqual(Object.keys(content), ['text/csv']);
   assert.deepEqual(content['text/csv'].schema, { type: 'string', contentMediaType: 'text/csv' });
+});
+
+// ---- CSV export (M1-T6, ADR 0017) ----
+
+// The header, pinned a third time here on purpose: changing it must be a
+// deliberate edit of the contract, the description and this test.
+const EXPORT_COLUMNS = [
+  'item_type', 'locale', 'contribute_to_aggregates', 'shelf_entry_id', 'vocabulary_version', 'bean_id',
+  'purchase_date', 'roast_date', 'bag_size', 'price_band', 'brew_id', 'brewed_at',
+  'method', 'dose_dg', 'water_g', 'water_temp_c', 'water_temp_special', 'brew_time_s', 'grind_normalised', 'water_type', 'milk',
+  'scores_aroma', 'scores_flavour', 'scores_aftertaste', 'scores_acidity', 'scores_body', 'scores_sweetness', 'scores_balance', 'scores_overall',
+  'intensities_acidity', 'intensities_body', 'intensities_bitterness', 'flavour_notes', 'buy_again', 'recipe_id', 'photo_id',
+];
+const EXPORT_ITEM_TYPES = ['profile', 'shelf_entry', 'brew', 'recipe', 'label_photo'];
+const csvMedia = (d) => d.paths['/export'].get.responses['200'].content['text/csv'];
+
+test('openapi.yaml: the export header is pinned in x-csv-columns and in the description, and they agree', () => {
+  assert.deepEqual(checkCsvExport(doc), []);
+  assert.deepEqual(csvMedia(doc)['x-csv-columns'], EXPORT_COLUMNS);
+  assert.deepEqual(csvMedia(doc)['x-csv-item-types'], EXPORT_ITEM_TYPES);
+  const description = doc.paths['/export'].get.description;
+  assert.ok(description.includes(`\ncolumns: ${EXPORT_COLUMNS.join(',')}\n`));
+  assert.ok(description.includes(`\nitem_types: ${EXPORT_ITEM_TYPES.join(',')}\n`));
+  for (const rule of ['UTF-8', 'RFC 4180', 'CRLF', 'double quotes', 'joined by `;`', 'empty string']) {
+    assert.ok(description.includes(rule), `export description states ${rule}`);
+  }
+});
+
+test('openapi.yaml: every field of the exported resources has exactly one column, and nothing else does', () => {
+  const { byType, problems } = csvExportColumns(doc);
+  assert.deepEqual(problems, []);
+  assert.deepEqual(Object.keys(byType), EXPORT_ITEM_TYPES);
+  assert.deepEqual(byType.profile, ['item_type', 'locale', 'contribute_to_aggregates']);
+  assert.deepEqual(byType.label_photo, ['item_type', 'photo_id', 'bean_id']);
+  // vocabulary_version is carried by the items that carry it, and only those.
+  assert.deepEqual(EXPORT_ITEM_TYPES.filter((t) => byType[t].includes('vocabulary_version')), ['shelf_entry', 'brew', 'recipe']);
+  // Counters and pending uploads are not resources of the contract, so they have no column.
+  for (const column of EXPORT_COLUMNS) assert.doesNotMatch(column, /lookup|pending|upload|count|expires/);
+  assert.deepEqual([...new Set(Object.values(byType).flat())].sort(), [...EXPORT_COLUMNS].sort());
+});
+
+test('CSV export check fails when a resource gains a field without a column, or a column has no field', () => {
+  assertProblem(checkCsvExport(broken((d) => {
+    schemas(d).BrewParameters.properties.ratio = { type: 'integer', minimum: 1, maximum: 30 };
+  })), 'x-csv-columns lacks the field columns ratio');
+  assertProblem(checkCsvExport(broken((d) => {
+    csvMedia(d)['x-csv-columns'] = csvMedia(d)['x-csv-columns'].filter((c) => c !== 'milk');
+  })), 'x-csv-columns lacks the field columns milk');
+  assertProblem(checkCsvExport(broken((d) => {
+    csvMedia(d)['x-csv-columns'].push('created_at');
+  })), 'has columns no exported resource has: created_at');
+  assertProblem(checkCsvExport(broken((d) => {
+    schemas(d).Rating.properties.extra = { type: 'object', additionalProperties: false, properties: {} };
+  })), 'Brew.values.rating.extra: nested object is neither a CSV wrapper');
+  assertProblem(checkCsvExport(broken((d) => {
+    schemas(d).Rating.properties.counts = { type: 'array', maxItems: 2, items: { type: 'integer', minimum: 1, maximum: 2 } };
+  })), 'only an array of vocabulary ids can be one CSV column');
+});
+
+test('CSV export check fails on a malformed header list or item type list', () => {
+  const cases = [
+    [(m) => { m['x-csv-columns'] = []; }, 'x-csv-columns must be a non-empty list'],
+    [(m) => { m['x-csv-columns'] = ['item_type', 'Locale']; }, 'x-csv-columns entry "Locale" is not snake_case'],
+    [(m) => { m['x-csv-columns'].push('locale'); }, 'x-csv-columns repeats locale'],
+    [(m) => { m['x-csv-columns'] = [...m['x-csv-columns'].slice(1), 'item_type']; }, 'the first column must be item_type'],
+    [(m) => { m['x-csv-item-types'] = ['brew', 'profile', 'shelf_entry', 'recipe', 'label_photo']; }, 'x-csv-item-types must be profile, shelf_entry, brew, recipe, label_photo'],
+    [(m) => { delete m['x-csv-columns']; }, 'x-csv-columns must be a non-empty list'],
+  ];
+  for (const [mutate, fragment] of cases) assertProblem(checkCsvExport(broken((d) => mutate(csvMedia(d)))), fragment);
+  assertProblem(checkCsvExport(broken((d) => { delete d.paths['/export']; })), 'GET /export: no 200 text/csv response');
+});
+
+test('CSV export check fails when the description and the extension disagree', () => {
+  const edit = (from, to) => broken((d) => {
+    const op = d.paths['/export'].get;
+    assert.ok(op.description.includes(from), `description contains ${from}`);
+    op.description = op.description.replace(from, to);
+  });
+  assertProblem(checkCsvExport(edit('columns: item_type,locale,', 'columns: item_type,')), 'the description\'s "columns:" line differs from x-csv-columns');
+  assertProblem(checkCsvExport(edit('\ncolumns: ', '\nheader: ')), 'the description has no line "columns: a,b,c"');
+  assertProblem(checkCsvExport(edit('item_types: profile,shelf_entry,', 'item_types: shelf_entry,profile,')), 'the description\'s "item_types:" line differs');
+  assertProblem(checkCsvExport(edit('| `milk` | brew, recipe |', '| `milk` | brew |')), 'the column table says milk is filled by brew, the schemas say brew, recipe');
+  assertProblem(checkCsvExport(edit('| `photo_id` | label_photo | Id |\n', '')), 'the description\'s column table does not list x-csv-columns in order');
+  // Moving a column in the extension alone breaks both description pins.
+  const moved = checkCsvExport(broken((d) => {
+    const columns = csvMedia(d)['x-csv-columns'];
+    columns.splice(columns.indexOf('photo_id'), 1);
+    columns.splice(1, 0, 'photo_id');
+  }));
+  assertProblem(moved, 'the description\'s "columns:" line differs');
+  assertProblem(moved, 'column table does not list x-csv-columns in order');
+});
+
+test('CSV export check fails on x-csv-* anywhere but the export\'s text/csv response, including on the schema', () => {
+  assertProblem(checkCsvExport(broken((d) => {
+    d.paths['/profile'].get.responses['200'].content['application/json']['x-csv-columns'] = ['item_type'];
+  })), 'x-csv-columns is only allowed on the text/csv response of GET /export');
+  assertProblem(checkCsvExport(broken((d) => {
+    d.paths['/export'].get['x-csv-item-types'] = ['profile'];
+  })), 'x-csv-item-types is only allowed on the text/csv response of GET /export');
+  // On the schema itself, the keyword allowlist and the raw-body check both refuse it.
+  const onSchema = broken((d) => { csvMedia(d).schema['x-csv-columns'] = ['item_type']; });
+  assertProblem(checkCsvExport(onSchema), 'x-csv-columns is only allowed on the text/csv response');
+  assertProblem(lintSchemas(onSchema), 'keyword x-csv-columns is not allowed');
+  assertProblem(checkStructure(onSchema), 'a text/csv body must be exactly { type: string, contentMediaType: text/csv }');
+  assert.equal(CSV_EXPORT.route, '/export');
+});
+
+test('openapi.yaml: account deletion and consent state the decisions (D1, D2, D10, D11)', () => {
+  const remove = doc.paths['/account'].delete;
+  assert.deepEqual(Object.keys(remove.responses).sort(), ['204', '401', '429']);
+  for (const fragment of ['D2', 'D10', 'D11', 'ADR 0017', 'deletion log', 'ids only', 'deleted last', 'retries', 'same token']) {
+    assert.ok(remove.description.includes(fragment), `DELETE /account description mentions ${fragment}`);
+  }
+  assert.doesNotMatch(remove.description, /open decision|cupmark-|bucket|USER#|PHOTO#/i);
+  const consent = schemas(doc).Consent.properties.contribute_to_aggregates.description;
+  assert.match(consent, /Opt-in/);
+  assert.doesNotMatch(consent, /open decision/i);
 });
 
 test('openapi.yaml: ranges match v1 exactly (dose as integer decigrams)', () => {

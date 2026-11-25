@@ -50,3 +50,45 @@ export function userIdFromEvent(event: APIGatewayProxyEventV2WithJWTAuthorizer):
   const sub: unknown = event.requestContext?.authorizer?.jwt?.claims?.sub;
   return typeof sub === 'string' && COGNITO_SUB.test(sub) ? mint(sub) : undefined;
 }
+
+/**
+ * Cognito usernames are at most 128 characters. This accepts the ASCII subset
+ * that pool usernames and federated ones (`<provider>_<id>`) use; anything else
+ * is treated as absent.
+ */
+const COGNITO_USERNAME = /^[A-Za-z0-9_.@+-]{1,128}$/;
+
+let mintUsername: (username: string) => CognitoUsername;
+
+/**
+ * The caller's Cognito username, the `username` claim of the access token. For
+ * a Sign in with Apple user it looks like `SignInWithApple_<apple id>`. Used
+ * only to delete the caller's own Cognito user (DELETE /account), never for a
+ * key, a log line or a response. Like `UserId` it comes from the verified
+ * token only, through `cognitoUsernameFromEvent`.
+ */
+export class CognitoUsername {
+  readonly #username: string;
+
+  private constructor(token: typeof MINT, username: string) {
+    if (token !== MINT || !COGNITO_USERNAME.test(username)) {
+      throw new TypeError('a CognitoUsername comes only from cognitoUsernameFromEvent');
+    }
+    this.#username = username;
+  }
+
+  static {
+    mintUsername = (username) => new CognitoUsername(MINT, username);
+  }
+
+  public get value(): string {
+    return this.#username;
+  }
+}
+
+/** The caller's Cognito username from the token's `username` claim, or undefined if it has none that is valid. */
+export function cognitoUsernameFromEvent(event: APIGatewayProxyEventV2WithJWTAuthorizer): CognitoUsername | undefined {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  const username: unknown = event.requestContext?.authorizer?.jwt?.claims?.username;
+  return typeof username === 'string' && COGNITO_USERNAME.test(username) ? mintUsername(username) : undefined;
+}

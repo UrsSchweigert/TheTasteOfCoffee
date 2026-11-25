@@ -979,6 +979,188 @@ export function compileComponentSchemas(doc) {
   };
 }
 
+/**
+ * The CSV export (task M1-T6, ADR 0017). Its header is pinned twice: as
+ * `x-csv-columns` (and `x-csv-item-types`) on the `text/csv` Media Type
+ * Object of the 200 response, and as the lines `columns: a,b,c` and
+ * `item_types: a,b,c` plus a column table in the operation description. The
+ * extensions sit on the Media Type Object, not on the schema, so the raw body
+ * stays exactly `{ type: string, contentMediaType: text/csv }` and the schema
+ * keyword allowlist is untouched.
+ *
+ * Each item type flattens one component schema (or, for label photos, which
+ * have no response schema, a fixed column list). Flattening: a scalar or an
+ * array of ids is one column under its property name; an object named in
+ * `wrappers` adds its fields without a prefix; an object with
+ * `x-vocabulary-keys` adds its fields as `<property>_<key>`; any other object
+ * is a problem, so a new nested object needs a decision here first.
+ */
+export const CSV_COLUMNS_KEYWORD = 'x-csv-columns';
+export const CSV_ITEM_TYPES_KEYWORD = 'x-csv-item-types';
+export const CSV_ITEM_TYPE_COLUMN = 'item_type';
+export const CSV_EXPORT = {
+  method: 'get',
+  route: '/export',
+  code: '200',
+  itemTypes: {
+    profile: { schema: 'Profile' },
+    shelf_entry: { schema: 'ShelfEntry' },
+    brew: { schema: 'Brew' },
+    recipe: { schema: 'Recipe' },
+    // The user-side PHOTO# item (ADR 0016, backend/README.md); no route returns it as JSON.
+    label_photo: { columns: ['photo_id', 'bean_id'] },
+  },
+  wrappers: ['values', 'parameters', 'rating', 'consent'],
+};
+const CSV_NAME = /^[a-z][a-z0-9_]{0,62}$/;
+
+/** The columns one component schema flattens to, in schema order. */
+export function csvColumnsOf(doc, schemaName, wrappers = CSV_EXPORT.wrappers) {
+  const columns = [];
+  const problems = [];
+  const deref = (node) => {
+    let current = node;
+    for (let i = 0; i < 10 && isMap(current) && typeof current.$ref === 'string'; i += 1) current = resolveRef(doc, current.$ref);
+    return current;
+  };
+  const walk = (schema, prefix, where) => {
+    const resolved = deref(schema);
+    if (!isMap(resolved) || resolved.type !== 'object' || !isMap(resolved.properties)) {
+      problems.push(`${where}: is not an object with properties`);
+      return;
+    }
+    for (const [name, child] of Object.entries(resolved.properties)) {
+      const target = deref(child);
+      const at = `${where}.${name}`;
+      if (isMap(target) && target.type === 'object') {
+        if (wrappers.includes(name)) walk(target, prefix, at);
+        else if (typeof target['x-vocabulary-keys'] === 'string') walk(target, `${prefix}${name}_`, at);
+        else problems.push(`${at}: nested object is neither a CSV wrapper (${wrappers.join(', ')}) nor keyed by x-vocabulary-keys`);
+        continue;
+      }
+      if (isMap(target) && target.type === 'array') {
+        const item = deref(target.items);
+        if (!isMap(item) || item.type !== 'string' || !Array.isArray(item.enum)) {
+          problems.push(`${at}: only an array of vocabulary ids can be one CSV column`);
+        }
+      }
+      columns.push(`${prefix}${name}`);
+    }
+  };
+  walk({ $ref: SCHEMAS_PREFIX + schemaName }, '', schemaName);
+  return { columns, problems };
+}
+
+/** `{ <item type>: [columns] }` as the export's item types flatten, item_type first. */
+export function csvExportColumns(doc, exportSpec = CSV_EXPORT) {
+  const byType = {};
+  const problems = [];
+  for (const [type, source] of Object.entries(exportSpec.itemTypes)) {
+    const found = source.schema ? csvColumnsOf(doc, source.schema, exportSpec.wrappers) : { columns: [...source.columns], problems: [] };
+    problems.push(...found.problems.map((p) => `CSV item type ${type}: ${p}`));
+    const columns = [CSV_ITEM_TYPE_COLUMN, ...found.columns];
+    const duplicates = columns.filter((c, i) => columns.indexOf(c) !== i);
+    if (duplicates.length > 0) problems.push(`CSV item type ${type}: duplicate columns ${[...new Set(duplicates)].join(', ')}`);
+    byType[type] = columns;
+  }
+  return { byType, problems };
+}
+
+/** A fenced line `<key>: a,b,c` of a description, or undefined (or null if it appears more than once). */
+function descriptionList(description, key) {
+  const matches = [...String(description ?? '').matchAll(new RegExp(`^${key}: (.*)$`, 'gm'))];
+  if (matches.length !== 1) return matches.length === 0 ? undefined : null;
+  return matches[0][1].split(',');
+}
+
+/** The column table of the description: `| \`column\` | type, type | value |` rows, in order. */
+function descriptionTable(description) {
+  return [...String(description ?? '').matchAll(/^\| `([a-z0-9_]+)` \| ([a-z_, ]+) \|/gm)].map((m) => ({
+    column: m[1],
+    itemTypes: m[2].trim().split(/, */),
+  }));
+}
+
+/**
+ * Checks the CSV export: the extensions sit only on the export's text/csv
+ * response and are well formed, the description pins the same lists, and the
+ * columns are exactly the flattened fields of the exported resources.
+ */
+export function checkCsvExport(doc, exportSpec = CSV_EXPORT) {
+  const problems = [];
+  const expectedPath = ['paths', exportSpec.route, exportSpec.method, 'responses', exportSpec.code, 'content', CSV_MEDIA_TYPE];
+  const walk = (node, path) => {
+    if (Array.isArray(node)) {
+      node.forEach((child, i) => walk(child, [...path, i]));
+      return;
+    }
+    if (!isMap(node)) return;
+    for (const [key, child] of Object.entries(node)) {
+      if ([CSV_COLUMNS_KEYWORD, CSV_ITEM_TYPES_KEYWORD].includes(key) && JSON.stringify(path) !== JSON.stringify(expectedPath)) {
+        problems.push(`${pointer(path)}: ${key} is only allowed on the ${CSV_MEDIA_TYPE} response of ${exportSpec.method.toUpperCase()} ${exportSpec.route}`);
+      }
+      walk(child, [...path, key]);
+    }
+  };
+  walk(doc, []);
+
+  const where = `${exportSpec.method.toUpperCase()} ${exportSpec.route}`;
+  const op = doc?.paths?.[exportSpec.route]?.[exportSpec.method];
+  const media = op?.responses?.[exportSpec.code]?.content?.[CSV_MEDIA_TYPE];
+  if (!isMap(media)) return [...problems, `${where}: no ${exportSpec.code} ${CSV_MEDIA_TYPE} response`];
+
+  const listProblems = (value, keyword) => {
+    if (!Array.isArray(value) || value.length === 0) return [`${where}: ${keyword} must be a non-empty list`];
+    const found = [];
+    for (const name of value) if (typeof name !== 'string' || !CSV_NAME.test(name)) found.push(`${where}: ${keyword} entry ${JSON.stringify(name)} is not snake_case`);
+    const duplicates = value.filter((c, i) => value.indexOf(c) !== i);
+    if (duplicates.length > 0) found.push(`${where}: ${keyword} repeats ${[...new Set(duplicates)].join(', ')}`);
+    return found;
+  };
+  const columns = media[CSV_COLUMNS_KEYWORD];
+  const itemTypes = media[CSV_ITEM_TYPES_KEYWORD];
+  const columnProblems = listProblems(columns, CSV_COLUMNS_KEYWORD);
+  const typeProblems = listProblems(itemTypes, CSV_ITEM_TYPES_KEYWORD);
+  problems.push(...columnProblems, ...typeProblems);
+  if (columnProblems.length > 0 || typeProblems.length > 0) return problems;
+
+  if (columns[0] !== CSV_ITEM_TYPE_COLUMN) problems.push(`${where}: the first column must be ${CSV_ITEM_TYPE_COLUMN}`);
+  const expectedTypes = Object.keys(exportSpec.itemTypes);
+  if (JSON.stringify(itemTypes) !== JSON.stringify(expectedTypes)) {
+    problems.push(`${where}: ${CSV_ITEM_TYPES_KEYWORD} must be ${expectedTypes.join(', ')} (CSV_EXPORT in lib/openapi.mjs)`);
+  }
+
+  // The description pins the same lists.
+  for (const [key, keyword, value] of [['columns', CSV_COLUMNS_KEYWORD, columns], ['item_types', CSV_ITEM_TYPES_KEYWORD, itemTypes]]) {
+    const pinned = descriptionList(op.description, key);
+    if (pinned === undefined) problems.push(`${where}: the description has no line "${key}: a,b,c"`);
+    else if (pinned === null) problems.push(`${where}: the description has more than one line "${key}: ..."`);
+    else if (JSON.stringify(pinned) !== JSON.stringify(value)) problems.push(`${where}: the description's "${key}:" line differs from ${keyword}`);
+  }
+
+  // The columns are exactly the flattened fields of the exported resources.
+  const { byType, problems: flattenProblems } = csvExportColumns(doc, exportSpec);
+  problems.push(...flattenProblems.map((p) => `${where}: ${p}`));
+  const derived = new Set(Object.values(byType).flat());
+  const missing = [...derived].filter((c) => !columns.includes(c));
+  const extra = columns.filter((c) => !derived.has(c));
+  if (missing.length > 0) problems.push(`${where}: ${CSV_COLUMNS_KEYWORD} lacks the field columns ${missing.join(', ')}`);
+  if (extra.length > 0) problems.push(`${where}: ${CSV_COLUMNS_KEYWORD} has columns no exported resource has: ${extra.join(', ')}`);
+
+  // The description table lists every column, in order, with the item types that fill it.
+  const table = descriptionTable(op.description);
+  if (JSON.stringify(table.map((row) => row.column)) !== JSON.stringify(columns)) {
+    problems.push(`${where}: the description's column table does not list ${CSV_COLUMNS_KEYWORD} in order`);
+  }
+  for (const row of table) {
+    const filledBy = expectedTypes.filter((type) => byType[type]?.includes(row.column));
+    if (JSON.stringify(row.itemTypes) !== JSON.stringify(filledBy)) {
+      problems.push(`${where}: the column table says ${row.column} is filled by ${row.itemTypes.join(', ')}, the schemas say ${filledBy.join(', ')}`);
+    }
+  }
+  return problems;
+}
+
 /** All checks together, as used by bin/lint-openapi.mjs. */
 export function checkOpenApi(doc, context) {
   const problems = [
@@ -987,6 +1169,7 @@ export function checkOpenApi(doc, context) {
     ...findRequestFreeText(doc),
     ...findIdentityFields(doc),
     ...checkVocabularyBindings(doc, context),
+    ...checkCsvExport(doc),
   ];
   try {
     compileComponentSchemas(doc);

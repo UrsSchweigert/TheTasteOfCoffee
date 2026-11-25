@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { GENERATED_FILE, OPENAPI_FILE, generateFromContract, parseOpenApi } from '../scripts/codegen/paths.ts';
+import { CsvExportGenerationError, generateExportSource } from '../scripts/codegen/csv-export.ts';
+import { GENERATED_EXPORT_FILE, GENERATED_FILE, OPENAPI_FILE, generateExportFromContract, generateFromContract, parseOpenApi } from '../scripts/codegen/paths.ts';
 import { ContractGenerationError, generateContractSource } from '../scripts/codegen/zod-from-openapi.ts';
 import { componentSchemas } from '../src/generated/contract.ts';
 
@@ -151,5 +152,35 @@ describe('generator', () => {
   it('fails on a document without component schemas', () => {
     expect(() => generateContractSource({})).toThrow(ContractGenerationError);
     expect(() => generateContractSource(documentWith({}))).toThrow(ContractGenerationError);
+  });
+});
+
+describe('CSV export header (M1-T6)', () => {
+  const media = (extra: Record<string, unknown>): unknown => ({
+    paths: { '/export': { get: { responses: { '200': { content: { 'text/csv': { schema: { type: 'string' }, ...extra } } } } } } },
+  });
+
+  it('src/generated/export.ts is what the generator makes from contracts/openapi.yaml', () => {
+    const committed = readFileSync(GENERATED_EXPORT_FILE, 'utf8').replace(/\r\n/g, '\n');
+    expect(committed === generateExportFromContract(), 'run `npm run generate` and commit the result').toBe(true);
+  });
+
+  it('emits both lists in contract order', () => {
+    const source = generateExportSource(media({ 'x-csv-columns': ['item_type', 'b', 'a'], 'x-csv-item-types': ['z', 'y'] }));
+    expect(source).toContain("export const EXPORT_CSV_COLUMNS = [\n  'item_type',\n  'b',\n  'a',\n] as const;");
+    expect(source).toContain("export const EXPORT_CSV_ITEM_TYPES = [\n  'z',\n  'y',\n] as const;");
+  });
+
+  it.each([
+    ['no export route', {}],
+    ['no columns', media({ 'x-csv-item-types': ['a'] })],
+    ['no item types', media({ 'x-csv-columns': ['item_type'] })],
+    ['empty columns', media({ 'x-csv-columns': [], 'x-csv-item-types': ['a'] })],
+    ['a repeated column', media({ 'x-csv-columns': ['item_type', 'a', 'a'], 'x-csv-item-types': ['a'] })],
+    ['a column that is not snake_case', media({ 'x-csv-columns': ['item_type', "a'];"], 'x-csv-item-types': ['a'] })],
+    ['a first column other than item_type', media({ 'x-csv-columns': ['a', 'item_type'], 'x-csv-item-types': ['a'] })],
+    ['a non-string item type', media({ 'x-csv-columns': ['item_type'], 'x-csv-item-types': [1] })],
+  ])('fails on %s', (_name, document) => {
+    expect(() => generateExportSource(document)).toThrow(CsvExportGenerationError);
   });
 });

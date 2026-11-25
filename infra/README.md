@@ -27,7 +27,7 @@ bin/cupmark.ts     entry point (cdk.json "app"): builds, synthesises, runs the g
 src/config.ts      region, tag, name prefix, bootstrap qualifier, stage names
 src/app.ts         builds the App with the selected stages
 src/stage.ts       CupmarkStage (one per environment) and CupmarkStack (base of every stack)
-src/data.ts        the DynamoDB table and the two S3 buckets (M1-T1)
+src/data.ts        the DynamoDB table and the three S3 buckets (M1-T1, M1-T6)
 src/identity.ts    the Cognito user pool, its domain, the iOS app client and the Apple provider (M1-T2)
 src/functions.ts   one Lambda function: bundle, role, concurrency cap, 14-day log group
 src/api.ts         the HTTP API, its authorizer and stage, the api and health functions (M1-T2)
@@ -70,15 +70,18 @@ Verifying (or rejecting) a bean removes both attributes in the same write, which
 
 ### Buckets
 
-Both buckets: all public access blocked, object ownership `BucketOwnerEnforced` (ACLs off), versioning on, S3-managed encryption (SSE-S3), a bucket policy that denies any request without TLS or with TLS older than 1.2, `RETAIN`. Names are `cupmark-<stage>-<part>-<account id>` because bucket names are global.
+All three buckets: all public access blocked, object ownership `BucketOwnerEnforced` (ACLs off), versioning on, S3-managed encryption (SSE-S3), a bucket policy that denies any request without TLS or with TLS older than 1.2, `RETAIN`. Names are `cupmark-<stage>-<part>-<account id>` because bucket names are global.
 
 | Bucket | Holds | Lifecycle |
 | --- | --- | --- |
 | `cupmark-<stage>-photos-<account>` | By prefix: `uploads/` raw label photo uploads (presigned POST, ADR 0016); `labels/` the stripped label photos of unverified beans (F1), seen only by the operator; `verified/` photos of verified beans; `catalogue/` the catalogue's copies of Open Food Facts images (ADR 0011), which never expire | Objects under `uploads/` expire 1 day after they were written, and their noncurrent versions 1 day later. Objects under `verified/` expire 90 days after they were written. Noncurrent versions elsewhere expire after 30 days. Incomplete multipart uploads are aborted after 1 day. Expired delete markers are removed. No CORS configuration: the iOS app is not a browser. |
 | `cupmark-<stage>-backups-<account>` | The weekly full table export | Moves to S3 Glacier Flexible Retrieval after 30 days and expires after 365 days. Noncurrent versions expire after 30 days. Incomplete multipart uploads are aborted after 7 days. Expired delete markers are removed. |
+| `cupmark-<stage>-deletion-log-<account>` | The account deletion log (ADR 0017): one object per deleted account, `entries/<ulid>.json`, holding `sub`, `photo_ids` and `deleted_at` (ids only) | Objects under `entries/` expire 400 days after they were written. Noncurrent versions expire after 30 days. Expired delete markers are removed. |
 
-- **Label photo uploads (ADR 0016).** The API signs a presigned POST for `uploads/<photoId>.jpg` (exact key, `image/jpeg`, 1 byte to 8 MiB, 10 minutes); the app posts the JPEG straight to S3. The completion call reads the upload, strips its metadata and writes `labels/<photoId>.jpg`. Keys hold only the random photo id, never a user id. The API never deletes the raw upload: the `expire-raw-uploads` rule expires it 1 day after creation (in a versioned bucket that adds a delete marker and makes it noncurrent) and removes the noncurrent version 1 day later, so an unstripped original exists for at most about two days; the leftover delete marker is then removed by `remove-expired-delete-markers`. The whole-bucket `expire-noncurrent-versions` rule (30 days) also matches `uploads/`; when two rules expire the same object, S3 applies the shorter period, so the 1-day rule wins there and the two do not conflict. Photos under `labels/` never expire by lifecycle while the bean is in review. No S3 delete permission is needed, so `CupmarkBoundary` is unchanged.
+- **Label photo uploads (ADR 0016).** The API signs a presigned POST for `uploads/<photoId>.jpg` (exact key, `image/jpeg`, 1 byte to 8 MiB, 10 minutes); the app posts the JPEG straight to S3. The completion call reads the upload, strips its metadata and writes `labels/<photoId>.jpg`. Keys hold only the random photo id, never a user id. The API never deletes the raw upload: the `expire-raw-uploads` rule expires it 1 day after creation (in a versioned bucket that adds a delete marker and makes it noncurrent) and removes the noncurrent version 1 day later, so an unstripped original exists for at most about two days; the leftover delete marker is then removed by `remove-expired-delete-markers`. The whole-bucket `expire-noncurrent-versions` rule (30 days) also matches `uploads/`; when two rules expire the same object, S3 applies the shorter period, so the 1-day rule wins there and the two do not conflict. Photos under `labels/` never expire by lifecycle while the bean is in review. The upload flow itself deletes nothing; the only S3 deletes are account deletion's, below.
 - **Label photos.** `docs/06-cost-estimate.md` says "delete label photos 90 days after the bean is verified". Lifecycle rules count from an object's creation, not from a later event, so the convention is: when the operator verifies a bean, the tooling copies its photo to `verified/<beanId>/...` (a new object with a new creation date) and deletes the original. Photos of beans still in review never expire by lifecycle. Because the bucket is versioned, an expired or deleted photo stays as a noncurrent version for 30 more days, so it is gone for good about 120 days after verification.
+- **Account deletion (ADR 0017).** `DELETE /account` removes every version and delete marker of the user's `labels/<id>.jpg` and `uploads/<id>.jpg` (it lists the versions with the exact key as prefix, then deletes each `VersionId`), so a deleted photo does not linger as a noncurrent version. It then writes one entry to the deletion log before deleting the Cognito user.
+- **Deletion log.** It lives outside the table so that restoring the table from point-in-time recovery or an export cannot lose entries written after the restore point. 400 days outlives the 365-day exports and the 35-day recovery window. The API may only put objects under `entries/`; it cannot read, list or delete the log. Reading it is for the operator's restore procedure (M5): after a restore, re-delete every `sub` and bean-side `PHOTO#` item logged after the restore point. Its logical id is pinned like the other buckets.
 - **Backups.** Glacier Flexible Retrieval restores in hours (standard retrieval 3 to 5 hours), which matches the "restore within a few hours" target; the newest four exports are still in S3 Standard, and point-in-time recovery covers the last 35 days anyway. Its 90-day minimum storage duration is well inside the one-year retention.
 - **No access logging.** S3 server access logs need a third bucket, which then needs its own retention and safety properties, and they add storage and request charges per log object. CloudTrail (account level) already records bucket-level API calls. Revisit if the photo bucket ever needs per-object audit.
 - **No replication.** Replicating the backup bucket to Ireland (eu-west-1) is optional in the design and is not done. It is a follow-up: it would need a replication role, a second bucket in another region (an exception to the region guard) and a change to `CupmarkCfnExecution`, which denies every region but eu-central-1.
@@ -126,18 +129,22 @@ CloudFormation cannot put a SecureString into `ProviderDetails.private_key` (`{{
 | Role | Actions | Resource |
 | --- | --- | --- |
 | both | `logs:CreateLogStream`, `logs:PutLogEvents` | its own log group |
-| api | `dynamodb:GetItem`, `PutItem`, `UpdateItem`, `DeleteItem`, `Query`, `ConditionCheckItem` (the repository's transactions are authorised per contained action) | the table |
+| api | `dynamodb:GetItem`, `PutItem`, `UpdateItem`, `DeleteItem`, `Query`, `ConditionCheckItem` (the repository's transactions are authorised per contained action), `BatchWriteItem` (account deletion deletes the user partition in pages of 25, ADR 0017) | the table |
 | api | `dynamodb:Query` | the index `gsi1` |
 | api | `ssm:GetParameter` | exactly `/cupmark/<stage>/cursor-key` (the AWS-managed `aws/ssm` key needs no grant) |
 | api | `s3:GetObject`, `s3:PutObject` | `cupmark-<stage>-photos-<account>/catalogue/*` |
 | api | `s3:GetObject`, `s3:PutObject` | `cupmark-<stage>-photos-<account>/uploads/*` (PutObject authorises the presigned POST the API signs; GetObject lets the completion call read it, ADR 0016) |
 | api | `s3:PutObject` | `cupmark-<stage>-photos-<account>/labels/*` (the stripped label photo, ADR 0016) |
+| api | `s3:DeleteObject`, `s3:DeleteObjectVersion` | `cupmark-<stage>-photos-<account>/labels/*` and `/uploads/*` (account deletion, ADR 0017) |
+| api | `s3:ListBucketVersions` | the photo bucket, only with `StringLike` `s3:prefix` `labels/*` or `uploads/*` (account deletion finds the version ids) |
+| api | `s3:PutObject` | `cupmark-<stage>-deletion-log-<account>/entries/*` (write only, ADR 0017) |
+| api | `cognito-idp:AdminDeleteUser` | the stage's user pool (account deletion, ADR 0017) |
 | apple-idp | `ssm:GetParameter` | exactly `/cupmark/<stage>/apple-sign-in-key` |
 | apple-idp | `cognito-idp:CreateIdentityProvider`, `UpdateIdentityProvider`, `DeleteIdentityProvider`, `DescribeIdentityProvider` | the stage's user pool |
 
-The api role has no S3 list or delete action at all, and the only delete actions any role holds are `dynamodb:DeleteItem` (api) and `cognito-idp:DeleteIdentityProvider` (apple-idp); `test/api.test.ts` pins both, and pins the exact S3 statements per stage.
+The only S3 delete and list actions any role holds are the api role's account-deletion statements, limited to `labels/` and `uploads/` of the photo bucket; `catalogue/` and `verified/` cannot be deleted by the API. No role can read, list or delete the deletion log. The only delete actions any role holds are `dynamodb:DeleteItem`, `s3:DeleteObject`, `s3:DeleteObjectVersion` and `cognito-idp:AdminDeleteUser` (api) and `cognito-idp:DeleteIdentityProvider` (apple-idp). `test/api.test.ts` pins all of this, and the exact S3 and Cognito statements, per stage.
 
-**API function environment:** `TABLE_NAME` (`cupmark-<stage>-main`), `CURSOR_KEY_PARAMETER` (`/cupmark/<stage>/cursor-key`), `PHOTO_BUCKET` (`cupmark-<stage>-photos-<account>`, where the API stores and serves `catalogue/` images, signs label photo uploads to `uploads/` and writes stripped photos to `labels/`), `NODE_OPTIONS=--enable-source-maps`. No secret is in the environment.
+**API function environment:** `TABLE_NAME` (`cupmark-<stage>-main`), `CURSOR_KEY_PARAMETER` (`/cupmark/<stage>/cursor-key`), `PHOTO_BUCKET` (`cupmark-<stage>-photos-<account>`, where the API stores and serves `catalogue/` images, signs label photo uploads to `uploads/` and writes stripped photos to `labels/`), `DELETION_LOG_BUCKET` (`cupmark-<stage>-deletion-log-<account>`, ADR 0017), `USER_POOL_ID` (the stage pool's id, for `AdminDeleteUser`), `NODE_OPTIONS=--enable-source-maps`. No secret is in the environment. Both bucket names match the backend's pattern `^cupmark-[a-z0-9][a-z0-9-]{0,53}[a-z0-9]$` without `--` (the longest, `cupmark-prod-deletion-log-<12 digits>`, is 38 characters); `test/api.test.ts` checks it.
 
 **Outbound HTTPS.** The functions are not in a VPC. A Lambda function outside a VPC has internet access through the Lambda service, so the API function reaches the Open Food Facts API and image host over HTTPS without a VPC, NAT gateway or VPC endpoint (all fixed-fee, invariant 5). Which hosts it calls is the backend's concern (docs/05, Barcode lookup); there is no egress filter, which would need a NAT gateway or a firewall.
 
@@ -181,6 +188,12 @@ Check without decrypting: `aws ssm describe-parameters --region eu-central-1 --p
    - `CupmarkBoundary`: `dynamodb:ConditionCheckItem` on `table/cupmark-*` (the repository's transactions use condition checks), and the four Cognito identity-provider actions on `userpool/*` in eu-central-1 for the Apple provider function (pools cannot be name-scoped; each role's own policy names its pool).
    - `CupmarkCfnExecution`: `s3:GetObject` on `cdk-cupmark-assets-<account>-eu-central-1/*`, so CloudFormation can create functions from the bootstrap's asset bucket.
    - `test/policies.test.ts` checks that the boundary allows everything the stack's roles are granted, and that the execution policy can read the code.
+
+   M1-T6 (account deletion, ADR 0017) changed `CupmarkBoundary` again, so re-apply it even if you already applied the M1-T2 version:
+   - two new statements: `AccountDeletionOfLabelPhotos` (`s3:DeleteObject`, `s3:DeleteObjectVersion` on `arn:aws:s3:::cupmark-*-photos-*/labels/*` and `/uploads/*`) and `AccountDeletionListPhotoVersions` (`s3:ListBucketVersions` on `arn:aws:s3:::cupmark-*-photos-*`), so no other bucket, the backups and the deletion log included, can have objects or versions deleted through the boundary;
+   - `cognito-idp:AdminDeleteUser` added to the user-pool statement, renamed from `AppleIdentityProviderOfCupmarkPools` to `CognitoOfCupmarkPools`.
+
+   `CupmarkCfnExecution` is unchanged: its `s3:*` on `cupmark-*` already covers creating and configuring the deletion log bucket. Without the new boundary, `DELETE /account` fails with AccessDenied (500) at its first step; nothing else breaks.
 2. **Create both SecureStrings per stage** (above): `/cupmark/<stage>/cursor-key` and `/cupmark/<stage>/apple-sign-in-key`.
 3. **Check the Lambda concurrency quota.** Service Quotas → AWS Lambda → Concurrent executions, in eu-central-1. AWS keeps at least 100 unreserved, so the quota must be at least 100 plus the reserved total: 100 + 20 = 120, plus whatever other projects in the account reserve. New accounts often start at 10; ask for an increase (free) if needed.
 4. **Domain prefix risk.** Cognito prefix domains are unique per region across all AWS customers. If `cupmark-dev` or `cupmark-prod` is taken, the deploy fails at the domain, and a new prefix also means a new return URL in Apple's portal (and in this repo's tests).
@@ -189,7 +202,7 @@ Still unverified until the first dev deploy: whether CloudFormation's `AWS::Logs
 
 ## Outputs
 
-The stack outputs, as plain `CfnOutput`s without exports: the table name, the stream ARN, both bucket names, the user pool id, the app client id, the hosted domain URL and the API URL. Nothing imports them across stacks.
+The stack outputs, as plain `CfnOutput`s without exports: the table name, the stream ARN, the three bucket names, the user pool id, the app client id, the hosted domain URL and the API URL. Nothing imports them across stacks.
 
 ## Guards
 
@@ -209,7 +222,7 @@ The stack outputs, as plain `CfnOutput`s without exports: the table name, the st
 | `stateful` | A DynamoDB table, S3 bucket or Cognito user pool that is not `Retain` on delete and on replacement; a table without deletion protection or point-in-time recovery; a bucket without versioning or without all four public access block settings; a user pool without `DeletionProtection: ACTIVE`. |
 | `iam` | In a role's inline policies or an `AWS::IAM::Policy`: an action with `*`, `Resource: "*"`, `NotAction`, `NotResource` or `NotPrincipal`; a resource that is neither a resource of the same template (any suffix) nor a literal ARN whose resource part starts with its service's prefix in `OWNED_ARN_PREFIXES`: S3 bucket `cupmark-` (or the bootstrap's `cdk-cupmark-assets-`), DynamoDB `table/cupmark-`, Lambda `function:cupmark-`, SSM `parameter/cupmark/`, logs `log-group:/aws/lambda/cupmark-` or `log-group:/cupmark/`, IAM `role/cupmark-`, `role/Cupmark` or `policy/Cupmark` (`cupmark-` later in the path does not count; any other service fails closed, so the user pool may only be named by its ARN from the template); an ARN in another account; a value that cannot be resolved at synth time; any managed policy. `AWS_MANAGED_ARN_EXCEPTIONS` lists the AWS-managed ARNs allowed anyway: none. |
 
-`test/logical-ids.test.ts` pins the logical ids of the table, both buckets and the user pool. A rename or move of their constructs would make CloudFormation create new, empty resources and orphan the old ones (they are `RETAIN`); the test fails first. Changing a pinned id needs a migration plan, not a snapshot update.
+`test/logical-ids.test.ts` pins the logical ids of the table, the three buckets and the user pool. A rename or move of their constructs would make CloudFormation create new, empty resources and orphan the old ones (they are `RETAIN`); the test fails first. Changing a pinned id needs a migration plan, not a snapshot update.
 
 Adding a new resource type means adding it, with its name rule, to `ALLOWED_RESOURCE_TYPES` in a reviewed pull request, and adding the matching permissions to `scripts/aws/cupmark-cfn-execution-policy.json` (ADR 0002).
 

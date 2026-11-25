@@ -37,13 +37,32 @@
       ]
     },
     {
-      "Sid": "AppleIdentityProviderOfCupmarkPools",
+      "Sid": "AccountDeletionOfLabelPhotos",
+      "Effect": "Allow",
+      "Action": [
+        "s3:DeleteObject",
+        "s3:DeleteObjectVersion"
+      ],
+      "Resource": [
+        "arn:aws:s3:::cupmark-*-photos-*/labels/*",
+        "arn:aws:s3:::cupmark-*-photos-*/uploads/*"
+      ]
+    },
+    {
+      "Sid": "AccountDeletionListPhotoVersions",
+      "Effect": "Allow",
+      "Action": "s3:ListBucketVersions",
+      "Resource": "arn:aws:s3:::cupmark-*-photos-*"
+    },
+    {
+      "Sid": "CognitoOfCupmarkPools",
       "Effect": "Allow",
       "Action": [
         "cognito-idp:CreateIdentityProvider",
         "cognito-idp:UpdateIdentityProvider",
         "cognito-idp:DeleteIdentityProvider",
-        "cognito-idp:DescribeIdentityProvider"
+        "cognito-idp:DescribeIdentityProvider",
+        "cognito-idp:AdminDeleteUser"
       ],
       "Resource": "arn:aws:cognito-idp:${REGION}:${ACCOUNT}:userpool/*"
     },

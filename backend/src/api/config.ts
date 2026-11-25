@@ -21,6 +21,12 @@
 //   holds the catalogue image copies under `catalogue/` (M1-T4c, ADR 0011).
 //   Missing, or not a `cupmark-` bucket name: hits are cached without an
 //   image, and GET /catalogue_images/{image_id} answers 404.
+// - DELETION_LOG_BUCKET: the deletion log bucket
+//   (`cupmark-<stage>-deletion-log-<account>`, ADR 0017), validated like
+//   PHOTO_BUCKET. USER_POOL_ID: the stage's Cognito user pool, matching
+//   `^eu-central-1_[A-Za-z0-9]{1,55}$` (src/account/user-pool.ts). If either
+//   (or PHOTO_BUCKET) is missing or invalid, DELETE /account answers 500 with
+//   a fixed code before it changes anything; every other route keeps working.
 //
 // Without a usable key the list routes answer 500 and issue or accept no
 // cursor; every other route keeps working. A failed read is retried after
@@ -35,6 +41,8 @@ export const ENV = {
   openFoodFactsContact: 'OFF_CONTACT',
   openFoodFactsLookupCap: 'OFF_LOOKUP_CAP',
   photoBucket: 'PHOTO_BUCKET',
+  deletionLogBucket: 'DELETION_LOG_BUCKET',
+  userPoolId: 'USER_POOL_ID',
 } as const;
 
 /** Open Food Facts fetches per user and UTC day when OFF_LOOKUP_CAP is not set (docs/05, Barcode lookup). */

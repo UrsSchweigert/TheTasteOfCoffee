@@ -87,3 +87,17 @@ export class LabelPhotoCompletedError extends RepositoryError {
 export class LabelPhotoCapReachedError extends RepositoryError {
   public override readonly name = 'LabelPhotoCapReachedError';
 }
+
+/**
+ * The caller's account is being deleted or was deleted: its tombstone
+ * (`DELETED#<sub>` / `META`) is in force, so no write of the caller is
+ * accepted (API: 401; ADR 0017, Addendum). Nothing was written.
+ */
+export class AccountDeletedError extends RepositoryError {
+  public override readonly name = 'AccountDeletedError';
+}
+
+/** Account deletion could not delete every item of the partition, even after retries (API: 500; the app retries). */
+export class DeletionIncompleteError extends RepositoryError {
+  public override readonly name = 'DeletionIncompleteError';
+}

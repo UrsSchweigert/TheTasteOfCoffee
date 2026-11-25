@@ -14,6 +14,12 @@
 //   caller's partition, and each shelf entry counts the brews that reference it
 //   (`brewCount`, ADR 0012), so a shelf entry with brews cannot be deleted
 //   and cannot change its bean (D14).
+// - Every write of a caller carries a ConditionCheck that the caller's
+//   account tombstone (`DELETED#<sub>` / `META`) is not in force, in the same
+//   transaction, so a token issued before the account was deleted cannot
+//   recreate the partition (ADR 0017, Addendum). A failed check is
+//   AccountDeletedError (API: 401). Single puts, updates and deletes of the
+//   caller's items are transactions for that reason.
 // - The aggregation pipeline (M3) is not here; keys.ts has its key builders.
 import {
   ConditionalCheckFailedException,
@@ -21,6 +27,7 @@ import {
   TransactionConflictException,
 } from '@aws-sdk/client-dynamodb';
 import {
+  BatchWriteCommand,
   DeleteCommand,
   GetCommand,
   PutCommand,
@@ -59,10 +66,12 @@ import type {
 import { newUlid } from '../ids/ulid.ts';
 import { decodeCursor, encodeCursor } from './cursor.ts';
 import {
+  AccountDeletedError,
   BarcodeTakenError,
   BeanNotFoundError,
   BeanNotUnverifiedError,
   CorruptItemError,
+  DeletionIncompleteError,
   InvalidKeyError,
   InvalidValuesError,
   ItemExistsError,
@@ -98,6 +107,7 @@ import {
   recipeKey,
   reviewQueueKey,
   shelfEntryKey,
+  tombstoneKey,
   userPk,
   utcOf,
 } from './keys.ts';
@@ -111,6 +121,8 @@ export interface RepositoryOptions {
   readonly now?: () => Date;
   /** Id generator, for tests. Must return a contract `Id` (ULID). */
   readonly newId?: (now: Date) => string;
+  /** Wait before retrying unprocessed batch deletes, for tests. Default: setTimeout. */
+  readonly sleep?: (ms: number) => Promise<void>;
 }
 
 export interface ListOptions {
@@ -171,7 +183,57 @@ export const ITEM_TYPE = {
   beanLabelPhoto: 'BEAN_LABEL_PHOTO',
   labelPhotoCount: 'BEAN_PHOTOS',
   labelPhotoUploads: 'PHOTO_UPLOADS',
+  tombstone: 'ACCOUNT_TOMBSTONE',
 } as const;
+
+/**
+ * How long a tombstone stays in force after the last DELETE /account call:
+ * longer than any access token issued before the deletion can live (60
+ * minutes; docs/05, Security). ADR 0017, Addendum.
+ */
+export const TOMBSTONE_TTL_SECONDS = 2 * 60 * 60;
+
+/** BatchWriteItem takes at most 25 requests. */
+export const BATCH_WRITE_SIZE = 25;
+/**
+ * Batches of deletes in flight at once. About 26,000 items (13,000 brews, the
+ * export limit) are 1,040 batches; at 8 at a time and 20 to 40 ms each that is
+ * about 3 to 5 s, inside the 10 s timeout (backend/README.md, Account deletion).
+ */
+export const BATCH_WRITE_CONCURRENCY = 8;
+/** Attempts of one batch of deletes, the first one included, before unprocessed items fail the deletion. */
+export const BATCH_WRITE_ATTEMPTS = 8;
+
+/** The account tombstone (`DELETED#<sub>` / `META`), as account deletion uses it. */
+export interface AccountTombstone {
+  /** When the deletion that this tombstone belongs to began; fixed-width UTC. */
+  readonly deletedAt: string;
+  /** Photo ids whose label photo was deleted in full (D10), recorded before any of it was deleted. */
+  readonly photoIds: readonly string[];
+  /** True once the deletion log entry for this tombstone was written. */
+  readonly logged: boolean;
+}
+
+/** A completed label photo of the caller (the user-side `PHOTO#` item). */
+export interface LabelPhoto {
+  readonly photoId: string;
+  readonly beanId: string;
+}
+
+/** What account deletion must handle in S3 for a caller: completed and pending label photos. */
+export interface AccountPhotos {
+  readonly photos: readonly LabelPhoto[];
+  readonly pendingPhotoIds: readonly string[];
+}
+
+/** Every exported item of a caller (GET /export), each kind sorted by ascending id. */
+export interface ExportItems {
+  readonly profile?: Profile;
+  readonly shelfEntries: readonly ShelfEntry[];
+  readonly brews: readonly Brew[];
+  readonly recipes: readonly Recipe[];
+  readonly labelPhotos: readonly LabelPhoto[];
+}
 
 /** Completed label photos per user and bean (docs/04 F1 step 4; ADR 0016). */
 export const LABEL_PHOTOS_PER_BEAN = 3;
@@ -232,6 +294,18 @@ const PendingLabelPhotoItem = KeyAttributes.extend({ photoId: IdSchema, beanId: 
 const LabelPhotoItem = KeyAttributes.extend({ photoId: IdSchema, beanId: IdSchema, createdAt: z.string() });
 const LabelPhotoCountItem = KeyAttributes.extend({ beanId: IdSchema, photos: z.number().int().nonnegative() });
 const LastKey = z.object({ pk: z.string(), sk: z.string(), gsi1sk: z.string().optional() });
+const TombstoneItem = KeyAttributes.extend({
+  deletedAt: z.string(),
+  expires_at: EpochSeconds,
+  photoIds: z.set(IdSchema).optional(),
+  loggedAt: z.string().optional(),
+});
+
+type TransactItems = NonNullable<TransactWriteCommandInput['TransactItems']>;
+
+function byId<T>(id: (item: T) => string): (a: T, b: T) => number {
+  return (a, b) => (id(a) < id(b) ? -1 : id(a) > id(b) ? 1 : 0);
+}
 
 type BeanItemShape = z.infer<typeof BeanItem>;
 
@@ -316,6 +390,7 @@ export class Repository {
   readonly #table: string;
   readonly #now: () => Date;
   readonly #newId: (now: Date) => string;
+  readonly #sleep: (ms: number) => Promise<void>;
 
   public constructor(options: RepositoryOptions) {
     if (options.tableName === '') throw new InvalidValuesError('a table name is required');
@@ -323,6 +398,7 @@ export class Repository {
     this.#table = options.tableName;
     this.#now = options.now ?? (() => new Date());
     this.#newId = options.newId ?? ((now) => newUlid(now.getTime()));
+    this.#sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   }
 
   // ---- profile ----
@@ -336,22 +412,29 @@ export class Repository {
   /**
    * Creates or replaces consent and locale (PUT /profile). An update, not a put,
    * so other attributes of the profile item (the entitlement, M4) are kept.
+   * Returns the stored values: the update sets exactly these.
    */
   public async putProfile(user: UserId, profile: Profile): Promise<Profile> {
     const key = profileKey(user);
     const values = validValues(ProfileSchema, profile, 'profile');
     const now = utcOf(this.#now());
-    const result = await this.#client.send(
-      new UpdateCommand({
-        TableName: this.#table,
-        Key: key,
-        UpdateExpression: 'SET #type = :type, #values = :values, updatedAt = :now, createdAt = if_not_exists(createdAt, :now)',
-        ExpressionAttributeNames: { '#type': 'type', '#values': 'values' },
-        ExpressionAttributeValues: { ':type': ITEM_TYPE.profile, ':values': values, ':now': now },
-        ReturnValues: 'ALL_NEW',
-      }),
-    );
-    return storedItem(ProfileItem, result.Attributes, key.pk, 'profile').values;
+    try {
+      await this.#transactAs(user, [
+        {
+          Update: {
+            TableName: this.#table,
+            Key: key,
+            UpdateExpression: 'SET #type = :type, #values = :values, updatedAt = :now, createdAt = if_not_exists(createdAt, :now)',
+            ExpressionAttributeNames: { '#type': 'type', '#values': 'values' },
+            ExpressionAttributeValues: { ':type': ITEM_TYPE.profile, ':values': values, ':now': now },
+          },
+        },
+      ]);
+    } catch (error) {
+      failedConditions(error);
+      throw error;
+    }
+    return values;
   }
 
   // ---- shelf entries ----
@@ -374,14 +457,10 @@ export class Repository {
       updatedAt: at,
     };
     try {
-      await this.#client.send(
-        new TransactWriteCommand({
-          TransactItems: [
-            { ConditionCheck: this.#beanUsable(values.bean_id) },
-            { Put: { TableName: this.#table, Item: item, ConditionExpression: 'attribute_not_exists(pk)' } },
-          ],
-        }),
-      );
+      await this.#transactAs(user, [
+        { ConditionCheck: this.#beanUsable(values.bean_id) },
+        { Put: { TableName: this.#table, Item: item, ConditionExpression: 'attribute_not_exists(pk)' } },
+      ]);
     } catch (error) {
       const failed = failedConditions(error);
       if (failed?.includes(0)) throw new BeanNotFoundError('no such bean');
@@ -420,21 +499,17 @@ export class Repository {
     const key = shelfEntryKey(user, shelfEntryId);
     const values = validValues(ShelfEntryInputSchema, input, 'shelf entry');
     try {
-      await this.#client.send(
-        new TransactWriteCommand({
-          TransactItems: [
-            { ConditionCheck: this.#beanUsable(values.bean_id) },
-            {
-              Update: this.#shelfReplaceUpdate(
-                key,
-                values,
-                'attribute_exists(pk) AND (beanId = :bean OR attribute_not_exists(brewCount) OR brewCount = :zero)',
-                { ':zero': 0 },
-              ),
-            },
-          ],
-        }),
-      );
+      await this.#transactAs(user, [
+        { ConditionCheck: this.#beanUsable(values.bean_id) },
+        {
+          Update: this.#shelfReplaceUpdate(
+            key,
+            values,
+            'attribute_exists(pk) AND (beanId = :bean OR attribute_not_exists(brewCount) OR brewCount = :zero)',
+            { ':zero': 0 },
+          ),
+        },
+      ]);
     } catch (error) {
       const failed = failedConditions(error);
       if (failed?.includes(1)) {
@@ -447,7 +522,7 @@ export class Repository {
         // Only the bean check failed: the bean is unknown or rejected. If the entry already names it, keep it.
         const shelf = await this.#shelfItem(user, shelfEntryId);
         if (shelf?.beanId !== values.bean_id) throw new BeanNotFoundError('no such bean');
-        await this.#replaceKeepingBean(key, values);
+        await this.#replaceKeepingBean(user, key, values);
         return { shelf_entry_id: shelf.shelfEntryId, values };
       }
       throw error;
@@ -461,16 +536,12 @@ export class Repository {
    * concurrent bean change cannot slip a rejected bean in. That race is
    * WriteConflictError, and the router retries the whole replace.
    */
-  async #replaceKeepingBean(key: Key, values: ShelfEntryInput): Promise<void> {
+  async #replaceKeepingBean(user: UserId, key: Key, values: ShelfEntryInput): Promise<void> {
     try {
-      await this.#client.send(
-        new TransactWriteCommand({
-          TransactItems: [
-            { ConditionCheck: this.#beanExists(values.bean_id) },
-            { Update: this.#shelfReplaceUpdate(key, values, 'attribute_exists(pk) AND beanId = :bean', {}) },
-          ],
-        }),
-      );
+      await this.#transactAs(user, [
+        { ConditionCheck: this.#beanExists(values.bean_id) },
+        { Update: this.#shelfReplaceUpdate(key, values, 'attribute_exists(pk) AND beanId = :bean', {}) },
+      ]);
     } catch (error) {
       const failed = failedConditions(error);
       if (failed?.includes(1)) {
@@ -516,17 +587,18 @@ export class Repository {
   public async deleteShelfEntry(user: UserId, shelfEntryId: string): Promise<void> {
     const key = shelfEntryKey(user, shelfEntryId);
     try {
-      await this.#client.send(
-        new DeleteCommand({
-          TableName: this.#table,
-          Key: key,
-          ConditionExpression: 'attribute_exists(pk) AND (attribute_not_exists(brewCount) OR brewCount = :zero)',
-          ExpressionAttributeValues: { ':zero': 0 },
-        }),
-      );
+      await this.#transactAs(user, [
+        {
+          Delete: {
+            TableName: this.#table,
+            Key: key,
+            ConditionExpression: 'attribute_exists(pk) AND (attribute_not_exists(brewCount) OR brewCount = :zero)',
+            ExpressionAttributeValues: { ':zero': 0 },
+          },
+        },
+      ]);
     } catch (error) {
-      rethrowConflict(error);
-      if (!isConditionFailure(error)) throw error;
+      if (!failedConditions(error)?.length) throw error;
       if ((await this.#get(key)) === undefined) throw new ItemNotFoundError('no such shelf entry');
       throw new ShelfEntryInUseError('brews reference the shelf entry');
     }
@@ -559,27 +631,23 @@ export class Repository {
     const at = utcOf(now);
     const references = { shelfEntryId: shelf.shelfEntryId, beanId: shelf.beanId };
     try {
-      await this.#client.send(
-        new TransactWriteCommand({
-          TransactItems: [
-            {
-              Put: {
-                TableName: this.#table,
-                Item: { ...key, type: ITEM_TYPE.brew, brewId, ...references, values, createdAt: at, updatedAt: at },
-                ConditionExpression: 'attribute_not_exists(pk)',
-              },
-            },
-            {
-              Put: {
-                TableName: this.#table,
-                Item: { ...ref, type: ITEM_TYPE.brewRef, brewId, brewSk: key.sk, createdAt: at },
-                ConditionExpression: 'attribute_not_exists(pk)',
-              },
-            },
-            { Update: this.#countBrew(shelf, 1) },
-          ],
-        }),
-      );
+      await this.#transactAs(user, [
+        {
+          Put: {
+            TableName: this.#table,
+            Item: { ...key, type: ITEM_TYPE.brew, brewId, ...references, values, createdAt: at, updatedAt: at },
+            ConditionExpression: 'attribute_not_exists(pk)',
+          },
+        },
+        {
+          Put: {
+            TableName: this.#table,
+            Item: { ...ref, type: ITEM_TYPE.brewRef, brewId, brewSk: key.sk, createdAt: at },
+            ConditionExpression: 'attribute_not_exists(pk)',
+          },
+        },
+        { Update: this.#countBrew(shelf, 1) },
+      ]);
     } catch (error) {
       const failed = failedConditions(error);
       if (failed?.includes(2)) {
@@ -641,7 +709,7 @@ export class Repository {
       ConditionExpression: 'attribute_exists(pk) AND shelfEntryId = :oldShelf',
       ExpressionAttributeValues: { ':oldShelf': brew.shelfEntryId },
     };
-    const brewItems: NonNullable<TransactWriteCommandInput['TransactItems']> =
+    const brewItems: TransactItems =
       newSk === ref.brewSk
         ? [
             { ConditionCheck: pointerUnchanged },
@@ -689,12 +757,12 @@ export class Repository {
             },
           ];
     const newShelfIndex = brewItems.length;
-    const shelfItems: NonNullable<TransactWriteCommandInput['TransactItems']> =
+    const shelfItems: TransactItems =
       shelf.shelfEntryId === brew.shelfEntryId
         ? [{ ConditionCheck: this.#shelfUnchanged(shelf) }]
         : [{ Update: this.#countBrew(shelf, 1) }, { Update: this.#uncountBrew(user, brew.shelfEntryId) }];
     try {
-      await this.#client.send(new TransactWriteCommand({ TransactItems: [...brewItems, ...shelfItems] }));
+      await this.#transactAs(user, [...brewItems, ...shelfItems]);
     } catch (error) {
       const failed = failedConditions(error);
       if (!failed?.length) throw error;
@@ -711,6 +779,7 @@ export class Repository {
   public async deleteBrew(user: UserId, brewId: string): Promise<void> {
     const { ref, brew } = await this.#brewWithRef(user, brewId);
     await this.#transactOnExisting(
+      user,
       [
         {
           Delete: {
@@ -756,13 +825,21 @@ export class Repository {
     const now = this.#now();
     const recipeId = this.#newId(now);
     const at = utcOf(now);
-    await this.#create(recipeKey(user, recipeId), {
-      type: ITEM_TYPE.recipe,
-      recipeId,
-      values,
-      createdAt: at,
-      updatedAt: at,
-    });
+    const key = recipeKey(user, recipeId);
+    try {
+      await this.#transactAs(user, [
+        {
+          Put: {
+            TableName: this.#table,
+            Item: { type: ITEM_TYPE.recipe, recipeId, values, createdAt: at, updatedAt: at, ...key },
+            ConditionExpression: 'attribute_not_exists(pk)',
+          },
+        },
+      ]);
+    } catch (error) {
+      if (failedConditions(error)?.length) throw new ItemExistsError('item exists');
+      throw error;
+    }
     return { recipe_id: recipeId, values };
   }
 
@@ -777,13 +854,36 @@ export class Repository {
   public async replaceRecipe(user: UserId, recipeId: string, input: RecipeInput): Promise<Recipe> {
     const key = recipeKey(user, recipeId);
     const values = validValues(RecipeInputSchema, input, 'recipe');
-    const item = await this.#update(key, { values, updatedAt: utcOf(this.#now()) });
-    const stored = storedItem(RecipeItem, item, key.pk, 'recipe');
-    return { recipe_id: stored.recipeId, values: stored.values };
+    try {
+      await this.#transactAs(user, [
+        {
+          Update: {
+            TableName: this.#table,
+            Key: key,
+            UpdateExpression: 'SET #values = :values, updatedAt = :now',
+            ConditionExpression: 'attribute_exists(pk)',
+            ExpressionAttributeNames: { '#values': 'values' },
+            ExpressionAttributeValues: { ':values': values, ':now': utcOf(this.#now()) },
+          },
+        },
+      ]);
+    } catch (error) {
+      if (failedConditions(error)?.length) throw new ItemNotFoundError('no such item');
+      throw error;
+    }
+    // The update sets exactly these values; the id is the one in the key.
+    return { recipe_id: parseRecipeSortKey(key.sk) ?? recipeId, values };
   }
 
   public async deleteRecipe(user: UserId, recipeId: string): Promise<void> {
-    await this.#delete(recipeKey(user, recipeId));
+    try {
+      await this.#transactAs(user, [
+        { Delete: { TableName: this.#table, Key: recipeKey(user, recipeId), ConditionExpression: 'attribute_exists(pk)' } },
+      ]);
+    } catch (error) {
+      if (failedConditions(error)?.length) throw new ItemNotFoundError('no such item');
+      throw error;
+    }
   }
 
   /** The caller's recipes, newest first. */
@@ -801,8 +901,13 @@ export class Repository {
    * Creates an unverified bean, in the review queue (`gsi1`). With a barcode, the
    * `BARCODE#` pointer is written in the same transaction; a barcode that already
    * points to a bean fails with BarcodeTakenError and writes nothing.
+   *
+   * `caller`, the signed-in user who submits the bean (POST /beans), is used
+   * only for the tombstone check in the same transaction (AccountDeletedError);
+   * it is never stored on the bean. The API always passes it; operator tooling
+   * and test setup may leave it out.
    */
-  public async createBean(input: NewBean): Promise<BeanRecord> {
+  public async createBean(input: NewBean, caller?: UserId): Promise<BeanRecord> {
     const vocabularyVersion = validValues(VocabularyVersionSchema, input.vocabularyVersion, 'vocabulary version');
     const pickedAttributes = validValues(BeanAttributesSchema, input.pickedAttributes, 'bean attributes');
     // Stored and keyed in the canonical 13-digit form, so UPC-A and EAN-13 of one product collide.
@@ -833,25 +938,19 @@ export class Repository {
       operatorAttributes: {},
       ...(barcode === undefined ? {} : { barcode }),
     };
-    if (barcode === undefined) {
-      await this.#create(key, item);
-      return beanOf(item);
+    const items: TransactItems = [{ Put: { TableName: this.#table, Item: item, ConditionExpression: 'attribute_not_exists(pk)' } }];
+    if (barcode !== undefined) {
+      items.push({
+        Put: {
+          TableName: this.#table,
+          Item: { ...barcodeKey(barcode), type: ITEM_TYPE.barcode, beanId, barcode, createdAt },
+          ConditionExpression: 'attribute_not_exists(pk)',
+        },
+      });
     }
     try {
-      await this.#client.send(
-        new TransactWriteCommand({
-          TransactItems: [
-            { Put: { TableName: this.#table, Item: item, ConditionExpression: 'attribute_not_exists(pk)' } },
-            {
-              Put: {
-                TableName: this.#table,
-                Item: { ...barcodeKey(barcode), type: ITEM_TYPE.barcode, beanId, barcode, createdAt },
-                ConditionExpression: 'attribute_not_exists(pk)',
-              },
-            },
-          ],
-        }),
-      );
+      if (caller === undefined) await this.#client.send(new TransactWriteCommand({ TransactItems: items }));
+      else await this.#transactAs(caller, items);
     } catch (error) {
       const failed = failedConditions(error);
       if (failed?.includes(1)) throw new BarcodeTakenError('barcode already points to a bean');
@@ -960,7 +1059,7 @@ export class Repository {
   public async countLookup(user: UserId, cap: number): Promise<boolean> {
     if (!Number.isSafeInteger(cap) || cap < 0) throw new InvalidValuesError('invalid lookup cap');
     const day = utcOf(this.#now()).slice(0, 10);
-    return this.#countDaily(lookupCounterKey(user, day), day, 'lookups', ITEM_TYPE.lookupCounter, cap);
+    return this.#countDaily(user, lookupCounterKey(user, day), day, 'lookups', ITEM_TYPE.lookupCounter, cap);
   }
 
   /**
@@ -969,24 +1068,25 @@ export class Repository {
    * up (nothing is written then). `expires_at` is the start of the day plus
    * LOOKUP_COUNTER_TTL_SECONDS.
    */
-  async #countDaily(key: Key, day: string, attribute: string, type: string, cap: number): Promise<boolean> {
+  async #countDaily(user: UserId, key: Key, day: string, attribute: string, type: string, cap: number): Promise<boolean> {
     if (cap === 0) return false;
     const expiresAt = epochSeconds(new Date(`${day}T00:00:00.000Z`)) + LOOKUP_COUNTER_TTL_SECONDS;
     try {
-      await this.#client.send(
-        new UpdateCommand({
-          TableName: this.#table,
-          Key: key,
-          UpdateExpression: 'SET #type = :type, expires_at = if_not_exists(expires_at, :expires) ADD #count :one',
-          ConditionExpression: 'attribute_not_exists(#count) OR #count < :cap',
-          ExpressionAttributeNames: { '#type': 'type', '#count': attribute },
-          ExpressionAttributeValues: { ':type': type, ':expires': expiresAt, ':one': 1, ':cap': cap },
-        }),
-      );
+      await this.#transactAs(user, [
+        {
+          Update: {
+            TableName: this.#table,
+            Key: key,
+            UpdateExpression: 'SET #type = :type, expires_at = if_not_exists(expires_at, :expires) ADD #count :one',
+            ConditionExpression: 'attribute_not_exists(#count) OR #count < :cap',
+            ExpressionAttributeNames: { '#type': 'type', '#count': attribute },
+            ExpressionAttributeValues: { ':type': type, ':expires': expiresAt, ':one': 1, ':cap': cap },
+          },
+        },
+      ]);
       return true;
     } catch (error) {
-      rethrowConflict(error);
-      if (isConditionFailure(error)) return false;
+      if (failedConditions(error)?.includes(0)) return false;
       throw error;
     }
   }
@@ -1001,7 +1101,7 @@ export class Repository {
   public async countLabelPhotoUpload(user: UserId, cap: number): Promise<boolean> {
     if (!Number.isSafeInteger(cap) || cap < 0) throw new InvalidValuesError('invalid upload cap');
     const day = utcOf(this.#now()).slice(0, 10);
-    return this.#countDaily(labelPhotoUploadCounterKey(user, day), day, 'uploads', ITEM_TYPE.labelPhotoUploads, cap);
+    return this.#countDaily(user, labelPhotoUploadCounterKey(user, day), day, 'uploads', ITEM_TYPE.labelPhotoUploads, cap);
   }
 
   /** How many label photos the caller has completed for the bean (`BEANPHOTOS#<beanId>`), 0 if none. */
@@ -1025,13 +1125,20 @@ export class Repository {
     const now = this.#now();
     const photoId = this.#newId(now);
     const key = pendingLabelPhotoKey(user, photoId);
-    await this.#create(key, {
+    const item = {
       type: ITEM_TYPE.labelPhotoPending,
       photoId,
       beanId: bean,
       createdAt: utcOf(now),
       expires_at: epochSeconds(now) + PENDING_LABEL_PHOTO_TTL_SECONDS,
-    });
+      ...key,
+    };
+    try {
+      await this.#transactAs(user, [{ Put: { TableName: this.#table, Item: item, ConditionExpression: 'attribute_not_exists(pk)' } }]);
+    } catch (error) {
+      if (failedConditions(error)?.length) throw new ItemExistsError('item exists');
+      throw error;
+    }
     return photoId;
   }
 
@@ -1087,53 +1194,49 @@ export class Repository {
     const now = this.#now();
     const createdAt = utcOf(now);
     try {
-      await this.#client.send(
-        new TransactWriteCommand({
-          TransactItems: [
-            {
-              Delete: {
-                TableName: this.#table,
-                Key: pending,
-                ConditionExpression: 'attribute_exists(pk) AND beanId = :bean AND expires_at > :now',
-                ExpressionAttributeValues: { ':bean': beanId, ':now': epochSeconds(now) },
-              },
-            },
-            {
-              Put: {
-                TableName: this.#table,
-                Item: { ...userPhoto, type: ITEM_TYPE.labelPhoto, photoId, beanId, createdAt },
-                ConditionExpression: 'attribute_not_exists(pk)',
-              },
-            },
-            {
-              Put: {
-                TableName: this.#table,
-                Item: { ...beanPhoto, type: ITEM_TYPE.beanLabelPhoto, photoId, createdAt },
-                ConditionExpression: 'attribute_not_exists(pk)',
-              },
-            },
-            {
-              Update: {
-                TableName: this.#table,
-                Key: count,
-                UpdateExpression: 'SET #type = :type, beanId = :bean ADD photos :one',
-                ConditionExpression: 'attribute_not_exists(photos) OR photos < :cap',
-                ExpressionAttributeNames: { '#type': 'type' },
-                ExpressionAttributeValues: { ':type': ITEM_TYPE.labelPhotoCount, ':bean': beanId, ':one': 1, ':cap': LABEL_PHOTOS_PER_BEAN },
-              },
-            },
-            {
-              ConditionCheck: {
-                TableName: this.#table,
-                Key: beanMetaKey(beanId),
-                ConditionExpression: 'attribute_exists(pk) AND #status = :unverified',
-                ExpressionAttributeNames: { '#status': 'status' },
-                ExpressionAttributeValues: { ':unverified': 'unverified' },
-              },
-            },
-          ],
-        }),
-      );
+      await this.#transactAs(user, [
+        {
+          Delete: {
+            TableName: this.#table,
+            Key: pending,
+            ConditionExpression: 'attribute_exists(pk) AND beanId = :bean AND expires_at > :now',
+            ExpressionAttributeValues: { ':bean': beanId, ':now': epochSeconds(now) },
+          },
+        },
+        {
+          Put: {
+            TableName: this.#table,
+            Item: { ...userPhoto, type: ITEM_TYPE.labelPhoto, photoId, beanId, createdAt },
+            ConditionExpression: 'attribute_not_exists(pk)',
+          },
+        },
+        {
+          Put: {
+            TableName: this.#table,
+            Item: { ...beanPhoto, type: ITEM_TYPE.beanLabelPhoto, photoId, createdAt },
+            ConditionExpression: 'attribute_not_exists(pk)',
+          },
+        },
+        {
+          Update: {
+            TableName: this.#table,
+            Key: count,
+            UpdateExpression: 'SET #type = :type, beanId = :bean ADD photos :one',
+            ConditionExpression: 'attribute_not_exists(photos) OR photos < :cap',
+            ExpressionAttributeNames: { '#type': 'type' },
+            ExpressionAttributeValues: { ':type': ITEM_TYPE.labelPhotoCount, ':bean': beanId, ':one': 1, ':cap': LABEL_PHOTOS_PER_BEAN },
+          },
+        },
+        {
+          ConditionCheck: {
+            TableName: this.#table,
+            Key: beanMetaKey(beanId),
+            ConditionExpression: 'attribute_exists(pk) AND #status = :unverified',
+            ExpressionAttributeNames: { '#status': 'status' },
+            ExpressionAttributeValues: { ':unverified': 'unverified' },
+          },
+        },
+      ]);
     } catch (error) {
       const failed = failedConditions(error);
       if (!failed?.length) throw error;
@@ -1200,6 +1303,220 @@ export class Repository {
     return last.success && last.data.gsi1sk !== undefined
       ? { items, nextCursor: encodeCursor(last.data.gsi1sk) }
       : { items };
+  }
+
+  // ---- export (GET /export; ADR 0017) ----
+
+  /**
+   * Every exported item of the caller: the profile, shelf entries, brews,
+   * recipes and label photo links, read by sort key prefix with all pages and
+   * strongly consistent. Counters, pending uploads and brew pointers are left
+   * out (they are not the caller's data). Each kind is sorted by ascending id.
+   */
+  public async exportItems(user: UserId): Promise<ExportItems> {
+    const pk = userPk(user);
+    const of = async <T>(prefix: string, isSortKey: (sk: string) => boolean, map: (item: unknown) => T): Promise<T[]> =>
+      (await this.#queryAll(pk, prefix)).map((item) => {
+        const sk = typeof item.sk === 'string' ? item.sk : '';
+        if (!isSortKey(sk)) throw new CorruptItemError('stored item does not match its sort key prefix');
+        return map(item);
+      });
+    const [profile, shelfEntries, brews, recipes, labelPhotos] = await Promise.all([
+      this.getProfile(user),
+      of(PREFIX.shelf, (sk) => parseShelfSortKey(sk) !== undefined, (item) => {
+        const stored = storedItem(ShelfItem, item, pk, 'shelf entry');
+        return { shelf_entry_id: stored.shelfEntryId, values: stored.values };
+      }),
+      of(PREFIX.brew, (sk) => parseBrewSortKey(sk) !== undefined, (item) => {
+        const stored = storedItem(BrewItem, item, pk, 'brew');
+        return { brew_id: stored.brewId, values: stored.values };
+      }),
+      of(PREFIX.recipe, (sk) => parseRecipeSortKey(sk) !== undefined, (item) => {
+        const stored = storedItem(RecipeItem, item, pk, 'recipe');
+        return { recipe_id: stored.recipeId, values: stored.values };
+      }),
+      of(PREFIX.labelPhoto, (sk) => IdSchema.safeParse(sk.slice(PREFIX.labelPhoto.length)).success, (item) => {
+        const stored = storedItem(LabelPhotoItem, item, pk, 'label photo');
+        return { photoId: stored.photoId, beanId: stored.beanId };
+      }),
+    ]);
+    return {
+      ...(profile === undefined ? {} : { profile }),
+      shelfEntries: shelfEntries.sort(byId((entry) => entry.shelf_entry_id)),
+      brews: brews.sort(byId((brew) => brew.brew_id)),
+      recipes: recipes.sort(byId((recipe) => recipe.recipe_id)),
+      labelPhotos: labelPhotos.sort(byId((photo) => photo.photoId)),
+    };
+  }
+
+  // ---- account deletion (DELETE /account; ADR 0017 and its Addendum) ----
+
+  /**
+   * True if the caller's tombstone is in force (strongly consistent read).
+   * For a route that must refuse a deleted caller before it does work outside
+   * the table; the write itself still carries the tombstone check.
+   */
+  public async isAccountDeleted(user: UserId): Promise<boolean> {
+    return (await this.getAccountTombstone(user)) !== undefined;
+  }
+
+  /** The caller's tombstone if it is in force (strongly consistent read), else undefined. */
+  public async getAccountTombstone(user: UserId): Promise<AccountTombstone | undefined> {
+    const stored = await this.#tombstone(user);
+    if (stored === undefined || stored.expires_at <= epochSeconds(this.#now())) return undefined;
+    return { deletedAt: stored.deletedAt, photoIds: [...(stored.photoIds ?? [])].sort(), logged: stored.loggedAt !== undefined };
+  }
+
+  /**
+   * Step 1 of account deletion: puts the tombstone `DELETED#<sub>` / `META`
+   * with `expires_at` TOMBSTONE_TTL_SECONDS ahead. Idempotent: a tombstone in
+   * force is kept, with its `deletedAt`, photo ids and log mark; only its
+   * `expires_at` moves forward to now plus TOMBSTONE_TTL_SECONDS, so it still
+   * outlives every token when a retry comes long after the first call. An
+   * expired one is replaced by a fresh tombstone. Returns what is stored.
+   */
+  public async markAccountDeleted(user: UserId): Promise<AccountTombstone> {
+    const key = tombstoneKey(user);
+    const now = this.#now();
+    const nowSeconds = epochSeconds(now);
+    const expiresAt = nowSeconds + TOMBSTONE_TTL_SECONDS;
+    try {
+      await this.#client.send(
+        new PutCommand({
+          TableName: this.#table,
+          Item: { ...key, type: ITEM_TYPE.tombstone, deletedAt: utcOf(now), expires_at: expiresAt },
+          ConditionExpression: 'attribute_not_exists(pk) OR expires_at <= :now',
+          ExpressionAttributeValues: { ':now': nowSeconds },
+        }),
+      );
+    } catch (error) {
+      rethrowConflict(error);
+      if (!isConditionFailure(error)) throw error;
+      try {
+        await this.#client.send(
+          new UpdateCommand({
+            TableName: this.#table,
+            Key: key,
+            UpdateExpression: 'SET expires_at = :expires',
+            ConditionExpression: 'attribute_exists(pk) AND expires_at < :expires',
+            ExpressionAttributeValues: { ':expires': expiresAt },
+          }),
+        );
+      } catch (later) {
+        rethrowConflict(later);
+        // Already at or past the new expiry (two calls in one second): keep it.
+        if (!isConditionFailure(later)) throw later;
+      }
+    }
+    const stored = await this.#tombstone(user);
+    if (stored === undefined) throw new CorruptItemError('the account tombstone is missing after its write');
+    return { deletedAt: stored.deletedAt, photoIds: [...(stored.photoIds ?? [])].sort(), logged: stored.loggedAt !== undefined };
+  }
+
+  /**
+   * Adds photo ids to the tombstone (a string set, ADD), before any part of
+   * those photos is deleted: a retry after the user-side items are gone still
+   * knows them for the deletion log. Needs the tombstone.
+   */
+  public async recordDeletedPhotos(user: UserId, photoIds: readonly string[]): Promise<void> {
+    if (photoIds.length === 0) return;
+    const ids = new Set(photoIds.map((photoId) => validValues(IdSchema, photoId, 'photo id')));
+    await this.#client.send(
+      new UpdateCommand({
+        TableName: this.#table,
+        Key: tombstoneKey(user),
+        UpdateExpression: 'ADD photoIds :ids',
+        ConditionExpression: 'attribute_exists(pk)',
+        ExpressionAttributeValues: { ':ids': ids },
+      }),
+    );
+  }
+
+  /** Marks the tombstone once the deletion log entry is written, so a retry does not write a second one. */
+  public async markDeletionLogged(user: UserId): Promise<void> {
+    await this.#client.send(
+      new UpdateCommand({
+        TableName: this.#table,
+        Key: tombstoneKey(user),
+        UpdateExpression: 'SET loggedAt = :now',
+        ConditionExpression: 'attribute_exists(pk)',
+        ExpressionAttributeValues: { ':now': utcOf(this.#now()) },
+      }),
+    );
+  }
+
+  /** The caller's completed label photos (`PHOTO#`) and pending uploads (`PHOTO_PENDING#`, expired ones too). */
+  public async accountPhotos(user: UserId): Promise<AccountPhotos> {
+    const pk = userPk(user);
+    const [completed, pending] = await Promise.all([this.#queryAll(pk, PREFIX.labelPhoto), this.#queryAll(pk, PREFIX.labelPhotoPending)]);
+    const photos = completed.map((item) => {
+      const stored = storedItem(LabelPhotoItem, item, pk, 'label photo');
+      if (stored.sk !== `${PREFIX.labelPhoto}${stored.photoId}`) throw new CorruptItemError('stored label photo does not match its key');
+      return { photoId: stored.photoId, beanId: stored.beanId };
+    });
+    const pendingPhotoIds = pending.map((item) => {
+      const stored = storedItem(PendingLabelPhotoItem, item, pk, 'pending label photo');
+      if (stored.sk !== `${PREFIX.labelPhotoPending}${stored.photoId}`) throw new CorruptItemError('stored pending label photo does not match its key');
+      return stored.photoId;
+    });
+    return { photos, pendingPhotoIds };
+  }
+
+  /** Deletes the bean's record of a label photo (`BEAN#<beanId>` / `PHOTO#<photoId>`); nothing if it is gone already. */
+  public async deleteBeanLabelPhoto(beanId: string, photoId: string): Promise<void> {
+    await this.#client.send(new DeleteCommand({ TableName: this.#table, Key: beanLabelPhotoKey(beanId, photoId) }));
+  }
+
+  /**
+   * Deletes every item of `USER#<sub>`: all keys are read first (all pages,
+   * strongly consistent), then deleted with BatchWriteItem in pages of
+   * BATCH_WRITE_SIZE. Unprocessed items are sent again after an exponential
+   * wait with jitter, up to BATCH_WRITE_ATTEMPTS times per page; any left
+   * then is DeletionIncompleteError, and a repeat of the call finishes the
+   * job. The tombstone must be in force first, so no write of the caller can
+   * land after the read. Returns how many items were deleted.
+   */
+  public async deleteUserPartition(user: UserId): Promise<number> {
+    const pk = userPk(user);
+    const keys = (await this.#queryAll(pk, undefined, 'pk, sk')).map((item) => {
+      const parsed = KeyAttributes.safeParse(item);
+      // Defence in depth: never send a delete for a key outside the caller's partition.
+      if (!parsed.success || parsed.data.pk !== pk) throw new CorruptItemError('stored item is outside the expected partition');
+      return { pk: parsed.data.pk, sk: parsed.data.sk };
+    });
+    const pages: Key[][] = [];
+    for (let index = 0; index < keys.length; index += BATCH_WRITE_SIZE) pages.push(keys.slice(index, index + BATCH_WRITE_SIZE));
+    let next = 0;
+    let failed = false;
+    const worker = async (): Promise<void> => {
+      while (!failed && next < pages.length) {
+        const page = pages[next] ?? [];
+        next += 1;
+        try {
+          await this.#deleteBatch(pk, page);
+        } catch (error) {
+          failed = true;
+          throw error;
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(BATCH_WRITE_CONCURRENCY, pages.length) }, worker));
+    return keys.length;
+  }
+
+  /** One page of at most BATCH_WRITE_SIZE deletes, with its retries of unprocessed items. */
+  async #deleteBatch(pk: string, page: readonly Key[]): Promise<void> {
+    let requests = page.map((key) => ({ DeleteRequest: { Key: key } }));
+    for (let attempt = 1; requests.length > 0; attempt += 1) {
+      if (attempt > BATCH_WRITE_ATTEMPTS) throw new DeletionIncompleteError('items of the partition are left after retries');
+      if (attempt > 1) await this.#sleep(Math.min(1000, 25 * 2 ** (attempt - 1)) * (0.5 + Math.random() / 2));
+      const result = await this.#client.send(new BatchWriteCommand({ RequestItems: { [this.#table]: requests } }));
+      requests = (result.UnprocessedItems?.[this.#table] ?? []).map((request) => {
+        const key = KeyAttributes.safeParse(request.DeleteRequest?.Key);
+        if (!key.success || key.data.pk !== pk) throw new CorruptItemError('an unprocessed delete is outside the expected partition');
+        return { DeleteRequest: { Key: { pk: key.data.pk, sk: key.data.sk } } };
+      });
+    }
   }
 
   // ---- internals ----
@@ -1296,67 +1613,71 @@ export class Repository {
     return result.Item;
   }
 
-  async #create(key: Key, attributes: Record<string, unknown>): Promise<void> {
+  /**
+   * ConditionCheck: the caller's account tombstone is not in force. An expired
+   * tombstone that TTL has not removed yet no longer blocks (ADR 0017,
+   * Addendum): it outlived every token issued before the deletion.
+   */
+  #notDeleted(user: UserId): NonNullable<TransactItems[number]['ConditionCheck']> {
+    return {
+      TableName: this.#table,
+      Key: tombstoneKey(user),
+      ConditionExpression: 'attribute_not_exists(pk) OR expires_at <= :now',
+      ExpressionAttributeValues: { ':now': epochSeconds(this.#now()) },
+    };
+  }
+
+  /**
+   * One transaction of the caller's: `items`, then the tombstone check as the
+   * last item, so the indices callers inspect on failure stay the same. A
+   * failed tombstone check is AccountDeletedError; any other error is thrown
+   * as it came.
+   */
+  async #transactAs(user: UserId, items: TransactItems): Promise<void> {
+    const guard = items.length;
     try {
-      await this.#client.send(
-        new PutCommand({
-          TableName: this.#table,
-          Item: { ...attributes, ...key },
-          ConditionExpression: 'attribute_not_exists(pk)',
-        }),
-      );
+      await this.#client.send(new TransactWriteCommand({ TransactItems: [...items, { ConditionCheck: this.#notDeleted(user) }] }));
     } catch (error) {
-      if (isConditionFailure(error)) throw new ItemExistsError('item exists');
+      if (error instanceof TransactionCanceledException && error.CancellationReasons?.[guard]?.Code === 'ConditionalCheckFailed') {
+        throw new AccountDeletedError('the account is deleted', { cause: error });
+      }
       throw error;
     }
   }
 
-  /** SET each attribute on an existing item; returns the item after the update. */
-  async #update(key: Key, attributes: Record<string, unknown>): Promise<unknown> {
-    const names: Record<string, string> = {};
-    const values: Record<string, unknown> = {};
-    const sets = Object.entries(attributes).map(([name, value], index) => {
-      names[`#a${String(index)}`] = name;
-      values[`:v${String(index)}`] = value;
-      return `#a${String(index)} = :v${String(index)}`;
-    });
-    try {
-      const result = await this.#client.send(
-        new UpdateCommand({
-          TableName: this.#table,
-          Key: key,
-          UpdateExpression: `SET ${sets.join(', ')}`,
-          ConditionExpression: 'attribute_exists(pk)',
-          ExpressionAttributeNames: names,
-          ExpressionAttributeValues: values,
-          ReturnValues: 'ALL_NEW',
-        }),
-      );
-      return result.Attributes;
-    } catch (error) {
-      if (isConditionFailure(error)) throw new ItemNotFoundError('no such item');
-      throw error;
-    }
+  /** Every item of `pk` (with `prefix` on the sort key, if given), all pages, strongly consistent. */
+  async #queryAll(pk: string, prefix: string | undefined, projection?: string): Promise<Record<string, unknown>[]> {
+    const items: Record<string, unknown>[] = [];
+    let start: Record<string, unknown> | undefined;
+    do {
+      const input: QueryCommandInput = {
+        TableName: this.#table,
+        KeyConditionExpression: prefix === undefined ? 'pk = :pk' : 'pk = :pk AND begins_with(sk, :prefix)',
+        ExpressionAttributeValues: prefix === undefined ? { ':pk': pk } : { ':pk': pk, ':prefix': prefix },
+        ConsistentRead: true,
+        ...(projection === undefined ? {} : { ProjectionExpression: projection }),
+        ...(start === undefined ? {} : { ExclusiveStartKey: start }),
+      };
+      const result = await this.#client.send(new QueryCommand(input));
+      items.push(...((result.Items ?? []) as Record<string, unknown>[]));
+      start = result.LastEvaluatedKey;
+    } while (start !== undefined);
+    return items;
   }
 
-  async #delete(key: Key): Promise<void> {
-    try {
-      await this.#client.send(
-        new DeleteCommand({ TableName: this.#table, Key: key, ConditionExpression: 'attribute_exists(pk)' }),
-      );
-    } catch (error) {
-      if (isConditionFailure(error)) throw new ItemNotFoundError('no such item');
-      throw error;
-    }
+  async #tombstone(user: UserId): Promise<z.infer<typeof TombstoneItem> | undefined> {
+    const key = tombstoneKey(user);
+    const item = await this.#get(key);
+    if (item === undefined) return undefined;
+    const stored = storedItem(TombstoneItem, item, key.pk, 'account tombstone');
+    if (stored.sk !== key.sk) throw new CorruptItemError('stored account tombstone does not match its key');
+    return stored;
   }
 
   /** Runs a transaction on an item that existed; on a failed condition, tells "gone" from "raced". */
-  async #transactOnExisting(
-    transactItems: NonNullable<TransactWriteCommandInput['TransactItems']>,
-    stillThere: () => Promise<unknown>,
-  ): Promise<void> {
+  async #transactOnExisting(user: UserId, transactItems: TransactItems, stillThere: () => Promise<unknown>): Promise<void> {
     try {
-      await this.#client.send(new TransactWriteCommand({ TransactItems: transactItems }));
+      await this.#transactAs(user, transactItems);
     } catch (error) {
       if (!failedConditions(error)?.length) throw error;
       if ((await stillThere()) === undefined) throw new ItemNotFoundError('no such item');

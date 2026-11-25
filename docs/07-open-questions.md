@@ -6,8 +6,8 @@ Since ADR 0014, the lead decides these on its own recommendation and records eac
 
 | Id | Question | Default the agents build to |
 | --- | --- | --- |
-| D1 | Opt-out or opt-in for contributing to aggregates? Opt-in is safer under GDPR but shrinks the data set. | Opt-in, asked once at onboarding |
-| D2 | What happens to a deleted user's contribution to aggregates? | Subtract it, then delete |
+| D1 | Opt-out or opt-in for contributing to aggregates? Opt-in is safer under GDPR but shrinks the data set. | **Answered 2026-11-25, decided by: lead (ADR 0014, ADR 0017):** opt-in, asked once at onboarding. The profile stores `consent.contribute_to_aggregates`; the app sends false unless the user agrees. The aggregator (M3) counts only brews whose author had consent at write time. |
+| D2 | What happens to a deleted user's contribution to aggregates? | **Answered 2026-11-25, decided by: lead (ADR 0014, ADR 0017):** subtract it, then delete. Account deletion deletes every brew item, and the aggregator (M3) subtracts each removed brew from the stream's old image, as it does for any brew delete. No aggregates exist before M3, so M1 needs nothing more. |
 | D3 | Who curates the catalogue? | The operator, through a CLI script |
 | D4 | Price points | 2.99 EUR a month, 19.99 EUR a year |
 | D5 | How does Open Food Facts share-alike apply to the bean catalogue? | Tag source per field, keep catalogue separate from ratings; lawyer to confirm |
@@ -40,7 +40,7 @@ Open items are also tracked as GitHub issues with the label `human` (since 2026-
 - [x] Require the `ci-ok` status check on `main` (GitHub Actions app only, branches up to date), plus the existing PR rules (owner, 2026-11-25).
 - [x] Create the SecureStrings `/cupmark/{dev,prod}/apple-sign-in-key` and `/cupmark/{dev,prod}/cursor-key` in eu-central-1 (owner, 2026-11-25, via CloudShell; all four confirmed present).
 - [x] Re-apply the guardrails after M1-T2 (`apply-guardrails.sh --apply`): boundary and execution policies updated, bootstrap unchanged, deploy role policy rewritten (owner, 2026-11-25, from CloudShell).
-- [ ] Raise the Lambda concurrency quota in eu-central-1 to at least 120. The owner requested 1000 on 2026-11-25; AWS approval is pending, and the first deploy waits for it.
+- [x] Raise the Lambda concurrency quota in eu-central-1 to at least 120. The owner requested 1000 on 2026-11-25; on 2026-11-25 the owner reported it is 1000.
 - [ ] Once M1-T9 is built, deploy `cupmark-github-oidc` once by hand, importing the existing `CupmarkGitHubDeploy` (the owner prefers this, because it keeps the role ARN).
 - [ ] Add repository secrets: `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`, and the AWS role ARN.
 - [ ] Approve every production deployment.

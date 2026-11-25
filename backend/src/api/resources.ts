@@ -43,6 +43,17 @@ export type ApiStore = Pick<
   | 'discardPendingLabelPhoto'
   | 'hasLabelPhoto'
   | 'completeLabelPhoto'
+  | 'getProfile'
+  | 'putProfile'
+  | 'exportItems'
+  | 'isAccountDeleted'
+  | 'getAccountTombstone'
+  | 'markAccountDeleted'
+  | 'accountPhotos'
+  | 'recordDeletedPhotos'
+  | 'deleteBeanLabelPhoto'
+  | 'deleteUserPartition'
+  | 'markDeletionLogged'
 >;
 
 export interface Resource<I extends { vocabulary_version: number }, O> {

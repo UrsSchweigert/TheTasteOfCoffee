@@ -73,8 +73,9 @@ describe('the Cupmark app', () => {
       for (const r of Object.values(template.Resources)) counts[r.Type] = (counts[r.Type] ?? 0) + 1;
       expect(counts).toEqual({
         'AWS::DynamoDB::Table': 1,
-        'AWS::S3::Bucket': 2,
-        'AWS::S3::BucketPolicy': 2,
+        // photos, backups and the deletion log (ADR 0017).
+        'AWS::S3::Bucket': 3,
+        'AWS::S3::BucketPolicy': 3,
         'AWS::Cognito::UserPool': 1,
         'AWS::Cognito::UserPoolDomain': 1,
         'AWS::Cognito::UserPoolClient': 1,

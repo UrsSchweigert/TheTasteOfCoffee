@@ -42,3 +42,4 @@ What this costs, what it rules out, when to revisit.
 - [0014 The lead decides open questions on its recommendation, unless cloud costs are likely](0014-lead-decides-on-its-recommendation.md)
 - [0015 The Sign in with Apple provider is created by a deploy-time custom resource](0015-apple-provider-via-deploy-time-custom-resource.md)
 - [0016 Label photos are uploaded with a presigned POST and stripped by the API](0016-label-photo-upload-and-stripping.md)
+- [0017 Account deletion runs in the request and writes a deletion log outside the table](0017-account-deletion-and-deletion-log.md)

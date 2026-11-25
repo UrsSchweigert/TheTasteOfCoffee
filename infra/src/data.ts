@@ -1,5 +1,5 @@
 // The stateful core of a stage (docs/05-system-design.md, Data model and Persistence
-// and recovery): one DynamoDB table and two private S3 buckets. Every resource here is
+// and recovery): one DynamoDB table and three private S3 buckets. Every resource here is
 // RETAIN: deleting the stack, or a change that would replace a resource, never deletes
 // data. Deleting data is a human decision (CLAUDE.md, stop-and-ask rules).
 
@@ -64,6 +64,17 @@ export const UPLOAD_NONCURRENT_DAYS = 1;
 /** Stripped label photos of unverified beans (ADR 0016); they never expire by lifecycle. */
 export const LABEL_PHOTO_PREFIX = 'labels/';
 
+/**
+ * ADR 0017: the deletion log. One object per deleted account, `entries/<ulid>.json`,
+ * holding ids only. Entries expire after 400 days, which outlives the 365-day exports
+ * and the 35-day point-in-time recovery window, so the restore procedure (M5) can
+ * re-delete every account deleted after a restore point.
+ */
+export const DELETION_LOG_PREFIX = 'entries/';
+export const DELETION_LOG_EXPIRE_AFTER_DAYS = 400;
+/** Days a deleted or overwritten log entry is kept as a noncurrent version. */
+export const DELETION_LOG_NONCURRENT_DAYS = 30;
+
 export interface CupmarkDataProps {
   readonly stage: StageName;
 }
@@ -81,7 +92,7 @@ function bucketName(stage: StageName, part: string): string {
   return Fn.join('', [`${resourceName(stage, part)}-`, Aws.ACCOUNT_ID]);
 }
 
-/** Properties both buckets share: private, versioned, TLS only, S3-managed keys, RETAIN. */
+/** Properties every bucket shares: private, versioned, TLS only, S3-managed keys, RETAIN. */
 function privateBucketProps(): s3.BucketProps {
   return {
     blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -98,6 +109,7 @@ export class CupmarkData extends Construct {
   public readonly table: dynamodb.Table;
   public readonly photoBucket: s3.Bucket;
   public readonly backupBucket: s3.Bucket;
+  public readonly deletionLogBucket: s3.Bucket;
 
   public constructor(scope: Construct, id: string, props: CupmarkDataProps) {
     super(scope, id);
@@ -184,6 +196,24 @@ export class CupmarkData extends Construct {
       ],
     });
 
+    // The deletion log (ADR 0017). Outside the table, so restoring the table from
+    // point-in-time recovery or an export cannot lose entries written after the
+    // restore point. The API may only put entries; the operator's restore procedure
+    // reads them.
+    this.deletionLogBucket = new s3.Bucket(this, 'DeletionLogBucket', {
+      ...privateBucketProps(),
+      bucketName: bucketName(stage, 'deletion-log'),
+      lifecycleRules: [
+        {
+          id: 'expire-entries',
+          prefix: DELETION_LOG_PREFIX,
+          expiration: Duration.days(DELETION_LOG_EXPIRE_AFTER_DAYS),
+        },
+        { id: 'expire-noncurrent-versions', noncurrentVersionExpiration: Duration.days(DELETION_LOG_NONCURRENT_DAYS) },
+        { id: 'remove-expired-delete-markers', expiredObjectDeleteMarker: true },
+      ],
+    });
+
     // Outputs of this stack only; no exports, nothing is imported elsewhere.
     const streamArn = this.table.tableStreamArn;
     if (streamArn === undefined) throw new Error('the table must have a stream');
@@ -194,5 +224,9 @@ export class CupmarkData extends Construct {
     });
     new CfnOutput(this, 'PhotoBucketName', { value: this.photoBucket.bucketName, description: 'Label photo bucket' });
     new CfnOutput(this, 'BackupBucketName', { value: this.backupBucket.bucketName, description: 'Weekly export bucket' });
+    new CfnOutput(this, 'DeletionLogBucketName', {
+      value: this.deletionLogBucket.bucketName,
+      description: 'Account deletion log bucket (ADR 0017)',
+    });
   }
 }

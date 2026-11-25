@@ -2,9 +2,9 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Cupmark API
-  version: 0.4.0
+  version: 0.5.0
   description: >-
-    Free-tier API of Cupmark (tasks M0-T2 and M1-T8). No request carries free
+    Free-tier API of Cupmark (tasks M0-T2, M1-T8, M1-T4d and M1-T6). No request carries free
     text: every string a client sends is an id from the closed vocabulary in
     contracts/vocabulary, a server-generated id, a digit-only barcode or an
     ISO date. The only text is response-only: the product name and brand the
@@ -638,17 +638,153 @@ paths:
     get:
       operationId: exportData
       summary: Export every item of the caller as CSV.
+      description: |-
+        All of the caller's items as one CSV file (ADR 0017). Every value is an
+        id, a vocabulary id, a number, a boolean, a date or a timestamp, so the
+        file holds no free text.
+
+        Format:
+
+        - UTF-8 without a byte order mark, RFC 4180, Content-Type
+          `text/csv; charset=utf-8; header=present`.
+        - The first row is the header. Every row, the last one included, ends
+          with CRLF.
+        - Every field is enclosed in double quotes, the header too. No value
+          can contain a double quote, comma, CR or LF.
+        - One row per item. The column `item_type` says which kind of item a
+          row is. Rows come in the order of `item_types` below, and each type
+          is sorted by ascending id. The profile row is left out while there
+          is no profile. A caller with no items gets the header row only.
+        - A field that the row's item type does not have, or that the item
+          leaves out, is the empty string `""`.
+        - Values are written as in the JSON body of the same resource. Ids and
+          vocabulary ids are written as they are. Booleans are `true` or
+          `false`. Numbers are written in their shortest decimal form, with no
+          exponent and no trailing zeros, for example `7` and `7.5`. Dates are
+          `YYYY-MM-DD`, and timestamps are RFC 3339 as stored.
+        - A multi-valued field is one column, its ids joined by `;` in the
+          stored order. Ids never contain `;`. `flavour_notes` is the only
+          such field.
+        - Nested objects are flattened to their fields, and each column keeps
+          the field's JSON name. These wrapper objects add nothing to the
+          name: `values`, `parameters`, `rating` and `consent`. The only
+          exceptions are the fields of `scores` and `intensities`, whose
+          names are vocabulary ids. They take the object's name as a prefix
+          (`scores_acidity`, `intensities_acidity`), because both objects
+          have a field `acidity` and a field `body`.
+        - The columns are fixed and in this order. The header row is exactly
+          this list, and it is the same for every caller and every file. The
+          lint checks that this list matches `x-csv-columns` on the response,
+          and that it holds exactly one column for every field of the
+          exported resources (contracts/README.md, "CSV export").
+
+        item_types: profile,shelf_entry,brew,recipe,label_photo
+
+        columns: item_type,locale,contribute_to_aggregates,shelf_entry_id,vocabulary_version,bean_id,purchase_date,roast_date,bag_size,price_band,brew_id,brewed_at,method,dose_dg,water_g,water_temp_c,water_temp_special,brew_time_s,grind_normalised,water_type,milk,scores_aroma,scores_flavour,scores_aftertaste,scores_acidity,scores_body,scores_sweetness,scores_balance,scores_overall,intensities_acidity,intensities_body,intensities_bitterness,flavour_notes,buy_again,recipe_id,photo_id
+
+        Item types:
+
+        - `profile`: the Profile (GET /profile). There is at most one row.
+        - `shelf_entry`: a ShelfEntry, with its values.
+        - `brew`: a Brew, with its values, parameters and rating.
+        - `recipe`: a Recipe, with its values and parameters.
+        - `label_photo`: a label photo that is still linked to the caller
+          (D10, ADR 0016). The row holds its photo_id and bean_id only. The
+          image bytes are not in the file.
+
+        The columns, the item types that fill each one, and the value
+        each one holds:
+
+        | column | item types | value |
+        |---|---|---|
+        | `item_type` | profile, shelf_entry, brew, recipe, label_photo | one of the item types |
+        | `locale` | profile | Locale |
+        | `contribute_to_aggregates` | profile | boolean |
+        | `shelf_entry_id` | shelf_entry, brew | Id. For a brew, its shelf entry. |
+        | `vocabulary_version` | shelf_entry, brew, recipe | VocabularyVersion of the item |
+        | `bean_id` | shelf_entry, label_photo | Id |
+        | `purchase_date` | shelf_entry | CalendarDate |
+        | `roast_date` | shelf_entry | CalendarDate |
+        | `bag_size` | shelf_entry | BagSize |
+        | `price_band` | shelf_entry | PriceBand |
+        | `brew_id` | brew | Id |
+        | `brewed_at` | brew | Timestamp |
+        | `method` | brew, recipe | Method |
+        | `dose_dg` | brew, recipe | DoseDg (integer decigrams) |
+        | `water_g` | brew, recipe | WaterG |
+        | `water_temp_c` | brew, recipe | WaterTempC |
+        | `water_temp_special` | brew, recipe | WaterTempSpecial |
+        | `brew_time_s` | brew, recipe | BrewTimeS |
+        | `grind_normalised` | brew, recipe | GrindNormalised |
+        | `water_type` | brew, recipe | WaterType |
+        | `milk` | brew, recipe | MilkType |
+        | `scores_aroma` | brew | Score |
+        | `scores_flavour` | brew | Score |
+        | `scores_aftertaste` | brew | Score |
+        | `scores_acidity` | brew | Score |
+        | `scores_body` | brew | Score |
+        | `scores_sweetness` | brew | Score |
+        | `scores_balance` | brew | Score |
+        | `scores_overall` | brew | Score |
+        | `intensities_acidity` | brew | IntensityLevel |
+        | `intensities_body` | brew | IntensityLevel |
+        | `intensities_bitterness` | brew | IntensityLevel |
+        | `flavour_notes` | brew | FlavourNote ids joined by `;` |
+        | `buy_again` | brew | boolean |
+        | `recipe_id` | recipe | Id |
+        | `photo_id` | label_photo | Id |
+
+        Not exported: the daily lookup counters, the label-photo cap
+        counters, pending label photo uploads and any other server state.
+        Rate-limit state and unfinished uploads are not the caller's data.
       responses:
         '200':
           description: >-
-            All of the caller's items. Columns are defined in task M1-T6.
-            Label photos still linked to the caller (D10) are listed by
-            photo_id and bean_id; the image bytes are not part of the CSV.
+            All of the caller's items, in the format given in the operation
+            description.
           content:
             text/csv:
               schema:
                 type: string
                 contentMediaType: text/csv
+              x-csv-item-types: [profile, shelf_entry, brew, recipe, label_photo]
+              x-csv-columns:
+                - item_type
+                - locale
+                - contribute_to_aggregates
+                - shelf_entry_id
+                - vocabulary_version
+                - bean_id
+                - purchase_date
+                - roast_date
+                - bag_size
+                - price_band
+                - brew_id
+                - brewed_at
+                - method
+                - dose_dg
+                - water_g
+                - water_temp_c
+                - water_temp_special
+                - brew_time_s
+                - grind_normalised
+                - water_type
+                - milk
+                - scores_aroma
+                - scores_flavour
+                - scores_aftertaste
+                - scores_acidity
+                - scores_body
+                - scores_sweetness
+                - scores_balance
+                - scores_overall
+                - intensities_acidity
+                - intensities_body
+                - intensities_bitterness
+                - flavour_notes
+                - buy_again
+                - recipe_id
+                - photo_id
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
@@ -657,16 +793,37 @@ paths:
   /account:
     delete:
       operationId: deleteAccount
-      summary: Delete the caller's whole partition and label photos.
-      description: >-
-        Removes the profile, shelf, brews, recipes and label photos of the
-        caller. Every version of the caller's label photos of unverified beans
-        is deleted at once; photos of verified beans stay in the catalogue but
-        lose their link to the caller (D10). What happens to the caller's contribution to aggregates is
-        open decision D2 (default: subtract it, then delete).
+      summary: Delete the caller's account, every item of the caller and the caller's label photos.
+      description: |-
+        Deletes the account in the request (D2, D10, D11, ADR 0017). The steps
+        run in this order:
+
+        1. Every version of the caller's label photos of beans that are not
+           verified yet is deleted at once, both the stored and the uploaded
+           copy, along with the catalogue's record of each such photo. Photos
+           of verified beans stay in the catalogue but lose their link to the
+           caller (D10).
+        2. Every item of the caller is deleted: the profile, shelf entries,
+           brews, recipes, label photo links, pending uploads and counters.
+           The aggregator (M3) subtracts each deleted brew, as it does for
+           any deleted brew (D2).
+        3. An entry is written to the deletion log. It holds ids only: the
+           caller's user id and the ids of the deleted photos. Every restore
+           from a backup re-applies the log before the restored data is used
+           (D11).
+        4. The caller's sign-in account is deleted last. After that, no new
+           token can be issued for it.
+
+        The answer is 204 only after every step has succeeded. If any step
+        fails, the server answers 500 (as on any route, an unexpected
+        failure is not listed in this document), and the app retries. Every
+        step can safely be repeated, so a retry with the same token finishes
+        the deletion, as long as the token has not expired. A retry after a
+        204 answers 204 again. After the 204, the app signs out and discards
+        its tokens.
       responses:
         '204':
-          description: Deleted.
+          description: The account and every item of the caller are deleted, and the deletion is logged.
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
@@ -1434,7 +1591,10 @@ components:
       required: [contribute_to_aggregates]
       properties:
         contribute_to_aggregates:
-          description: Open decision D1; default is opt-in, asked once at onboarding, so the app sends false unless the user agrees.
+          description: >-
+            Opt-in (D1, ADR 0017). Asked once at onboarding; false unless the
+            user agrees, so the app sends false until then. The aggregator
+            (M3) counts only brews written while this was true.
           type: boolean
 
     Profile:
