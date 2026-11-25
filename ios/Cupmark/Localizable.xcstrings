@@ -505,6 +505,546 @@
         }
       }
     },
+    "brew.amounts_header" : {
+      "comment" : "Header of the dose and water section of the brew form.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dosis und Wasser"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dose and Water"
+          }
+        }
+      }
+    },
+    "brew.bean_header" : {
+      "comment" : "Header of the bean section of the brew form.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bohne"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bean"
+          }
+        }
+      }
+    },
+    "brew.cancel" : {
+      "comment" : "Closes the brew form without saving.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abbrechen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel"
+          }
+        }
+      }
+    },
+    "brew.dose" : {
+      "comment" : "Label of the coffee dose stepper, in grams.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dosis"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dose"
+          }
+        }
+      }
+    },
+    "brew.dose.clear" : {
+      "comment" : "Accessibility label of the button that clears the dose.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dosis entfernen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear Dose"
+          }
+        }
+      }
+    },
+    "brew.grind" : {
+      "comment" : "Label of the normalised grind stepper, from fine to coarse.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mahlgrad, fein bis grob"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grind, Fine to Coarse"
+          }
+        }
+      }
+    },
+    "brew.grind.clear" : {
+      "comment" : "Accessibility label of the button that clears the grind.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mahlgrad entfernen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear Grind"
+          }
+        }
+      }
+    },
+    "brew.method" : {
+      "comment" : "Label of the brew method pick list.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Methode"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Method"
+          }
+        }
+      }
+    },
+    "brew.method.choose" : {
+      "comment" : "Brew method pick list entry shown while no method is chosen.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auswählen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose"
+          }
+        }
+      }
+    },
+    "brew.method.footer" : {
+      "comment" : "Footer of the method pick list: only the method is required.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nur die Methode ist nötig, alles andere ist optional."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only the method is required; everything else is optional."
+          }
+        }
+      }
+    },
+    "brew.milk" : {
+      "comment" : "Label of the milk pick list.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Milch"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Milk"
+          }
+        }
+      }
+    },
+    "brew.more_header" : {
+      "comment" : "Header of the grind and milk section of the brew form.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mahlgrad und Milch"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grind and Milk"
+          }
+        }
+      }
+    },
+    "brew.not_found" : {
+      "comment" : "Shown when the bag of the brew is no longer on the shelf.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Packung ist nicht mehr in deinem Regal."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This bag is no longer on your shelf."
+          }
+        }
+      }
+    },
+    "brew.offline_note" : {
+      "comment" : "Footer of the brew form: the save works offline.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wird sofort auf diesem iPhone gesichert und synchronisiert, sobald du online bist."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saved on this iPhone right away, and synced when you are online."
+          }
+        }
+      }
+    },
+    "brew.ratio" : {
+      "comment" : "Label of the brew ratio, coffee to water.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verhältnis"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ratio"
+          }
+        }
+      }
+    },
+    "brew.ratio.accessibility" : {
+      "comment" : "Accessibility label of the brew ratio, read before its number.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gramm Wasser pro Gramm Kaffee"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grams of water per gram of coffee"
+          }
+        }
+      }
+    },
+    "brew.ratio.missing" : {
+      "comment" : "Shown instead of the ratio until dose and water are set.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dosis und Wasser angeben"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set dose and water"
+          }
+        }
+      }
+    },
+    "brew.save" : {
+      "comment" : "Saves the brew.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sichern"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save"
+          }
+        }
+      }
+    },
+    "brew.save_failed" : {
+      "comment" : "Shown when a brew could not be saved on the device.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das konnte auf diesem iPhone nicht gesichert werden. Bitte versuche es noch einmal."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This could not be saved on this iPhone. Please try again."
+          }
+        }
+      }
+    },
+    "brew.start" : {
+      "comment" : "Button on a bag that opens the form to log a brew of it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zubereitung erfassen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Log a Brew"
+          }
+        }
+      }
+    },
+    "brew.temperature" : {
+      "comment" : "Label of the water temperature pick list: not set, heated, or cold.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wassertemperatur"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Water Temperature"
+          }
+        }
+      }
+    },
+    "brew.temperature.clear" : {
+      "comment" : "Accessibility label of the button that clears the water temperature.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Temperatur entfernen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear Temperature"
+          }
+        }
+      }
+    },
+    "brew.temperature.heated" : {
+      "comment" : "Water temperature pick list entry for heated water, set in degrees Celsius.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erhitzt"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Heated"
+          }
+        }
+      }
+    },
+    "brew.temperature.value" : {
+      "comment" : "Label of the water temperature stepper, in degrees Celsius.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Temperatur"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Temperature"
+          }
+        }
+      }
+    },
+    "brew.title" : {
+      "comment" : "Title of the form that logs a brew.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neue Zubereitung"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Brew"
+          }
+        }
+      }
+    },
+    "brew.water" : {
+      "comment" : "Label of the water stepper, in grams; for espresso it is the yield in the cup.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wasser oder Ausbeute"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Water or Yield"
+          }
+        }
+      }
+    },
+    "brew.water.clear" : {
+      "comment" : "Accessibility label of the button that clears the water or yield.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wasser oder Ausbeute entfernen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear Water or Yield"
+          }
+        }
+      }
+    },
+    "brew.water_header" : {
+      "comment" : "Header of the water section of the brew form.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wasser"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Water"
+          }
+        }
+      }
+    },
+    "brew.water_type" : {
+      "comment" : "Label of the water type pick list.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wasserart"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Water Type"
+          }
+        }
+      }
+    },
+    "label_photo.add_another" : {
+      "comment" : "Button that opens the camera for one more label photo.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weiteres Foto aufnehmen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add Another Photo"
+          }
+        }
+      }
+    },
     "label_photo.attached.accessibility" : {
       "comment" : "Accessibility label of the label photo preview in the bean entry.",
       "extractionState" : "manual",
@@ -519,6 +1059,24 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Photo of the label"
+          }
+        }
+      }
+    },
+    "label_photo.daily_limit" : {
+      "comment" : "Shown when the daily limit of label photo uploads is reached.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Du hast für heute so viele Etikettenfotos gesendet wie möglich. Versuche es morgen noch einmal."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You have sent as many label photos as possible for today. Try again tomorrow."
           }
         }
       }
@@ -595,6 +1153,42 @@
         }
       }
     },
+    "label_photo.no_more_photos" : {
+      "comment" : "Shown when the bean takes no more label photos.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Für diese Bohne werden keine weiteren Etikettenfotos angenommen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This bean takes no more label photos."
+          }
+        }
+      }
+    },
+    "label_photo.not_uploaded" : {
+      "comment" : "Status of a label photo that will not be uploaded.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Foto nicht gesendet"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Photo Not Sent"
+          }
+        }
+      }
+    },
     "label_photo.permission_denied" : {
       "comment" : "Shown in the label photo section when camera access is denied.",
       "extractionState" : "manual",
@@ -627,6 +1221,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Preparing the photo…"
+          }
+        }
+      }
+    },
+    "label_photo.rejected.message" : {
+      "comment" : "Asks the user to take a rejected label photo again.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Foto konnte nicht verwendet werden. Nimm es noch einmal auf."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The photo could not be used. Take it again."
+          }
+        }
+      }
+    },
+    "label_photo.rejected.title" : {
+      "comment" : "Status of a label photo the server did not accept.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Foto nicht angenommen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Photo Not Accepted"
           }
         }
       }
@@ -667,6 +1297,24 @@
         }
       }
     },
+    "label_photo.sign_in.message" : {
+      "comment" : "Asks the user to sign in again before a label photo can be sent.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Melde dich erneut an und versuche dann noch einmal, das Foto zu senden."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in again, then try again to send the photo."
+          }
+        }
+      }
+    },
     "label_photo.take" : {
       "comment" : "Button that opens the camera to photograph the bag's label.",
       "extractionState" : "manual",
@@ -681,6 +1329,132 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Photograph the Label"
+          }
+        }
+      }
+    },
+    "label_photo.upload_failed.message" : {
+      "comment" : "Explains a failed label photo upload that can be retried.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Foto konnte gerade nicht gesendet werden. Prüfe die Verbindung und versuche es erneut."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The photo could not be sent right now. Check the connection and try again."
+          }
+        }
+      }
+    },
+    "label_photo.upload_failed.title" : {
+      "comment" : "Status of a label photo whose upload failed.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht hochgeladen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not Uploaded"
+          }
+        }
+      }
+    },
+    "label_photo.uploaded.message" : {
+      "comment" : "Explains what happens to an uploaded label photo.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es wartet auf die Prüfung."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It is waiting for review."
+          }
+        }
+      }
+    },
+    "label_photo.uploaded.title" : {
+      "comment" : "Status of a label photo that was uploaded.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Foto gesendet"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Photo Sent"
+          }
+        }
+      }
+    },
+    "label_photo.uploading" : {
+      "comment" : "Status while a label photo is being uploaded.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Foto wird hochgeladen …"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uploading the photo…"
+          }
+        }
+      }
+    },
+    "label_photo.uploads.footer" : {
+      "comment" : "Footer under the label photos of a saved bean.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bis zu 3 Fotos des Etiketts helfen uns, die Bohne zu prüfen. Sie werden vertraulich geprüft und nie anderen Nutzern gezeigt. Standort- und Kameradaten werden entfernt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Up to 3 photos of the label help us check the bean. They are reviewed privately and never shown to other users. Location and camera details are removed."
+          }
+        }
+      }
+    },
+    "label_photo.uploads.header" : {
+      "comment" : "Section header above the label photos of a saved bean.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Etikettenfotos"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Label Photos"
           }
         }
       }

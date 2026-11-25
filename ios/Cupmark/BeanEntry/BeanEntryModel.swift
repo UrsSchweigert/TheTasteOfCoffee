@@ -13,7 +13,8 @@ import Observation
 ///   shown and the same body is never sent again. Every other failure can be retried.
 ///
 /// The save goes straight to the API for now. `request` is the complete body, built from the
-/// picks alone, so M2-T25 can put it into the outbox instead of calling `save()`.
+/// picks alone, so M2-T25 can put it into the outbox instead of calling `save()`. Once an
+/// unverified bean is saved, its label photos are uploaded by `labelPhotoUploads` (M2-T24).
 @MainActor
 @Observable
 final class BeanEntryModel {
@@ -47,15 +48,32 @@ final class BeanEntryModel {
     /// The body a 400 answered. It is never sent again.
     private(set) var rejectedRequest: API.BeanCreate?
     /// The label photo (M2-T23), held in memory as an encoded JPEG. It is not part of
-    /// `request`: M2-T24 uploads it to the saved bean's id.
+    /// `request`: once the bean is saved, it is handed to `labelPhotoUploads`.
     let labelPhoto = LabelPhotoDraft()
+    /// The label photos of the saved bean (M2-T24): set once the bean is saved, if it is
+    /// unverified. The photo of the form is its first one and starts uploading at once.
+    private(set) var labelPhotoUploads: LabelPhotoUploadModel?
 
     private let client: APIClient
+    private let photoUploader: any LabelPhotoUploading
+    private let photoFiles: LabelPhotoFileStore
 
-    init(barcode: CanonicalBarcode?, client: APIClient, picks: API.BeanAttributes = API.BeanAttributes()) {
+    init(
+        barcode: CanonicalBarcode?,
+        client: APIClient,
+        picks: API.BeanAttributes = API.BeanAttributes(),
+        photoUploader: (any LabelPhotoUploading)? = nil,
+        photoFiles: LabelPhotoFileStore = .standard()
+    ) {
         self.barcode = barcode
         self.client = client
         self.picks = picks
+        if let photoUploader {
+            self.photoUploader = photoUploader
+        } else {
+            self.photoUploader = LabelPhotoUploader(api: client, files: photoFiles)
+        }
+        self.photoFiles = photoFiles
     }
 
     /// The `POST /beans` body for the current picks: the bundled vocabulary version, the
@@ -77,10 +95,10 @@ final class BeanEntryModel {
         }
     }
 
-    /// Whether `save()` would send a request now: not while saving, not once saved, and not
-    /// the body a 400 answered.
+    /// Whether `save()` would send a request now: not while saving, not once saved, not
+    /// while the label photo is being encoded, and not the body a 400 answered.
     var canSave: Bool {
-        isEditable && request != rejectedRequest && state != .failed(.signInRequired)
+        isEditable && request != rejectedRequest && state != .failed(.signInRequired) && !labelPhoto.isPreparing
     }
 
     /// Sends `POST /beans`. Does nothing unless `canSave`.
@@ -91,7 +109,7 @@ final class BeanEntryModel {
         let body = self.request
         state = .saving
         do {
-            state = .saved(try await client.createBean(body))
+            didSave(try await client.createBean(body))
         } catch APIError.badRequest {
             rejectedRequest = body
             state = .failed(.rejected)
@@ -119,11 +137,27 @@ final class BeanEntryModel {
             return
         }
         do {
-            state = .saved(try await client.lookupBarcode(path))
+            didSave(try await client.lookupBarcode(path))
         } catch {
             // A 404 after a 409 contradicts it; "Try again" starts over with `POST /beans`.
             state = BeanEntryModel.failureState(after: error)
         }
+    }
+
+    /// Shows the saved bean. For an unverified bean the label photos start (M2-T24), and the
+    /// photo of the form, if any, uploads at once. A verified bean takes no label photos
+    /// (ADR 0016), so the form's photo is dropped.
+    private func didSave(_ bean: API.Bean) {
+        if !bean.verified, let beanID = ResourceID(bean.beanId) {
+            photoFiles.removeStale()
+            let uploads = LabelPhotoUploadModel(beanID: beanID, uploader: photoUploader, files: photoFiles)
+            if case .attached(let prepared) = labelPhoto.state {
+                uploads.add(prepared)
+            }
+            labelPhotoUploads = uploads
+        }
+        labelPhoto.remove()
+        state = .saved(bean)
     }
 
     /// The state after a failed call that is not a 400 or 409 from `POST /beans`. A cancelled

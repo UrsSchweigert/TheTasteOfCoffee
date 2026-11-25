@@ -49,8 +49,9 @@ struct PreparedLabelPhoto: @unchecked Sendable, Equatable {
 }
 
 /// The label photo of a bean entry draft (M2-T23, F1 step 4). It holds the encoded JPEG in
-/// memory until M2-T24 uploads it once the bean has an id; nothing is written to disk and
-/// nothing is sent from here. One photo; taking another replaces it.
+/// memory until the bean is saved, then `BeanEntryModel` hands it to `LabelPhotoUploadModel`
+/// (M2-T24), which writes and uploads it; nothing is written to disk and nothing is sent from
+/// here. One photo; taking another replaces it.
 @MainActor
 @Observable
 final class LabelPhotoDraft {

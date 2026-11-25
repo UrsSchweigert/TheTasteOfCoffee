@@ -1125,3 +1125,71 @@ test('the shelf is the signed-in root and the scan flow can add to it (M2-T18)',
   const entry = lexSwift(readFileSync(join(repoRoot, 'ios/Cupmark/BeanEntry/BeanEntryScreen.swift'), 'utf8')).masked;
   assert.match(entry, /AddToShelfBar\(bean: bean/);
 });
+
+// ---- Brew form (M2-T19, docs/04 F2, ADR 0025) ----
+
+test('the brew form has no typed text, takes its ranges from the vocabulary and writes only through AccountStore (M2-T19)', () => {
+  const files = m2t14Files('ios/Cupmark/Brew').filter((file) => file.endsWith('.swift'));
+  assert.ok(files.some((file) => file.endsWith('BrewFormScreen.swift')), 'the brew sources are scanned');
+  for (const file of files) {
+    const code = lexSwift(readFileSync(join(repoRoot, file), 'utf8')).masked;
+    assert.doesNotMatch(code, /\.searchable\b|\bTextField\b|\bTextEditor\b|\bSecureField\b/, `${file}: no typed text (invariant 1)`);
+    assert.doesNotMatch(code, /\.rawValue\s*==|rawValue:\s*"/, `${file}: no vocabulary id as a string`);
+    assert.doesNotMatch(code, /\bcontext\s*\.\s*(insert|save|delete)\(/, `${file}: no direct insert, save or delete on the context`);
+  }
+  const draft = lexSwift(readFileSync(join(repoRoot, 'ios/Cupmark/Brew/BrewDraft.swift'), 'utf8')).masked;
+  for (const range of ['doseG', 'waterG', 'waterTempC', 'grindNormalised']) {
+    assert.match(draft, new RegExp(`Vocabulary\\.Ranges\\.${range}\\b`), `the ${range} stepper reads Vocabulary.Ranges.${range}`);
+  }
+  const model = lexSwift(readFileSync(join(repoRoot, 'ios/Cupmark/Brew/BrewFormModel.swift'), 'utf8')).masked;
+  assert.match(model, /store\.addBrew\(brew, shelfEntry: entry\)/);
+  assert.match(model, /API\.Timestamp\(now\(\)\)/, 'brewed_at is recorded on the device');
+
+  // No range is written in the view: no stepper bounds or steps, and no number of any brew range.
+  const screen = lexSwift(readFileSync(join(repoRoot, 'ios/Cupmark/Brew/BrewFormScreen.swift'), 'utf8')).masked;
+  assert.doesNotMatch(screen, /Stepper\s*\([^)]*\b(in|step|value)\s*:/s, 'steppers take no bounds or steps in the view');
+  assert.doesNotMatch(screen, /Vocabulary\.Ranges/, 'the view reads ranges only through BrewNumberField');
+  const generated = readFileSync(join(repoRoot, 'ios/Cupmark/Generated/Vocabulary.swift'), 'utf8');
+  const version = /static let version = (\d+)/.exec(generated)[1];
+  const brew = JSON.parse(readFileSync(join(repoRoot, `contracts/vocabulary/v${version}/brew.json`), 'utf8'));
+  const rangeNumbers = new Set(
+    Object.values(brew.ranges).flatMap(({ minimum, maximum, multipleOf }) => [minimum, maximum, multipleOf]),
+  );
+  const literals = [...screen.matchAll(/(?<![\w.])\d+(?:\.\d+)?(?![\w.])/g)].map((match) => Number(match[0]));
+  assert.deepEqual(literals.filter((value) => rangeNumbers.has(value)), [], 'no range bound or step in the view');
+
+  // The brew starts from a shelf entry.
+  const shelf = lexSwift(readFileSync(join(repoRoot, 'ios/Cupmark/Shelf/ShelfScreen.swift'), 'utf8')).masked;
+  assert.match(shelf, /BrewFormScreen\(store: store, shelfEntry: route\.shelfEntryLocalID/);
+  const editor = lexSwift(readFileSync(join(repoRoot, 'ios/Cupmark/Shelf/ShelfEntryEditorScreen.swift'), 'utf8')).masked;
+  assert.match(editor, /BrewFormScreen\(store: model\.store, shelfEntry: route\.shelfEntryLocalID/);
+});
+
+test('label photo upload: the Swift patterns equal the contract, and the S3 POST never goes through APIClient (M2-T24)', () => {
+  const doc = loadOpenApi();
+  const schemas = doc.components.schemas;
+  const source = readFileSync(join(repoRoot, 'ios/Cupmark/LabelPhoto/PresignedLabelPhotoPost.swift'), 'utf8');
+  const swiftPatterns = Object.fromEntries(
+    [...source.matchAll(/static let (\w+) = #"(.*)"#/g)].map((match) => [match[1], match[2]]),
+  );
+  const expected = { url: schemas.LabelPhotoUploadForm.properties.url.pattern };
+  for (const [name, property] of Object.entries(schemas.LabelPhotoUploadFields.properties)) {
+    expected[lowerCamel(name)] = property.pattern;
+  }
+  assert.deepEqual(swiftPatterns, expected);
+  for (const pattern of Object.values(expected)) assert.ok(pattern.startsWith('^') && pattern.endsWith('$'));
+
+  // Every contract field has an S3 field name in the app, the security token is the only optional one.
+  assert.deepEqual(
+    [...schemas.LabelPhotoUploadFields.required].sort(),
+    Object.keys(schemas.LabelPhotoUploadFields.properties).filter((name) => name !== 'x_amz_security_token').sort(),
+  );
+  for (const name of ['key', 'bucket', 'Content-Type', 'Policy', 'X-Amz-Algorithm', 'X-Amz-Credential', 'X-Amz-Date', 'X-Amz-Security-Token', 'X-Amz-Signature', 'file']) {
+    assert.match(source, new RegExp(`= "${name}"`), `S3 field name ${name}`);
+  }
+
+  // The S3 POST has its own transport: the uploader never sets a token and never calls APIClient's send.
+  const uploader = lexSwift(readFileSync(join(repoRoot, 'ios/Cupmark/LabelPhoto/LabelPhotoUploader.swift'), 'utf8')).masked;
+  assert.doesNotMatch(uploader, /Authorization|Bearer|accessToken|tokenProvider/);
+  assert.match(uploader, /transport\.send\(post\.request\(for: body\), body: body\.data\)/);
+});

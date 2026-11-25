@@ -96,6 +96,20 @@ enum L10n {
     static var labelPhotoRemove: LocalizedStringKey { "label_photo.remove" }
     static var labelPhotoRetake: LocalizedStringKey { "label_photo.retake" }
     static var labelPhotoTake: LocalizedStringKey { "label_photo.take" }
+    static var labelPhotoUploadsHeader: LocalizedStringKey { "label_photo.uploads.header" }
+    static var labelPhotoUploadsFooter: LocalizedStringKey { "label_photo.uploads.footer" }
+    static var labelPhotoAddAnother: LocalizedStringKey { "label_photo.add_another" }
+    static var labelPhotoUploading: LocalizedStringKey { "label_photo.uploading" }
+    static var labelPhotoUploaded: LocalizedStringKey { "label_photo.uploaded.title" }
+    static var labelPhotoUploadedMessage: LocalizedStringKey { "label_photo.uploaded.message" }
+    static var labelPhotoRejectedTitle: LocalizedStringKey { "label_photo.rejected.title" }
+    static var labelPhotoRejectedMessage: LocalizedStringKey { "label_photo.rejected.message" }
+    static var labelPhotoUploadFailedTitle: LocalizedStringKey { "label_photo.upload_failed.title" }
+    static var labelPhotoUploadFailedMessage: LocalizedStringKey { "label_photo.upload_failed.message" }
+    static var labelPhotoSignInMessage: LocalizedStringKey { "label_photo.sign_in.message" }
+    static var labelPhotoNotUploaded: LocalizedStringKey { "label_photo.not_uploaded" }
+    static var labelPhotoNoMorePhotos: LocalizedStringKey { "label_photo.no_more_photos" }
+    static var labelPhotoDailyLimit: LocalizedStringKey { "label_photo.daily_limit" }
     // Shelf, shelf entries and sync issues (M2-T18).
     static var shelfHeader: LocalizedStringKey { "shelf.header" }
     static var shelfEmpty: LocalizedStringKey { "shelf.empty" }
@@ -153,6 +167,36 @@ enum L10n {
     static var syncIssuesBeanChangeRevertedMessage: LocalizedStringKey { "sync_issues.bean_change_reverted.message" }
     static var syncIssuesDeleteRestoredTitle: LocalizedStringKey { "sync_issues.delete_restored.title" }
     static var syncIssuesDeleteRestoredMessage: LocalizedStringKey { "sync_issues.delete_restored.message" }
+    // Brew form (M2-T19).
+    static var brewStart: LocalizedStringKey { "brew.start" }
+    static var brewTitle: LocalizedStringKey { "brew.title" }
+    static var brewCancel: LocalizedStringKey { "brew.cancel" }
+    static var brewSave: LocalizedStringKey { "brew.save" }
+    static var brewBeanHeader: LocalizedStringKey { "brew.bean_header" }
+    static var brewMethod: LocalizedStringKey { "brew.method" }
+    static var brewMethodChoose: LocalizedStringKey { "brew.method.choose" }
+    static var brewMethodFooter: LocalizedStringKey { "brew.method.footer" }
+    static var brewAmountsHeader: LocalizedStringKey { "brew.amounts_header" }
+    static var brewDose: LocalizedStringKey { "brew.dose" }
+    static var brewDoseClear: LocalizedStringKey { "brew.dose.clear" }
+    static var brewWater: LocalizedStringKey { "brew.water" }
+    static var brewWaterClear: LocalizedStringKey { "brew.water.clear" }
+    static var brewRatio: LocalizedStringKey { "brew.ratio" }
+    static var brewRatioAccessibility: LocalizedStringKey { "brew.ratio.accessibility" }
+    static var brewRatioMissing: LocalizedStringKey { "brew.ratio.missing" }
+    static var brewWaterHeader: LocalizedStringKey { "brew.water_header" }
+    static var brewTemperature: LocalizedStringKey { "brew.temperature" }
+    static var brewTemperatureHeated: LocalizedStringKey { "brew.temperature.heated" }
+    static var brewTemperatureValue: LocalizedStringKey { "brew.temperature.value" }
+    static var brewTemperatureClear: LocalizedStringKey { "brew.temperature.clear" }
+    static var brewWaterType: LocalizedStringKey { "brew.water_type" }
+    static var brewMoreHeader: LocalizedStringKey { "brew.more_header" }
+    static var brewGrind: LocalizedStringKey { "brew.grind" }
+    static var brewGrindClear: LocalizedStringKey { "brew.grind.clear" }
+    static var brewMilk: LocalizedStringKey { "brew.milk" }
+    static var brewOfflineNote: LocalizedStringKey { "brew.offline_note" }
+    static var brewNotFound: LocalizedStringKey { "brew.not_found" }
+    static var brewSaveFailed: LocalizedStringKey { "brew.save_failed" }
     static var signInAgainTitle: LocalizedStringKey { "sign_in_again.title" }
     static var signInAgainMessage: LocalizedStringKey { "sign_in_again.message" }
     static var signInAgainButton: LocalizedStringKey { "sign_in_again.button" }

@@ -9,7 +9,9 @@ import SwiftUI
 /// - Every list offers "Not set" and the vocabulary's own `other` and `unknown` entries where
 ///   the list has them. No roaster list (ADR 0006) and no search field (invariant 1).
 /// - The label photo (M2-T23) follows the picks when the device has a camera
-///   (`LabelPhotoSection`); it is kept in memory on the model until M2-T24 uploads it.
+///   (`LabelPhotoSection`); it is kept in memory on the model until the bean is saved. For an
+///   unverified bean the saved screen then shows `LabelPhotoUploadSection` (M2-T24): the
+///   form's photo uploads at once, and up to 3 can be added.
 /// - The save runs in an unstructured task, so leaving the screen does not cancel a request the
 ///   server may already act on.
 struct BeanEntryScreen: View {
@@ -57,12 +59,18 @@ struct BeanEntryScreen: View {
     @ViewBuilder
     private var content: some View {
         if case .saved(let bean) = model.state {
-            BeanDetailView(bean: bean, vocabulary: vocabulary, language: language, loadImage: loadImage)
-                .safeAreaInset(edge: .bottom) {
-                    if let shelf {
-                        AddToShelfBar(bean: bean, context: shelf, vocabulary: vocabulary, language: language)
-                    }
+            BeanDetailView(
+                bean: bean,
+                vocabulary: vocabulary,
+                language: language,
+                loadImage: loadImage,
+                labelPhotos: model.labelPhotoUploads.map { LabelPhotoUploadSection(model: $0, availability: cameraAvailability) }
+            )
+            .safeAreaInset(edge: .bottom) {
+                if let shelf {
+                    AddToShelfBar(bean: bean, context: shelf, vocabulary: vocabulary, language: language)
                 }
+            }
         } else if model.state == .failed(.signInRequired) {
             SignInAgainView()
         } else {
