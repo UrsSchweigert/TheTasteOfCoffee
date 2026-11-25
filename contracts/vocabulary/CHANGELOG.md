@@ -2,6 +2,12 @@
 
 A published version is immutable. Every change to a list goes into the next `v<N>/` directory and is recorded here. Removing or renaming an id is a breaking change and needs an ADR in `docs/decisions/`.
 
+## 2026-11-25: v1 milk list extended before release
+
+- Exception to immutability, approved by the owner (ADR 0003). v1 was marked published only on an unmerged branch, and nothing used it yet.
+- Added to `milk_types` in `brew.json`: `almond`, `cashew`, `hazelnut`, `macadamia`, `coconut`, `rice`, `pea`. Nothing was removed or renamed, and `other_plant` stays last.
+- `v1.lock.json` was regenerated for `brew.json`. From here on, v1 is immutable without exception.
+
 ## 2026-11-25: v1 published
 
 - The owner approved v1 as proposed: the flavour notes, processes, roast levels, the EUR-per-kg price bands, and the ranges and steps. No id, value or range changed; only `"status"` went from `draft` to `published` in all five files.
@@ -14,7 +20,7 @@ First version, task M0-T1. Published on 2026-11-25 (see above); before that it w
 
 Taken from `docs/04-specification.md`:
 
-- `brew.json`: 12 methods, 4 water types, 5 milk types, the special water temperature `cold`, ranges for dose, water or yield, water temperature, brew time and normalised grind.
+- `brew.json`: 12 methods, 4 water types, 12 milk types (none, dairy and ten plant or nut drinks), the special water temperature `cold`, ranges for dose, water or yield, water temperature, brew time and normalised grind.
 - `criteria.json`: 8 criteria, the score scale 1 to 10 in half steps, 3 intensity dimensions with 3 levels, buy again.
 - `shelf.json`: bag sizes 250 g, 500 g, 1 kg.
 - `flavour_notes.json`: at most 5 picks.

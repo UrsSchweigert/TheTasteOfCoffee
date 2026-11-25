@@ -26,6 +26,13 @@
       "dairy": "Dairy",
       "oat": "Oat",
       "soy": "Soy",
+      "almond": "Almond",
+      "cashew": "Cashew",
+      "hazelnut": "Hazelnut",
+      "macadamia": "Macadamia",
+      "coconut": "Coconut",
+      "rice": "Rice",
+      "pea": "Pea",
       "other_plant": "Other plant"
     },
     "water_temp_special": {

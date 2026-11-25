@@ -26,6 +26,13 @@
     { "id": "dairy" },
     { "id": "oat" },
     { "id": "soy" },
+    { "id": "almond" },
+    { "id": "cashew" },
+    { "id": "hazelnut" },
+    { "id": "macadamia" },
+    { "id": "coconut" },
+    { "id": "rice" },
+    { "id": "pea" },
     { "id": "other_plant" }
   ],
   "water_temp_special": [

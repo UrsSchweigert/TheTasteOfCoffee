@@ -51,7 +51,7 @@ test('v1 holds the lists and values the specification names', () => {
     'aeropress', 'french_press', 'cold_brew', 'cezve', 'siphon', 'fully_automatic',
   ]);
   assert.deepEqual(lists.water_types, ['tap', 'filtered', 'bottled', 'remineralised']);
-  assert.deepEqual(lists.milk_types, ['none', 'dairy', 'oat', 'soy', 'other_plant']);
+  assert.deepEqual(lists.milk_types, ['none', 'dairy', 'oat', 'soy', 'almond', 'cashew', 'hazelnut', 'macadamia', 'coconut', 'rice', 'pea', 'other_plant']);
   assert.deepEqual(lists.water_temp_special, ['cold']);
   assert.deepEqual(files.brew.ranges.dose_g, { minimum: 5, maximum: 100, multipleOf: 0.1 });
   assert.deepEqual(files.brew.ranges.water_g, { minimum: 10, maximum: 1500, multipleOf: 1 });
