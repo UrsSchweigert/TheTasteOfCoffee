@@ -141,8 +141,8 @@ final class SyncEngine {
             return
         }
         let sleep = self.sleep
-        let nap = Task {
-            try? await sleep(seconds)
+        let nap = Task<Void, Never> {
+            _ = try? await sleep(seconds)
         }
         self.nap = nap
         await nap.value
