@@ -59,7 +59,7 @@ Goal: the repo builds, tests and checks itself; the shared contract exists.
   - Third-party actions are pinned; the workflow has read-only permissions.
 
 ### M0-T6 iOS project skeleton
-- status: todo
+- status: in-progress
 - owner: ios-engineer
 - depends: M0-T1
 - acceptance:
@@ -68,13 +68,20 @@ Goal: the repo builds, tests and checks itself; the shared contract exists.
   - A macOS CI job builds and tests the app.
 
 ### M0-T7 Accounts and secrets
-- status: todo
+- status: blocked
 - owner: human
 - needs: human
 - depends: none
 - acceptance:
   - Apple Developer Program membership active; App ID and Sign in with Apple key created.
-  - In the shared AWS account (ADR 0009): root has MFA; `scripts/aws/apply-guardrails.sh --apply` has run (done); the GitHub OIDC provider exists, so `reference` is used (done); `cupmark-github-oidc` (M1-T9) has been deployed once by hand.
+  - In the shared AWS account (ADR 0009), checked read-only by the owner on 2026-11-25:
+    - root MFA is on (done);
+    - `CupmarkBoundary` and `CupmarkCfnExecution` match `scripts/aws/*.json` (done);
+    - `CDKToolkit-cupmark` is bootstrapped with qualifier `cupmark`, version 34 (done);
+    - the GitHub OIDC provider exists, so `reference` is used (done);
+    - `CupmarkGitHubDeploy` exists, created by hand (done);
+    - `cupmark-github-oidc` (M1-T9) has been deployed once by hand, importing that role (open).
+  - Branch protection on `main` requires `ci-ok` (done).
   - Repository secrets set for the Claude GitHub workflow.
 
 
@@ -183,7 +190,10 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
 - acceptance:
   - A separate stack `cupmark-github-oidc` creates the role `CupmarkGitHubDeploy`, which GitHub Actions in this repository may assume, and the prod stage only from `main`. The role may assume only the `cdk-cupmark-*` bootstrap roles.
   - The context flag `cupmark:githubOidcProvider` is `create` or `reference`, and the committed default is `reference`, because the provider already exists in the shared account. With `create`, the stack makes the provider for `token.actions.githubusercontent.com`. With `reference`, it trusts the existing provider by ARN and never modifies it. Tests cover both modes.
-  - The role `CupmarkGitHubDeploy` already exists. The README gives the owner two documented paths: import it into the stack with `cdk import` and a resource mapping file, or delete it first. The stack never creates a second role under another name. A test pins the role name and its trust policy.
+  - The role `CupmarkGitHubDeploy` already exists (created by hand on 2026-11-25). Its trust is the existing provider, `aud` `sts.amazonaws.com`, and `sub` set to this repository's `environment:dev` and `ref:refs/heads/main`. Its inline policy `AssumeCdkBootstrapRoles` allows `sts:AssumeRole` on the four `cdk-cupmark-*` roles. It has no boundary and no tags.
+    - The stack defines this role so that it matches what exists, and it is imported with `cdk import` and a resource mapping file. This is the owner's preferred option, because it keeps the role ARN.
+    - The README documents the import. Any drift the import would cause, such as adding the boundary or tags, is listed for the owner before the deploy. Deleting the role instead needs the owner. The stack never creates a second role under another name. A test pins the role name and its trust policy.
+  - `scripts/aws/apply-guardrails.sh` step 3 (`put-role-policy` on `CupmarkGitHubDeploy`) is reconciled with ADR 0009, because the stack owns the role and the script must no longer write its policy.
   - The stack deploys with the caller's credentials, not through `CupmarkCfnExecution`. The README gives the one-time manual deploy steps, including how to check whether a provider or a role named `CupmarkGitHubDeploy` already exists.
   - The guards add the M0-T4 review findings: IAM policies with `*` actions or resources, or with ARNs outside `cupmark-`, fail, and so do stateful resources without RETAIN. Tests show each guard failing.
 

@@ -20,7 +20,7 @@ How you build:
 - Vocabulary, labels and ranges come from the bundled `contracts/` files through generated Swift types. Never type a list of methods, criteria or notes into Swift source.
 - All user-visible strings go through the String Catalog with German and English.
 - SwiftData is the local source of truth. Every write goes to the local store first, then to an outbox that syncs when online. Sync must be idempotent and survive app termination.
-- Scanning uses VisionKit `DataScannerViewController` for EAN-13 and UPC-A. Unknown barcodes go to Open Food Facts from the device with a descriptive User-Agent.
+- Scanning uses VisionKit `DataScannerViewController` for EAN-13 and UPC-A. Unknown barcodes go to the backend's barcode lookup, which queries Open Food Facts server-side (ADR 0005); the app never calls Open Food Facts directly and never sends text.
 - Sign in with Apple through the Cognito user pool. Tokens live in the Keychain. Request no name and no email.
 - Subscription through StoreKit 2. Send the signed transaction to the backend; the backend's entitlement is what unlocks paid screens.
 - App Attest assertions on write requests.

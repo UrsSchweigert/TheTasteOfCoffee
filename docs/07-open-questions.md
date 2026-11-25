@@ -24,8 +24,10 @@ Record each answer as an ADR in `docs/decisions/`.
 - [ ] Create the App ID, the Sign in with Apple service and key, and the subscription products in App Store Connect.
 - [x] In the shared AWS account (ADR 0009): run `scripts/aws/apply-guardrails.sh --apply` and the `cupmark` CDK bootstrap. Done by the owner on 2026-11-25; both match the repo.
 - [x] Check whether a GitHub OIDC provider already exists. It does, so `cupmark-github-oidc` uses `reference` (owner, 2026-11-25).
-- [ ] Confirm MFA on root in the shared account.
-- [ ] Once M1-T9 is built, deploy `cupmark-github-oidc` once by hand, importing or replacing the existing role `CupmarkGitHubDeploy`.
+- [x] Confirm MFA on root in the shared account. Enabled (owner check, 2026-11-25).
+- [x] Create the role `CupmarkGitHubDeploy` (owner, by hand, 2026-11-25). Trust: the existing provider, `aud` `sts.amazonaws.com`, `sub` limited to this repository's `environment:dev` and `ref:refs/heads/main`. Inline policy `AssumeCdkBootstrapRoles` covers the four `cdk-cupmark-*` roles only. No boundary, no tags.
+- [x] Require the `ci-ok` status check on `main` (GitHub Actions app only, branches up to date), plus the existing PR rules (owner, 2026-11-25).
+- [ ] Once M1-T9 is built, deploy `cupmark-github-oidc` once by hand, importing the existing `CupmarkGitHubDeploy` (the owner prefers this, because it keeps the role ARN).
 - [ ] Add repository secrets: `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`, and the AWS role ARN.
 - [ ] Approve every production deployment.
 - [x] Review and approve version 1 of the flavour vocabulary before it ships (it is expensive to change later). Approved by the owner on 2026-11-25.
