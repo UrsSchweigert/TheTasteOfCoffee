@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   LANGUAGES,
   checkI18n,
+  checkParentReferences,
   checkSemantics,
   checkVersionEntries,
   collectIds,
@@ -235,16 +236,17 @@ test('id check fails: an array of strings or other non-objects, even with a lax 
   assert.ok(collectIds({ zz_test_fixture: ['a'] }).problems.includes('zz_test_fixture.json: top level is an array, not an object'));
 });
 
-// ---- Vocabulary v2 (ADR 0006): a draft until the owner approves it. ----
+// ---- Vocabulary v2 (ADR 0006, amended by ADR 0011): published on 2026-11-25. ----
 
 const withoutMeta = ({ version, status, ...rest }) => rest;
+const v2Entries = (namespace) => loadVocabulary(2).bean[namespace];
 
-test('v2 is a draft in every file, so v1 stays the latest published version', () => {
+test('v2 is published in every file (owner-approved with the ADR 0011 amendments)', () => {
   const files = loadVocabulary(2);
-  for (const [name, file] of Object.entries(files)) assert.equal(file.status, 'draft', `${name}.json`);
+  for (const [name, file] of Object.entries(files)) assert.equal(file.status, 'published', `${name}.json`);
 });
 
-test('v2 is v1 plus the origins and varieties lists in bean.json, and nothing else changed', () => {
+test('v2 is v1 plus the origins, species and varieties lists in bean.json, and nothing else changed', () => {
   const v1 = loadVocabulary(1);
   const v2 = loadVocabulary(2);
   assert.deepEqual(Object.keys(v2), Object.keys(v1));
@@ -252,9 +254,9 @@ test('v2 is v1 plus the origins and varieties lists in bean.json, and nothing el
     const expected = withoutMeta(v1[name]);
     const actual = withoutMeta(v2[name]);
     if (name === 'bean') {
-      const { origins, varieties, ...rest } = actual;
+      const { origins, species, varieties, ...rest } = actual;
       assert.deepEqual(rest, expected, 'bean.json: v1 lists unchanged');
-      assert.ok(origins && varieties, 'bean.json: origins and varieties added');
+      assert.ok(origins && species && varieties, 'bean.json: origins, species and varieties added');
     } else {
       assert.deepEqual(actual, expected, `${name}.json`);
     }
@@ -274,10 +276,10 @@ test('no version drops or renames an id of the version before it (that needs an 
 
 test('v2 origins and varieties: well-known sets, ending with other and unknown', () => {
   const { lists } = collectIds(loadVocabulary(2));
-  assert.ok(lists.origins.length >= 40 && lists.origins.length <= 60, `origins: ${lists.origins.length}`);
-  assert.ok(lists.varieties.length >= 20 && lists.varieties.length <= 30, `varieties: ${lists.varieties.length}`);
-  assert.deepEqual(lists.origins.slice(-2), ['other', 'unknown']);
-  assert.deepEqual(lists.varieties.slice(-2), ['other', 'unknown']);
+  assert.equal(lists.origins.length, 56);
+  assert.equal(lists.varieties.length, 36);
+  assert.deepEqual(lists.origins.slice(-3), ['blend', 'other', 'unknown']);
+  assert.deepEqual(lists.varieties.slice(-3), ['mixed', 'other', 'unknown']);
   for (const id of ['ethiopia', 'kenya', 'brazil', 'colombia', 'costa_rica', 'guatemala', 'indonesia', 'yemen']) {
     assert.ok(lists.origins.includes(id), id);
   }
@@ -286,27 +288,107 @@ test('v2 origins and varieties: well-known sets, ending with other and unknown',
   }
 });
 
-test('schema check: bean.json needs origins and varieties from v2 on, and v1 has neither', () => {
-  const v2 = clone(loadVocabulary(2));
-  delete v2.bean.varieties;
-  assert.ok(validateVocabulary(v2, schemas, 2).includes("bean.json: / must have required property 'varieties'"));
-  const v1 = clone(loadVocabulary(1));
-  v1.bean.origins = [{ id: 'ethiopia' }];
-  assert.notDeepEqual(validateVocabulary(v1, schemas, 1), []);
-  const draftOrigins = clone(loadVocabulary(2));
-  draftOrigins.bean.origins.push({ id: 'Ethiopia Guji' });
-  assert.notDeepEqual(validateVocabulary(draftOrigins, schemas, 2), []);
+test('v2 holds the owner amendments of ADR 0011', () => {
+  const { lists } = collectIds(loadVocabulary(2));
+  for (const id of ['madagascar', 'togo', 'australia', 'usa', 'bali', 'flores']) assert.ok(lists.origins.includes(id), id);
+  for (const id of ['red_bourbon', 'java', 'parainema', 'obata', 'marsellesa', 'catucai', 'ethiopia_74110', 'ethiopia_74112', 'sl14']) {
+    assert.ok(lists.varieties.includes(id), id);
+  }
+  // Robusta is a species, not a cultivar: varieties lists Arabica cultivars only.
+  assert.ok(!lists.varieties.includes('robusta'));
+  assert.deepEqual(lists.species, ['arabica', 'robusta', 'liberica', 'excelsa', 'arabica_robusta_blend', 'unknown']);
+  // `java` is an origin (the island) and a variety (the cultivar): separate namespaces.
+  assert.ok(lists.origins.includes('java') && lists.varieties.includes('java'));
 });
 
-test('label check fails: an origin or variety without a label in one language', () => {
+test('v2 regions name their country, and only the regions do', () => {
+  const regions = Object.fromEntries(v2Entries('origins').filter((entry) => 'country' in entry).map((entry) => [entry.id, entry.country]));
+  assert.deepEqual(regions, {
+    hawaii: 'usa',
+    sumatra: 'indonesia',
+    java: 'indonesia',
+    sulawesi: 'indonesia',
+    bali: 'indonesia',
+    flores: 'indonesia',
+  });
+  // A country entry follows the regions' order rule: it comes before its regions.
+  const ids = v2Entries('origins').map((entry) => entry.id);
+  for (const [region, country] of Object.entries(regions)) assert.ok(ids.indexOf(country) < ids.indexOf(region), region);
+});
+
+for (const version of versions) {
+  test(`v${version}: every parent reference names a top-level entry of the same list`, () => {
+    assert.deepEqual(checkParentReferences(loadVocabulary(version)), []);
+  });
+}
+
+test('parent check fails: unknown parent, a region as parent, self reference, and the attribute in another list', () => {
+  const files = clone(loadVocabulary(2));
+  const origin = (id) => files.bean.origins.find((entry) => entry.id === id);
+  origin('sumatra').country = 'atlantis';
+  origin('bali').country = 'java';
+  origin('kenya').country = 'kenya';
+  origin('flores').country = 7;
+  files.bean.varieties[0].country = 'ethiopia';
+  assert.deepEqual(checkParentReferences(files), [
+    'origins.kenya: country names the entry itself',
+    'origins.sumatra: country "atlantis" is not an entry of origins',
+    'origins.bali: country java has a country itself; a parent must be top level',
+    'origins.flores: country 7 is not an entry of origins',
+    'varieties.typica: country is only allowed in origins',
+  ]);
+});
+
+test('schema check: bean.json needs origins, species and varieties from v2 on, and v1 has none of them', () => {
+  const missing = (name) => {
+    const v2 = clone(loadVocabulary(2));
+    delete v2.bean[name];
+    return validateVocabulary(v2, schemas, 2);
+  };
+  for (const name of ['origins', 'species', 'varieties']) {
+    assert.ok(missing(name).includes(`bean.json: / must have required property '${name}'`), name);
+  }
+  for (const name of ['origins', 'species', 'varieties']) {
+    const v1 = clone(loadVocabulary(1));
+    v1.bean[name] = [{ id: 'unknown' }];
+    assert.notDeepEqual(validateVocabulary(v1, schemas, 1), [], name);
+  }
+  const badId = clone(loadVocabulary(2));
+  badId.bean.origins.push({ id: 'Ethiopia Guji' });
+  assert.notDeepEqual(validateVocabulary(badId, schemas, 2), []);
+});
+
+test('schema check: country is optional, an id, and only allowed on origins', () => {
+  const broken = (mutate) => {
+    const files = clone(loadVocabulary(2));
+    mutate(files.bean);
+    return validateVocabulary(files, schemas, 2);
+  };
+  assert.deepEqual(broken(() => {}), []);
+  assert.notDeepEqual(broken((bean) => { bean.origins[0].country = 'Not An Id'; }), []);
+  assert.notDeepEqual(broken((bean) => { bean.origins[0].region = 'x'; }), []);
+  assert.notDeepEqual(broken((bean) => { bean.varieties[0].country = 'ethiopia'; }), []);
+  assert.notDeepEqual(broken((bean) => { bean.species[0].country = 'ethiopia'; }), []);
+  assert.notDeepEqual(broken((bean) => { bean.processes[0].country = 'ethiopia'; }), []);
+});
+
+test('label check fails: an origin, species or variety without a label in one language', () => {
   const lists = allLists();
   const en = clone(loadI18n().en);
   const de = clone(loadI18n().de);
   delete en.labels.origins.ethiopia;
   de.labels.varieties.geisha = '';
   delete de.labels.origins;
+  delete de.labels.species.excelsa;
   assert.deepEqual(checkI18n('en', en, lists), ['en: missing label origins.ethiopia']);
   const problems = checkI18n('de', de, lists);
   assert.ok(problems.includes('de: empty label varieties.geisha'));
   assert.ok(problems.includes('de: missing label origins.unknown'));
+  assert.ok(problems.includes('de: missing label species.excelsa'));
+});
+
+test('label check fails: a label left for an id that was removed (robusta under varieties)', () => {
+  const en = clone(loadI18n().en);
+  en.labels.varieties.robusta = 'Robusta';
+  assert.deepEqual(checkI18n('en', en, allLists()), ['en: orphan label varieties.robusta']);
 });

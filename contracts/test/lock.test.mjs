@@ -29,12 +29,11 @@ test('no lock file is left without its version directory', () => {
   assert.deepEqual(checkOrphanLocks(versions), []);
 });
 
-test('v2 is a draft and has no lock until the owner approves it', () => {
-  // ADR 0006 and README.md, "Publishing a version": v2 is published and
-  // locked only after the owner's approval. Change this test then.
+test('v2 is published and locked (owner-approved on 2026-11-25, ADR 0011)', () => {
   assert.ok(versions.includes(2));
-  assert.deepEqual(Object.values(loadVocabulary(2)).map((file) => file.status).filter((s) => s !== 'draft'), []);
-  assert.equal(existsSync(lockPath(2)), false);
+  assert.deepEqual(Object.values(loadVocabulary(2)).map((file) => file.status).filter((s) => s !== 'published'), []);
+  const lock = JSON.parse(readFileSync(lockPath(2), 'utf8'));
+  assert.deepEqual(Object.keys(lock.files), Object.keys(loadVocabulary(2)).map((name) => `${name}.json`));
 });
 
 test('v1 is published and locked', () => {
@@ -153,13 +152,31 @@ test('writeLock refuses to overwrite a lock and to lock a draft version', (t) =>
   assert.deepEqual(checkLock(next, dir), []);
 });
 
-test('writeLock refuses a version with one file still draft (v2 while it awaits approval)', (t) => {
+test('writeLock refuses a version with one file still draft', (t) => {
+  // A next version copied from the latest one, as "Publishing a version" step 1 says.
+  const dir = tempVocabulary(t);
+  const latest = Math.max(...listVersions(dir));
+  const next = latest + 1;
+  cpSync(join(dir, `v${latest}`), join(dir, `v${next}`), { recursive: true });
+  for (const name of Object.keys(loadVocabulary(next, dir))) {
+    const file = join(dir, `v${next}`, `${name}.json`);
+    writeFileSync(file, readFileSync(file, 'utf8')
+      .replace(`"version": ${latest}`, `"version": ${next}`)
+      .replace('"status": "published"', '"status": "draft"'));
+  }
+  assert.deepEqual(checkLock(next, dir), [], 'a draft needs no lock');
+  const file = join(dir, `v${next}`, 'bean.json');
+  writeFileSync(file, readFileSync(file, 'utf8').replace('"status": "draft"', '"status": "published"'));
+  assert.throws(() => writeLock(next, dir), /set "status": "published" in every file first/);
+  // And the half-published state is itself a failure until it is locked.
+  assert.deepEqual(checkLock(next, dir), [`v${next}: marked published but has no v${next}.lock.json`]);
+});
+
+test('lock check fails: a file of v2 is changed after publishing', (t) => {
   const dir = tempVocabulary(t);
   const file = join(dir, 'v2', 'bean.json');
-  writeFileSync(file, readFileSync(file, 'utf8').replace('"status": "draft"', '"status": "published"'));
-  assert.throws(() => writeLock(2, dir), /set "status": "published" in every file first/);
-  // And the half-published state is itself a failure until it is locked.
-  assert.deepEqual(checkLock(2, dir), ['v2: marked published but has no v2.lock.json']);
+  writeFileSync(file, readFileSync(file, 'utf8').replace('"country": "usa"', '"country": "mexico"'));
+  assert.deepEqual(checkLock(2, dir), ['v2/bean.json: changed in a published version']);
 });
 
 // ---- Unexpected entries in a version directory. ----
