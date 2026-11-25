@@ -14,16 +14,24 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  ENTRY_RANGES,
+  FIELD_RULES_KEY,
   LANGUAGES,
+  METHOD_FIELD,
   PARENT_REFERENCES,
   QUESTION_NAMESPACES,
+  SCALED_FIELDS,
+  checkEntryRanges,
+  checkFieldRules,
   checkParentReferences,
   collectIds,
+  isExactStep,
   listVersions,
   loadI18n,
   loadVocabulary,
 } from '../contracts/lib/vocabulary.mjs';
 import { isPublished } from '../contracts/lib/lock.mjs';
+import { loadOpenApi } from '../contracts/lib/openapi.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const GENERATED_FILE = join(root, 'ios', 'Cupmark', 'Generated', 'Vocabulary.swift');
@@ -43,7 +51,7 @@ const SWIFT_KEYWORDS = new Set([
 // Identifiable, VocabularyItem).
 const RESERVED_MEMBERS = new Set(['rawValue', 'allCases', 'id', 'namespace', 'hashValue', 'self']);
 // Type names the generator itself uses inside `enum Vocabulary`.
-const RESERVED_TYPES = new Set(['Namespace', 'Ranges', 'Constants', 'Language']);
+const RESERVED_TYPES = new Set(['Namespace', 'Ranges', 'Constants', 'Language', 'BrewField']);
 const RANGE_KEYS = ['maximum', 'minimum', 'multipleOf'];
 const TOP_LEVEL_META = new Set(['version', 'status']);
 // Words that are the same in singular and plural.
@@ -161,13 +169,19 @@ function mergeType(a, b) {
 
 /**
  * Walks the vocabulary files and returns everything the Swift file needs:
- * `{ lists, ranges, constants }`.
- * - lists: `{ namespace, file, items: [{ id, attributes, children }], parent }`
- *   in file order; `children` maps a nested namespace to its ids.
+ * `{ lists, ranges, constants, fieldRules }`.
+ * - lists: `{ namespace, file, items: [{ id, attributes, children, ranges }], parent }`
+ *   in file order; `children` maps a nested namespace to its ids, `ranges`
+ *   holds the entry's own range under the attribute ENTRY_RANGES names for
+ *   the list (a grinder's `scale`), if it has one.
  * - ranges: `{ path, name, minimum, maximum, multipleOf }` for every object
  *   that is exactly `{ minimum, maximum, multipleOf }`.
  * - constants: `{ path, name, value }` for every other scalar outside a list
  *   (top-level `version` and `status` excepted).
+ * - fieldRules: the method field rules, `brew.json` `field_rules`, as
+ *   `[{ field, methods }]` in file order, or undefined if the version has
+ *   none. They are rules, not constants: checkFieldRules (with the
+ *   BrewParameters fields) validates them in generateSwift.
  * Throws on anything it cannot represent, so a new shape in vocabulary v<N>
  * fails here instead of being dropped silently.
  */
@@ -178,6 +192,7 @@ export function describeVocabulary(files) {
   const lists = [];
   const ranges = [];
   const constants = [];
+  let fieldRules;
 
   // A nested list (flavour_notes under each flavour category) is one
   // namespace: its entries from every parent are merged into one list.
@@ -195,10 +210,15 @@ export function describeVocabulary(files) {
   const visitList = (namespace, file, array, parent) => {
     const list = listFor(namespace, file, parent);
     for (const item of array) {
-      const entry = { id: item.id, attributes: {}, children: {} };
+      const entry = { id: item.id, attributes: {}, children: {}, ranges: {} };
       list.items.push(entry);
       for (const [key, value] of Object.entries(item)) {
         if (key === 'id') continue;
+        if (key === ENTRY_RANGES[namespace]) {
+          if (!isRange(value)) throw new Error(`${file}.json: ${namespace}.${item.id}.${key} is not a range { minimum, maximum, multipleOf }`);
+          entry.ranges[key] = { minimum: value.minimum, maximum: value.maximum, multipleOf: value.multipleOf };
+          continue;
+        }
         if (isIdList(value)) {
           entry.children[key] = value.map((child) => child.id);
           visitList(key, file, value, namespace);
@@ -216,6 +236,15 @@ export function describeVocabulary(files) {
     for (const [key, value] of Object.entries(object)) {
       if (path.length === 0 && TOP_LEVEL_META.has(key)) continue;
       const childPath = [...path, key];
+      if (key === FIELD_RULES_KEY) {
+        if (file !== 'brew' || path.length !== 0) throw new Error(`${file}.json: ${childPath.join('.')}: field rules belong at the top of brew.json`);
+        if (!isObject(value)) throw new Error(`${file}.json: ${FIELD_RULES_KEY} is not an object`);
+        fieldRules = Object.entries(value).map(([field, rule]) => ({
+          field,
+          methods: isObject(rule?.allowed_methods) ? Object.keys(rule.allowed_methods) : [],
+        }));
+        continue;
+      }
       if (isIdList(value)) {
         visitList(key, file, value, undefined);
       } else if (isRange(value)) {
@@ -240,7 +269,17 @@ export function describeVocabulary(files) {
       seen.set(name, path);
     }
   }
-  return { lists, ranges, constants };
+  return { lists, ranges, constants, fieldRules };
+}
+
+/**
+ * The BrewParameters fields of contracts/openapi.yaml, in schema order. The
+ * method field rules may name any of them but `method`.
+ */
+export function brewParameterFields(openapi) {
+  const properties = openapi?.components?.schemas?.BrewParameters?.properties;
+  if (!isObject(properties)) throw new Error('openapi.yaml: components.schemas.BrewParameters.properties is missing');
+  return Object.keys(properties);
 }
 
 function typeName(namespace) {
@@ -285,13 +324,56 @@ function jsonValueLiteral(value) {
   return `.number(${swiftNumber(value, 'Double')})`;
 }
 
-/** The Swift source for one vocabulary version and its label languages. */
-export function generateSwift({ version, files, languages }) {
+/** Swift literal for a range. */
+function swiftRange({ minimum, maximum, multipleOf }) {
+  return `VocabularyRange(minimum: ${swiftNumber(minimum, 'Double')}, maximum: ${swiftNumber(maximum, 'Double')}, multipleOf: ${swiftNumber(multipleOf, 'Double')})`;
+}
+
+// The list whose ids the method field rules name (checkFieldRules reads `brew.methods`).
+const METHODS_NAMESPACE = 'methods';
+
+/**
+ * The Swift `BrewField` cases: the BrewParameters fields but `method`, and
+ * the rules keyed by them. Undefined when the version has no field rules.
+ * Throws on a rule checkFieldRules rejects (an unknown method or field, ...).
+ */
+function describeBrewFields(files, fieldRules, brewFields, lists) {
+  if (fieldRules === undefined) return undefined;
+  if (!Array.isArray(brewFields)) {
+    throw new Error(`brew.json has ${FIELD_RULES_KEY}; generateSwift needs brewFields, the BrewParameters fields of openapi.yaml`);
+  }
+  const problems = checkFieldRules(files, { fields: brewFields });
+  if (problems.length > 0) throw new Error(`vocabulary problems:\n${problems.join('\n')}`);
+  if (!lists.some((l) => l.namespace === METHODS_NAMESPACE)) throw new Error(`${FIELD_RULES_KEY} needs the list ${METHODS_NAMESPACE}`);
+  const fields = brewFields.filter((field) => field !== METHOD_FIELD).map((field) => ({ field, member: swiftMember(field) }));
+  if (new Set(fields.map((f) => f.member)).size !== fields.length) throw new Error('two BrewParameters fields become the same Swift case');
+  const known = new Set(fields.map((f) => f.field));
+  const scaledBy = new Map();
+  for (const [field, { by, list }] of Object.entries(SCALED_FIELDS)) {
+    if (!known.has(field)) continue;
+    if (!known.has(by)) throw new Error(`BrewField ${field} lies on the scale picked in ${by}, which is not a BrewParameters field`);
+    if (!(list in ENTRY_RANGES) || !lists.some((l) => l.namespace === list)) {
+      throw new Error(`BrewField ${field} lies on a range of the list ${list}, which this version does not define`);
+    }
+    scaledBy.set(field, by);
+  }
+  return { fields, rules: fieldRules, scaledBy };
+}
+
+/**
+ * The Swift source for one vocabulary version and its label languages.
+ * `brewFields`, the BrewParameters fields of openapi.yaml, is needed only
+ * when the version has method field rules (v3 on).
+ */
+export function generateSwift({ version, files, languages, brewFields }) {
   const referenceProblems = checkParentReferences(files);
   if (referenceProblems.length > 0) throw new Error(`vocabulary problems:\n${referenceProblems.join('\n')}`);
-  const { lists, ranges, constants } = describeVocabulary(files);
+  const rangeProblems = checkEntryRanges(files);
+  if (rangeProblems.length > 0) throw new Error(`vocabulary problems:\n${rangeProblems.join('\n')}`);
+  const { lists, ranges, constants, fieldRules } = describeVocabulary(files);
   const types = new Map(lists.map((l) => [l.namespace, typeName(l.namespace)]));
   if (new Set(types.values()).size !== types.size) throw new Error('two namespaces map to the same Swift type name');
+  const brew = describeBrewFields(files, fieldRules, brewFields, lists);
 
   const out = [];
   const line = (text = '') => out.push(text);
@@ -348,7 +430,8 @@ export function generateSwift({ version, files, languages }) {
       if ([...cases.values()].includes(member)) throw new Error(`${list.namespace}: two ids become case ${member}`);
       cases.set(item.id, member);
     }
-    for (const { key } of props) {
+    const rangeKey = ENTRY_RANGES[list.namespace];
+    for (const key of [...props.map((p) => p.key), ...(rangeKey === undefined ? [] : [rangeKey])]) {
       const name = lowerCamel(key);
       if ([...cases.values()].includes(name)) throw new Error(`${list.namespace}: attribute ${key} clashes with a case`);
     }
@@ -376,6 +459,22 @@ export function generateSwift({ version, files, languages }) {
           value = reference ? `.${cases.get(item.attributes[key])}` : swiftScalar(item.attributes[key], propType);
         }
         line(`            case .${cases.get(item.id)}: return ${value}`);
+      }
+      line('            }');
+      line('        }');
+    }
+
+    if (rangeKey !== undefined) {
+      line('');
+      line(`        /// \`${rangeKey}\` of each entry: its own range, or nil if it has none.`);
+      line(`        var ${swiftMember(rangeKey)}: VocabularyRange? {`);
+      line('            switch self {');
+      for (const item of list.items) {
+        const range = item.ranges[rangeKey];
+        if (range !== undefined && !isExactStep(range.multipleOf)) {
+          throw new Error(`${list.namespace}.${item.id}: ${rangeKey} step ${range.multipleOf} is not exact in binary floating point (ADR 0004)`);
+        }
+        line(`            case .${cases.get(item.id)}: return ${range === undefined ? 'nil' : swiftRange(range)}`);
       }
       line('            }');
       line('        }');
@@ -415,6 +514,26 @@ export function generateSwift({ version, files, languages }) {
     line('    }');
   }
 
+  if (brew !== undefined) {
+    line('');
+    line('    /// The fields of the API\'s BrewParameters (contracts/openapi.yaml) but `method`,');
+    line(`    /// which \`${FIELD_RULES_KEY}\` in brew.json can rule. The raw value is the API property.`);
+    line('    enum BrewField: String, CaseIterable, Codable, Sendable {');
+    for (const { field, member } of brew.fields) line(`        case ${member} = ${swiftString(field)}`);
+    line('');
+    line('        /// For a field whose value lies on the range of the entry picked in another');
+    line('        /// field (`grind_setting` on the `scale` of the `grinder`): that field.');
+    line('        var scaledBy: Vocabulary.BrewField? {');
+    line('            switch self {');
+    for (const { field, member } of brew.fields) {
+      const by = brew.scaledBy.get(field);
+      line(`            case .${member}: return ${by === undefined ? 'nil' : `.${swiftMember(by)}`}`);
+    }
+    line('            }');
+    line('        }');
+    line('    }');
+  }
+
   line('');
   line('    /// Every numeric range, as `{ minimum, maximum, multipleOf }` with inclusive bounds.');
   line('    enum Ranges {');
@@ -447,6 +566,32 @@ export function generateSwift({ version, files, languages }) {
   line('        ]');
   line('    }');
   line('}');
+  if (brew !== undefined) {
+    const methodType = types.get(METHODS_NAMESPACE);
+    const methodCase = (id) => `.${swiftCase(METHODS_NAMESPACE, id)}`;
+    const fieldMember = new Map(brew.fields.map(({ field, member }) => [field, member]));
+    line('');
+    line(`extension Vocabulary.${methodType} {`);
+    line(`    /// brew.${FIELD_RULES_KEY}: the methods each ruled field is allowed with, in the order`);
+    line('    /// of the method list. A field without a rule is allowed with every method.');
+    line(`    static let fieldRules: [Vocabulary.BrewField: [Vocabulary.${methodType}]] = [`);
+    for (const { field, methods } of brew.rules) {
+      line(`        .${fieldMember.get(field)}: [${methods.map(methodCase).join(', ')}],`);
+    }
+    line('    ]');
+    line('');
+    line('    /// Whether this method allows `field`: the brew form shows it, and the API accepts it.');
+    line('    func allows(_ field: Vocabulary.BrewField) -> Bool {');
+    line('        guard let methods = Self.fieldRules[field] else { return true }');
+    line('        return methods.contains(self)');
+    line('    }');
+    line('');
+    line('    /// The fields this method allows, in BrewParameters order.');
+    line('    var allowedFields: [Vocabulary.BrewField] {');
+    line('        Vocabulary.BrewField.allCases.filter { allows($0) }');
+    line('    }');
+    line('}');
+  }
   line('');
   line('/// The languages of contracts/i18n/. Every vocabulary id has a label in each.');
   line('enum VocabularyLanguage: String, CaseIterable, Sendable {');
@@ -488,7 +633,8 @@ function main() {
   const i18n = loadI18n();
   const languages = LANGUAGES.filter((lang) => lang in i18n);
   if (languages.length !== LANGUAGES.length) throw new Error(`contracts/i18n is missing one of ${LANGUAGES.join(', ')}`);
-  const source = generateSwift({ version, files, languages });
+  const brewFields = brewParameterFields(loadOpenApi());
+  const source = generateSwift({ version, files, languages, brewFields });
   const target = relative(root, GENERATED_FILE);
 
   if (!check) {
