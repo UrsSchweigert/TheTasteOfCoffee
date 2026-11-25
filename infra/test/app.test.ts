@@ -1,11 +1,13 @@
 // The real app: both stages synthesise offline, in eu-central-1, on the Cupmark
-// bootstrap, with no guard violations. The table and buckets are pinned in data.test.ts.
+// bootstrap, with no guard violations. The table and buckets are pinned in data.test.ts,
+// identity in identity.test.ts, the API in api.test.ts.
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { Template } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
 import { REGION, STAGES } from '../src/config.ts';
 import { ALLOWED_RESOURCE_TYPES, DENIED_RESOURCE_TYPES, checkApp, formatViolations } from '../src/guards.ts';
+import { API_ROUTES } from '../src/routes.ts';
 import { FAKE_ACCOUNT, INFRA_DIR, readCdkJson, testApp } from './helpers.ts';
 
 function stacksOf(options: Parameters<typeof testApp>[0] = {}) {
@@ -64,17 +66,29 @@ describe('the Cupmark app', () => {
     expect(formatViolations(violations)).toBe('');
   });
 
-  it('contains exactly the table, the two buckets and their policies, and no CDK metadata resource', () => {
+  it('contains exactly the data, identity and API resources, and no CDK metadata resource', () => {
     for (const stack of stacksOf().stacks) {
       const template = Template.fromStack(stack).toJSON() as { Resources: Record<string, { Type: string }> };
-      const types = Object.values(template.Resources).map((r) => r.Type).sort();
-      expect(types).toEqual([
-        'AWS::DynamoDB::Table',
-        'AWS::S3::Bucket',
-        'AWS::S3::Bucket',
-        'AWS::S3::BucketPolicy',
-        'AWS::S3::BucketPolicy',
-      ]);
+      const counts: Record<string, number> = {};
+      for (const r of Object.values(template.Resources)) counts[r.Type] = (counts[r.Type] ?? 0) + 1;
+      expect(counts).toEqual({
+        'AWS::DynamoDB::Table': 1,
+        'AWS::S3::Bucket': 2,
+        'AWS::S3::BucketPolicy': 2,
+        'AWS::Cognito::UserPool': 1,
+        'AWS::Cognito::UserPoolDomain': 1,
+        'AWS::Cognito::UserPoolClient': 1,
+        'AWS::ApiGatewayV2::Api': 1,
+        'AWS::ApiGatewayV2::Stage': 1,
+        'AWS::ApiGatewayV2::Authorizer': 1,
+        'AWS::ApiGatewayV2::Integration': 2,
+        'AWS::ApiGatewayV2::Route': API_ROUTES.length,
+        // One invoke permission per route, scoped to that route's path.
+        'AWS::Lambda::Permission': API_ROUTES.length,
+        'AWS::Lambda::Function': 2,
+        'AWS::IAM::Role': 2,
+        'AWS::Logs::LogGroup': 2,
+      });
       expect(Object.keys(template).sort()).toEqual(['Description', 'Outputs', 'Parameters', 'Resources', 'Rules']);
     }
   });

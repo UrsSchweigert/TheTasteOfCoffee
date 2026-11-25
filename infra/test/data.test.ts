@@ -4,6 +4,7 @@ import { Match, Template } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
 import { STAGES } from '../src/config.ts';
 import type { StageName } from '../src/config.ts';
+import { TTL_ATTRIBUTE } from '../src/data.ts';
 import { testApp } from './helpers.ts';
 
 type Resource = { Type: string; Properties: Record<string, unknown> } & Record<string, unknown>;
@@ -95,8 +96,9 @@ describe.each(STAGES)('stage %s', (stage) => {
       template.resourceCountIs('AWS::KMS::Key', 0);
     });
 
-    it('has no TTL (no item in the data model expires)', () => {
-      expect(props.TimeToLiveSpecification).toBeUndefined();
+    it('expires items by TTL on expires_at only (Open Food Facts misses and lookup counters)', () => {
+      expect(TTL_ATTRIBUTE).toBe('expires_at');
+      expect(props.TimeToLiveSpecification).toEqual({ AttributeName: 'expires_at', Enabled: true });
     });
 
     it('has exactly one index: the sparse review queue gsi1 (gsi1pk, gsi1sk), on-demand', () => {

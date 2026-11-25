@@ -261,7 +261,18 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-          cache-dependency-path: infra/package-lock.json
+          cache-dependency-path: |
+            infra/package-lock.json
+            backend/package-lock.json
+      # The Lambda code is the backend's bundle (backend/dist/<name>/index.mjs, M1-T2),
+      # and the route test parses contracts/openapi.yaml with the backend's yaml package.
+      # Licences of backend dependencies are checked in the backend job.
+      - name: Install backend
+        working-directory: backend
+        run: npm ci
+      - name: Build backend bundles
+        working-directory: backend
+        run: npm run build
       - name: Install
         run: npm ci
       # Licence allowlist (M0-T10), on the lockfile installed just above.

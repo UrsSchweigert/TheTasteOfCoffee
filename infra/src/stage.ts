@@ -10,7 +10,9 @@ import {
   stackName,
 } from './config.ts';
 import type { StageName } from './config.ts';
+import { CupmarkApi } from './api.ts';
 import { CupmarkData } from './data.ts';
+import { CupmarkIdentity } from './identity.ts';
 
 export interface CupmarkStageProps {
   readonly stage: StageName;
@@ -47,9 +49,11 @@ export class CupmarkStack extends Stack {
  */
 export class CupmarkStage extends Stage {
   public readonly cupmarkStage: StageName;
-  /** The stage's stack: table and buckets (M1-T1); identity and API follow in M1. */
+  /** The stage's stack: table and buckets (M1-T1), identity and API (M1-T2). */
   public readonly core: CupmarkStack;
   public readonly data: CupmarkData;
+  public readonly identity: CupmarkIdentity;
+  public readonly api: CupmarkApi;
 
   public constructor(scope: Construct, props: CupmarkStageProps) {
     const env: Environment =
@@ -65,6 +69,13 @@ export class CupmarkStage extends Stage {
       description: `Cupmark ${props.stage}: core resources`,
     });
     this.data = new CupmarkData(this.core, 'Data', { stage: props.stage });
+    this.identity = new CupmarkIdentity(this.core, 'Identity', { stage: props.stage });
+    this.api = new CupmarkApi(this.core, 'Api', {
+      stage: props.stage,
+      data: this.data,
+      userPool: this.identity.userPool,
+      appClient: this.identity.appClient,
+    });
 
     // Resource tags (in the template), on top of the stack tags above.
     Tags.of(this).add(PROJECT_TAG_KEY, PROJECT_TAG_VALUE);

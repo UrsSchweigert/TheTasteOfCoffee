@@ -86,7 +86,7 @@ Every error has no body. One log line per request: `operation`, `status`, `reque
 
 The contract's `Cursor` is HMAC-signed (`src/api/cursor.ts`): `base64url(HMAC-SHA256(key, "cupmark-cursor-v1", list, caller, inner))` (43 characters) followed by the repository's cursor. A cursor from another list, another caller or another key, a changed character, or the repository's unsigned cursor is 400. The repository then checks the inner cursor again.
 
-### Configuration (to be provided by M1-T2)
+### Configuration (set by infra, M1-T2: `infra/src/api.ts`)
 
 | Variable | Value |
 | --- | --- |
