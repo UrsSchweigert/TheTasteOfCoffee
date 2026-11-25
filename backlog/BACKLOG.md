@@ -540,7 +540,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the unit tests run in the `ios` job. The task ends `needs-mac-verification` until camera scanning passes on a device in M2-T34.
 
 ### M2-T14 Lookup and confirm flow
-- status: needs-mac-verification (written on Linux; `LookupModelTests` run in the `ios` job)
+- status: done (built and tested by the macOS `ios` job in #59)
 - owner: ios-engineer
 - depends: M2-T8, M2-T11, M2-T13
 - implements: docs/04-specification.md, F1 steps 2 and 3; docs/05-system-design.md, Barcode lookup; ADR 0005, ADR 0011
@@ -583,7 +583,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T16 Sync outbox and conflict rules
-- status: needs-mac-verification (written on Linux; `SyncEngineTests` run in the `ios` job)
+- status: done (built and tested by the macOS `ios` job in #59)
 - owner: ios-engineer
 - depends: M2-T8, M2-T11, M2-T15
 - implements: docs/04-specification.md, Non-functional (Offline, Durability); ADR 0012 (brew counts, `WriteConflictError`); docs/07 D14; ADR 0017, Addendum
@@ -634,6 +634,7 @@ Planning notes (planned 2026-11-25):
 - depends: M2-T14, M2-T17
 - implements: docs/04-specification.md, F1 step 5; docs/07 D14; ADR 0012
 - acceptance:
+  - From the M2-T14 and M2-T16 reviews: a 401 in the lookup flow shows a sign-in message instead of a generic retry; a parked or flagged item (400, 404-then-200, a reverted bean change, a restored delete, a rejected delete that is still `pendingDelete`) is shown with a way to redo or discard it; screens edit drafts and write through `AccountStore`; add a test that `BeanAttributeField` covers `API.BeanAttributes.propertyNames`; tighten the node check so Open Food Facts `name` and `brand` reach views only through `Text(verbatim:)`.
   - After a bean is found or confirmed, the user adds a shelf entry, which is saved locally and through the outbox. Its fields:
     - purchase date: a date picker, default today;
     - roast date: optional;
@@ -826,6 +827,7 @@ Planning notes (planned 2026-11-25):
 - depends: M2-T16
 - implements: docs/03-project-brief.md, Tiers (export own data); docs/05-system-design.md, Security (Export); ADR 0017
 - acceptance:
+  - From the M2-T16 review: after an account is deleted on another device, this device keeps that account's store and outbox. Remove a store whose account can no longer sign in (for example on the tombstone 401), or offer it in a "remove local data" setting.
   - Settings, then Export:
     1. The app tries to drain the outbox. If changes are still pending, it says they are not in the file.
     2. It calls `GET /export`.
@@ -841,6 +843,7 @@ Planning notes (planned 2026-11-25):
 - depends: M2-T16
 - implements: docs/04-specification.md, Non-functional (account deletion in the app); ADR 0017 and its Addendum; contracts `deleteAccount`
 - acceptance:
+  - From the M2-T16 review: a 401 from the ADR 0017 tombstone signs the user out without a reason. Give `AuthModel` a way to show "this account was deleted or its session ended" when sync asks for sign-in.
   - Settings, then Delete account. Two steps confirm with buttons only, and they say what is deleted: the data, the label photos of unverified beans, and the sign-in.
   - The outbox stops, and nothing more is sent. The app refreshes the token, then calls `DELETE /account`.
   - 500, 429 and network failures are retried with backoff until a 204. The state "deletion in progress" is persisted and resumed after a restart. Until the 204, the user stays signed in.
