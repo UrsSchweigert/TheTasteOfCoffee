@@ -646,7 +646,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T19 Brew form per method
-- status: todo
+- status: needs-mac-verification (reviewed; marked done once the macOS `ios` job passes in its pull request)
 - owner: ios-engineer
 - depends: M2-T18
 - implements: docs/04-specification.md, F2
@@ -863,6 +863,7 @@ Planning notes (planned 2026-11-25):
 - owner: ios-engineer
 - depends: M2-T25, M2-T26, M2-T27, M2-T28, M2-T29, M2-T30, M2-T31
 - implements: docs/04-specification.md, Non-functional (Localisation); docs/03-project-brief.md, In scope (German and English)
+- note: from the M2-T19 review, the ratio's `1:` prefix is written in `BrewFormat.ratio`; move it to a catalogue format key if a locale writes ratios differently.
 - acceptance:
   - `scripts/check-ios-strings.mjs` also checks `InfoPlist.xcstrings`: both languages, and `extractionState` manual. A test shows it failing on a missing language.
   - Numbers, units, dates and durations go through Foundation formatters in the device locale. Tests check "18,5 g" in de and "18.5 g" in en, the ratio, dates, and the timer as mm:ss.
