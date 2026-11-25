@@ -451,7 +451,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T9 Stage configuration
-- status: needs-mac-verification
+- status: done (built and tested by the macOS `ios` job in #57)
 - owner: ios-engineer
 - depends: M2-T8
 - implements: docs/05-system-design.md, Components, Security; infra/src/identity.ts (`cupmark://auth`, `cupmark://signout`); infra/README.md (stack outputs)
@@ -525,7 +525,7 @@ Planning notes (planned 2026-11-25):
   - Mac: ends `needs-mac-verification` until the owner reports a TestFlight build installed on a device.
 
 ### M2-T13 Barcode scanner
-- status: needs-mac-verification
+- status: needs-mac-verification (unit tests passed in the `ios` job in #57; the camera scan is verified on a device in M2-T34)
 - owner: ios-engineer
 - depends: M0-T6
 - implements: docs/04-specification.md, F1 step 1, Input model (camera scan, EAN-13 and UPC-A)
@@ -692,6 +692,7 @@ Planning notes (planned 2026-11-25):
 - depends: M2-T14
 - implements: docs/04-specification.md, F1 step 4; ADR 0006, ADR 0011
 - acceptance:
+  - From the M2-T13 review: when the pick-list screen is pushed over the scanner, the camera must stop. Today a cancelled `.task` returns without `source.stop()`, so the camera would keep running off screen. Stop the source on cancellation (`withTaskCancellationHandler`) or in `.onDisappear`, with a test.
   - Pick lists for origin, species, process, variety and roast level (segmented). All are optional, and `other` and `unknown` are offered. In the origin list, regions are grouped under their country through `Vocabulary.Origin.country`.
   - There is no roaster list (ADR 0006) and no search field (`.searchable` is typed text, invariant 1).
   - Saving sends `POST /beans` with the bundled `vocabulary_version`, and the barcode if one was scanned.
@@ -883,6 +884,7 @@ Planning notes (planned 2026-11-25):
 - depends: M1-T7, M2-T10, M2-T12, M2-T33
 - implements: docs/03-project-brief.md, Goals; docs/04-specification.md, F1 to F3 and Non-functional
 - acceptance:
+  - From the M2-T13 review: confirm the camera starts on the first appearance of the scanner (`startScanning()` is called from `updateUIViewController`), and that UPC-A bags arrive as 13 digits under `.ean13`.
   - The flow passes:
     1. Sign in.
     2. Scan one known and one unknown barcode, and confirm an Open Food Facts hit.
