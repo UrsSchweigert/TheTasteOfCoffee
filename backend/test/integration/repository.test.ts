@@ -498,10 +498,15 @@ describe.skipIf(!local.reachable)('repository on DynamoDB Local', () => {
       for (let round = 0; round < 25; round += 1) {
         const user = verifiedUserId(`f0f0f0f0-f0f0-4f0f-8f0f-${String(round).padStart(12, '0')}`);
         const entry = (await repo.createShelfEntry(user, shelfInput())).shelf_entry_id;
+        // A random head start for each write, so both orders occur (the replace sends no read first).
+        const later = async <T>(write: () => Promise<T>): Promise<T> => {
+          await new Promise((resolve) => setTimeout(resolve, Math.random() * 12));
+          return withRetry(write);
+        };
         const settled = await Promise.allSettled([
-          withRetry(() => repo.createBrew(user, brewInput(entry, '2026-11-25T07:00:00Z'))),
-          withRetry(() => repo.replaceShelfEntry(user, entry, shelfInput({ bean_id: OTHER_BEAN }))),
-          withRetry(() => repo.createBrew(user, brewInput(entry, '2026-11-25T08:00:00Z'))),
+          later(() => repo.createBrew(user, brewInput(entry, '2026-11-25T07:00:00Z'))),
+          later(() => repo.replaceShelfEntry(user, entry, shelfInput({ bean_id: OTHER_BEAN }))),
+          later(() => repo.createBrew(user, brewInput(entry, '2026-11-25T08:00:00Z'))),
         ]);
         const [brewA, replace, brewB] = settled;
         if (replace.status === 'fulfilled') outcomes.replaced += 1;
