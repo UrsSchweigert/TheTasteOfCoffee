@@ -161,7 +161,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - Unverified bean `META` items set the sparse index keys documented in `infra/README.md`: `gsi1pk=REVIEW#UNVERIFIED`, and `gsi1sk=<createdAt>#<beanId>` with `createdAt` always fixed-width UTC (`toISOString()`). Verifying or rejecting a bean removes both.
 
 ### M1-T4a Bean catalogue and barcode lookup
-- status: in-progress
+- status: done
 - owner: backend-engineer
 - depends: M1-T3, M1-T8
 - implements: docs/04-specification.md, F1
@@ -171,6 +171,15 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - `createBean` can throw `WriteConflictError`, so the route retries it like the other writes. Operator verify and reject also use `rethrowConflict` (from the M1-T5 review).
   - Rejecting a bean frees its barcode: the `BARCODE#` pointer is removed in the same write, so the next scan can submit a fresh entry. The rejected bean stays recorded for the operator (owner decision, 2026-11-25).
   - `POST /beans` with `open_food_facts_confirmed` returns 409 until M1-T4b provides the cache.
+
+### M1-T11 Rejected beans on shelves; catalogue contract wording
+- status: todo
+- owner: contract-keeper, then backend-engineer
+- depends: M1-T4a
+- implements: follow-ups from the M1-T4a review; decided by the lead under ADR 0014
+- acceptance:
+  - Creating or replacing a shelf entry with a rejected bean answers 404 (`BeanNotFoundError`). The condition is `status <> rejected`, in the same transaction. Shelf entries that already reference a bean rejected later keep working. Unit and DynamoDB Local tests cover both cases.
+  - `contracts/openapi.yaml`: `NotFound` no longer says "in the caller's partition" for the shared catalogue routes (it also covers a rejected bean), and `BadRequest` mentions a bad barcode check digit. No schema change.
 
 ### M1-T4b Server-side Open Food Facts lookup
 - status: todo
