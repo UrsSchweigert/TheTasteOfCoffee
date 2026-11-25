@@ -16,6 +16,14 @@ const STRING_FORMATS = ['date', 'date-time'];
 const SCHEMA_TYPES = ['string', 'number', 'integer', 'boolean', 'object', 'array'];
 const JSON_MEDIA_TYPE = 'application/json';
 const CSV_MEDIA_TYPE = 'text/csv';
+const JPEG_MEDIA_TYPE = 'image/jpeg';
+/**
+ * Response bodies that are not JSON: the CSV export and the stored copy of a
+ * catalogue image (ADR 0011). Each must be exactly
+ * `{ type: string, contentMediaType: <the media type> }`, and only in a
+ * response; request bodies are JSON only.
+ */
+export const RAW_RESPONSE_MEDIA_TYPES = [CSV_MEDIA_TYPE, JPEG_MEDIA_TYPE];
 const SCHEMAS_PREFIX = '#/components/schemas/';
 
 /** Extension keywords that bind a schema to the vocabulary. See README.md. */
@@ -40,14 +48,19 @@ export const VOCABULARY_KEYWORDS = [
  *    reach it, through any number of `$ref`s.
  * 2. The health route (ADR 0007). Exactly the operations in
  *    UNAUTHENTICATED_ROUTES declare `security: []`; they take no parameters
- *    and no body, and return the schema named there, whose one property is
- *    an enum tagged `x-health-status: true` holding only HEALTH_STATUS_VALUES.
+ *    and no body, their path has no other operation, and they return the
+ *    schema named there. That schema is exactly
+ *    `{ type: object, additionalProperties: false, required: [status],
+ *    properties: { status } }`, and `status` is a string enum tagged
+ *    `x-health-status: true` holding only HEALTH_STATUS_VALUES.
  */
 export const FREE_TEXT_KEYWORD = 'x-free-text-from';
 export const FREE_TEXT_SOURCES = ['open_food_facts'];
 export const FREE_TEXT_MAX_LENGTH = 200;
 export const HEALTH_STATUS_KEYWORD = 'x-health-status';
 export const HEALTH_STATUS_VALUES = ['ok'];
+/** The one property of the health body. */
+export const HEALTH_STATUS_PROPERTY = 'status';
 export const UNAUTHENTICATED_ROUTES = [
   { method: 'get', route: '/health', schema: 'HealthStatus', decision: 'docs/decisions/0007-unauthenticated-health-route.md' },
 ];
@@ -251,8 +264,8 @@ export function patternProblems(pattern) {
 /**
  * The no-free-text lint. Fails on:
  * - a string without `enum`, an anchored `pattern` or a `format` of date or
- *   date-time. Exceptions: a CSV response body with `contentMediaType:
- *   text/csv`, and response-only free text marked `x-free-text-from` with
+ *   date-time. Exceptions: a CSV or JPEG response body whose
+ *   `contentMediaType` is its media type, and response-only free text marked `x-free-text-from` with
  *   `readOnly: true` and a bounded `maxLength` (findRequestFreeText proves no
  *   request reaches it);
  * - `x-free-text-from` on anything but a string, and `readOnly` without it;
@@ -321,7 +334,7 @@ export function lintSchemas(doc) {
         if (hasFormat && !STRING_FORMATS.includes(schema.format)) {
           add(path, `format ${schema.format} is not one of ${STRING_FORMATS.join(', ')}`);
         }
-        const isCsvBody = context.mediaType === CSV_MEDIA_TYPE && schema.contentMediaType === CSV_MEDIA_TYPE;
+        const isRawBody = RAW_RESPONSE_MEDIA_TYPES.includes(context.mediaType) && schema.contentMediaType === context.mediaType;
         const isFreeText = FREE_TEXT_KEYWORD in schema;
         if (isFreeText) {
           const source = schema[FREE_TEXT_KEYWORD];
@@ -339,7 +352,7 @@ export function lintSchemas(doc) {
           }
           if (schema.readOnly !== true) add(path, 'free text needs readOnly: true (it is response-only)');
         }
-        if (!hasEnum && !hasPattern && !hasFormat && !isCsvBody && !isFreeText) add(path, 'string without enum, pattern or format');
+        if (!hasEnum && !hasPattern && !hasFormat && !isRawBody && !isFreeText) add(path, 'string without enum, pattern or format');
         break;
       }
       case 'number':
@@ -513,6 +526,8 @@ export function checkStructure(doc) {
     }
   }
 
+  for (const open of UNAUTHENTICATED_ROUTES) problems.push(...healthSchemaProblems(doc.components?.schemas?.[open.schema], open.schema));
+
   if (!isMap(doc.paths) || Object.keys(doc.paths).length === 0) {
     problems.push('paths is empty');
     return problems;
@@ -553,6 +568,10 @@ export function checkStructure(doc) {
         operationIds.add(op.operationId);
       }
       const open = UNAUTHENTICATED_ROUTES.find((r) => r.method === method && r.route === route);
+      const sharesOpenPath = UNAUTHENTICATED_ROUTES.find((r) => r.route === route && r.method !== method);
+      if (!open && sharesOpenPath) {
+        problems.push(`${where}: ${route} has ${sharesOpenPath.method.toUpperCase()} only (${sharesOpenPath.decision})`);
+      }
       if (open) {
         if (!Array.isArray(op.security) || op.security.length !== 0) {
           problems.push(`${where}: must declare security: [] (${open.decision})`);
@@ -615,15 +634,50 @@ export function checkStructure(doc) {
           continue;
         }
         for (const [mediaType, media] of Object.entries(isMap(response.content) ? response.content : {})) {
-          if (![JSON_MEDIA_TYPE, CSV_MEDIA_TYPE].includes(mediaType)) problems.push(`${where} ${code}: media type ${mediaType} is not allowed`);
+          if (![JSON_MEDIA_TYPE, ...RAW_RESPONSE_MEDIA_TYPES].includes(mediaType)) problems.push(`${where} ${code}: media type ${mediaType} is not allowed`);
           if (!isMap(media) || media.schema === undefined) problems.push(`${where} ${code}: ${mediaType} has no schema`);
-          if (mediaType === CSV_MEDIA_TYPE && media?.schema?.contentMediaType !== CSV_MEDIA_TYPE) {
-            problems.push(`${where} ${code}: a CSV body must be a string with contentMediaType ${CSV_MEDIA_TYPE}`);
+          const raw = media?.schema;
+          const isExactRaw = isMap(raw) && Object.keys(raw).sort().join() === 'contentMediaType,type' && raw.type === 'string' && raw.contentMediaType === mediaType;
+          if (RAW_RESPONSE_MEDIA_TYPES.includes(mediaType) && !isExactRaw) {
+            problems.push(`${where} ${code}: a ${mediaType} body must be exactly { type: string, contentMediaType: ${mediaType} }`);
           }
         }
         if (code === '204' && response.content !== undefined) problems.push(`${where} 204: must not have content`);
       }
     }
+  }
+  return problems;
+}
+
+/**
+ * The body of the unauthenticated route must be exactly
+ * `{ type: object, additionalProperties: false, required: [status],
+ * properties: { status: { type: string, enum: [ok], x-health-status: true } } }`
+ * (a `description` is allowed on both), so it can never grow a field that
+ * leaks data without the token.
+ */
+function healthSchemaProblems(schema, name) {
+  const where = `components.schemas.${name}`;
+  if (!isMap(schema)) return [`${where}: missing`];
+  const problems = [];
+  const keysOf = (node) => Object.keys(node).filter((key) => key !== 'description').sort().join();
+  if (keysOf(schema) !== 'additionalProperties,properties,required,type') {
+    problems.push(`${where}: must hold exactly type, additionalProperties, required and properties`);
+  }
+  if (schema.type !== 'object' || schema.additionalProperties !== false) {
+    problems.push(`${where}: must be an object with additionalProperties: false`);
+  }
+  if (JSON.stringify(schema.required) !== JSON.stringify([HEALTH_STATUS_PROPERTY])) {
+    problems.push(`${where}: required must be exactly [${HEALTH_STATUS_PROPERTY}]`);
+  }
+  const properties = isMap(schema.properties) ? schema.properties : {};
+  if (Object.keys(properties).join() !== HEALTH_STATUS_PROPERTY) {
+    problems.push(`${where}: must have exactly one property, ${HEALTH_STATUS_PROPERTY}`);
+  }
+  const status = properties[HEALTH_STATUS_PROPERTY];
+  if (!isMap(status) || keysOf(status) !== `enum,type,${HEALTH_STATUS_KEYWORD}` || status.type !== 'string' ||
+      JSON.stringify(status.enum) !== JSON.stringify(HEALTH_STATUS_VALUES) || status[HEALTH_STATUS_KEYWORD] !== true) {
+    problems.push(`${where}.properties.${HEALTH_STATUS_PROPERTY}: must be exactly { type: string, enum: [${HEALTH_STATUS_VALUES.join(', ')}], ${HEALTH_STATUS_KEYWORD}: true }`);
   }
   return problems;
 }
