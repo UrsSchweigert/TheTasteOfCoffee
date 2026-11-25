@@ -1,9 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { App } from 'aws-cdk-lib';
 import { buildApp } from '../src/app.ts';
 import type { CupmarkApp } from '../src/app.ts';
 import { checkApp } from '../src/guards.ts';
 import type { Violation } from '../src/guards.ts';
+import { CupmarkGitHubOidcStack } from '../src/github-oidc.ts';
+import type { GitHubOidcProviderMode } from '../src/github-oidc.ts';
 import type { CupmarkStack } from '../src/stage.ts';
 
 export const INFRA_DIR = fileURLToPath(new URL('..', import.meta.url));
@@ -63,4 +66,35 @@ export function violationsAfter(
   if (dev === undefined) throw new Error('dev stage missing');
   mutate(dev.core, cupmark);
   return checkApp(cupmark.app);
+}
+
+export interface GitHubOidcTestOptions {
+  readonly providerMode?: GitHubOidcProviderMode;
+  readonly importMode?: boolean;
+  /** As in ViolationsAfterOptions. */
+  readonly validateTemplates?: boolean;
+}
+
+/**
+ * An app with only the `cupmark-github-oidc` stack (no stages, so no backend bundle is
+ * needed), with the feature flags from cdk.json. Defaults: `reference`, not import mode.
+ */
+export function githubOidcApp(options: GitHubOidcTestOptions = {}): { app: App; stack: CupmarkGitHubOidcStack } {
+  const validation = options.validateTemplates === false ? { '@aws-cdk/core:validateAgainstDefaultRules': false } : {};
+  const app = new App({ analyticsReporting: false, context: { ...readCdkJson().context, ...validation } });
+  const stack = new CupmarkGitHubOidcStack(app, {
+    providerMode: options.providerMode ?? 'reference',
+    importMode: options.importMode ?? false,
+  });
+  return { app, stack };
+}
+
+/** Like violationsAfter, for a throwaway change to the GitHub OIDC stack. */
+export function githubOidcViolationsAfter(
+  mutate: (stack: CupmarkGitHubOidcStack) => void,
+  options: GitHubOidcTestOptions = {},
+): Violation[] {
+  const { app, stack } = githubOidcApp({ validateTemplates: false, ...options });
+  mutate(stack);
+  return checkApp(app);
 }

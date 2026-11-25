@@ -2,6 +2,7 @@ import { App } from 'aws-cdk-lib';
 import type { AppProps } from 'aws-cdk-lib';
 import { STAGE_CONTEXT_KEY, STAGES, accountContextKey, isStageName } from './config.ts';
 import type { StageName } from './config.ts';
+import { CupmarkGitHubOidcStack, githubOidcImportMode, githubOidcProviderMode } from './github-oidc.ts';
 import { CupmarkStage } from './stage.ts';
 
 export interface BuildAppOptions {
@@ -14,6 +15,11 @@ export interface BuildAppOptions {
 export interface CupmarkApp {
   readonly app: App;
   readonly stages: readonly CupmarkStage[];
+  /**
+   * `cupmark-github-oidc` (M1-T9), only when no stage is selected. `-c stage=<name>`
+   * leaves it out, so a stage deploy can never select it by accident.
+   */
+  readonly githubOidc: CupmarkGitHubOidcStack | undefined;
 }
 
 const ACCOUNT_ID = /^\d{12}$/;
@@ -54,5 +60,9 @@ export function buildApp(options: BuildAppOptions = {}): CupmarkApp {
   const stages = selectedStages(app).map(
     (stage) => new CupmarkStage(app, { stage, account: stageAccount(app, stage, env) }),
   );
-  return { app, stages };
+  const githubOidc =
+    app.node.tryGetContext(STAGE_CONTEXT_KEY) === undefined
+      ? new CupmarkGitHubOidcStack(app, { providerMode: githubOidcProviderMode(app), importMode: githubOidcImportMode(app) })
+      : undefined;
+  return { app, stages, githubOidc };
 }

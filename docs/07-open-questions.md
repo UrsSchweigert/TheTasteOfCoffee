@@ -42,7 +42,7 @@ Open items are also tracked as GitHub issues with the label `human` (since 2026-
 - [x] Re-apply the guardrails after M1-T2 (`apply-guardrails.sh --apply`): boundary and execution policies updated, bootstrap unchanged, deploy role policy rewritten (owner, 2026-11-25, from CloudShell).
 - [x] Raise the Lambda concurrency quota in eu-central-1 to at least 120. The owner requested 1000 on 2026-11-25; on 2026-11-25 the owner reported it is 1000.
 - [ ] Re-apply the guardrails after M1-T6 (boundary: S3 version deletes on the photo bucket's `labels/` and `uploads/`, `ListBucketVersions`, `AdminDeleteUser`). Issue #45. Needed before the first deploy.
-- [ ] Once M1-T9 is built, deploy `cupmark-github-oidc` once by hand, importing the existing `CupmarkGitHubDeploy` (the owner prefers this, because it keeps the role ARN).
+- [ ] Once M1-T9 is merged, import the existing `CupmarkGitHubDeploy` into `cupmark-github-oidc` by hand, in CloudShell with your own credentials. Follow infra/README.md, "One-time import (owner)": check the provider and the role; `cdk import` with `-c cupmark:githubOidcImport=true` and `import/cupmark-github-oidc.json`; drift detection (`IN_SYNC`); then `cdk deploy cupmark-github-oidc`, which adds only the tag `project=cupmark` (ADR 0018); then the AWS OIDC check workflow. If the role differs from the template, stop and report it. The owner prefers the import, because it keeps the role as it is.
 - [ ] Add repository secrets: `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`, and the AWS role ARN.
 - [ ] Approve every production deployment.
 - [x] Review and approve version 1 of the flavour vocabulary before it ships (it is expensive to change later). Approved by the owner on 2026-11-25.
