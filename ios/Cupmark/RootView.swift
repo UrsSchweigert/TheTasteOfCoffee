@@ -18,7 +18,10 @@ struct RootView: View {
     private var content: some View {
         switch stage {
         case .configured:
-            vocabularyContent
+            // Signed-in content only (M2-T11); the closure gets the local store's AccountID.
+            AuthGate { _ in
+                vocabularyContent
+            }
         case .notConfigured:
             NotConfiguredView()
         }

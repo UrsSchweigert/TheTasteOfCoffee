@@ -375,7 +375,7 @@ final class APIClient: Sendable {
                 if Task.isCancelled || error is CancellationError {
                     throw CancellationError()
                 }
-                throw APIError.unauthorized
+                throw APIClient.tokenFailure(error)
             }
             try Task.checkCancellation()
             response = try await perform(endpoint, url: url, body: body, token: accessToken())
@@ -386,7 +386,8 @@ final class APIClient: Sendable {
         return response.data
     }
 
-    /// The provider's token; `unauthorized` when it has none.
+    /// The provider's token; `unauthorized` when it has none, `transport` when it could not be
+    /// refreshed for lack of a network.
     private func accessToken() async throws -> String {
         do {
             return try await tokenProvider.currentAccessToken()
@@ -394,7 +395,31 @@ final class APIClient: Sendable {
             if Task.isCancelled || error is CancellationError {
                 throw CancellationError()
             }
-            throw APIError.unauthorized
+            throw APIClient.tokenFailure(error)
+        }
+    }
+
+    /// What a failure of the token provider becomes (M2-T11). Only a failure that means
+    /// "sign in again" is `unauthorized`; a failure of Cognito itself is retryable, so the
+    /// outbox backs off instead of signing the user out:
+    /// - a network failure while refreshing stays `transport`;
+    /// - a Cognito 5xx, or a token response the app cannot use, is `serviceUnavailable`;
+    /// - a Cognito 429 is `tooManyRequests`;
+    /// - anything else (`invalid_grant` as `sessionExpired`, no saved sign-in, an account
+    ///   mismatch, another 4xx, a Keychain failure) is `unauthorized`.
+    static func tokenFailure(_ error: any Error) -> APIError {
+        if let apiError = error as? APIError, case .transport = apiError {
+            return apiError
+        }
+        switch error as? AuthError {
+        case .server(let status) where (500...599).contains(status):
+            return .serviceUnavailable
+        case .server(429):
+            return .tooManyRequests
+        case .invalidResponse:
+            return .serviceUnavailable
+        default:
+            return .unauthorized
         }
     }
 
