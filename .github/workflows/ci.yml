@@ -31,7 +31,10 @@ jobs:
   # of ios/ counts as a change to ios/). Pushes to main always run ios.
   # Any doubt (unknown event, missing base, failed diff) means ios=true.
   # ios=true when a changed path starts with one of IOS_PATHS; a path ending
-  # in `/` is a directory prefix.
+  # in `/` is a directory prefix. IOS_PATHS covers ios/ and everything the iOS
+  # generators read: the scripts themselves, the contracts/lib modules they
+  # import, and their inputs (M2-T6). scripts/check-workflows.test.mjs derives
+  # that list from the scripts and fails if an entry is missing.
   changes:
     name: changes
     runs-on: ubuntu-latest
@@ -53,7 +56,11 @@ jobs:
             ios/
             contracts/vocabulary/
             contracts/i18n/
+            contracts/openapi.yaml
+            contracts/lib/vocabulary.mjs
+            contracts/lib/lock.mjs
             scripts/generate-ios-vocabulary.mjs
+            scripts/generate-ios-api.mjs
             scripts/check-ios-strings.mjs
             .github/workflows/ci.yml
         # GitHub runs this with bash -eo pipefail; every check that may fail is
