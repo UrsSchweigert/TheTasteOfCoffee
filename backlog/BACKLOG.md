@@ -267,7 +267,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - Status: done on 2026-11-25 in two parts. Part 1: D7 and D9, plus draft v2. Part 2: v2 published and locked with the owner's ADR 0011 amendments; origin, species and variety bound in the contract; Open Food Facts images referenced by `image_id`; health route and raw-body lint hardened; backend and iOS on v2.
 
 ### M1-T9 GitHub OIDC deploy stack and IAM policy guards
-- status: todo
+- status: in-progress
 - owner: infra-engineer
 - depends: M0-T4
 - implements: docs/decisions/0009
