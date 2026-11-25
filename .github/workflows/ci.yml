@@ -1,0 +1,140 @@
+# Continuous integration (backlog M0-T5). Runs every check from the Definition
+# of done in CLAUDE.md on pull requests and on pushes to main.
+#
+# Safety rules, enforced by scripts/check-workflows.mjs (the workflow-lint job):
+# - read-only token (top-level `permissions: contents: read`, nothing else);
+# - every action pinned to a full commit SHA, version in a trailing comment;
+# - no pull_request_target, no secrets, checkout without persisted credentials;
+# - every job has timeout-minutes.
+# Branch protection should require the single `ci-ok` check.
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  # Superseded PR runs are cancelled; every push to main runs to completion.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+defaults:
+  run:
+    shell: bash
+jobs:
+  workflow-lint:
+    name: workflow-lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: contracts/package-lock.json
+      - name: Install (contracts, for the yaml parser)
+        working-directory: contracts
+        run: npm ci
+      - name: Check workflow files
+        run: |
+          set -euo pipefail
+          node --test scripts/check-workflows.test.mjs
+          node scripts/check-workflows.mjs
+
+  contracts:
+    name: contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: contracts/package-lock.json
+      - name: Install
+        working-directory: contracts
+        run: npm ci
+      - name: Test
+        working-directory: contracts
+        run: npm test
+      - name: No free text
+        run: scripts/check-no-free-text.sh
+
+  backend:
+    name: backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Test
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: Generated contract is up to date
+        run: npm run check:generated
+
+  infra:
+    name: infra
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: infra/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Test
+        run: npm test
+      # Offline: --no-lookups, no AWS credentials exist in this workflow.
+      - name: Synth
+        run: npm run synth
+
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [workflow-lint, contracts, backend, infra]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: All jobs passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          set -euo pipefail
+          echo "Job results: $RESULTS"
+          for r in $RESULTS; do
+            if [ "$r" != "success" ]; then
+              echo "A required job did not succeed ($r)"
+              exit 1
+            fi
+          done
