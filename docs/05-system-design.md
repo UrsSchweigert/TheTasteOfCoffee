@@ -82,7 +82,7 @@ One sparse index (`gsi1`) lists unverified beans for the review queue: only an u
 
 1. A brew is written to the user's partition.
 2. DynamoDB Streams hands the change to the aggregator Lambda in batches.
-3. The aggregator adds the scores to the running totals of the bean and of the bean-and-method item, using atomic counters. Edits and deletes apply the difference.
+3. The aggregator adds the scores to the running totals of the bean and of the bean-and-method item, using atomic counters. Edits and deletes apply the difference. It acts on brew items only and ignores every other item type in the stream (shelf entries, pointers, label photo items, counters and TTL deletes).
 4. Reading a bean page is then one or two item reads, with mean and spread computed from count, sum and sum of squares.
 5. A nightly job reads the aggregate items (one per bean) and writes the ranking lists.
 

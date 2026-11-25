@@ -204,7 +204,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - Any metadata-stripping dependency has a permissive licence and passes the licence check.
 
 ### M1-T4d Label photo upload
-- status: in-progress
+- status: done
 - owner: backend-engineer
 - depends: M1-T4a
 - implements: docs/04-specification.md, F1; D10 to D12
@@ -317,6 +317,8 @@ Scope: StoreKit 2 purchase and restore, transaction verification, App Store Serv
 Goal: ready for strangers. Not yet planned.
 
 Scope: App Attest, per-user write caps, budgets and alarms, operator CLI for the review queue and catalogue curation, restore drill from point-in-time recovery and from the S3 export, privacy review, performance against the 300 ms target.
+
+From M1-T4d (ADR 0016, D10): the operator CLI reads label photos from `labels/<photo_id>.jpg` (it needs `s3:GetObject` on `labels/*`) by following the bean's `PHOTO#` items. On verification it copies the photo to `verified/`, where it expires after 90 days, and removes the user-side `PHOTO#` link, so the verified photo is no longer tied to the user.
 
 ## M6 Launch
 
