@@ -13,6 +13,10 @@
 //   type string         enum (strings only) | pattern (compiled with the `u` flag, as
 //                       ajv does) | format date, date-time (real calendar checks in
 //                       src/contract/formats.ts) | minLength, maxLength (code points)
+//                       | response-only free text: `x-free-text-from: open_food_facts`
+//                       with `readOnly: true` and `maxLength` (ADR 0005), emitted as a
+//                       string bounded in code points; without the marker a string
+//                       with no enum, pattern or format throws
 //   type integer        z.int(); minimum, maximum (inclusive), multipleOf (exact `%`,
 //                       dyadic steps only, as the contract lint requires)
 //   type number         z.number(); minimum, maximum (inclusive), multipleOf (as above)
@@ -20,8 +24,8 @@
 //   type object         z.strictObject (additionalProperties must be false);
 //                       properties, required, dependentRequired, not: { required }
 //   type array          items (one schema), minItems, maxItems, uniqueItems
-//   annotations         description, title, the x-vocabulary* tags (checked by the
-//                       contracts tests, nothing to enforce at runtime)
+//   annotations         description, title, the x-vocabulary* tags and x-health-status
+//                       (checked by the contracts tests, nothing to enforce at runtime)
 // Everything else (allOf, oneOf, anyOf, const, default, exclusive bounds, ...) throws.
 
 export class ContractGenerationError extends Error {
@@ -45,10 +49,15 @@ const ANNOTATIONS = new Set([
   'x-vocabulary-max-items',
   'x-vocabulary-version',
   'x-i18n-languages',
+  'x-health-status',
 ]);
 
+/** The one source of response-only free text (contracts/lib/openapi.mjs, FREE_TEXT_SOURCES). */
+const FREE_TEXT_KEYWORD = 'x-free-text-from';
+const FREE_TEXT_SOURCES: ReadonlySet<unknown> = new Set(['open_food_facts']);
+
 const KEYWORDS_BY_TYPE: Record<string, ReadonlySet<string>> = {
-  string: new Set(['type', 'enum', 'pattern', 'format', 'minLength', 'maxLength']),
+  string: new Set(['type', 'enum', 'pattern', 'format', 'minLength', 'maxLength', 'readOnly', FREE_TEXT_KEYWORD]),
   integer: new Set(['type', 'minimum', 'maximum', 'multipleOf']),
   number: new Set(['type', 'minimum', 'maximum', 'multipleOf']),
   boolean: new Set(['type']),
@@ -151,6 +160,18 @@ class Emitter {
   }
 
   private string(path: string, schema: JsonObject, indent: string): string {
+    const isFreeText = FREE_TEXT_KEYWORD in schema;
+    if ('readOnly' in schema && !isFreeText) fail(path, `readOnly is only supported on response-only free text (${FREE_TEXT_KEYWORD})`);
+    if (isFreeText) {
+      if (!FREE_TEXT_SOURCES.has(schema[FREE_TEXT_KEYWORD])) fail(path, `${FREE_TEXT_KEYWORD} must be open_food_facts`);
+      if (schema.readOnly !== true) fail(path, 'response-only free text needs readOnly: true');
+      for (const key of ['enum', 'pattern', 'format']) {
+        if (key in schema) fail(path, `${FREE_TEXT_KEYWORD} together with ${key} is not supported`);
+      }
+      if (!('maxLength' in schema)) fail(path, 'response-only free text needs maxLength');
+      return this.lengths(path, schema, 'z.string()');
+    }
+
     if ('enum' in schema) {
       const values = schema.enum;
       if (Object.keys(schema).some((key) => KEYWORDS_BY_TYPE.string?.has(key) && key !== 'type' && key !== 'enum')) {
@@ -190,6 +211,12 @@ class Emitter {
       this.helpers.add(check.helper);
       code += `.refine(${check.helper}, { error: ${literal(check.message)} })`;
     }
+    return this.lengths(path, schema, code);
+  }
+
+  /** minLength and maxLength in code points, as JSON Schema (and ajv) count them. */
+  private lengths(path: string, schema: JsonObject, base: string): string {
+    let code = base;
     if ('minLength' in schema) {
       const min = nonNegativeInteger(path, 'minLength', schema.minLength);
       this.helpers.add('codePointLength');

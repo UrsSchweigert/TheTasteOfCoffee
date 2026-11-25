@@ -2,7 +2,7 @@
 // Do not edit. Change the contract, then run `npm run generate` in backend/.
 
 import { z } from 'zod';
-import { hasUniqueItems, isDateTime, isFullDate, isPresent } from '../contract/formats.ts';
+import { codePointLength, hasUniqueItems, isDateTime, isFullDate, isPresent } from '../contract/formats.ts';
 
 export const IdSchema = z.string().regex(new RegExp('^[0-9A-HJKMNP-TV-Z]{26}$', 'u'));
 export type Id = z.infer<typeof IdSchema>;
@@ -21,6 +21,11 @@ export type Timestamp = z.infer<typeof TimestampSchema>;
 
 export const VocabularyVersionSchema = z.int().min(1).max(1);
 export type VocabularyVersion = z.infer<typeof VocabularyVersionSchema>;
+
+export const HealthStatusSchema = z.strictObject({
+  status: z.enum(['ok']),
+});
+export type HealthStatus = z.infer<typeof HealthStatusSchema>;
 
 export const LocaleSchema = z.enum(['de', 'en']);
 export type Locale = z.infer<typeof LocaleSchema>;
@@ -208,12 +213,20 @@ export const BeanCreateSchema = z.strictObject({
 });
 export type BeanCreate = z.infer<typeof BeanCreateSchema>;
 
+export const OpenFoodFactsProductSchema = z.strictObject({
+  name: z.string().refine((value) => codePointLength(value) >= 1, { error: 'Too short' }).refine((value) => codePointLength(value) <= 150, { error: 'Too long' }).optional(),
+  brand: z.string().refine((value) => codePointLength(value) >= 1, { error: 'Too short' }).refine((value) => codePointLength(value) <= 100, { error: 'Too long' }).optional(),
+  image_ref: z.string().regex(new RegExp('^https://images\\.openfoodfacts\\.org/images/products/[0-9]{3}/[0-9]{3}/[0-9]{3}/[0-9]{4}/front_[a-z]{2}\\.[0-9]{1,6}\\.(100|200|400|full)\\.jpg$', 'u')).optional(),
+});
+export type OpenFoodFactsProduct = z.infer<typeof OpenFoodFactsProductSchema>;
+
 export const BeanSchema = z.strictObject({
   bean_id: IdSchema,
   vocabulary_version: VocabularyVersionSchema,
   verified: z.boolean(),
   barcode: BarcodeSchema.optional(),
   open_food_facts_match: z.boolean(),
+  open_food_facts: OpenFoodFactsProductSchema.optional(),
   picked_attributes: BeanAttributesSchema,
   operator_attributes: BeanAttributesSchema,
 });
@@ -343,6 +356,7 @@ export const componentSchemas = {
   CalendarDate: CalendarDateSchema,
   Timestamp: TimestampSchema,
   VocabularyVersion: VocabularyVersionSchema,
+  HealthStatus: HealthStatusSchema,
   Locale: LocaleSchema,
   Method: MethodSchema,
   WaterType: WaterTypeSchema,
@@ -363,6 +377,7 @@ export const componentSchemas = {
   BeanAttributes: BeanAttributesSchema,
   BeanCreate: BeanCreateSchema,
   Bean: BeanSchema,
+  OpenFoodFactsProduct: OpenFoodFactsProductSchema,
   ShelfEntryInput: ShelfEntryInputSchema,
   ShelfEntry: ShelfEntrySchema,
   ShelfEntryPage: ShelfEntryPageSchema,
