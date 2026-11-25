@@ -13,6 +13,8 @@ Cupmark/                  app target sources and resources
   Networking/             APIClient, TokenProvider, APIError, CatalogueImageCache
   Vocabulary/             VocabularyStore (runtime loader) and helpers
   Configuration/          StageConfig and the "not configured" screen
+  Auth/                   sign-in (M2-T11): AuthModel, AuthSession, PKCE, Keychain, sign-in screen
+  Store/                  SwiftData local store, one per account (M2-T15)
   L10n.swift              keys of the String Catalog
   Localizable.xcstrings   String Catalog, English (source) and German
 CupmarkTests/             XCTest unit tests (hosted in the app)
@@ -60,7 +62,7 @@ node scripts/generate-ios-api.mjs
 
 - The base URL is injected (M2-T9). The default session is ephemeral, with no URL cache and no cookies.
 - Method, path, success status and `Accept` come from `API.Endpoint`. Path parameters are `ResourceID` (a ULID, checked against the contract's `Id` pattern) or `LookupBarcode` (12 or 13 digits) only, so no path is built from other text. `cursor` and `limit` are checked too.
-- Every request carries `Authorization: Bearer <token>` from a `TokenProvider` (`currentAccessToken()`, `refresh()`; M2-T11 implements it). No path, query or body names a user (invariant 3). On a 401 the client calls `refresh()` once and sends the request once more; a second 401, a failed refresh or no token is `APIError.unauthorized`.
+- Every request carries `Authorization: Bearer <token>` from a `TokenProvider` (`currentAccessToken()`, `refresh()`; `AuthSession` implements it, see Sign-in). No path, query or body names a user (invariant 3). On a 401 the client calls `refresh()` once and sends the request once more; a second 401, a failed refresh or no token is `APIError.unauthorized`, except a refresh that failed in transport, which stays `APIError.transport` (M2-T11).
 - Any status other than the route's success status throws `APIError`: `badRequest`, `unauthorized`, `notFound`, `conflict`, `tooManyRequests`, `serviceUnavailable`, `server(status:)`, `unexpectedStatus` (also a 2xx other than the documented one), plus `transport(URLError.Code)`, `undecodable` and `invalidResponse`. Error bodies are not read. The client logs nothing, so no body, token or Open Food Facts text reaches a log (docs/05, Security).
 - `allShelfEntries()`, `allBrews()` and `allRecipes()` follow `next_cursor` with `limit=100` until it is absent. Items that do not decode are collected in `undecodableItems`. A repeated or malformed cursor, or more than 1,000 pages (`APIClient.maxPages`), stops with `invalidResponse`.
 - Cancelling the calling task throws `CancellationError`, never `transport(.cancelled)`, and nothing is refreshed or retried after it.
@@ -91,6 +93,32 @@ node scripts/generate-ios-api.mjs
 - When scanning is unsupported, denied or not available, `ScannerScreen` offers the pick-list entry (`onPickListEntry`, connected in M2-T22) and a Settings link (`UIApplication.openSettingsURLString`). `onScanned` is connected to the lookup in M2-T14; until then the root screen's "Scan a bag" row passes placeholders.
 - The camera permission prompt is `INFOPLIST_KEY_NSCameraUsageDescription` in the app target's build settings, localised in `Cupmark/InfoPlist.xcstrings` (en, de).
 - Only a device can run the camera: unit tests cover the logic, the real scan is checked in M2-T34.
+
+## Local store
+
+`Store/` (M2-T15) is the SwiftData copy of the user's own data (docs/04, Offline). It is not wired into the app yet; M2-T16 to M2-T18 add the outbox, the pull and the screens.
+
+- One store per account (ADR 0020). `StoreAccount` gives the store a stable id, the id token's `sub`. Sign-in adapts its account value with `extension AccountID: StoreAccount { var stableID: String { rawValue } }`. The file is `Library/Application Support/Accounts/<sha-256 hex of the id>.store`, so the raw `sub` is never in a path. An empty id throws. `AccountStore.open(for:)` opens only that file, with CloudKit off; `AccountStore.inMemory()` is a new empty store for tests and previews.
+- `CupmarkSchemaV1` (`VersionedSchema` 1.0.0) holds `StoredBean`, `StoredShelfEntry`, `StoredBrew`, `StoredRecipe` and `StoredProfile`; `CupmarkMigrationPlan` has no stages yet. A new version adds `CupmarkSchemaV<N>`, a stage, and moves the `Stored...` type aliases.
+- Every model has `localID` (the only `@Attribute(.unique)`), `serverID` (nil until the server has it; the profile has none, the API gives it no id), `vocabularyVersion` and `syncStateRaw`, a `SyncState` raw value (`synced`, `pending_create`, `pending_update`, `pending_delete`). Bean to shelf entry to brew are relationships with inverses.
+- Vocabulary values are stored as contract ids (`methodID`, `bagSizeID`, ...) and read through the `Vocabulary` enums: an unknown id reads as nil and is kept. A rating is one JSON blob of ids (`RatingValues`: score by criterion id, level by dimension id, note ids), so no criterion or note list is written in Swift. Converting to an API type (`apiInput()`, `apiParameters()`, `apiRating()`) throws `LocalStoreError.unknownVocabularyID` instead of sending an unknown id, and `missingServerID` while a referenced item has no server id. `apply(_:)` and the `init(_:)` from an API type take server values.
+- Writes save at once. A local edit of a synced item makes it `pendingUpdate`; deleting an item the server never had removes it, any other becomes `pendingDelete` and is hidden. A shelf entry with brews cannot be deleted (ADR 0012). Lists: `brewsNewestFirst()` (by `brewed_at`, kept in whole milliseconds), `shelfEntries()` (latest purchase first), `recipes()`.
+- `BrewDerivedValues` is the one place for derived values: ratio `water_g / (dose_dg / 10)` (ADR 0004), and days since roast from `roast_date` to the day `brewed_at` falls on in the device calendar's time zone, counted on calendar days, so a daylight saving or time zone change never shifts it by one.
+- Tests: `AccountStoreTests`, `StoredValuesTests`, `StoreLocationTests` (including two accounts on disk) and `BrewDerivedValuesTests`, with fixtures in `CupmarkTests/Support/StoreFixtures.swift`.
+
+## Sign-in
+
+`Auth/` (M2-T11, ADR 0024) signs in through the Cognito hosted UI with Sign in with Apple as the only provider. It needs no package, no Sign in with Apple entitlement and no registered URL scheme.
+
+- `SignInView` has one control, `AppleSignInButton`: drawn to Apple's guidelines, not `AuthenticationServices.SignInWithAppleButton`, which always starts the native request (it needs the entitlement and returns a token the hosted UI cannot take). The app asks for no name and no email.
+- The button opens `ASWebAuthenticationSession` (`SystemWebAuthenticator`, ephemeral, callback scheme `cupmark`) on `/oauth2/authorize` with `response_type=code`, `client_id`, `redirect_uri=cupmark://auth`, `identity_provider=SignInWithApple`, `scope=openid`, a random `state` and an S256 `code_challenge` (`PKCE`: 32 `SecRandomCopyBytes` bytes, CryptoKit SHA-256, base64url). `AuthorizationRequest.code(fromCallback:redirectURL:)` rejects another URL, a missing, repeated or different `state`, an OAuth `error` and a missing code. Closing the sheet is `AuthError.cancelled`, which shows no error.
+- `CognitoTokenEndpoint` posts `application/x-www-form-urlencoded` to `/oauth2/token` (code with `code_verifier`; refresh token) and `/oauth2/revoke`, with `client_id` and no client secret. Only an error body's `error` code is read (`invalid_grant`). A network failure is `APIError.transport`.
+- `AuthSession` is an actor and the app's `TokenProvider`. The refresh token and the `AccountID` are one Keychain item (`KeychainCredentialStore`: generic password, service `app.cupmark.Cupmark.auth.<stage>`, account `refresh-token`, `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`). The access token is kept in memory only; the id token is read for its `sub` and dropped. A token is refreshed 120 s before it expires (or at half its lifetime, if shorter) and on a 401 (`refresh()`); concurrent callers share one refresh task, and a caller that asks during a refresh waits for it. `invalid_grant` ends the session (`AuthStatus.sessionExpired`); a transport failure keeps it, so the app works offline, and `APIClient` passes `transport` through instead of `unauthorized`.
+- Sign-out clears memory and the Keychain, then revokes the refresh token; a failed revoke still leaves the device signed out.
+- `AuthModel` (`@Observable`, main actor) holds the phase (`restoring`, `signedOut`, `signingIn`, `signedIn(AccountID)`) and the note to show. `CupmarkApp` builds it with `AuthModel.live(config:)` when the stage is configured and puts it in the environment; `AuthGate` in `RootView` shows the sign-in screen or the signed-in content and, for now, a sign-out toolbar button.
+- **`AccountID` (for M2-T15).** The local store key: the lowercase hex SHA-256 of the id token's `sub`, 64 characters, file-name safe. Read it from `AuthModel.accountID` or from the closure argument of `AuthGate`. It is available offline at launch (saved in the Keychain). It is never sent: the backend takes the user from the access token (invariant 3). The id token's signature is not checked, because the value only picks a local store (ADR 0024).
+- Tests: `PKCETests` (RFC 7636 appendix B), `HostedUITests` (authorize URL, callback checks), `TokenEndpointTests` (form bodies, no secret, decoding, errors, with `StubURLProtocol`), `AccountIDTests`, `AuthSessionTests` (single-flight refresh, expiry, offline, sign-out), `AuthModelTests` (the flow with a fake web sheet), and `KeychainCredentialStoreTests`, a real Keychain round trip in the test host app that is skipped if the simulator gives the unsigned build no Keychain. Fakes are in `CupmarkTests/Support/AuthFakes.swift`.
+- Only a device run against dev (M2-T34) shows the Apple sheet, the callback and a real token exchange.
 
 ## Strings
 

@@ -26,4 +26,14 @@ enum L10n {
     static var scannerNotAvailableMessage: LocalizedStringKey { "scanner.not_available.message" }
     static var notConfiguredTitle: LocalizedStringKey { "not_configured.title" }
     static var notConfiguredMessage: LocalizedStringKey { "not_configured.message" }
+    static var signInTitle: LocalizedStringKey { "sign_in.title" }
+    static var signInMessage: LocalizedStringKey { "sign_in.message" }
+    static var signInWithApple: LocalizedStringKey { "sign_in.apple_button" }
+    static var signInInProgress: LocalizedStringKey { "sign_in.in_progress" }
+    static var signInFailed: LocalizedStringKey { "sign_in.failed" }
+    static var signInOffline: LocalizedStringKey { "sign_in.offline" }
+    static var signInSessionExpired: LocalizedStringKey { "sign_in.session_expired" }
+    static var authRestoring: LocalizedStringKey { "auth.restoring" }
+    static var accountSignOut: LocalizedStringKey { "account.sign_out" }
+    static var accountSignOutConfirmTitle: LocalizedStringKey { "account.sign_out.confirm_title" }
 }

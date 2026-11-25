@@ -1,6 +1,42 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "account.sign_out" : {
+      "comment" : "Button and confirmation action that sign the user out.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abmelden"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign Out"
+          }
+        }
+      }
+    },
+    "account.sign_out.confirm_title" : {
+      "comment" : "Title of the confirmation before signing out.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Von Cupmark abmelden?"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign out of Cupmark?"
+          }
+        }
+      }
+    },
     "app.title" : {
       "comment" : "App name, shown as the title of the root screen.",
       "extractionState" : "manual",
@@ -15,6 +51,24 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cupmark"
+          }
+        }
+      }
+    },
+    "auth.restoring" : {
+      "comment" : "Accessibility label of the activity indicator while the app checks the saved sign-in at launch.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anmeldung wird geprüft"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checking sign-in"
           }
         }
       }
@@ -357,6 +411,132 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Scanning not supported"
+          }
+        }
+      }
+    },
+    "sign_in.apple_button" : {
+      "comment" : "Title of the Sign in with Apple button. Use Apple's official wording for the language.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mit Apple anmelden"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in with Apple"
+          }
+        }
+      }
+    },
+    "sign_in.failed" : {
+      "comment" : "Shown on the sign-in screen when signing in did not work.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Anmeldung hat nicht geklappt. Bitte versuche es noch einmal."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign-in did not work. Please try again."
+          }
+        }
+      }
+    },
+    "sign_in.in_progress" : {
+      "comment" : "Accessibility label of the activity indicator while signing in.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anmeldung läuft"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signing in"
+          }
+        }
+      }
+    },
+    "sign_in.message" : {
+      "comment" : "Explains on the sign-in screen why to sign in and what the app does not ask for.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Melde dich an, um deine Bohnen, Zubereitungen und Bewertungen zu speichern. Cupmark fragt weder nach deinem Namen noch nach deiner E-Mail-Adresse."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in to keep your beans, brews and ratings. Cupmark does not ask for your name or your email address."
+          }
+        }
+      }
+    },
+    "sign_in.offline" : {
+      "comment" : "Shown on the sign-in screen when there is no network connection.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Verbindung. Prüfe deine Internetverbindung und versuche es noch einmal."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No connection. Check your internet connection and try again."
+          }
+        }
+      }
+    },
+    "sign_in.session_expired" : {
+      "comment" : "Shown on the sign-in screen when the saved sign-in has ended.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Anmeldung ist abgelaufen. Bitte melde dich erneut an."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your sign-in has expired. Please sign in again."
+          }
+        }
+      }
+    },
+    "sign_in.title" : {
+      "comment" : "Title of the sign-in screen.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Willkommen bei Cupmark"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Welcome to Cupmark"
           }
         }
       }

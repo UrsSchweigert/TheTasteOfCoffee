@@ -477,7 +477,7 @@ Planning notes (planned 2026-11-25):
   - Nothing else changes. The values are configuration, not secrets (invariant 8 holds).
 
 ### M2-T11 Sign in with Apple through the Cognito hosted UI with PKCE
-- status: in-progress
+- status: needs-mac-verification (written on Linux, not compiled; the unit tests run in the `ios` job, the real sign-in against dev in M2-T34; ADR 0024)
 - owner: ios-engineer
 - depends: M2-T8, M2-T9
 - implements: docs/03-project-brief.md (Sign in with Apple only); docs/05-system-design.md, Security (60-minute access tokens, refresh token in the Keychain); infra/src/identity.ts (public client, `openid`, `cupmark://auth`)
@@ -563,7 +563,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T15 SwiftData local store
-- status: in-progress
+- status: needs-mac-verification (written on Linux, not compiled; becomes done when the `ios` job passes)
 - owner: ios-engineer
 - depends: M2-T1, M2-T7
 - implements: docs/04-specification.md, Non-functional (Offline: "the device holds a full copy of the user's own data"); docs/05-system-design.md, Components (SwiftData local store)

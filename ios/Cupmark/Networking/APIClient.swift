@@ -375,7 +375,7 @@ final class APIClient: Sendable {
                 if Task.isCancelled || error is CancellationError {
                     throw CancellationError()
                 }
-                throw APIError.unauthorized
+                throw APIClient.tokenFailure(error)
             }
             try Task.checkCancellation()
             response = try await perform(endpoint, url: url, body: body, token: accessToken())
@@ -386,7 +386,8 @@ final class APIClient: Sendable {
         return response.data
     }
 
-    /// The provider's token; `unauthorized` when it has none.
+    /// The provider's token; `unauthorized` when it has none, `transport` when it could not be
+    /// refreshed for lack of a network.
     private func accessToken() async throws -> String {
         do {
             return try await tokenProvider.currentAccessToken()
@@ -394,8 +395,18 @@ final class APIClient: Sendable {
             if Task.isCancelled || error is CancellationError {
                 throw CancellationError()
             }
-            throw APIError.unauthorized
+            throw APIClient.tokenFailure(error)
         }
+    }
+
+    /// What a failure of the token provider becomes: a network failure while refreshing stays
+    /// `transport` (M2-T11), so the app is not treated as signed out when it is offline;
+    /// anything else is `unauthorized`.
+    static func tokenFailure(_ error: any Error) -> APIError {
+        if let apiError = error as? APIError, case .transport = apiError {
+            return apiError
+        }
+        return .unauthorized
     }
 
     private func perform(_ endpoint: API.Endpoint, url: URL, body: Data?, token: String) async throws -> (data: Data, status: Int) {
