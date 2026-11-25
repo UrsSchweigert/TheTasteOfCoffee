@@ -98,7 +98,7 @@ This keeps the paid tier's read cost flat no matter how many brews exist. If ad 
 | Authorisation | Partition key derived from the token; paid and give-to-get checks in the API function |
 | Input | Every field validated server-side against a closed list or a numeric range. With no text fields there is nothing to inject or moderate |
 | Abuse | API Gateway throttling; per-user daily write cap; App Attest on write routes |
-| Encryption | TLS in transit; DynamoDB and S3 encrypted at rest with AWS-managed keys at no charge |
+| Encryption | TLS in transit; DynamoDB encrypted at rest with the AWS-owned key and S3 with SSE-S3, both at no charge and with no KMS key (owner decision, 2026-11-25) |
 | Access to AWS | Shared account isolated by ADR 0002 and 0009 (a separate account remains the later option); root with MFA and no keys; least-privilege role per function; CloudTrail on |
 | Privacy | Aggregates only above 5 raters; in-app export and account deletion; no third-party SDKs; data stays in the EU |
 | Cost attack | AWS Budgets alarm at 10 USD; Lambda concurrency cap; throttling limits the worst case |
