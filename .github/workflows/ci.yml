@@ -290,9 +290,14 @@ jobs:
   # Every job must succeed. The one exception: `ios` may be skipped, but only
   # when `changes` succeeded and said ios=false. A failed or cancelled ios, or
   # a skip for any other reason, fails ci-ok.
+  # `!cancelled()` instead of `always()`: when the whole run is cancelled
+  # (a newer push superseded it), ci-ok is skipped and shows grey instead of a
+  # misleading red. A job that fails or times out still runs ci-ok and fails it.
+  # GitHub counts a skipped required check as passing, so the lead merges only
+  # when ci-ok concluded `success` on the head commit (next-task skill, step 5).
   ci-ok:
     name: ci-ok
-    if: always()
+    if: ${{ !cancelled() }}
     needs: [changes, workflow-lint, contracts, ios, backend, infra]
     runs-on: ubuntu-latest
     timeout-minutes: 2

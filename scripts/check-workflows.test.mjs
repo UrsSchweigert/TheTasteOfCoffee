@@ -269,10 +269,10 @@ test('ci.yml: the ios job needs the changes job and runs only when it says ios=t
   assert.doesNotMatch(ciOkStep.run, /\$\{\{/);
 });
 
-test('ci.yml: ci-ok needs every job, including changes and ios, and always runs', () => {
+test('ci.yml: ci-ok needs every job, including changes and ios, and runs unless the run was cancelled', () => {
   const jobs = Object.keys(ci.jobs).filter((id) => id !== 'ci-ok').sort();
   assert.deepEqual([...ci.jobs['ci-ok'].needs].sort(), jobs);
-  assert.equal(ci.jobs['ci-ok'].if, 'always()');
+  assert.equal(ci.jobs['ci-ok'].if, '${{ !cancelled() }}');
   // Every job except ios is listed in OTHER_RESULTS, so each must be success.
   const text = ciOkStep.env.OTHER_RESULTS;
   const others = [...text.matchAll(/(\S+)=(\$\{\{[^}]*\}\})/g)];
