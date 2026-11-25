@@ -28,7 +28,7 @@ async function newShelf(h: Harness, sub = ALICE_SUB): Promise<string> {
 }
 
 describe('routes', () => {
-  it('serves exactly the shelf, brew, recipe, bean catalogue, Open Food Facts lookup, catalogue image and label photo operations of the contract', () => {
+  it('serves exactly every operation of the contract except the health route (its own Lambda)', () => {
     const served = ROUTES.map((route) => `${route.method} ${route.segments.join('/')} ${route.operation}`).sort();
     const expected: string[] = [];
     for (const path of [
@@ -45,18 +45,30 @@ describe('routes', () => {
       '/catalogue_images/{image_id}',
       '/beans/{bean_id}/label_photos',
       '/label_photos/{photo_id}/complete',
+      '/profile',
+      '/export',
+      '/account',
     ]) {
       for (const [method, operation] of Object.entries(contract.paths[path] ?? {})) {
         expected.push(`${method.toUpperCase()} ${path} ${operation.operationId}`);
       }
     }
     expect(served).toEqual(expected.sort());
-    expect(served).toHaveLength(22);
+    expect(served).toHaveLength(26);
+    expect(Object.keys(contract.paths).filter((path) => path !== '/health').sort()).toEqual(
+      [...new Set(ROUTES.map((route) => route.segments.join('/')))].sort(),
+    );
   });
 
   it.each([
-    ['GET', '/profile'],
-    ['PUT', '/profile'],
+    ['POST', '/profile'],
+    ['DELETE', '/profile'],
+    ['GET', '/profile/'],
+    ['POST', '/export'],
+    ['GET', '/export/'],
+    ['GET', '/account'],
+    ['POST', '/account'],
+    ['DELETE', '/account/'],
     ['GET', '/beans'],
     ['PUT', `/beans/${ID}`],
     ['DELETE', `/beans/${ID}`],
@@ -74,8 +86,6 @@ describe('routes', () => {
     ['POST', `/label_photos/${ID}`],
     ['POST', '/label_photos'],
     ['GET', `/label_photos/${ID}`],
-    ['GET', '/export'],
-    ['DELETE', '/account'],
     ['GET', '/health'],
     ['GET', '/'],
     ['GET', '/nothing'],

@@ -241,8 +241,10 @@ describe('references under a race (ADR 0012)', () => {
     expect(sent).toHaveLength(2);
     for (const input of sent) {
       const items = (input.TransactItems ?? []) as Record<string, Record<string, unknown>>[];
-      expect(items).toHaveLength(2);
+      // The bean check, the write, then the caller's tombstone check (ADR 0017, Addendum).
+      expect(items).toHaveLength(3);
       expect(items[0]?.ConditionCheck).toMatchObject(usable);
+      expect(items[2]?.ConditionCheck).toMatchObject({ Key: { pk: `DELETED#${ALICE.value}`, sk: 'META' } });
     }
   });
 
@@ -299,17 +301,8 @@ describe('references under a race (ADR 0012)', () => {
   });
 
   it('a failed shelf delete is 404 if the entry is gone and in use if it is there', async () => {
-    const condition = new ConditionalCheckFailedException({ message: 'failed', $metadata: {} });
-    const gone = stub((input) => {
-      if (!('ConditionExpression' in input)) return {};
-      throw condition;
-    });
-    await expect(gone.repo.deleteShelfEntry(ALICE, ID)).rejects.toThrow(ItemNotFoundError);
-    const there = stub((input) => {
-      if (!('ConditionExpression' in input)) return shelfItem;
-      throw condition;
-    });
-    await expect(there.repo.deleteShelfEntry(ALICE, ID)).rejects.toThrow(ShelfEntryInUseError);
+    await expect(racing([{}], cancelled(0, 2)).repo.deleteShelfEntry(ALICE, ID)).rejects.toThrow(ItemNotFoundError);
+    await expect(racing([shelfItem], cancelled(0, 2)).repo.deleteShelfEntry(ALICE, ID)).rejects.toThrow(ShelfEntryInUseError);
   });
 });
 
@@ -363,10 +356,7 @@ describe('concurrent transactions on a hot shelf entry (ADR 0012)', () => {
   });
 
   it('a shelf delete that meets a counting transaction is WriteConflictError', async () => {
-    const { repo } = stub(() => {
-      throw new TransactionConflictException({ message: 'conflict', $metadata: {} });
-    });
-    await expect(repo.deleteShelfEntry(ALICE, ID)).rejects.toThrow(WriteConflictError);
+    await expect(racing([], conflict(2, 0)).deleteShelfEntry(ALICE, ID)).rejects.toThrow(WriteConflictError);
   });
 });
 

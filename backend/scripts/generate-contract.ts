@@ -1,6 +1,7 @@
 // Writes src/generated/contract.ts from contracts/openapi.yaml, and
 // src/generated/vocabulary.ts from the published versions in
-// contracts/vocabulary and the contract's x-vocabulary* tags.
+// contracts/vocabulary and the contract's x-vocabulary* tags, and
+// src/generated/export.ts from the x-csv-* extensions of GET /export.
 // With --check, writes nothing and exits 1 if a committed file differs from a
 // fresh generation (no drift between contracts and backend).
 import { readFileSync, writeFileSync } from 'node:fs';

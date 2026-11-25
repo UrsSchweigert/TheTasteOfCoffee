@@ -6,8 +6,9 @@
 //   `labels/<photoId>.jpg` for the stripped copy the operator's tooling reads.
 //   No user id in any key (S3 keys show up in logs and tooling).
 // - infra grants the API function s3:PutObject on `uploads/*` (needed to sign
-//   the POST), s3:GetObject on `uploads/*` and s3:PutObject on `labels/*`. No
-//   delete: a lifecycle rule expires `uploads/` after 1 day.
+//   the POST), s3:GetObject on `uploads/*` and s3:PutObject on `labels/*`.
+//   Nothing here deletes: a lifecycle rule expires `uploads/` after 1 day, and
+//   account deletion (M1-T6) deletes through photo-deletion-store.ts.
 // - The presigned POST (@aws-sdk/s3-presigned-post) has the exact key, the
 //   field `Content-Type: image/jpeg`, and a policy with: the exact key,
 //   `content-length-range` 1 to MAX_LABEL_PHOTO_BYTES, `Content-Type` equal

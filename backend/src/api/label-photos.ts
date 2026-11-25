@@ -22,6 +22,8 @@
 // POST /label_photos/{photo_id}/complete, in this order:
 // 1. 400: a malformed photo id (the router), a query or a body.
 // 2. 500 without a usable PHOTO_BUCKET.
+// 2a. 401 if the caller's account tombstone is in force (M1-T6; a strongly
+//    consistent read, before any S3 work; the transaction checks it again).
 // 3. The caller's pending item. None (unknown, another caller's, expired, or
 //    rejected before): 409 if the caller has a completed photo with this id,
 //    else 404. Another caller's id is never read, so it looks unknown.
@@ -52,6 +54,7 @@ import { stripJpeg } from '../images/jpeg.ts';
 import type { LabelPhotoStore, PresignedUpload } from '../images/label-photo-store.ts';
 import { MAX_LABEL_PHOTO_BYTES, UPLOAD_EXPIRES_SECONDS, uploadKey } from '../images/label-photo-store.ts';
 import {
+  AccountDeletedError,
   BeanNotUnverifiedError,
   ItemNotFoundError,
   LABEL_PHOTOS_PER_BEAN,
@@ -79,6 +82,7 @@ export type LabelPhotoRepository = Pick<
   | 'discardPendingLabelPhoto'
   | 'hasLabelPhoto'
   | 'completeLabelPhoto'
+  | 'isAccountDeleted'
 >;
 
 export interface LabelPhotoConfig {
@@ -180,6 +184,9 @@ export async function completeLabelPhoto(
   retry: Retry,
 ): Promise<LabelPhotoOutcome> {
   if (config === undefined) return NOT_CONFIGURED;
+  // A deleted account (ADR 0017, Addendum): refused before any S3 work, so no
+  // labels/ object is written for it. The transaction checks the tombstone again.
+  if (await store.isAccountDeleted(user)) return { result: empty(401), error: 'AccountDeletedError' };
   const pending = await store.getPendingLabelPhoto(user, photoId);
   if (pending === undefined) {
     return (await store.hasLabelPhoto(user, photoId))
@@ -220,6 +227,7 @@ export async function completeLabelPhoto(
       return { result: empty(409), error: error.name, ...orphaned };
     }
     if (error instanceof ItemNotFoundError) return { result: empty(404), error: 'LabelPhotoNotPending', ...orphaned };
+    if (error instanceof AccountDeletedError) return { result: empty(401), error: error.name, ...orphaned };
     return { result: empty(500), error: errorName(error), ...orphaned };
   }
   return { result: empty(204) };

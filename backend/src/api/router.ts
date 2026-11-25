@@ -7,15 +7,15 @@
 // the stored catalogue images GET /catalogue_images/{image_id} (task
 // M1-T4c, catalogue-images.ts) and the label photo upload
 // POST /beans/{bean_id}/label_photos and
-// POST /label_photos/{photo_id}/complete (task M1-T4d, label-photos.ts).
+// POST /label_photos/{photo_id}/complete (task M1-T4d, label-photos.ts),
+// and the profile, export and account deletion: GET and PUT /profile,
+// GET /export (export.ts) and DELETE /account (account.ts) (task M1-T6).
 //
 // Order of checks for every request:
 // 1. Route: method and `rawPath` against the table. No match is 404 with no
-//    body. That includes the contract routes whose tasks have not landed yet
-//    (profile, export, account; the contract declares no
-//    501 for them), /health (its own Lambda, ADR 0007), a
-//    trailing slash and any method a path does not declare (the contract
-//    declares no 405).
+//    body. That includes /health (its own Lambda, ADR 0007), a trailing
+//    slash and any method a path does not declare (the contract declares no
+//    405).
 // 2. Caller: `userIdFromEvent`, the token subject only. None is 401.
 // 3. Input: path parameters against the contract (ids against the `Id`
 //    pattern; a barcode against `Barcode` and its check digit), the query
@@ -26,7 +26,9 @@
 //    entry that brews reference is deleted or would change its bean, D14; a
 //    bean for a barcode that already points to a bean; a bean from an Open
 //    Food Facts hit the server has not cached), 400 (a cursor the repository
-//    refuses) and 500 for anything else. A write that raced another write is
+//    refuses), 401 (the caller's account tombstone is in force: every write
+//    of a deleted account is refused, ADR 0017 Addendum) and 500 for
+//    anything else. A write that raced another write is
 //    tried up to three times in all, with a short random wait in between.
 //    The Open Food Facts lookup answers 404, 409, 429 and 503 itself
 //    (open-food-facts.ts) and logs a fixed error name and, for 503, a reason
@@ -45,9 +47,10 @@
 // Food Facts text.
 import type { z } from 'zod';
 import type { UserId } from '../auth/user-id.ts';
-import { userIdFromEvent } from '../auth/user-id.ts';
-import { IdSchema } from '../generated/contract.ts';
+import { cognitoUsernameFromEvent, userIdFromEvent } from '../auth/user-id.ts';
+import { IdSchema, ProfileSchema } from '../generated/contract.ts';
 import {
+  AccountDeletedError,
   BarcodeTakenError,
   BeanNotFoundError,
   InvalidCursorError,
@@ -61,6 +64,9 @@ import {
   WriteConflictError,
 } from '../repository/index.ts';
 import type { CatalogueImageStore } from '../images/catalogue-store.ts';
+import { deleteAccount } from './account.ts';
+import type { AccountDeletionConfig } from './account.ts';
+import { csvResponse, exportCsv } from './export.ts';
 import { BarcodeParameterSchema, createBean, getBean, lookupBarcode, parseBeanCreate } from './catalogue.ts';
 import { getCatalogueImage } from './catalogue-images.ts';
 import { completeLabelPhoto, createLabelPhotoUpload } from './label-photos.ts';
@@ -68,7 +74,7 @@ import type { LabelPhotoConfig, LabelPhotoOutcome } from './label-photos.ts';
 import { lookupOpenFoodFacts } from './open-food-facts.ts';
 import type { LookupResult, OpenFoodFactsLookupConfig } from './open-food-facts.ts';
 import type { CursorSigner } from './cursor.ts';
-import { empty, hasNoBody, json, parseBody, parseLimit, parseQuery } from './http.ts';
+import { empty, hasNoBody, json, parseBody, parseJsonBody, parseLimit, parseQuery } from './http.ts';
 import type { ApiEvent, ApiResult } from './http.ts';
 import { brewResource, recipeResource, shelfResource } from './resources.ts';
 import type { ApiStore, Resource } from './resources.ts';
@@ -94,6 +100,8 @@ export interface ApiDependencies {
   readonly catalogueImages?: CatalogueImageStore;
   /** The label photo store in the photo bucket and its daily cap; absent without a usable PHOTO_BUCKET (both routes 500). */
   readonly labelPhotos?: LabelPhotoConfig;
+  /** The photo bucket, deletion log and user pool for DELETE /account; a missing part makes it 500 before anything changes. */
+  readonly accountDeletion?: AccountDeletionConfig;
   readonly log?: (entry: LogEntry) => void;
   /** Wait before retry number `retry` (1, 2) of a write that raced; for tests. Default: 10 to 50 ms, then 20 to 100 ms. */
   readonly retryDelayMs?: (retry: number) => number;
@@ -143,6 +151,7 @@ function failed(status: number, error: unknown): Outcome {
 
 /** Maps a repository error to its status. Messages are never used (they are safe, but the status is the answer). */
 function outcomeOf(error: unknown): Outcome {
+  if (error instanceof AccountDeletedError) return failed(401, error);
   if (error instanceof ItemNotFoundError || error instanceof BeanNotFoundError || error instanceof ShelfEntryNotFoundError) {
     return failed(404, error);
   }
@@ -319,10 +328,10 @@ const catalogueRoutes: Route[] = [
     segments: ['', 'beans'],
     parameters: {},
     operation: 'createBean',
-    handle: async ({ event, deps }) => {
+    handle: async ({ event, user, deps }) => {
       const input = noQuery(event) ? parseBeanCreate(event) : undefined;
       if (input === undefined) return BAD_REQUEST;
-      return run(async () => json(201, await attempt(() => createBean(deps.store, input), deps.retryDelayMs ?? jitteredDelay)));
+      return run(async () => json(201, await attempt(() => createBean(deps.store, input, user), deps.retryDelayMs ?? jitteredDelay)));
     },
   },
   {
@@ -385,6 +394,65 @@ const labelPhotoRoutes: Route[] = [
   },
 ];
 
+/** The caller's profile, export and account deletion (M1-T6, ADR 0017). User-scoped. */
+const accountRoutes: Route[] = [
+  {
+    method: 'GET',
+    segments: ['', 'profile'],
+    parameters: {},
+    operation: 'getProfile',
+    handle: async ({ event, user, deps }) => {
+      if (!noQuery(event) || !hasNoBody(event)) return BAD_REQUEST;
+      return run(async () => {
+        const profile = await deps.store.getProfile(user);
+        // No profile before the first PUT: the app runs onboarding.
+        return profile === undefined ? empty(404) : json(200, profile);
+      });
+    },
+  },
+  {
+    method: 'PUT',
+    segments: ['', 'profile'],
+    parameters: {},
+    operation: 'putProfile',
+    handle: async ({ event, user, deps }) => {
+      const input = noQuery(event) ? parseJsonBody(event, ProfileSchema) : undefined;
+      if (input === undefined) return BAD_REQUEST;
+      return run(async () => json(200, await attempt(() => deps.store.putProfile(user, input), deps.retryDelayMs ?? jitteredDelay)));
+    },
+  },
+  {
+    method: 'GET',
+    segments: ['', 'export'],
+    parameters: {},
+    operation: 'exportData',
+    handle: async ({ event, user, deps }) => {
+      if (!noQuery(event) || !hasNoBody(event)) return BAD_REQUEST;
+      try {
+        return { result: csvResponse(exportCsv(await deps.store.exportItems(user))) };
+      } catch (error) {
+        // ExportTooLargeError: over MAX_EXPORT_BYTES, the Lambda response limit (export.ts).
+        return failed(500, error);
+      }
+    },
+  },
+  {
+    method: 'DELETE',
+    segments: ['', 'account'],
+    parameters: {},
+    operation: 'deleteAccount',
+    // Exempt from the tombstone check: a retry, and a repeat after the 204, must run again.
+    handle: async ({ event, user, deps }) => {
+      if (!noQuery(event) || !hasNoBody(event)) return BAD_REQUEST;
+      try {
+        return await deleteAccount(deps.store, deps.accountDeletion, user, cognitoUsernameFromEvent(event));
+      } catch (error) {
+        return failed(500, error);
+      }
+    },
+  },
+];
+
 /** Every route this Lambda serves. */
 export const ROUTES: readonly Route[] = [
   ...routesOf(shelfResource),
@@ -392,6 +460,7 @@ export const ROUTES: readonly Route[] = [
   ...routesOf(recipeResource),
   ...catalogueRoutes,
   ...labelPhotoRoutes,
+  ...accountRoutes,
 ];
 
 const PARAMETER = /^\{([a-z][a-z0-9_]*)\}$/;

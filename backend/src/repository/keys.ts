@@ -48,6 +48,7 @@ export const PREFIX = {
   labelPhotoPending: 'PHOTO_PENDING#',
   labelPhotoCount: 'BEANPHOTOS#',
   labelPhotoUploads: 'PHOTO_UPLOADS#',
+  deletedAccount: 'DELETED#',
 } as const;
 
 export const SORT_KEY = {
@@ -56,6 +57,7 @@ export const SORT_KEY = {
   barcodeTarget: 'BEAN',
   openFoodFactsCache: 'OFF',
   aggregateAll: 'AGG#ALL',
+  tombstone: 'META',
 } as const;
 
 export const REVIEW_QUEUE_PK = 'REVIEW#UNVERIFIED';
@@ -189,6 +191,17 @@ export function labelPhotoCountKey(user: UserId, beanId: string): Key {
 /** `PHOTO_UPLOADS#<YYYY-MM-DD>`: the label photo uploads the caller started that UTC day; TTL `expires_at`. */
 export function labelPhotoUploadCounterKey(user: UserId, utcDay: string): Key {
   return { pk: userPk(user), sk: `${PREFIX.labelPhotoUploads}${calendarDate(utcDay, 'upload day')}` };
+}
+
+// ---- account deletion (M1-T6; ADR 0017, Addendum) ----
+
+/**
+ * `DELETED#<sub>` / `META`: the tombstone of a deleted account. Its own
+ * partition, outside `USER#<sub>`, so emptying the user partition keeps it.
+ * Every write of the caller is conditional on it not being in force.
+ */
+export function tombstoneKey(user: UserId): Key {
+  return { pk: `${PREFIX.deletedAccount}${userPart(user)}`, sk: SORT_KEY.tombstone };
 }
 
 // ---- bean catalogue ----

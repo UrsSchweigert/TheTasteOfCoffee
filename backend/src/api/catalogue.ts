@@ -7,9 +7,12 @@
 // rejected, verified or not (F1 step 3: unverified entries are shown right
 // away, ADR 0005). A rejected bean is answered 404 as if it did not exist; its
 // barcode pointer is gone (Repository.rejectBean), so a scan can submit a fresh
-// entry. The caller's user id is not used here and never stored on a bean: the
-// response cannot carry another user's id because the bean holds none.
+// entry. The caller's user id is never stored on a bean, so the response
+// cannot carry another user's id because the bean holds none. POST /beans
+// passes it to the repository only for the tombstone check of a deleted
+// account (ADR 0017, Addendum).
 import { z } from 'zod';
+import type { UserId } from '../auth/user-id.ts';
 import { BeanCreateSchema } from '../generated/contract.ts';
 import type { Bean, BeanCreate, OpenFoodFactsProduct } from '../generated/contract.ts';
 import { InvalidKeyError, OpenFoodFactsHitMissingError, canonicalBarcode } from '../repository/index.ts';
@@ -77,7 +80,7 @@ export async function getBean(store: CatalogueStore, beanId: string): Promise<Be
  * `false` is the same as leaving it out. A barcode that already points to a
  * bean is BarcodeTakenError (409), from the repository's transaction.
  */
-export async function createBean(store: CatalogueStore, input: BeanCreate): Promise<Bean> {
+export async function createBean(store: CatalogueStore, input: BeanCreate, caller: UserId): Promise<Bean> {
   const barcode = input.barcode === undefined ? undefined : canonicalBarcode(input.barcode);
   let openFoodFacts: OpenFoodFactsProduct | undefined;
   if (input.open_food_facts_confirmed === true) {
@@ -91,6 +94,6 @@ export async function createBean(store: CatalogueStore, input: BeanCreate): Prom
     openFoodFactsMatch: openFoodFacts !== undefined,
     ...(openFoodFacts === undefined ? {} : { openFoodFacts }),
     pickedAttributes: input.attributes,
-  });
+  }, caller);
   return record.bean;
 }

@@ -9,10 +9,12 @@
 // the per-user daily lookup counter with its cap; the label photo items
 // (pending uploads with their expiry, completed photos in the user and bean
 // partitions, the per-bean count with its cap of 3, the daily upload counter)
-// and the completion's all-or-nothing conditions.
+// and the completion's all-or-nothing conditions; the profile; the export
+// read; the account tombstone, which makes every write of a deleted caller
+// fail with AccountDeletedError and nothing written; and the deletion steps.
 // The real repository is tested against DynamoDB Local.
 import type { UserId } from '../../src/auth/user-id.ts';
-import type { Brew, BrewInput, Recipe, RecipeInput, ShelfEntry, ShelfEntryInput } from '../../src/generated/contract.ts';
+import type { Brew, BrewInput, Profile, Recipe, RecipeInput, ShelfEntry, ShelfEntryInput } from '../../src/generated/contract.ts';
 import type { ApiStore } from '../../src/api/resources.ts';
 import { newUlid } from '../../src/ids/ulid.ts';
 import {
@@ -49,6 +51,8 @@ import {
   pendingLabelPhotoKey,
 } from '../../src/repository/index.ts';
 import type { PendingLabelPhoto } from '../../src/repository/index.ts';
+import { AccountDeletedError, TOMBSTONE_TTL_SECONDS } from '../../src/repository/index.ts';
+import type { AccountPhotos, AccountTombstone, ExportItems } from '../../src/repository/index.ts';
 
 interface Partition {
   readonly shelf: Map<string, ShelfEntry>;
@@ -97,12 +101,32 @@ export class FakeStore implements ApiStore {
   public now = new Date('2026-11-25T12:00:00.000Z');
   /** Every call, by method name, for assertions. */
   public readonly calls: string[] = [];
+  /** Profiles by user partition key. */
+  public readonly profiles = new Map<string, Profile>();
+  /** Account tombstones by user partition key (the repository keeps them under `DELETED#<sub>`). */
+  public readonly tombstones = new Map<string, { deletedAt: string; expiresAt: number; photoIds: Set<string>; logged: boolean }>();
   /** Ids are made one millisecond apart, so newest first is deterministic. */
   #clock = Date.UTC(2026, 10, 1);
 
   #newId(): string {
     this.#clock += 1;
     return newUlid(this.#clock);
+  }
+
+  #seconds(): number {
+    return Math.floor(this.now.getTime() / 1000);
+  }
+
+  /** Like the repository's tombstone ConditionCheck: a tombstone in force refuses the write, and nothing is written. */
+  #guard(user: UserId): void {
+    const tombstone = this.tombstones.get(userPk(user));
+    if (tombstone !== undefined && tombstone.expiresAt > this.#seconds()) throw new AccountDeletedError('the account is deleted');
+  }
+
+  /** Runs a write of the caller under the tombstone guard, as a promise. */
+  async #write<T>(user: UserId, write: () => Promise<T>): Promise<T> {
+    this.#guard(user);
+    return write();
   }
 
   #of(user: UserId): Partition {
@@ -133,6 +157,10 @@ export class FakeStore implements ApiStore {
 
   public createShelfEntry(user: UserId, input: ShelfEntryInput): Promise<ShelfEntry> {
     this.calls.push('createShelfEntry');
+    return this.#write(user, () => this.#createShelfEntry(user, input));
+  }
+
+  #createShelfEntry(user: UserId, input: ShelfEntryInput): Promise<ShelfEntry> {
     if (!this.#beanUsable(input.bean_id)) return Promise.reject(new BeanNotFoundError('no such bean'));
     const entry = { shelf_entry_id: this.#newId(), values: structuredClone(input) };
     this.#of(user).shelf.set(entry.shelf_entry_id, entry);
@@ -147,6 +175,10 @@ export class FakeStore implements ApiStore {
 
   public replaceShelfEntry(user: UserId, id: string, input: ShelfEntryInput): Promise<ShelfEntry> {
     this.calls.push('replaceShelfEntry');
+    return this.#write(user, () => this.#replaceShelfEntry(user, id, input));
+  }
+
+  #replaceShelfEntry(user: UserId, id: string, input: ShelfEntryInput): Promise<ShelfEntry> {
     const p = this.#of(user);
     if (!p.shelf.has(id)) return Promise.reject(new ItemNotFoundError('no such item'));
     const keepsBean = p.shelf.get(id)?.values.bean_id === input.bean_id;
@@ -163,6 +195,10 @@ export class FakeStore implements ApiStore {
 
   public deleteShelfEntry(user: UserId, id: string): Promise<void> {
     this.calls.push('deleteShelfEntry');
+    return this.#write(user, () => this.#deleteShelfEntry(user, id));
+  }
+
+  #deleteShelfEntry(user: UserId, id: string): Promise<void> {
     const p = this.#of(user);
     if (!p.shelf.has(id)) return Promise.reject(new ItemNotFoundError('no such item'));
     if (this.#brewCount(p, id) > 0) return Promise.reject(new ShelfEntryInUseError('in use'));
@@ -178,6 +214,10 @@ export class FakeStore implements ApiStore {
 
   public createBrew(user: UserId, input: BrewInput): Promise<Brew> {
     this.calls.push('createBrew');
+    return this.#write(user, () => this.#createBrew(user, input));
+  }
+
+  #createBrew(user: UserId, input: BrewInput): Promise<Brew> {
     const p = this.#of(user);
     if (!p.shelf.has(input.shelf_entry_id)) return Promise.reject(new ShelfEntryNotFoundError('no such shelf entry'));
     const brew = { brew_id: this.#newId(), values: structuredClone(input) };
@@ -192,6 +232,10 @@ export class FakeStore implements ApiStore {
 
   public replaceBrew(user: UserId, id: string, input: BrewInput): Promise<Brew> {
     this.calls.push('replaceBrew');
+    return this.#write(user, () => this.#replaceBrew(user, id, input));
+  }
+
+  #replaceBrew(user: UserId, id: string, input: BrewInput): Promise<Brew> {
     const p = this.#of(user);
     if (!p.brews.has(id)) return Promise.reject(new ItemNotFoundError('no such brew'));
     if (!p.shelf.has(input.shelf_entry_id)) return Promise.reject(new ShelfEntryNotFoundError('no such shelf entry'));
@@ -202,6 +246,10 @@ export class FakeStore implements ApiStore {
 
   public deleteBrew(user: UserId, id: string): Promise<void> {
     this.calls.push('deleteBrew');
+    return this.#write(user, () => this.#deleteBrew(user, id));
+  }
+
+  #deleteBrew(user: UserId, id: string): Promise<void> {
     const p = this.#of(user);
     if (!p.brews.delete(id)) return Promise.reject(new ItemNotFoundError('no such brew'));
     return Promise.resolve();
@@ -215,6 +263,10 @@ export class FakeStore implements ApiStore {
 
   public createRecipe(user: UserId, input: RecipeInput): Promise<Recipe> {
     this.calls.push('createRecipe');
+    return this.#write(user, () => this.#createRecipe(user, input));
+  }
+
+  #createRecipe(user: UserId, input: RecipeInput): Promise<Recipe> {
     const recipe = { recipe_id: this.#newId(), values: structuredClone(input) };
     this.#of(user).recipes.set(recipe.recipe_id, recipe);
     return Promise.resolve(structuredClone(recipe));
@@ -227,6 +279,10 @@ export class FakeStore implements ApiStore {
 
   public replaceRecipe(user: UserId, id: string, input: RecipeInput): Promise<Recipe> {
     this.calls.push('replaceRecipe');
+    return this.#write(user, () => this.#replaceRecipe(user, id, input));
+  }
+
+  #replaceRecipe(user: UserId, id: string, input: RecipeInput): Promise<Recipe> {
     const p = this.#of(user);
     if (!p.recipes.has(id)) return Promise.reject(new ItemNotFoundError('no such item'));
     const recipe = { recipe_id: id, values: structuredClone(input) };
@@ -236,12 +292,19 @@ export class FakeStore implements ApiStore {
 
   public deleteRecipe(user: UserId, id: string): Promise<void> {
     this.calls.push('deleteRecipe');
+    return this.#write(user, () => this.#deleteRecipe(user, id));
+  }
+
+  #deleteRecipe(user: UserId, id: string): Promise<void> {
     if (!this.#of(user).recipes.delete(id)) return Promise.reject(new ItemNotFoundError('no such item'));
     return Promise.resolve();
   }
 
-  public createBean(input: NewBean): Promise<BeanRecord> {
+  public createBean(input: NewBean, caller?: UserId): Promise<BeanRecord> {
     this.calls.push('createBean');
+    if (caller !== undefined && (this.tombstones.get(userPk(caller))?.expiresAt ?? 0) > this.#seconds()) {
+      return Promise.reject(new AccountDeletedError('the account is deleted'));
+    }
     const barcode = input.barcode === undefined ? undefined : canonicalBarcode(input.barcode);
     if (barcode !== undefined && this.barcodes.has(barcode)) return Promise.reject(new BarcodeTakenError('barcode taken'));
     const beanId = this.#newId();
@@ -298,6 +361,10 @@ export class FakeStore implements ApiStore {
 
   public countLookup(user: UserId, cap: number): Promise<boolean> {
     this.calls.push('countLookup');
+    return this.#write(user, () => this.#countLookup(user, cap));
+  }
+
+  #countLookup(user: UserId, cap: number): Promise<boolean> {
     if (!Number.isSafeInteger(cap) || cap < 0) return Promise.reject(new InvalidValuesError('invalid lookup cap'));
     const key = lookupCounterKey(user, this.now.toISOString().slice(0, 10));
     const id = `${key.pk}|${key.sk}`;
@@ -311,6 +378,10 @@ export class FakeStore implements ApiStore {
 
   public countLabelPhotoUpload(user: UserId, cap: number): Promise<boolean> {
     this.calls.push('countLabelPhotoUpload');
+    return this.#write(user, () => this.#countLabelPhotoUpload(user, cap));
+  }
+
+  #countLabelPhotoUpload(user: UserId, cap: number): Promise<boolean> {
     if (!Number.isSafeInteger(cap) || cap < 0) return Promise.reject(new InvalidValuesError('invalid upload cap'));
     const id = keyId(labelPhotoUploadCounterKey(user, this.now.toISOString().slice(0, 10)));
     const count = this.uploadCounters.get(id) ?? 0;
@@ -326,6 +397,10 @@ export class FakeStore implements ApiStore {
 
   public createPendingLabelPhoto(user: UserId, beanId: string): Promise<string> {
     this.calls.push('createPendingLabelPhoto');
+    return this.#write(user, () => this.#createPendingLabelPhoto(user, beanId));
+  }
+
+  #createPendingLabelPhoto(user: UserId, beanId: string): Promise<string> {
     const photoId = this.photoIds.shift() ?? this.#newId();
     this.pendingPhotos.set(keyId(pendingLabelPhotoKey(user, photoId)), {
       beanId,
@@ -354,6 +429,10 @@ export class FakeStore implements ApiStore {
 
   public completeLabelPhoto(user: UserId, photoId: string, beanId: string): Promise<void> {
     this.calls.push('completeLabelPhoto');
+    return this.#write(user, () => this.#completeLabelPhoto(user, photoId, beanId));
+  }
+
+  #completeLabelPhoto(user: UserId, photoId: string, beanId: string): Promise<void> {
     if (this.failComplete !== undefined) return Promise.reject(this.failComplete);
     const pendingId = keyId(pendingLabelPhotoKey(user, photoId));
     const userId = keyId(labelPhotoKey(user, photoId));
@@ -373,6 +452,121 @@ export class FakeStore implements ApiStore {
     this.beanPhotos.set(beanPhotoId, { createdAt });
     this.photoCounts.set(countId, count + 1);
     return Promise.resolve();
+  }
+
+  // ---- profile, export and account deletion (M1-T6) ----
+
+  public getProfile(user: UserId): Promise<Profile | undefined> {
+    this.calls.push('getProfile');
+    return Promise.resolve(structuredClone(this.profiles.get(userPk(user))));
+  }
+
+  public putProfile(user: UserId, profile: Profile): Promise<Profile> {
+    this.calls.push('putProfile');
+    return this.#write(user, () => {
+      this.profiles.set(userPk(user), structuredClone(profile));
+      return Promise.resolve(structuredClone(profile));
+    });
+  }
+
+  /** The label photo items of the caller's partition (keys `pk|sk`), as photo id and bean id. */
+  #userPhotosOf(user: UserId): { photoId: string; beanId: string }[] {
+    const prefix = `${userPk(user)}|PHOTO#`;
+    return [...this.userPhotos].filter(([id]) => id.startsWith(prefix)).map(([id, photo]) => ({ photoId: id.slice(prefix.length), beanId: photo.beanId }));
+  }
+
+  public exportItems(user: UserId): Promise<ExportItems> {
+    this.calls.push('exportItems');
+    const p = this.#of(user);
+    const sorted = <T>(items: T[], id: (item: T) => string): T[] => items.sort((a, b) => (id(a) < id(b) ? -1 : 1));
+    const profile = this.profiles.get(userPk(user));
+    return Promise.resolve(
+      structuredClone({
+        ...(profile === undefined ? {} : { profile }),
+        shelfEntries: sorted([...p.shelf.values()], (entry) => entry.shelf_entry_id),
+        brews: sorted([...p.brews.values()], (brew) => brew.brew_id),
+        recipes: sorted([...p.recipes.values()], (recipe) => recipe.recipe_id),
+        labelPhotos: sorted(this.#userPhotosOf(user), (photo) => photo.photoId),
+      }),
+    );
+  }
+
+  public isAccountDeleted(user: UserId): Promise<boolean> {
+    this.calls.push('isAccountDeleted');
+    const tombstone = this.tombstones.get(userPk(user));
+    return Promise.resolve(tombstone !== undefined && tombstone.expiresAt > this.#seconds());
+  }
+
+  public markAccountDeleted(user: UserId): Promise<AccountTombstone> {
+    this.calls.push('markAccountDeleted');
+    const pk = userPk(user);
+    const expiresAt = this.#seconds() + TOMBSTONE_TTL_SECONDS;
+    let tombstone = this.tombstones.get(pk);
+    if (tombstone === undefined || tombstone.expiresAt <= this.#seconds()) {
+      tombstone = { deletedAt: this.now.toISOString(), expiresAt, photoIds: new Set(), logged: false };
+      this.tombstones.set(pk, tombstone);
+    } else if (tombstone.expiresAt < expiresAt) {
+      tombstone.expiresAt = expiresAt;
+    }
+    return Promise.resolve({ deletedAt: tombstone.deletedAt, photoIds: [...tombstone.photoIds].sort(), logged: tombstone.logged });
+  }
+
+  public recordDeletedPhotos(user: UserId, photoIds: readonly string[]): Promise<void> {
+    this.calls.push('recordDeletedPhotos');
+    const tombstone = this.tombstones.get(userPk(user));
+    if (tombstone === undefined) return Promise.reject(new ItemNotFoundError('no tombstone'));
+    for (const id of photoIds) tombstone.photoIds.add(id);
+    return Promise.resolve();
+  }
+
+  public markDeletionLogged(user: UserId): Promise<void> {
+    this.calls.push('markDeletionLogged');
+    const tombstone = this.tombstones.get(userPk(user));
+    if (tombstone === undefined) return Promise.reject(new ItemNotFoundError('no tombstone'));
+    tombstone.logged = true;
+    return Promise.resolve();
+  }
+
+  public accountPhotos(user: UserId): Promise<AccountPhotos> {
+    this.calls.push('accountPhotos');
+    const prefix = `${userPk(user)}|PHOTO_PENDING#`;
+    const pendingPhotoIds = [...this.pendingPhotos.keys()].filter((id) => id.startsWith(prefix)).map((id) => id.slice(prefix.length));
+    return Promise.resolve({ photos: this.#userPhotosOf(user), pendingPhotoIds });
+  }
+
+  public deleteBeanLabelPhoto(beanId: string, photoId: string): Promise<void> {
+    this.calls.push('deleteBeanLabelPhoto');
+    this.beanPhotos.delete(keyId(beanLabelPhotoKey(beanId, photoId)));
+    return Promise.resolve();
+  }
+
+  public deleteUserPartition(user: UserId): Promise<number> {
+    this.calls.push('deleteUserPartition');
+    const pk = userPk(user);
+    let deleted = 0;
+    const p = this.#of(user);
+    deleted += p.shelf.size + p.brews.size * 2 + p.recipes.size;
+    this.#partitions.delete(pk);
+    if (this.profiles.delete(pk)) deleted += 1;
+    for (const map of [this.lookupCounters, this.pendingPhotos, this.userPhotos, this.photoCounts, this.uploadCounters] as Map<string, unknown>[]) {
+      for (const id of [...map.keys()]) {
+        if (id.startsWith(`${pk}|`)) {
+          map.delete(id);
+          deleted += 1;
+        }
+      }
+    }
+    return Promise.resolve(deleted);
+  }
+
+  /** True if nothing of the user's partition is left in this store. */
+  public partitionIsEmpty(user: UserId): boolean {
+    const pk = userPk(user);
+    const p = this.#partitions.get(pk);
+    const inMaps = [this.lookupCounters, this.pendingPhotos, this.userPhotos, this.photoCounts, this.uploadCounters].some((map) =>
+      [...(map as Map<string, unknown>).keys()].some((id) => id.startsWith(`${pk}|`)),
+    );
+    return (p === undefined || p.shelf.size + p.brews.size + p.recipes.size === 0) && !this.profiles.has(pk) && !inMaps;
   }
 
   /** A shelf entry may newly name the bean: known, and not rejected (M1-T11). */

@@ -16,6 +16,8 @@ export const BEAN = '01JDQ8Z6V3W4X5Y6Z7A8B9C0DF';
 export interface RequestOptions {
   /** Token subject; null for a request without the authorizer context. Default ALICE_SUB. */
   readonly sub?: string | null;
+  /** The token's `username` claim (Cognito access tokens carry it); absent by default. */
+  readonly username?: string;
   /** A value to send as JSON. */
   readonly json?: unknown;
   /** A raw body, sent as is. */
@@ -49,7 +51,7 @@ export function apiEvent(method: string, path: string, options: RequestOptions =
       stage: '$default',
       time: '25/Nov/2026:07:30:00 +0000',
       timeEpoch: 0,
-      authorizer: sub === null ? undefined : { principalId: '', integrationLatency: 0, jwt: { claims: { sub }, scopes: [] } },
+      authorizer: sub === null ? undefined : { principalId: '', integrationLatency: 0, jwt: { claims: { sub, ...(options.username === undefined ? {} : { username: options.username }) }, scopes: [] } },
     },
   };
   return event as unknown as ApiEvent;
@@ -91,8 +93,10 @@ export function harness(overrides: Partial<Omit<ApiDependencies, 'store'>> & { s
     async call(method, path, options) {
       const result = await api(apiEvent(method, path, options));
       const status = result.statusCode ?? 0;
-      // A binary body (base64, the catalogue images) is returned as sent; everything else is JSON.
-      const body = result.body === undefined ? undefined : result.isBase64Encoded === true ? result.body : (JSON.parse(result.body) as unknown);
+      // A JSON body is parsed; anything else (base64 catalogue images, the CSV export) is returned as sent.
+      const contentType = String(result.headers?.['content-type'] ?? '');
+      const isJson = result.isBase64Encoded !== true && contentType.startsWith('application/json');
+      const body = result.body === undefined ? undefined : isJson ? (JSON.parse(result.body) as unknown) : result.body;
       return { status, result, body };
     },
   };

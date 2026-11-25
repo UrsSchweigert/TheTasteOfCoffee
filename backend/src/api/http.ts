@@ -80,6 +80,20 @@ export function parseBody<T extends { vocabulary_version: number }>(
   schemaName: string,
   extra: (value: T) => boolean = () => true,
 ): T | undefined {
+  const parsed = parseJsonBody(event, schema);
+  if (parsed === undefined) return undefined;
+  if (!conformsToVocabulary(schemaName, parsed, parsed.vocabulary_version)) return undefined;
+  if (!extra(parsed)) return undefined;
+  return parsed;
+}
+
+/**
+ * The first steps of parseBody, for a body with no `vocabulary_version`
+ * (PUT /profile, whose only values are contract enums and a boolean): content
+ * type, size, UTF-8, JSON, then the generated contract schema (unknown
+ * properties rejected). Undefined on any failure (answer 400).
+ */
+export function parseJsonBody<T>(event: ApiEvent, schema: z.ZodType<T>): T | undefined {
   const contentType = header(event, 'content-type');
   if (contentType === undefined || !JSON_CONTENT_TYPE.test(contentType.trim())) return undefined;
   if (!hasBody(event)) return undefined;
@@ -92,10 +106,7 @@ export function parseBody<T extends { vocabulary_version: number }>(
     return undefined;
   }
   const parsed = schema.safeParse(value);
-  if (!parsed.success) return undefined;
-  if (!conformsToVocabulary(schemaName, parsed.data, parsed.data.vocabulary_version)) return undefined;
-  if (!extra(parsed.data)) return undefined;
-  return parsed.data;
+  return parsed.success ? parsed.data : undefined;
 }
 
 /**
