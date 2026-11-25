@@ -135,7 +135,7 @@ test('secrets, missing timeouts and persisted checkout credentials are rejected'
 test('strict files without the read-only rules allow only allowlisted job write scopes', () => {
   const withJobPerms = (perms) =>
     good.replace('    timeout-minutes: 5', `    timeout-minutes: 5\n    permissions:\n${perms}`);
-  const oidc = withJobPerms('      id-token: write\n      contents: read');
+  const oidc = withJobPerms('      id-token: write\n      contents: read').replace('    timeout-minutes: 5', '    timeout-minutes: 5\n    environment: dev');
   assert.deepEqual(strictWith(oidc, { a: ['id-token'] }), []);
   has(strictWith(oidc, {}), 'job a: permissions grant id-token: write (not in the allowlist');
   has(strictWith(oidc, { b: ['id-token'] }), 'job a: permissions grant id-token: write');
@@ -143,6 +143,35 @@ test('strict files without the read-only rules allow only allowlisted job write 
   has(strictWith(good.replace('    timeout-minutes: 5', '    timeout-minutes: 5\n    permissions: write-all'), { a: ['id-token'] }), 'write-all');
   // Still no top-level write scope, even with a job allowlist.
   has(strictWith(good.replace('contents: read', 'id-token: write'), { a: ['id-token'] }), 'top-level permissions grant id-token: write');
+});
+
+test('AWS credentials need the literal environment dev or prod (ADR 0018)', () => {
+  const aws = (env) =>
+    good
+      .replace('    timeout-minutes: 5', `    timeout-minutes: 5${env}\n    permissions:\n      id-token: write`)
+      .replace('      - run: echo hi', `      - uses: aws-actions/configure-aws-credentials@${SHA} # v6.3.0\n      - run: echo hi`);
+  const policy = { a: ['id-token'] };
+  assert.deepEqual(strictWith(aws('\n    environment: dev'), policy), []);
+  assert.deepEqual(strictWith(aws('\n    environment: prod'), policy), []);
+  assert.deepEqual(strictWith(aws('\n    environment:\n      name: prod\n      url: https://example.com'), policy), []);
+  has(strictWith(aws(''), policy), 'configure-aws-credentials needs the literal environment dev or prod');
+  has(strictWith(aws('\n    environment: staging'), policy), 'configure-aws-credentials needs');
+  has(strictWith(aws('\n    environment: ${{ inputs.env }}'), policy), 'configure-aws-credentials needs');
+  // Also in advisory files: a new deploy workflow is caught before it is made strict.
+  has(checkWorkflow(aws(''), { strict: false }), 'configure-aws-credentials needs');
+});
+
+test('in strict files an OIDC token needs an AWS environment unless the job is listed', () => {
+  const oidc = good.replace('    timeout-minutes: 5', '    timeout-minutes: 5\n    permissions:\n      id-token: write');
+  has(strictWith(oidc, { a: ['id-token'] }), 'job a: requests an OIDC token (id-token: write) without the environment dev or prod');
+  assert.deepEqual(checkWorkflow(oidc, { strict: true, jobWrites: { a: ['id-token'] }, oidcWithoutEnvironment: ['a'] }), []);
+});
+
+test('the committed AWS OIDC check runs in the dev environment, and claude.yml is the only listed exception', () => {
+  const wf = createRequire(join(root, 'contracts', 'package.json'))('yaml').parse(readWorkflow('aws-oidc-check.yml'));
+  assert.equal(wf.jobs.check.environment, 'dev');
+  const listed = [...STRICT_FILES].filter(([, p]) => (p.oidcWithoutEnvironment ?? []).length > 0).map(([f, p]) => [f, p.oidcWithoutEnvironment]);
+  assert.deepEqual(listed, [['claude.yml', ['claude']]]);
 });
 
 test('strict files without the read-only rules may use secrets and an empty top-level permissions block', () => {

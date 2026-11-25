@@ -48,22 +48,28 @@ export const GITHUB_OIDC_AUDIENCE = 'sts.amazonaws.com';
  */
 export const GITHUB_REPOSITORY = 'UrsSchweigert/TheTasteOfCoffee';
 
+/** The GitHub environments the role trusts; both are limited to `main` in GitHub. */
+export const GITHUB_DEPLOY_ENVIRONMENTS = ['dev', 'prod'] as const;
+
 /**
- * The `sub` values the role trusts, exactly as the hand-made role has them (docs/07):
- * - `environment:dev`: a job that declares the GitHub environment `dev`;
- * - `ref:refs/heads/main`: a job on `main` that declares no environment (the AWS OIDC
- *   check workflow, and the prod deploy unless it declares an environment).
+ * The `sub` values the role trusts (ADR 0018): only jobs that declare the GitHub
+ * environment `dev` or `prod`. GitHub writes `sub` as `repo:<owner>/<repo>:environment:<name>`
+ * for such a job. The owner sets the same list on the existing role by hand before the
+ * import, so the import template still matches it exactly (docs/07, issue #46).
  *
- * TODO(M1-T7): a job that declares an environment gets `environment:<name>` as `sub`,
- * never `ref:...`. If the prod deploy job declares the GitHub environment `prod` (it
- * should, for its required reviewers), add `repo:<repo>:environment:prod` here and
- * restrict that environment's deployment branches to `main`. That is a trust change
- * the owner deploys by hand (infra/README.md). See ADR 0018.
+ * Not `ref:refs/heads/main`: `.github/workflows/claude.yml` runs on `issue_comment` with
+ * `id-token: write`, and for that event GitHub sets the ref to the default branch, so
+ * its `sub` is `ref:refs/heads/main`. Trusting it would let that agent job assume this
+ * role and, through the bootstrap's deploy role, deploy any `cupmark-*` stack.
+ *
+ * IAM does not keep other branches out: a job on any branch that names `environment: dev`
+ * gets `environment:dev`. What separates `main` from other branches is the deployment
+ * branch limit of both environments in GitHub (owner, issue #46). dev and prod are not
+ * separated in IAM either: one role, one bootstrap.
  */
-export const GITHUB_DEPLOY_SUBJECTS: readonly string[] = [
-  `repo:${GITHUB_REPOSITORY}:environment:dev`,
-  `repo:${GITHUB_REPOSITORY}:ref:refs/heads/main`,
-];
+export const GITHUB_DEPLOY_SUBJECTS: readonly string[] = GITHUB_DEPLOY_ENVIRONMENTS.map(
+  (env) => `repo:${GITHUB_REPOSITORY}:environment:${env}`,
+);
 
 /** The existing role's name; the IAM `Cupmark` prefix of invariant 9. */
 export const GITHUB_DEPLOY_ROLE_NAME = 'CupmarkGitHubDeploy';

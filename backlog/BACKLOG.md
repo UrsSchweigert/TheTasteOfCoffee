@@ -244,6 +244,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
 - needs: human (approve the first deployment)
 - acceptance:
   - A workflow deploys to dev through OIDC on merge to `main`, and to prod only through a manually approved environment.
+  - From M1-T9 review (ADR 0018): the deploy jobs declare the GitHub environments `dev` and `prod` (the role `CupmarkGitHubDeploy` trusts only `environment:dev` and `environment:prod`; both environments are limited to `main`). The prod job requires the owner's approval (required reviewer on `prod`). The stage stacks are named explicitly (`-c stage=<stage>`, `cupmark-<stage>-core`), never `--all`. `scripts/check-workflows.mjs` fails a job that runs `configure-aws-credentials` without the literal environment `dev` or `prod`; the deploy workflow is added to its strict files.
   - A smoke test calls the health route after deploy.
   - From M1-T4b: the API function gets `OFF_CONTACT` (the operator's mailbox, as a plain environment variable) and optionally `OFF_LOOKUP_CAP`. Without them, uncached Open Food Facts lookups answer 503.
   - From M1-T4b review: after the first deploy to dev, look up one known barcode and one unknown one, and check that the answers match the response shape the client expects (`status`, `product.product_name`, `product.brands`). A shape mismatch answers 503 and caches nothing.

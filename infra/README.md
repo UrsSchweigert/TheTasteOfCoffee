@@ -161,8 +161,8 @@ ADR 0009 and ADR 0018. The stack holds the role that GitHub Actions in this repo
 | --- | --- |
 | Stack | `cupmark-github-oidc`, at the top of the app (not in a stage), built only when no `-c stage=` is given. eu-central-1, account-agnostic (every ARN uses `AWS::AccountId`), termination protection on, stack tag `project=cupmark` (none in import mode). |
 | Deployed by | The owner, by hand, with their own credentials. `CliCredentialsStackSynthesizer` (qualifier `cupmark`): the CLI assumes no bootstrap role and passes no CloudFormation execution role, so `CupmarkCfnExecution` (which denies `oidc-provider/*` and does not cover this role) is not involved. The CLI still uploads the template to `cdk-cupmark-assets-<account>-eu-central-1`, so the `cupmark` bootstrap must exist (it does). The stack has no other asset and no `BootstrapVersion` parameter. |
-| Role | `CupmarkGitHubDeploy`, logical id `DeployRole` (pinned; it is the key of the import mapping). `RETAIN` on delete and on replacement. No permissions boundary, no managed policies, no description, default path and session duration, as built by hand. Tag `project=cupmark` only after the import (below). |
-| Trust | Principal: the GitHub provider. `reference` (committed): `arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com`, named by ARN only, never imported, looked up or modified. `create`: the provider of this stack. Action `sts:AssumeRoleWithWebIdentity`. `StringEquals` `token.actions.githubusercontent.com:aud` = `sts.amazonaws.com` and `token.actions.githubusercontent.com:sub` = exactly `repo:UrsSchweigert/TheTasteOfCoffee:environment:dev` or `repo:UrsSchweigert/TheTasteOfCoffee:ref:refs/heads/main`. |
+| Role | `CupmarkGitHubDeploy`, logical id `DeployRole` (pinned; it is the key of the import mapping). `RETAIN` on delete and on replacement. No permissions boundary, no managed policies, no description, default path and session duration, as built by hand; the owner changes its trust by hand to the two environment subjects before the import (docs/07, issue #46). Tag `project=cupmark` only after the import (below). |
+| Trust | Principal: the GitHub provider. `reference` (committed): `arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com`, named by ARN only, never imported, looked up or modified. `create`: the provider of this stack. Action `sts:AssumeRoleWithWebIdentity`. `StringEquals` `token.actions.githubusercontent.com:aud` = `sts.amazonaws.com` and `token.actions.githubusercontent.com:sub` = exactly `repo:UrsSchweigert/TheTasteOfCoffee:environment:dev` or `repo:UrsSchweigert/TheTasteOfCoffee:environment:prod`. No `ref:` subject (below). |
 | Inline policy | `AssumeCdkBootstrapRoles`: `sts:AssumeRole` on exactly `cdk-cupmark-deploy-role-`, `cdk-cupmark-file-publishing-role-`, `cdk-cupmark-image-publishing-role-` and `cdk-cupmark-lookup-role-<account>-eu-central-1`. This is the document `scripts/aws/apply-guardrails.sh` step 3 wrote before M1-T9. |
 | Provider (create mode only) | `AWS::IAM::OIDCProvider`, URL `https://token.actions.githubusercontent.com`, client id `sts.amazonaws.com`, no thumbprints (IAM no longer uses them for GitHub). `RETAIN`. An account can hold only one provider per URL, so create mode fails with `EntityAlreadyExists` if one exists. That is a safe failure. |
 
@@ -175,19 +175,22 @@ ADR 0009 and ADR 0018. The stack holds the role that GitHub Actions in this repo
 
 **The repository name is case-sensitive.** GitHub writes `sub` with the owner and repository as GitHub names them, and IAM's `StringEquals` compares case-sensitively. The name `UrsSchweigert/TheTasteOfCoffee` was checked against the GitHub API (`full_name`) on 2026-11-25. If the repository or the account is ever renamed, or moved, every assume fails with AccessDenied until `GITHUB_REPOSITORY` in `src/github-oidc.ts` is changed and the stack is deployed again.
 
-**Which jobs may assume the role.** GitHub sets `sub` to `repo:<owner>/<repo>:environment:<name>` when a job declares an environment, and to `repo:<owner>/<repo>:ref:<ref>` when it does not (for push and workflow_dispatch events). So:
+**Which jobs may assume the role.** GitHub sets `sub` to `repo:<owner>/<repo>:environment:<name>` when a job declares an environment, and to `repo:<owner>/<repo>:ref:<ref>` (or `:pull_request`) when it does not. The role accepts only the two environment subjects, so only a job that declares `environment: dev` or `environment: prod` can assume it.
 
-- a job that declares the environment `dev` may assume the role, on any branch the `dev` environment allows;
-- a job on `main` that declares no environment may assume it (the "AWS OIDC check" workflow does this);
-- no pull request job, no job on another branch, and no job of another repository or fork may assume it.
-
-"The prod stage only from `main`": with this trust, a prod deploy job on `main` that declares no environment is accepted. But the owner approves every production deployment, so the prod job should declare a GitHub environment `prod` with required reviewers, and then its `sub` is `environment:prod`, which this trust does not accept yet. **TODO(M1-T7):** if the prod job declares `environment: prod`, add `repo:UrsSchweigert/TheTasteOfCoffee:environment:prod` to `GITHUB_DEPLOY_SUBJECTS`, limit the `prod` environment's deployment branches to `main`, and have the owner deploy the stack (`npx cdk diff` and then `npx cdk deploy cupmark-github-oidc`, as in step 6 below). There is one role for both stages, and the `cupmark` bootstrap's deploy role can deploy any `cupmark-*` stack, so IAM alone cannot keep a dev job from deploying prod. M1-T7 must also limit the `dev` environment's deployment branches to `main` (ADR 0018).
+- **Why not `ref:refs/heads/main`.** `.github/workflows/claude.yml` runs on `issue_comment` with `id-token: write`, which it needs to exchange a GitHub OIDC token for the Claude App token. For `issue_comment` GitHub sets the ref to the default branch, so that job's `sub` is `repo:UrsSchweigert/TheTasteOfCoffee:ref:refs/heads/main`. If the role trusted that subject, the agent running there, driven by any issue comment, could assume `CupmarkGitHubDeploy` and, through the `cupmark` bootstrap's deploy role, deploy any `cupmark-*` stack, prod included. The same holds for every other job on `main` without an environment. The guard (`trust`) therefore rejects every `sub` except the two environment subjects, and `scripts/check-workflows.mjs` requires every job that runs `configure-aws-credentials` to declare the literal environment `dev` or `prod`. In strict workflow files it also requires that of every job that requests an OIDC token; `claude.yml`'s `claude` job is the one listed exception, because it never assumes the AWS role.
+- **What separates `main` from other branches: the environments' branch limits, not IAM.** A job on any branch, including a pushed feature branch, that declares `environment: dev` gets `sub` `environment:dev`, and IAM accepts it. A workflow that names an environment that does not exist creates it unprotected. The only control is in GitHub: the environments `dev` and `prod` exist, both have deployment branches limited to `main`, and `prod` requires the owner as reviewer (owner, docs/07, issue #46). If a branch limit is removed, any branch can deploy.
+- **dev and prod are not separated in IAM** (ADR 0018). There is one role and one `cupmark` bootstrap, and the bootstrap's deploy role can deploy any `cupmark-*` stack, so a job in the `dev` environment could deploy prod stacks too. What keeps prod deploys behind the owner's approval is that the workflows on `main` (reviewed pull requests) deploy prod only from a job in the `prod` environment. Real separation would need a bootstrap per stage, which is an owner decision for later.
+- No pull request job, no job of another repository or fork, and no job without an environment can assume the role.
 
 ### One-time import (owner)
 
 Run by the owner in AWS CloudShell in eu-central-1, signed in with their own admin identity (not root). Never by an agent or CI. Nothing here deletes anything. The role keeps its ARN and its unique id, and GitHub deploys keep working throughout.
 
 ```sh
+# Before you start (docs/07, issue #46): the GitHub environments dev and prod exist and are
+# limited to the branch main, prod requires you as reviewer, and you have set the role's trust
+# `sub` list by hand to exactly the two environment subjects (table above).
+
 # 0. Who and where. Node 22.18 or later is needed (infra/.npmrc is engine-strict);
 #    if CloudShell's node is older, install Node 22 for the session first (for example with nvm).
 aws sts get-caller-identity          # your identity in the shared account, not :root
@@ -203,22 +206,14 @@ npx cdk synth --no-lookups --quiet
 npx cdk synth --no-lookups --quiet -c cupmark:githubOidcImport=true
 jq '.Resources.DeployRole' cdk.out/cupmark-github-oidc.template.json   # what the import will record
 
-# 2. Check what exists (read-only).
-aws iam list-open-id-connect-providers
-#    must list arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com
-ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
-aws iam get-open-id-connect-provider \
-  --open-id-connect-provider-arn "arn:aws:iam::$ACCOUNT:oidc-provider/token.actions.githubusercontent.com" \
-  --query ClientIDList               # must contain sts.amazonaws.com
-aws iam get-role --role-name CupmarkGitHubDeploy \
-  --query 'Role.{Trust:AssumeRolePolicyDocument,Boundary:PermissionsBoundary,Tags:Tags,Path:Path,MaxSession:MaxSessionDuration,Description:Description}'
-aws iam list-role-policies --role-name CupmarkGitHubDeploy            # exactly ["AssumeCdkBootstrapRoles"]
-aws iam get-role-policy --role-name CupmarkGitHubDeploy --policy-name AssumeCdkBootstrapRoles
-aws iam list-attached-role-policies --role-name CupmarkGitHubDeploy   # empty
+# 2. Check what exists, mechanically (read-only). Exits non-zero on any difference between the
+#    role and the import template from step 1: provider present, trust, inline policy names and
+#    document, no managed policies, no boundary, no tags, path, session duration, description.
+cd .. && scripts/aws/check-github-deploy-role.sh && cd infra
 aws cloudformation describe-stacks --stack-name cupmark-github-oidc   # must fail: "does not exist"
 ```
 
-Compare step 2 with the template from step 1 and with the table above. The role must have: the trust with `StringEquals` (not `StringLike`) and exactly the two `sub` values, the four bootstrap role ARNs, no boundary, no tags, path `/`, a session duration of 3600 and no description. **If anything differs, stop and report it.** The template is then changed to match the role in a pull request before the import. Importing a role that differs from the template leaves silent drift (ADR 0018). If the provider does not exist, stop as well: `reference` would trust a provider that is not there.
+`scripts/aws/check-github-deploy-role.sh` renders the import template with your account id and runs `diff` against `aws iam get-role` (`AssumeRolePolicyDocument` and the other role properties), `list-role-policies`, `get-role-policy` and `list-attached-role-policies`. It ignores only the order of string lists, which IAM ignores too. It exits 1 on any difference and 2 if the template was synthesised without `-c cupmark:githubOidcImport=true`. **If it does not end with "The role matches the import template.", stop and report the diff.** The fix is a pull request, or a hand edit of the role's trust if you have not set it yet (above). Importing a role that differs from the template leaves silent drift (ADR 0018). A missing provider is a difference too: `reference` would trust a provider that is not there. `test/deploy-role-check-script.test.ts` runs the script against a fake `aws`.
 
 ```sh
 # 3. Import the role into the new stack. CloudFormation takes the role as it is and changes nothing.
@@ -244,14 +239,18 @@ npx cdk diff cupmark-github-oidc --toolkit-stack-name CDKToolkit-cupmark
 # 6. Apply it: an in-place tag update, no replacement, no change to trust or permissions.
 npx cdk deploy cupmark-github-oidc --toolkit-stack-name CDKToolkit-cupmark
 aws iam list-role-tags --role-name CupmarkGitHubDeploy             # project=cupmark
-#    run the drift check of step 4 again: IN_SYNC; termination protection is now true
+aws cloudformation describe-stacks --stack-name cupmark-github-oidc \
+  --query 'Stacks[0].EnableTerminationProtection'                 # true
+#    The stack defines termination protection; cdk deploy turns it on if the import did not.
+#    If it is still false, stop and report it. Then run the drift check of step 4 again: IN_SYNC.
 
-# 7. From GitHub, run the "AWS OIDC check" workflow on main: it must still pass.
+# 7. From GitHub, run the "AWS OIDC check" workflow on main. Its job declares environment: dev,
+#    so this also shows that the dev environment exists and allows main.
 ```
 
 If step 4 reports `DRIFTED`, do not run steps 5 and 6. Report the difference. It is fixed in a pull request, by changing the template to match the role or the role to match the template, before anything else is deployed to this stack.
 
-**The drift list before the deploy.** The import itself changes nothing. The only planned change afterwards is step 6: the tag `project=cupmark` on the role, and the stack tag. No boundary is added (ADR 0018). Later changes are each a reviewed pull request plus the same `cdk diff` and `cdk deploy` by the owner. The first expected one is `environment:prod` in the trust (M1-T7).
+**The drift list before the deploy.** The import itself changes nothing. The only planned change afterwards is step 6: the tag `project=cupmark` on the role, and the stack tag. No boundary is added (ADR 0018). Later changes are each a reviewed pull request plus the same `cdk diff` and `cdk deploy` by the owner. The trust is not expected to change: `environment:prod` is already in it.
 
 **Rolling back.**
 
@@ -264,7 +263,7 @@ If step 4 reports `DRIFTED`, do not run steps 5 and 6. Report the difference. It
 
 **A fresh account** (no provider yet): `npx cdk deploy cupmark-github-oidc -c cupmark:githubOidcProvider=create --toolkit-stack-name CDKToolkit-cupmark`, with no import, after the `cupmark` bootstrap. Commit `create` to cdk.json in that case, so a later deploy does not drop the provider from the stack (it would stay in the account because it is `RETAIN`).
 
-**For M1-T7.** The deploy workflow names the stage stacks (`-c stage=<stage>`, `cupmark-<stage>-core`) and never uses `--all`. With `-c stage=` the app does not contain `cupmark-github-oidc`. If the workflow ever tried to deploy it, the deploy would fail with AccessDenied, because the role can only assume the bootstrap roles.
+**For M1-T7.** The deploy jobs declare `environment: dev` and `environment: prod` (prod with the owner's approval), as `scripts/check-workflows.mjs` requires. The workflow names the stage stacks (`-c stage=<stage>`, `cupmark-<stage>-core`) and never uses `--all`. With `-c stage=` the app does not contain `cupmark-github-oidc`. If the workflow ever tried to deploy it, the deploy would fail with AccessDenied, because the role can only assume the bootstrap roles.
 
 ## Parameters the owner creates
 
@@ -340,7 +339,7 @@ The stack outputs, as plain `CfnOutput`s without exports: the table name, the st
 | `isolation` | A template that names the other stage. |
 | `stateful` | A DynamoDB table, S3 bucket or Cognito user pool, or any resource of `cupmark-github-oidc` (the role, the provider), that is not `Retain` on delete and on replacement; a table without deletion protection or point-in-time recovery; a bucket without versioning or without all four public access block settings; a user pool without `DeletionProtection: ACTIVE`. |
 | `iam` | In a role's inline policies or an `AWS::IAM::Policy`: an action with `*` or `?`, `Resource: "*"`, a resource with `*` or `?` anywhere except the two `RESOURCE_WILDCARD_EXCEPTIONS` (S3 objects `<Cupmark bucket>[/<prefix>]/*`, because object keys are run-time ids; log streams `log-group:<Cupmark log group>:*`, because Lambda names the streams), so `table/cupmark-*`, `function:cupmark-*` or `parameter/cupmark/*` fail; `NotAction`, `NotResource` or `NotPrincipal`; a resource that is neither a resource of the same template (any suffix) nor a literal ARN whose resource part starts with its service's prefix in `OWNED_ARN_PREFIXES`: S3 bucket `cupmark-` (or the bootstrap's `cdk-cupmark-assets-`), DynamoDB `table/cupmark-`, Lambda `function:cupmark-`, SSM `parameter/cupmark/`, logs `log-group:/aws/lambda/cupmark-` or `log-group:/cupmark/`, IAM `role/cupmark-`, `role/Cupmark` or `policy/Cupmark` (`cupmark-` later in the path does not count; any other service fails closed, so the user pool may only be named by its ARN from the template); an ARN in another account; a value that cannot be resolved at synth time; any managed policy. `AWS_MANAGED_ARN_EXCEPTIONS` lists the AWS-managed ARNs allowed anyway: none. Only in `cupmark-github-oidc`, `GITHUB_OIDC_ARN_PREFIXES` adds IAM `role/cdk-cupmark-` (the bootstrap roles); a stage role naming them fails. An `AWS::S3::BucketPolicy` with any Allow statement fails: bucket policies may only deny (the TLS-only policy, whose `s3:*` and Principal `*` sit in Deny statements). |
-| `trust` | A role's trust policy with anything but Allow statements with one principal: in a stage stack, only a service on `TRUSTED_SERVICE_PRINCIPALS` (`lambda.amazonaws.com`) with `sts:AssumeRole`; in `cupmark-github-oidc`, only the GitHub provider (`arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com`, the one documented foreign ARN, or the stack's own provider in create mode) with `sts:AssumeRoleWithWebIdentity`, a `StringEquals`-only condition, `aud` exactly `sts.amazonaws.com` and literal `sub` values of `repo:UrsSchweigert/TheTasteOfCoffee:`. `AWS` and `*` principals fail everywhere. |
+| `trust` | A role's trust policy with anything but Allow statements with one principal: in a stage stack, only a service on `TRUSTED_SERVICE_PRINCIPALS` (`lambda.amazonaws.com`) with `sts:AssumeRole`; in `cupmark-github-oidc`, only the GitHub provider (`arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com`, the one documented foreign ARN, or the stack's own provider in create mode) with `sts:AssumeRoleWithWebIdentity`, a `StringEquals`-only condition, `aud` exactly `sts.amazonaws.com` and `sub` values from exactly `repo:UrsSchweigert/TheTasteOfCoffee:environment:dev` and `:environment:prod` (no `ref:` or `pull_request` subject). `AWS` and `*` principals fail everywhere. |
 
 `test/logical-ids.test.ts` pins the logical ids of the table, the three buckets and the user pool. A rename or move of their constructs would make CloudFormation create new, empty resources and orphan the old ones (they are `RETAIN`); the test fails first. Changing a pinned id needs a migration plan, not a snapshot update.
 

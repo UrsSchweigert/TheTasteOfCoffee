@@ -37,6 +37,7 @@ import type { StageName } from './config.ts';
 import {
   CupmarkGitHubOidcStack,
   GITHUB_DEPLOY_ROLE_NAME,
+  GITHUB_DEPLOY_SUBJECTS,
   GITHUB_OIDC_AUDIENCE,
   GITHUB_OIDC_HOST,
   GITHUB_OIDC_STACK_NAME,
@@ -377,6 +378,10 @@ export const GITHUB_OIDC_ARN_PREFIXES: Readonly<Record<string, readonly string[]
  * would also match resources created later, by anyone. The resource up to the wildcard
  * must already pass the prefix check.
  */
+// Known limitation: `index/*` or `stream/*` on a table of this template (for example
+// `${table.tableArn}/index/*`) fails, because only S3 and logs have an exception. Name the
+// index or stream exactly instead (the api role names `index/gsi1`); add an exception here,
+// with its reason, only if a role really needs every index or stream.
 export const RESOURCE_WILDCARD_EXCEPTIONS: readonly { readonly service: string; readonly pattern: RegExp; readonly why: string }[] = [
   {
     service: 's3',
@@ -475,7 +480,8 @@ const GITHUB_PROVIDER_ARN = `arn:aws:iam::${ACCOUNT_PLACEHOLDER}:oidc-provider/$
  * TRUSTED_SERVICE_PRINCIPALS with `sts:AssumeRole`. GitHub OIDC stack: the role may only
  * trust the GitHub provider (by its ARN, the one documented foreign ARN, or the provider
  * of the same template in create mode) with `sts:AssumeRoleWithWebIdentity`, `aud`
- * `sts.amazonaws.com` and `sub` values of this repository, all `StringEquals`. No `AWS`
+ * `sts.amazonaws.com` and only the `environment:dev` / `environment:prod` subjects of this
+ * repository, all `StringEquals`. No `AWS`
  * principal (another account or role) and no `*` principal anywhere.
  */
 function trustProblems(doc: unknown, resources: Json, githubOidc: boolean): string[] {
@@ -532,8 +538,10 @@ function trustProblems(doc: unknown, resources: Json, githubOidc: boolean): stri
     const subs = asList(get(condition, ['StringEquals', `${GITHUB_OIDC_HOST}:sub`]));
     if (subs.length === 0) found.push(`${at}: ${GITHUB_OIDC_HOST}:sub must be set`);
     for (const sub of subs) {
-      if (typeof sub !== 'string' || !sub.startsWith(`repo:${GITHUB_REPOSITORY}:`) || /[*?]/.test(sub)) {
-        found.push(`${at}: sub ${JSON.stringify(sub)} must be a literal subject of repo:${GITHUB_REPOSITORY}`);
+      // Only the environment subjects (ADR 0018): a `ref:` subject would also match jobs
+      // without an environment, such as claude.yml's issue_comment job on main.
+      if (typeof sub !== 'string' || !GITHUB_DEPLOY_SUBJECTS.includes(sub)) {
+        found.push(`${at}: sub ${JSON.stringify(sub)} must be one of ${GITHUB_DEPLOY_SUBJECTS.join(', ')} (environment subjects of repo:${GITHUB_REPOSITORY} only)`);
       }
     }
   }

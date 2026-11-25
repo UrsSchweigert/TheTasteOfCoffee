@@ -43,4 +43,4 @@ What this costs, what it rules out, when to revisit.
 - [0015 The Sign in with Apple provider is created by a deploy-time custom resource](0015-apple-provider-via-deploy-time-custom-resource.md)
 - [0016 Label photos are uploaded with a presigned POST and stripped by the API](0016-label-photo-upload-and-stripping.md)
 - [0017 Account deletion runs in the request and writes a deletion log outside the table](0017-account-deletion-and-deletion-log.md)
-- [0018 The GitHub deploy role is imported as it is, then tagged; no boundary; its trust stays as built](0018-github-deploy-role-import-tags-and-trust.md)
+- [0018 The GitHub deploy role trusts only the dev and prod environments, is imported as it is, then tagged; no boundary](0018-github-deploy-role-import-tags-and-trust.md)
