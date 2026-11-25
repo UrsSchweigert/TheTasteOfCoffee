@@ -35,7 +35,12 @@ You are the lead. You coordinate; the specialist agents do the work. Argument: a
 
 - Set the task status: `done`, or `needs-mac-verification` for iOS work that could not be built here.
 - Commit with a message that says what changed and why. Push the branch and open a pull request whose body lists: the task id, the acceptance criteria with how each was verified, the reviewer verdict, and anything a human must do.
-- Never merge the pull request yourself. Never push to `main`.
+- Merge the pull request yourself (squash) when the work needs it to progress, as the owner decided on 2026-11-25. Merge only when all of these hold:
+  - `reviewer` approved with no open blocking findings;
+  - every CI check on the head commit is green;
+  - there is no merge conflict;
+  - nothing is left that a human must do first.
+  Otherwise leave it open and say what is missing. Never merge a pull request that needs a human decision, spends money or touches a real account (for example a deploy). Never push to `main` directly.
 
 ## 6. Report
 
