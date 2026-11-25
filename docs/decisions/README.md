@@ -33,3 +33,4 @@ What this costs, what it rules out, when to revisit.
 - [0005 Open Food Facts text is stored and shown; the server fetches it](0005-open-food-facts-text-in-the-catalogue.md)
 - [0006 Origin and variety pick lists in vocabulary v2; roaster comes from Open Food Facts](0006-origin-variety-lists-and-roaster-from-open-food-facts.md)
 - [0007 The health route needs no token](0007-unauthenticated-health-route.md)
+- [0008 MPL-2.0 is allowed in dev-only tooling](0008-mpl-licensed-dev-tooling.md)
