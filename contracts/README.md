@@ -109,6 +109,32 @@ And no request may reach it: `findRequestFreeText` walks every request body, par
 
 The structural check covers: OpenAPI `3.1.x`, `info`, lowercase paths with `{snake_case}` parameters, unique camelCase `operationId`, path parameters that match the template, a 2xx and a 401 response on every operation, request bodies that are required and `application/json` only, responses that are `application/json`, `text/csv` or `image/jpeg` only, no body on 204, the `bearerAuth` scheme (HTTP bearer, JWT) required at the top level and never overridden, every `$ref` resolving, and no unused component schema. The component schemas are also compiled with ajv in strict mode, so a misspelt keyword fails. This is not a full OpenAPI validator; it checks what the generators and the gateway rely on.
 
+### CSV export
+
+`GET /export` returns `text/csv` (task M1-T6, ADR 0017). The body schema stays exactly `{ type: string, contentMediaType: text/csv }`. The header is pinned in two places:
+
+- `x-csv-columns`, the ordered header, and `x-csv-item-types`, the values of the `item_type` column in row order. Both sit on the `text/csv` Media Type Object of the 200 response, not on the schema. OpenAPI allows `x-` extensions there, and the schema keyword allowlist and the exact raw-body shape stay as they are. On a schema, the keyword fails like any other unknown keyword.
+- the export operation's description, as the lines `columns: a,b,c` and `item_types: a,b,c` and a column table (`` | `column` | item types | value | ``).
+
+`checkCsvExport` in `lib/openapi.mjs`, which is part of the lint, fails when:
+
+- either extension appears anywhere else;
+- a list is empty, repeats a name or holds a name that is not snake_case;
+- the first column is not `item_type`;
+- the item types differ from `CSV_EXPORT`;
+- the description's lines or table differ from the extensions;
+- the columns are not exactly the fields of the exported resources.
+
+The columns are derived from the component schemas named in `CSV_EXPORT` (`Profile`, `ShelfEntry`, `Brew`, `Recipe`). Label photos have no response schema, so they have the fixed columns `photo_id` and `bean_id`. The derivation works like this:
+
+- A scalar is one column under its JSON name.
+- An array of vocabulary ids is one column, with its ids joined by `;`.
+- The wrapper objects `values`, `parameters`, `rating` and `consent` add their fields with no prefix.
+- An object tagged `x-vocabulary-keys` (`scores`, `intensities`) adds its fields as `<property>_<key>`.
+- Any other nested object fails until `CSV_EXPORT` says how to flatten it.
+
+So a new field on a brew, a new criterion or a new intensity dimension fails the lint until the header gains its column. The column order is chosen by hand. Changing the header is an API change and needs a version bump.
+
 ### Binding to the vocabulary
 
 Enums and ranges are written by hand in `openapi.yaml` and tagged with the vocabulary value they come from. The tests compare each tagged value with the vocabulary, so the two cannot drift:

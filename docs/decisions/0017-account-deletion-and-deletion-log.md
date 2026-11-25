@@ -54,3 +54,13 @@ D1 (consent) and D2 (aggregates) were still open. The lead decides them here.
 - **Cost:** one more bucket with no fixed fee; S3 and DynamoDB requests per deletion. Within docs/06.
 - **Restore procedure (M5):** before restored data is used, read every log entry newer than the restore point and delete each `sub`'s partition and each bean-side `PHOTO#` item again.
 - **The privacy policy (M6)** must disclose the 35-day and 365-day retention, and the 400-day retention of the ids-only deletion log.
+
+## Addendum: tokens issued before deletion (2026-11-25, lead, ADR 0014)
+
+An access token stays valid for up to 60 minutes after `AdminDeleteUser`, and the HTTP API's JWT authorizer does not check revocation. Without a guard, a write sent with such a token after the 204 (for example a queued offline sync) would recreate a partition for the deleted user.
+
+- Account deletion therefore writes a tombstone item `DELETED#<sub>` / `META` in its own partition, outside `USER#<sub>`. It is written before the partition is emptied and holds `expires_at` 2 hours ahead: longer than any token issued before the deletion can live.
+- Every write route checks the tombstone in the same transaction (a `ConditionCheck` that it does not exist), or with a strongly consistent read just before the write where the write is a single put. If the tombstone exists, the route answers 401.
+- A repeated `DELETE /account` with an old token answers 204 and does nothing further.
+- Reads need no check: once the partition is empty they return nothing.
+- Cost: one extra read unit per write request, pay-per-use.
