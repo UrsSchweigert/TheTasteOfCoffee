@@ -8,12 +8,17 @@ struct RootView: View {
     let stage: StageConfigLoadState
     /// Set by `CupmarkApp` when the stage is configured (M2-T14).
     @Environment(\.apiClient) private var apiClient
+    /// The signed-in account, which the navigation stack is keyed by (M2-T18).
+    @Environment(AuthModel.self) private var auth: AuthModel?
 
     var body: some View {
         NavigationStack {
             content
                 .navigationTitle(Text(L10n.appTitle))
         }
+        // A new stack on every account change and on sign-out, so no pushed screen (a shelf
+        // entry, the scan flow) of the previous account stays on the path.
+        .id(auth?.accountID)
     }
 
     @ViewBuilder
@@ -21,11 +26,22 @@ struct RootView: View {
         switch stage {
         case .configured:
             // Signed-in content only (M2-T11); the closure gets the local store's AccountID.
-            AuthGate { _ in
-                vocabularyContent
+            AuthGate { account in
+                signedInContent(account)
             }
         case .notConfigured:
             NotConfiguredView()
+        }
+    }
+
+    /// The signed-in root (M2-T18): the shelf of the account's local store, with "Scan a bag"
+    /// on it. Without a vocabulary, the error below.
+    @ViewBuilder
+    private func signedInContent(_ account: AccountID) -> some View {
+        if case .loaded(let store, let language) = state {
+            ShelfRoot(account: account, vocabulary: store, language: language)
+        } else {
+            vocabularyContent
         }
     }
 

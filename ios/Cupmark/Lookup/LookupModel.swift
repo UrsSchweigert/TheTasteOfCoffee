@@ -8,9 +8,11 @@ import Observation
 ///   contacts Open Food Facts: name, brand and image come through our API, the image as a
 ///   server-stored copy (ADR 0011).
 /// - Open Food Facts text is shown as plain text only and is never sent back or logged.
-/// - Every failure ends in a state that offers the pick-list entry (M2-T22).
+/// - Every failure ends in a state that offers the pick-list entry (M2-T22), except a 401
+///   that `APIClient` could not fix with its refresh: that is `signInRequired`, which asks the
+///   user to sign in again instead of offering a retry that would fail the same way (M2-T18).
 ///
-/// Until M2-T18 the flow ends at the bean; from M2-T18 on it continues to the shelf entry.
+/// From the bean the flow continues to the shelf entry (M2-T18, `AddToShelfBar`).
 @MainActor
 @Observable
 final class LookupModel {
@@ -42,7 +44,7 @@ final class LookupModel {
         case idle
         /// `GET /barcodes/{barcode}`, then possibly `GET /barcodes/{barcode}/open_food_facts`.
         case lookingUp
-        /// The catalogue's bean for the barcode. The end of the flow until M2-T18.
+        /// The catalogue's bean for the barcode. "Add to Shelf" follows (M2-T18).
         case bean(API.Bean)
         /// An Open Food Facts hit, waiting for Confirm or Reject.
         case openFoodFacts(API.OpenFoodFactsProduct)
@@ -50,6 +52,10 @@ final class LookupModel {
         case confirming(API.OpenFoodFactsProduct)
         /// No bean: the pick-list entry is offered.
         case pickList(PickListReason)
+        /// The server refused the token, also after a refresh (401, `APIError.unauthorized`):
+        /// the user has to sign in again. No retry and no pick-list entry, which would be
+        /// refused the same way.
+        case signInRequired
     }
 
     /// Which route an error came from: only the Open Food Facts route has the daily lookup cap.
@@ -78,7 +84,7 @@ final class LookupModel {
             true
         case .pickList(let reason):
             reason.allowsRetry
-        case .lookingUp, .bean, .openFoodFacts, .confirming:
+        case .lookingUp, .bean, .openFoodFacts, .confirming, .signInRequired:
             false
         }
     }
@@ -186,13 +192,15 @@ final class LookupModel {
             return .pickList(.failed)
         }
         switch apiError {
+        case .unauthorized:
+            return .signInRequired
         case .tooManyRequests:
             // Only the Open Food Facts route counts lookups against the daily cap. Elsewhere a
             // 429 is throttling, so it is "try again later".
             return .pickList(route == .openFoodFacts ? .limitReached : .unavailable)
         case .serviceUnavailable, .server, .transport:
             return .pickList(.unavailable)
-        case .badRequest, .unauthorized, .notFound, .conflict, .unexpectedStatus, .undecodable, .invalidResponse, .invalidRequest:
+        case .badRequest, .notFound, .conflict, .unexpectedStatus, .undecodable, .invalidResponse, .invalidRequest:
             return .pickList(.failed)
         }
     }

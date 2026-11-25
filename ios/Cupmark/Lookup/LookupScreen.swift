@@ -3,11 +3,13 @@ import SwiftUI
 /// F1 steps 2 and 3 on screen (M2-T14): shows the state of a `LookupModel`. A known bean, an
 /// Open Food Facts hit to confirm or reject, or a message with the pick-list entry.
 /// `onPickListEntry` opens the pick-list entry (`ScanFlowView` pushes `BeanEntryScreen`, M2-T22).
+/// With a `shelf`, a bean gets "Add to Shelf" (M2-T18). A 401 asks the user to sign in again.
 struct LookupScreen: View {
     @Bindable var model: LookupModel
     let vocabulary: VocabularyStore
     let language: VocabularyLanguage
     let onPickListEntry: @MainActor () -> Void
+    var shelf: ShelfAddContext? = nil
 
     var body: some View {
         content
@@ -34,6 +36,13 @@ struct LookupScreen: View {
             }
         case .bean(let bean):
             BeanDetailView(bean: bean, vocabulary: vocabulary, language: language, loadImage: loadImage)
+                .safeAreaInset(edge: .bottom) {
+                    if let shelf {
+                        AddToShelfBar(bean: bean, context: shelf, vocabulary: vocabulary, language: language)
+                    }
+                }
+        case .signInRequired:
+            SignInAgainView()
         case .openFoodFacts(let product), .confirming(let product):
             // One branch for both, so the form keeps its identity (scroll position, image)
             // while the confirmation is sent.
@@ -168,6 +177,9 @@ struct ScanFlowView: View {
     /// Called after the pick-list entry was opened. This view pushes the entry itself, so the
     /// caller does not need to do anything here.
     var onPickListEntry: @MainActor () -> Void = {}
+    /// Where a found, confirmed or created bean is put on the shelf (M2-T18); nil offers no
+    /// "Add to Shelf".
+    var shelf: ShelfAddContext? = nil
     @State private var lookup: LookupModel? = nil
     @State private var entry: BeanEntryModel? = nil
 
@@ -175,7 +187,7 @@ struct ScanFlowView: View {
         flow
             .navigationDestination(isPresented: isShowingEntry) {
                 if let entry {
-                    BeanEntryScreen(model: entry, vocabulary: vocabulary, language: language)
+                    BeanEntryScreen(model: entry, vocabulary: vocabulary, language: language, shelf: shelf)
                 }
             }
     }
@@ -185,7 +197,7 @@ struct ScanFlowView: View {
         if let lookup {
             LookupScreen(model: lookup, vocabulary: vocabulary, language: language, onPickListEntry: {
                 openEntry(barcode: lookup.barcode)
-            })
+            }, shelf: shelf)
         } else {
             ScannerScreen(
                 onScanned: { barcode in

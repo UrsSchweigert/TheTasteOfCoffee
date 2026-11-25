@@ -55,6 +55,14 @@ extension API.Bean {
     /// Every set attribute, one row per field. Where both groups have a value, the operator's
     /// wins (contracts/openapi.yaml, `Bean`).
     var attributeRows: [BeanAttributeRow] {
+        BeanAttributeRow.rows(operatorAttributes: operatorAttributes, pickedAttributes: pickedAttributes)
+    }
+}
+
+extension BeanAttributeRow {
+    /// Every set attribute of the two groups, one row per field, the operator's value first.
+    /// Shared by the catalogue bean (`API.Bean.attributeRows`) and the stored bean (M2-T18).
+    static func rows(operatorAttributes: API.BeanAttributes, pickedAttributes: API.BeanAttributes) -> [BeanAttributeRow] {
         BeanAttributeField.allCases.compactMap { field in
             if let id = field.valueID(in: operatorAttributes) {
                 return BeanAttributeRow(field: field, valueID: id, source: .operatorSet)
