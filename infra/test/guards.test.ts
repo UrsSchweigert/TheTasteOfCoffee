@@ -586,6 +586,67 @@ describe('(g) IAM policies', () => {
     expect(iamOnly(violations)).toHaveLength(1);
   });
 
+  it.each([
+    ['S3, cupmark- after another bucket', 'arn:aws:s3:::derschweigert/cupmark-x'],
+    ['S3, cupmark- inside the bucket name', 'arn:aws:s3:::other-cupmark-x/*'],
+    ['S3, the shared bootstrap bucket', 'arn:aws:s3:::cdk-hnb659fds-assets-123456789012-eu-central-1/*'],
+    ['DynamoDB, an index named cupmark- of another table', 'arn:aws:dynamodb:eu-central-1:123456789012:table/other/index/cupmark-x'],
+    ['Lambda, another function', 'arn:aws:lambda:eu-central-1:123456789012:function:other-cupmark-x'],
+    ['SSM, cupmark/ under another path', 'arn:aws:ssm:eu-central-1:123456789012:parameter/other/cupmark/x'],
+    ['logs, another log group', 'arn:aws:logs:eu-central-1:123456789012:log-group:/aws/lambda/other/cupmark-x:*'],
+    ['IAM, a role under another path', 'arn:aws:iam::123456789012:role/other/cupmark-x'],
+    ['Cognito, a literal pool ARN (only the template pool counts)', 'arn:aws:cognito-idp:eu-central-1:123456789012:userpool/*'],
+    ['an unlisted service', 'arn:aws:sqs:eu-central-1:123456789012:cupmark-dev-queue'],
+  ])('fails on a foreign ARN: %s', (_label, resource) => {
+    const violations = violationsAfter(
+      (stack) => {
+        roleWith(stack, new iam.PolicyStatement({ actions: ['s3:GetObject'], resources: [resource] }));
+      },
+      { context: { 'cupmark:dev:account': FAKE_ACCOUNT } },
+    );
+    expect(iamOnly(violations)).toHaveLength(1);
+    expectViolation(violations, 'iam', /is not a Cupmark resource|is not on OWNED_ARN_PREFIXES/);
+  });
+
+  it('passes literal ARNs whose first name segment is Cupmark\'s, for every listed service', () => {
+    const violations = violationsAfter(
+      (stack) => {
+        roleWith(
+          stack,
+          new iam.PolicyStatement({
+            actions: ['s3:GetObject'],
+            resources: [
+              'arn:aws:s3:::cupmark-dev-x/catalogue/*',
+              'arn:aws:s3:::cdk-cupmark-assets-123456789012-eu-central-1/*',
+              'arn:aws:dynamodb:eu-central-1:123456789012:table/cupmark-dev-main/index/gsi1',
+              'arn:aws:lambda:eu-central-1:123456789012:function:cupmark-dev-api',
+              'arn:aws:ssm:eu-central-1:123456789012:parameter/cupmark/dev/x',
+              'arn:aws:logs:eu-central-1:123456789012:log-group:/aws/lambda/cupmark-dev-api:*',
+              'arn:aws:logs:eu-central-1:123456789012:log-group:/cupmark/dev/x:*',
+              'arn:aws:iam::123456789012:role/cupmark-dev-api',
+              'arn:aws:iam::123456789012:role/CupmarkGitHubDeploy',
+              'arn:aws:iam::123456789012:policy/CupmarkBoundary',
+            ],
+          }),
+        );
+      },
+      { context: { 'cupmark:dev:account': FAKE_ACCOUNT } },
+    );
+    expect(formatViolations(violations)).toBe('');
+  });
+
+  it('passes the template pool\'s ARN for the Cognito identity-provider actions', () => {
+    const violations = violationsAfter((stack) => {
+      const pool = new cognito.UserPool(stack, 'Pool', {
+        userPoolName: 'cupmark-dev-other',
+        deletionProtection: true,
+        removalPolicy: RemovalPolicy.RETAIN,
+      });
+      roleWith(stack, new iam.PolicyStatement({ actions: ['cognito-idp:UpdateIdentityProvider'], resources: [pool.userPoolArn] }));
+    });
+    expect(formatViolations(violations)).toBe('');
+  });
+
   it('fails on a resource that cannot be resolved at synth time', () => {
     const violations = violationsAfter((stack) => {
       roleWith(stack, new iam.PolicyStatement({ actions: ['s3:GetObject'], resources: [Fn.importValue('Other-BucketArn')] }));

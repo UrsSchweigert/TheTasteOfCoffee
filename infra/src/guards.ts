@@ -305,8 +305,22 @@ function renderArn(value: unknown, resources: Json, depth = 0): string {
   return UNKNOWN;
 }
 
-/** The resource part of an ARN (before any `*`) names something Cupmark owns. */
-const OWNED_RESOURCE = /(?:^|[/:])(?:cupmark-|cupmark\/|Cupmark)/;
+/**
+ * Literal ARNs the app may name, per service: the resource part of the ARN (after
+ * `arn:aws:<service>:<region>:<account>:`) must start with one of these prefixes, so
+ * the first name segment is Cupmark's. `cupmark-` later in the path does not count.
+ * A service that is not listed fails closed; resources of this template (Ref or
+ * Fn::GetAtt, such as the user pool's ARN) are always allowed, with any suffix.
+ */
+export const OWNED_ARN_PREFIXES: Readonly<Record<string, readonly string[]>> = {
+  // Bucket names; `cdk-cupmark-assets-` is the Cupmark bootstrap's asset bucket.
+  s3: ['cupmark-', 'cdk-cupmark-assets-'],
+  dynamodb: ['table/cupmark-'],
+  lambda: ['function:cupmark-'],
+  ssm: ['parameter/cupmark/'],
+  logs: ['log-group:/aws/lambda/cupmark-', 'log-group:/cupmark/'],
+  iam: ['role/cupmark-', 'role/Cupmark', 'policy/Cupmark'],
+};
 
 function iamResourceProblem(value: unknown, resources: Json, ownAccount: string | undefined): string | undefined {
   const text = renderArn(value, resources);
@@ -316,12 +330,15 @@ function iamResourceProblem(value: unknown, resources: Json, ownAccount: string 
   if (text.startsWith(OWNED)) return undefined;
   if (!text.startsWith('arn:')) return `resource "${text}" is not an ARN of this stack`;
   const parts = text.split(':');
+  const service = parts[2] ?? '';
   const account = parts[4] ?? '';
   const resource = parts.slice(5).join(':');
   if (account !== '' && account !== ACCOUNT_PLACEHOLDER && account !== ownAccount) return `resource "${text}" is in another account`;
-  const head = resource.split('*')[0] ?? '';
-  if (head.startsWith(OWNED) || OWNED_RESOURCE.test(head)) return undefined;
-  return `resource "${text}" is not a cupmark- (or Cupmark) resource`;
+  if (resource.startsWith(OWNED)) return undefined;
+  const prefixes = OWNED_ARN_PREFIXES[service];
+  if (prefixes === undefined) return `resource "${text}": service ${service} is not on OWNED_ARN_PREFIXES; name a resource of this template instead`;
+  if (prefixes.some((p) => resource.startsWith(p))) return undefined;
+  return `resource "${text}" is not a Cupmark resource: it must start with ${prefixes.map((p) => `${service}:${p}`).join(' or ')}`;
 }
 
 function asList(value: unknown): unknown[] {
