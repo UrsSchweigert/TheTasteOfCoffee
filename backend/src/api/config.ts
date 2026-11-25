@@ -17,6 +17,10 @@
 //   from the cache only and is otherwise 503, with no outbound call.
 // - OFF_LOOKUP_CAP: Open Food Facts fetches per user and UTC day, default 50
 //   (lookupCapFromEnv).
+// - PHOTO_BUCKET: the photo bucket (`cupmark-<stage>-photos-<account>`), which
+//   holds the catalogue image copies under `catalogue/` (M1-T4c, ADR 0011).
+//   Missing, or not a `cupmark-` bucket name: hits are cached without an
+//   image, and GET /catalogue_images/{image_id} answers 404.
 //
 // Without a usable key the list routes answer 500 and issue or accept no
 // cursor; every other route keeps working. A failed read is retried after
@@ -30,6 +34,7 @@ export const ENV = {
   cursorKeyParameter: 'CURSOR_KEY_PARAMETER',
   openFoodFactsContact: 'OFF_CONTACT',
   openFoodFactsLookupCap: 'OFF_LOOKUP_CAP',
+  photoBucket: 'PHOTO_BUCKET',
 } as const;
 
 /** Open Food Facts fetches per user and UTC day when OFF_LOOKUP_CAP is not set (docs/05, Barcode lookup). */

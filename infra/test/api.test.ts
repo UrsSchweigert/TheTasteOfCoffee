@@ -265,11 +265,13 @@ describe.each(STAGES)('stage %s', (stage) => {
     });
   });
 
-  it('gives the API function the table name and the cursor key parameter, and nothing secret', () => {
+  it('gives the API function the table name, the cursor key parameter and the photo bucket, and nothing secret', () => {
+    expect(photoBucketId).toBeDefined();
     expect(apiFn.Properties.Environment).toEqual({
       Variables: {
         TABLE_NAME: { Ref: tableId },
         CURSOR_KEY_PARAMETER: cursorKeyParameter(stage),
+        PHOTO_BUCKET: { Ref: photoBucketId },
         NODE_OPTIONS: '--enable-source-maps',
       },
     });
@@ -278,6 +280,35 @@ describe.each(STAGES)('stage %s', (stage) => {
 
   it('gives the health function no data access and no configuration', () => {
     expect(healthFn.Properties.Environment).toEqual({ Variables: { NODE_OPTIONS: '--enable-source-maps' } });
+  });
+
+  it('gives the photo bucket name only to the API function, not to health or apple-idp', () => {
+    const [, appleFn] = byName(template, 'AWS::Lambda::Function', 'FunctionName', `cupmark-${stage}-apple-idp`);
+    for (const fn of [healthFn, appleFn]) {
+      const variables = (fn.Properties.Environment as { Variables?: Record<string, unknown> } | undefined)?.Variables ?? {};
+      expect(variables).not.toHaveProperty('PHOTO_BUCKET');
+    }
+  });
+
+  it('names the photo bucket so the backend accepts it (PHOTO_BUCKET pattern, no `--`)', () => {
+    // The backend's check of PHOTO_BUCKET (M1-T4c). The name is
+    // Fn::Join of a literal prefix and AWS::AccountId; resolve it with a realistic id.
+    const accepted = /^cupmark-[a-z0-9][a-z0-9-]{0,53}[a-z0-9]$/;
+    const bucket = resources(template, 'AWS::S3::Bucket').find(([id]) => id === photoBucketId);
+    const join = bucket?.[1].Properties.BucketName as { 'Fn::Join': [string, unknown[]] };
+    const [separator, parts] = join['Fn::Join'];
+    for (const account of ['123456789012', '000000000001', '999999999999']) {
+      const name = parts
+        .map((p) => {
+          if (typeof p === 'string') return p;
+          expect(p).toEqual({ Ref: 'AWS::AccountId' });
+          return account;
+        })
+        .join(separator);
+      expect(name).toBe(`cupmark-${stage}-photos-${account}`);
+      expect(name).toMatch(accepted);
+      expect(name).not.toContain('--');
+    }
   });
 
   it('outputs the API URL, the pool and client ids, without exports', () => {

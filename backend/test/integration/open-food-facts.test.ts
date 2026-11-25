@@ -1,14 +1,18 @@
 // The Open Food Facts cache and the daily lookup cap against DynamoDB Local
 // (M1-T4b): the stored items (a hit, a miss with its `expires_at`), an expired
 // miss read as absent, a hit never overwritten, the counter's atomic cap under
-// parallel calls, and the route end to end with a stubbed fetch. Nothing
+// parallel calls, and the route end to end with a stubbed fetch; the image
+// copy id (M1-T4c) on the cache item and the bean, and the route with the
+// image copy and GET /catalogue_images against a stubbed S3 client. Nothing
 // calls Open Food Facts or AWS.
 // Run with `npm run test:integration`; see test/integration/dynamodb-local.ts.
+import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApi } from '../../src/api/router.ts';
 import type { LogEntry } from '../../src/api/router.ts';
-import { BeanSchema } from '../../src/generated/contract.ts';
+import { BeanSchema, OpenFoodFactsProductSchema } from '../../src/generated/contract.ts';
+import { s3CatalogueImageStore } from '../../src/images/catalogue-store.ts';
 import { createOpenFoodFactsClient } from '../../src/openfoodfacts/client.ts';
 import type { Fetch } from '../../src/openfoodfacts/client.ts';
 import {
@@ -24,6 +28,7 @@ import {
 import { verifiedUserId } from '../events.ts';
 import { ALICE_SUB, BOB_SUB, apiEvent, beanBody, testSigner } from '../api/helpers.ts';
 import type { RequestOptions } from '../api/helpers.ts';
+import { jpegWithMetadata } from '../images/jpeg-fixtures.ts';
 import { connectDynamoDbLocal, createTestTable, deleteTestTable } from './dynamodb-local.ts';
 
 const local = await connectDynamoDbLocal();
@@ -32,6 +37,10 @@ const ALICE = verifiedUserId(ALICE_SUB);
 const BOB = verifiedUserId(BOB_SUB);
 const NOW = new Date('2026-11-25T18:30:00.000Z');
 const NOW_SECONDS = Math.floor(NOW.getTime() / 1000);
+const CAROL_SUB = '5e6f7a8b-9c0d-4e1f-a2b3-c4d5e6f7a8b9';
+const CAROL = verifiedUserId(CAROL_SUB);
+const IMAGE_ID = '01JDQ8Z6V3W4X5Y6Z7A8B9C0DF';
+const OTHER_IMAGE_ID = '01ARZ3NDEKTSV4RRFFQ69G5FAV';
 const DAY_START_SECONDS = Math.floor(Date.parse('2026-11-25T00:00:00.000Z') / 1000);
 
 /** Valid EAN-13s: 12 digits plus the GS1 check digit; `base` keeps the tests apart. */
@@ -122,10 +131,10 @@ describe.skipIf(!local.reachable)('Open Food Facts cache and lookup cap on Dynam
       expect((await raw(openFoodFactsCacheKey(barcode)))?.expires_at).toBe(NOW_SECONDS + 2 * OPEN_FOOD_FACTS_MISS_TTL_SECONDS + 10);
     });
 
-    it('refuses a hit without text, text over the limits, an image id (M1-T4c) and a bad barcode', async () => {
+    it('refuses a hit without text or image, text over the limits, an image id that is not an Id, and a bad barcode', async () => {
       const repo = repoAt(NOW);
       const barcode = ean(1, 5);
-      for (const product of [{}, { name: '' }, { name: 'x'.repeat(151) }, { brand: 'x'.repeat(101) }, { name: 'x', image_id: '01ARZ3NDEKTSV4RRFFQ69G5FAV' }]) {
+      for (const product of [{}, { name: '' }, { name: 'x'.repeat(151) }, { brand: 'x'.repeat(101) }, { name: 'x', image_id: 'https://images.openfoodfacts.org/x.jpg' }, { image_id: IMAGE_ID.toLowerCase() }]) {
         await expect(repo.cacheOpenFoodFactsResult(barcode, { kind: 'hit', product })).rejects.toBeInstanceOf(InvalidValuesError);
       }
       await expect(repo.cacheOpenFoodFactsResult('4006381333932', { kind: 'miss' })).rejects.toThrow();
@@ -138,6 +147,143 @@ describe.skipIf(!local.reachable)('Open Food Facts cache and lookup cap on Dynam
       await expect(repoAt(NOW).getOpenFoodFactsCache(barcode)).rejects.toBeInstanceOf(CorruptItemError);
       await documentClient.send(new PutCommand({ TableName: tableName, Item: { ...openFoodFactsCacheKey(barcode), result: 'miss', fetchedAt: 'x' } }));
       await expect(repoAt(NOW).getOpenFoodFactsCache(barcode)).rejects.toBeInstanceOf(CorruptItemError);
+    });
+  });
+
+  describe('the image copy id on the cache item and the bean (M1-T4c)', () => {
+    it('a hit stores image_id with its text, and one with only an image is a hit too', async () => {
+      const repo = repoAt(NOW);
+      const withText = ean(4, 1);
+      const stored = await repo.cacheOpenFoodFactsResult(withText, { kind: 'hit', product: { name: 'Guji', image_id: IMAGE_ID } });
+      expect(stored).toEqual({ kind: 'hit', product: { name: 'Guji', image_id: IMAGE_ID } });
+      expect((await raw(openFoodFactsCacheKey(withText)))?.product).toEqual({ name: 'Guji', image_id: IMAGE_ID });
+      expect(await repo.getOpenFoodFactsCache(withText)).toEqual(stored);
+
+      const imageOnly = ean(4, 2);
+      expect(await repo.cacheOpenFoodFactsResult(imageOnly, { kind: 'hit', product: { image_id: OTHER_IMAGE_ID } })).toEqual({ kind: 'hit', product: { image_id: OTHER_IMAGE_ID } });
+      expect(await repo.getOpenFoodFactsCache(imageOnly)).toEqual({ kind: 'hit', product: { image_id: OTHER_IMAGE_ID } });
+    });
+
+    it('a hit with an image is never overwritten, so its image is copied once: a racing hit gets the first one back', async () => {
+      const repo = repoAt(NOW);
+      const barcode = ean(4, 3);
+      const first = { kind: 'hit', product: { name: 'First', image_id: IMAGE_ID } } as const;
+      const [a, b] = await Promise.all([
+        repo.cacheOpenFoodFactsResult(barcode, first),
+        repo.cacheOpenFoodFactsResult(barcode, { kind: 'hit', product: { name: 'Second', image_id: OTHER_IMAGE_ID } }),
+      ].map((p) => p.catch((error: unknown) => error)));
+      const stored = await repo.getOpenFoodFactsCache(barcode);
+      expect(stored?.kind).toBe('hit');
+      // Both callers answer what is stored (or one retries a write conflict).
+      for (const answer of [a, b]) if (!(answer instanceof Error)) expect(answer).toEqual(stored);
+      expect(await repo.cacheOpenFoodFactsResult(barcode, { kind: 'hit', product: { name: 'Third', image_id: OTHER_IMAGE_ID } })).toEqual(stored);
+    });
+
+    it('a bean stores the image_id from a confirmed hit and returns it', async () => {
+      const repo = repoAt(NOW);
+      const record = await repo.createBean({ vocabularyVersion: 1, barcode: ean(4, 4), openFoodFactsMatch: true, openFoodFacts: { brand: 'Acme', image_id: IMAGE_ID }, pickedAttributes: {} });
+      expect(record.bean.open_food_facts).toEqual({ brand: 'Acme', image_id: IMAGE_ID });
+      expect((await raw(beanMetaKey(record.bean.bean_id)))?.openFoodFacts).toEqual({ brand: 'Acme', image_id: IMAGE_ID });
+      expect((await repo.getBean(record.bean.bean_id))?.bean.open_food_facts).toEqual({ brand: 'Acme', image_id: IMAGE_ID });
+    });
+  });
+
+  describe('the route with the image copy, end to end with a stubbed fetch and S3', () => {
+    it('copies the image once, caches its id, serves it, and a failed copy caches the hit without an image', async () => {
+      const withImage = ean(5, 1);
+      const failing = ean(5, 2);
+      const imageOnly = ean(5, 3);
+      const imageUrl = (code: string): string => `https://images.openfoodfacts.org/images/products/${code.slice(0, 3)}/${code.slice(3, 6)}/${code.slice(6, 9)}/${code.slice(9)}/front_de.4.400.jpg`;
+      const fetched: string[] = [];
+      const fetch: Fetch = (url) => {
+        fetched.push(url);
+        if (url.startsWith('https://images.openfoodfacts.org/')) {
+          if (url.includes(`/${imageOnly.slice(9)}/`)) return Promise.resolve(new Response('busy', { status: 503 }));
+          return Promise.resolve(url.includes(withImage.slice(9))
+            ? new Response(jpegWithMetadata(), { status: 200, headers: { 'content-type': 'image/jpeg' } })
+            : new Response('gone', { status: 404 }));
+        }
+        if (url.includes(imageOnly)) {
+          return Promise.resolve(new Response(JSON.stringify({ status: 1, product: { image_front_url: imageUrl(imageOnly) } }), { status: 200, headers: { 'content-type': 'application/json' } }));
+        }
+        const code = url.includes(withImage) ? withImage : failing;
+        return Promise.resolve(new Response(JSON.stringify({ status: 1, product: { product_name: 'Guji', image_front_url: imageUrl(code) } }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      };
+      const objects = new Map<string, Uint8Array>();
+      const s3 = {
+        send: (command: unknown): Promise<unknown> => {
+          if (command instanceof PutObjectCommand) {
+            const body = command.input.Body;
+            if (!(body instanceof Uint8Array) || command.input.ContentType !== 'image/jpeg') return Promise.reject(new Error('unexpected put'));
+            objects.set(command.input.Key ?? '', body);
+            return Promise.resolve({});
+          }
+          if (command instanceof GetObjectCommand) {
+            const bytes = objects.get(command.input.Key ?? '');
+            if (bytes === undefined) return Promise.reject(Object.assign(new Error('no'), { name: 'NoSuchKey' }));
+            return Promise.resolve({ ContentLength: bytes.byteLength, Body: { transformToByteArray: () => Promise.resolve(bytes) } });
+          }
+          return Promise.reject(new Error('unexpected command'));
+        },
+      };
+      const catalogueImages = s3CatalogueImageStore(s3, 'cupmark-test-photos-000000000000');
+      if (catalogueImages === undefined) throw new Error('the test bucket name must be accepted');
+      const logs: LogEntry[] = [];
+      const signer = testSigner();
+      const api = createApi({
+        store: new Repository({ client: documentClient, tableName }),
+        cursorSigner: () => Promise.resolve(signer),
+        openFoodFacts: { client: createOpenFoodFactsClient({ contact: 'operator@example.org', fetch }), dailyCap: 5 },
+        catalogueImages,
+        log: (entry) => logs.push(entry),
+      });
+      // Its own caller, so the other route test's daily counter for Alice is not touched.
+      const call = (path: string, options: RequestOptions = {}) => api(apiEvent(options.json === undefined ? 'GET' : 'POST', path, { sub: CAROL_SUB, ...options }));
+
+      const first = await call(`/barcodes/${withImage}/open_food_facts`);
+      expect(first.statusCode).toBe(200);
+      const product = OpenFoodFactsProductSchema.parse(JSON.parse(first.body ?? ''));
+      expect(product.name).toBe('Guji');
+      const imageId = product.image_id ?? '';
+      expect(imageId).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
+      expect([...objects.keys()]).toEqual([`catalogue/${imageId}.jpg`]);
+      expect((await raw(openFoodFactsCacheKey(withImage)))?.product).toEqual({ name: 'Guji', image_id: imageId });
+
+      // Cached: Bob's lookup fetches nothing and copies nothing.
+      expect(JSON.parse((await call(`/barcodes/${withImage}/open_food_facts`, { sub: BOB_SUB })).body ?? '')).toEqual(product);
+      expect(fetched).toHaveLength(2);
+      expect(objects.size).toBe(1);
+
+      const served = await call(`/catalogue_images/${imageId}`, { sub: BOB_SUB });
+      expect(served.statusCode).toBe(200);
+      expect(served.isBase64Encoded).toBe(true);
+      const bytes = Buffer.from(served.body ?? '', 'base64');
+      expect(bytes.includes(Buffer.from('GPSLatitude'))).toBe(false);
+      expect(bytes.subarray(0, 2)).toEqual(Buffer.from([0xff, 0xd8]));
+      expect(served.headers?.['x-content-type-options']).toBe('nosniff');
+      expect((await call(`/catalogue_images/${OTHER_IMAGE_ID}`)).statusCode).toBe(404);
+
+      const created = await call('/beans', { json: beanBody({ barcode: withImage, open_food_facts_confirmed: true }) });
+      expect(created.statusCode).toBe(201);
+      expect(BeanSchema.parse(JSON.parse(created.body ?? '')).open_food_facts).toEqual({ name: 'Guji', image_id: imageId });
+
+      const failed = await call(`/barcodes/${failing}/open_food_facts`);
+      expect(failed.statusCode).toBe(200);
+      expect(JSON.parse(failed.body ?? '')).toEqual({ name: 'Guji' });
+      expect((await raw(openFoodFactsCacheKey(failing)))?.product).toEqual({ name: 'Guji' });
+      expect(objects.size).toBe(1);
+
+      // Only an image, and its host answered 503: 503, nothing cached, the fetch counted.
+      const day = new Date().toISOString().slice(0, 10);
+      const countedBefore = (await raw(lookupCounterKey(CAROL, day)))?.lookups;
+      expect((await call(`/barcodes/${imageOnly}/open_food_facts`)).statusCode).toBe(503);
+      expect(await raw(openFoodFactsCacheKey(imageOnly))).toBeUndefined();
+      expect((await raw(lookupCounterKey(CAROL, day)))?.lookups).toBe(Number(countedBefore) + 1);
+      expect(logs.at(-1)).toEqual({ operation: 'lookupOpenFoodFacts', status: 503, request_id: 'request-1', error: 'OpenFoodFactsUnavailable', reason: 'image_unavailable', image: 'server_status' });
+
+      expect(logs.map((entry) => entry.image)).toEqual(['stored', undefined, undefined, undefined, undefined, 'client_status', 'server_status']);
+      const text = JSON.stringify(logs);
+      for (const leaked of [withImage, failing, imageOnly, imageId, 'openfoodfacts', 'Guji', CAROL_SUB, BOB_SUB]) expect(text).not.toContain(leaked);
     });
   });
 

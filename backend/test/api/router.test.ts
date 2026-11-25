@@ -28,7 +28,7 @@ async function newShelf(h: Harness, sub = ALICE_SUB): Promise<string> {
 }
 
 describe('routes', () => {
-  it('serves exactly the shelf, brew, recipe, bean catalogue and Open Food Facts lookup operations of the contract', () => {
+  it('serves exactly the shelf, brew, recipe, bean catalogue, Open Food Facts lookup and catalogue image operations of the contract', () => {
     const served = ROUTES.map((route) => `${route.method} ${route.segments.join('/')} ${route.operation}`).sort();
     const expected: string[] = [];
     for (const path of [
@@ -42,13 +42,14 @@ describe('routes', () => {
       '/barcodes/{barcode}/open_food_facts',
       '/beans',
       '/beans/{bean_id}',
+      '/catalogue_images/{image_id}',
     ]) {
       for (const [method, operation] of Object.entries(contract.paths[path] ?? {})) {
         expected.push(`${method.toUpperCase()} ${path} ${operation.operationId}`);
       }
     }
     expect(served).toEqual(expected.sort());
-    expect(served).toHaveLength(19);
+    expect(served).toHaveLength(20);
   });
 
   it.each([
@@ -62,7 +63,9 @@ describe('routes', () => {
     ['GET', '/barcodes/4006381333931/'],
     ['POST', '/barcodes/4006381333931/open_food_facts'],
     ['GET', '/barcodes/4006381333931/open_food_facts/'],
-    ['GET', `/catalogue_images/${ID}`],
+    ['POST', `/catalogue_images/${ID}`],
+    ['GET', '/catalogue_images'],
+    ['GET', `/catalogue_images/${ID}/`],
     ['GET', '/export'],
     ['DELETE', '/account'],
     ['GET', '/health'],

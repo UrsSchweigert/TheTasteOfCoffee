@@ -194,7 +194,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - Tests use a stubbed HTTP client; no test calls Open Food Facts.
 
 ### M1-T4c Open Food Facts image copy
-- status: todo
+- status: in-progress
 - owner: backend-engineer
 - depends: M1-T4b
 - implements: docs/decisions/0011, D12

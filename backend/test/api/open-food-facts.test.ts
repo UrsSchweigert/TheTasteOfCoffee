@@ -421,7 +421,7 @@ describe('privacy', () => {
       expect(text).not.toContain(leaked);
     }
     for (const entry of h.logs) {
-      for (const key of Object.keys(entry)) expect(['operation', 'status', 'request_id', 'error', 'reason']).toContain(key);
+      for (const key of Object.keys(entry)) expect(['operation', 'status', 'request_id', 'error', 'reason', 'image']).toContain(key);
     }
   });
 });

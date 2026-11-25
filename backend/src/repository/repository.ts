@@ -879,12 +879,14 @@ export class Repository {
   }
 
   /**
-   * Caches what a fetch found: a hit (cleaned name and brand; at least one) or
-   * a miss with `expires_at` now plus OPEN_FOOD_FACTS_MISS_TTL_SECONDS. A hit
-   * is never overwritten (it does not expire, and M1-T4c copies its image
-   * once): the put is conditional on no item or a miss, and if a hit is
+   * Caches what a fetch found: a hit (cleaned name and brand, and the id of
+   * the stored image copy, M1-T4c; at least one of the three) or a miss with
+   * `expires_at` now plus OPEN_FOOD_FACTS_MISS_TTL_SECONDS. A hit is never
+   * overwritten (it does not expire, and its image is copied once, before
+   * this write): the put is conditional on no item or a miss, and if a hit is
    * already there, that hit is returned. So the answer is always what is
-   * stored, even when two fetches of one barcode race.
+   * stored, even when two fetches of one barcode race; the losing fetch's
+   * image object is then left unreferenced in the bucket.
    */
   public async cacheOpenFoodFactsResult(barcode: string, result: OpenFoodFactsCacheEntry): Promise<OpenFoodFactsCacheEntry> {
     const key = openFoodFactsCacheKey(barcode);
@@ -893,8 +895,9 @@ export class Repository {
     let item: Record<string, unknown>;
     if (result.kind === 'hit') {
       const product = validValues(OpenFoodFactsProductSchema, result.product, 'Open Food Facts product');
-      if (product.name === undefined && product.brand === undefined) throw new InvalidValuesError('an Open Food Facts hit needs a name or a brand');
-      if (product.image_id !== undefined) throw new InvalidValuesError('image copies arrive with M1-T4c');
+      if (product.name === undefined && product.brand === undefined && product.image_id === undefined) {
+        throw new InvalidValuesError('an Open Food Facts hit needs a name, a brand or an image');
+      }
       item = { ...key, type: ITEM_TYPE.openFoodFactsCache, result: 'hit', product, fetchedAt };
     } else {
       item = { ...key, type: ITEM_TYPE.openFoodFactsCache, result: 'miss', fetchedAt, expires_at: epochSeconds(now) + OPEN_FOOD_FACTS_MISS_TTL_SECONDS };
