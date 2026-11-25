@@ -477,7 +477,7 @@ Planning notes (planned 2026-11-25):
   - Nothing else changes. The values are configuration, not secrets (invariant 8 holds).
 
 ### M2-T11 Sign in with Apple through the Cognito hosted UI with PKCE
-- status: needs-mac-verification (written on Linux, not compiled; the unit tests run in the `ios` job, the real sign-in against dev in M2-T34; ADR 0024)
+- status: needs-mac-verification (unit tests pass in the `ios` job in #58; the real sign-in against dev is verified in M2-T34)
 - owner: ios-engineer
 - depends: M2-T8, M2-T9
 - implements: docs/03-project-brief.md (Sign in with Apple only); docs/05-system-design.md, Security (60-minute access tokens, refresh token in the Keychain); infra/src/identity.ts (public client, `openid`, `cupmark://auth`)
@@ -510,6 +510,7 @@ Planning notes (planned 2026-11-25):
 - depends: M2-T11
 - implements: docs/03-project-brief.md, Suggested order of work (docs/07, step 4: ship to TestFlight); M0-T7 (Team ID)
 - acceptance:
+  - From the M2-T11 review: before the first App Review submission, check the hand-drawn Sign in with Apple button against Apple's guidelines for custom buttons (Apple's downloadable logo artwork and title-to-height proportions), not only the `apple.logo` symbol.
   - `project.pbxproj` sets `DEVELOPMENT_TEAM = 2F695PTZC6` on the app and test targets, with automatic signing. The Team ID is configuration, not a secret, and M1-T2 already names it. CI keeps `CODE_SIGNING_ALLOWED=NO` and still passes. The ios/README.md "Signing" section no longer says the team is set only locally.
   - The upload is accepted by App Store Connect:
     - `ITSAppUsesNonExemptEncryption` is `NO` (system HTTPS only);
@@ -563,7 +564,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T15 SwiftData local store
-- status: needs-mac-verification (written on Linux, not compiled; becomes done when the `ios` job passes)
+- status: done (built and tested by the macOS `ios` job in #58)
 - owner: ios-engineer
 - depends: M2-T1, M2-T7
 - implements: docs/04-specification.md, Non-functional (Offline: "the device holds a full copy of the user's own data"); docs/05-system-design.md, Components (SwiftData local store)
