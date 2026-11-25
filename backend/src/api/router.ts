@@ -2,13 +2,15 @@
 // table of routes. It dispatches only the routes that have landed: shelf,
 // brews and recipes, five operations each (task M1-T5), the bean
 // catalogue: GET /barcodes/{barcode}, POST /beans, GET /beans/{bean_id}
-// (task M1-T4a, catalogue.ts), and the Open Food Facts lookup
-// GET /barcodes/{barcode}/open_food_facts (task M1-T4b, open-food-facts.ts).
+// (task M1-T4a, catalogue.ts), the Open Food Facts lookup
+// GET /barcodes/{barcode}/open_food_facts (task M1-T4b, open-food-facts.ts)
+// and the stored catalogue images GET /catalogue_images/{image_id} (task
+// M1-T4c, catalogue-images.ts).
 //
 // Order of checks for every request:
 // 1. Route: method and `rawPath` against the table. No match is 404 with no
 //    body. That includes the contract routes whose tasks have not landed yet
-//    (catalogue images, profile, export, account; the contract declares no
+//    (profile, export, account; the contract declares no
 //    501 for them), /health (its own Lambda, ADR 0007), a
 //    trailing slash and any method a path does not declare (the contract
 //    declares no 405).
@@ -26,13 +28,15 @@
 //    tried up to three times in all, with a short random wait in between.
 //    The Open Food Facts lookup answers 404, 409, 429 and 503 itself
 //    (open-food-facts.ts) and logs a fixed error name and, for 503, a reason
-//    code.
+//    code; a fetched hit also logs a fixed `image` code (stored, none, or why
+//    the copy failed). The catalogue image route answers 404 and 500 itself.
 //
 // Matching uses `rawPath`, so the API must use the `$default` stage (no stage
 // prefix in the path). Every response except a 2xx with content has no body.
 // One log line per request: operation, status, request id and, on failure,
 // the error class name (and a fixed reason code where there is one). Never a
-// body, token, header, query, barcode, user id or Open Food Facts text.
+// body, token, header, query, barcode, image id, image URL, user id or Open
+// Food Facts text.
 import type { z } from 'zod';
 import type { UserId } from '../auth/user-id.ts';
 import { userIdFromEvent } from '../auth/user-id.ts';
@@ -50,7 +54,9 @@ import {
   ShelfEntryNotFoundError,
   WriteConflictError,
 } from '../repository/index.ts';
+import type { CatalogueImageStore } from '../images/catalogue-store.ts';
 import { BarcodeParameterSchema, createBean, getBean, lookupBarcode, parseBeanCreate } from './catalogue.ts';
+import { getCatalogueImage } from './catalogue-images.ts';
 import { lookupOpenFoodFacts } from './open-food-facts.ts';
 import type { LookupResult, OpenFoodFactsLookupConfig } from './open-food-facts.ts';
 import type { CursorSigner } from './cursor.ts';
@@ -66,6 +72,8 @@ export interface LogEntry {
   readonly error?: string;
   /** A fixed reason code with some errors (the Open Food Facts lookup's 503). Never input or upstream text. */
   readonly reason?: string;
+  /** What happened to the front image of a fetched Open Food Facts hit: a fixed code (ImageLogCode). */
+  readonly image?: string;
 }
 
 export interface ApiDependencies {
@@ -74,6 +82,8 @@ export interface ApiDependencies {
   readonly cursorSigner: () => Promise<CursorSigner | undefined>;
   /** The Open Food Facts client and the daily cap. Absent: the lookup answers from the cache only, else 503. */
   readonly openFoodFacts?: OpenFoodFactsLookupConfig;
+  /** The catalogue image store in the photo bucket; absent without a usable PHOTO_BUCKET (no copies, GET is 404). */
+  readonly catalogueImages?: CatalogueImageStore;
   readonly log?: (entry: LogEntry) => void;
   /** Wait before retry number `retry` (1, 2) of a write that raced; for tests. Default: 10 to 50 ms, then 20 to 100 ms. */
   readonly retryDelayMs?: (retry: number) => number;
@@ -101,6 +111,7 @@ interface Outcome {
   readonly result: ApiResult;
   readonly error?: string;
   readonly reason?: string;
+  readonly image?: string;
 }
 
 interface Route {
@@ -278,15 +289,18 @@ const catalogueRoutes: Route[] = [
       if (!noQuery(event) || !hasNoBody(event)) return BAD_REQUEST;
       let found: LookupResult;
       try {
-        found = await lookupOpenFoodFacts(deps.store, deps.openFoodFacts, user, params.barcode ?? '');
+        found = await lookupOpenFoodFacts(deps.store, deps.openFoodFacts, deps.catalogueImages, user, params.barcode ?? '');
       } catch (error) {
         return outcomeOf(error);
       }
-      if (found.status === 200) return { result: json(200, found.product) };
+      const imageCode = found.status === 200 || found.status === 404 || found.status === 503 ? found.image : undefined;
+      const image = imageCode === undefined ? {} : { image: imageCode };
+      if (found.status === 200) return { result: json(200, found.product), ...image };
       return {
         result: empty(found.status),
         ...('error' in found ? { error: found.error } : {}),
         ...('reason' in found ? { reason: found.reason } : {}),
+        ...image,
       };
     },
   },
@@ -312,6 +326,17 @@ const catalogueRoutes: Route[] = [
         const found = await getBean(deps.store, params.bean_id ?? '');
         return found === undefined ? empty(404) : json(200, found);
       });
+    },
+  },
+  {
+    method: 'GET',
+    segments: ['', 'catalogue_images', '{image_id}'],
+    // ImageIdPath: the contract's `Id`.
+    parameters: { image_id: IdSchema },
+    operation: 'getCatalogueImage',
+    handle: async ({ event, params, deps }) => {
+      if (!noQuery(event) || !hasNoBody(event)) return BAD_REQUEST;
+      return getCatalogueImage(deps.catalogueImages, params.image_id ?? '');
     },
   },
 ];
@@ -361,6 +386,7 @@ export function createApi(deps: ApiDependencies): (event: ApiEvent) => Promise<A
         request_id: requestId,
         ...(outcome.error === undefined ? {} : { error: outcome.error }),
         ...(outcome.reason === undefined ? {} : { reason: outcome.reason }),
+        ...(outcome.image === undefined ? {} : { image: outcome.image }),
       });
       return outcome.result;
     };

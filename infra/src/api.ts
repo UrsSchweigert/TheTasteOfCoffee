@@ -102,6 +102,8 @@ export class CupmarkApi extends Construct {
       environment: {
         TABLE_NAME: data.table.tableName,
         CURSOR_KEY_PARAMETER: cursorKeyParameter(stage),
+        // The backend stores and serves catalogue images under `catalogue/` (ADR 0011).
+        PHOTO_BUCKET: data.photoBucket.bucketName,
       },
       statements: [
         new iam.PolicyStatement({

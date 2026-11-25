@@ -91,7 +91,9 @@ export function harness(overrides: Partial<Omit<ApiDependencies, 'store'>> & { s
     async call(method, path, options) {
       const result = await api(apiEvent(method, path, options));
       const status = result.statusCode ?? 0;
-      return { status, result, body: result.body === undefined ? undefined : (JSON.parse(result.body) as unknown) };
+      // A binary body (base64, the catalogue images) is returned as sent; everything else is JSON.
+      const body = result.body === undefined ? undefined : result.isBase64Encoded === true ? result.body : (JSON.parse(result.body) as unknown);
+      return { status, result, body };
     },
   };
 }

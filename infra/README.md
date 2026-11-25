@@ -132,7 +132,7 @@ CloudFormation cannot put a SecureString into `ProviderDetails.private_key` (`{{
 | apple-idp | `ssm:GetParameter` | exactly `/cupmark/<stage>/apple-sign-in-key` |
 | apple-idp | `cognito-idp:CreateIdentityProvider`, `UpdateIdentityProvider`, `DeleteIdentityProvider`, `DescribeIdentityProvider` | the stage's user pool |
 
-**API function environment:** `TABLE_NAME` (`cupmark-<stage>-main`), `CURSOR_KEY_PARAMETER` (`/cupmark/<stage>/cursor-key`), `NODE_OPTIONS=--enable-source-maps`. No secret is in the environment.
+**API function environment:** `TABLE_NAME` (`cupmark-<stage>-main`), `CURSOR_KEY_PARAMETER` (`/cupmark/<stage>/cursor-key`), `PHOTO_BUCKET` (`cupmark-<stage>-photos-<account>`, where the API stores and serves `catalogue/` images), `NODE_OPTIONS=--enable-source-maps`. No secret is in the environment.
 
 **Outbound HTTPS.** The functions are not in a VPC. A Lambda function outside a VPC has internet access through the Lambda service, so the API function reaches the Open Food Facts API and image host over HTTPS without a VPC, NAT gateway or VPC endpoint (all fixed-fee, invariant 5). Which hosts it calls is the backend's concern (docs/05, Barcode lookup); there is no egress filter, which would need a NAT gateway or a firewall.
 
