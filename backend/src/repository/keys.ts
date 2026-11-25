@@ -43,12 +43,14 @@ export const PREFIX = {
   aggregateMethod: 'AGG#METHOD#',
   rater: 'RATER#',
   ranking: 'RANK#',
+  lookups: 'LOOKUPS#',
 } as const;
 
 export const SORT_KEY = {
   profile: 'PROFILE',
   beanMeta: 'META',
   barcodeTarget: 'BEAN',
+  openFoodFactsCache: 'OFF',
   aggregateAll: 'AGG#ALL',
 } as const;
 
@@ -152,6 +154,14 @@ export function recipeKey(user: UserId, recipeId: string): Key {
   return { pk: userPk(user), sk: `${PREFIX.recipe}${id(recipeId, 'recipe id')}` };
 }
 
+/**
+ * `LOOKUPS#<YYYY-MM-DD>`: the caller's Open Food Facts fetches on that UTC day
+ * (docs/05, Barcode lookup: per-user daily cap). Carries `expires_at` (TTL).
+ */
+export function lookupCounterKey(user: UserId, utcDay: string): Key {
+  return { pk: userPk(user), sk: `${PREFIX.lookups}${calendarDate(utcDay, 'lookup day')}` };
+}
+
 // ---- bean catalogue ----
 
 export function beanPk(beanId: string): string {
@@ -169,7 +179,20 @@ export function reviewQueueKey(createdAt: Date, beanId: string): ReviewQueueKey 
 
 /** `BARCODE#<EAN-13>`: the 12- and 13-digit forms of one product give the same key. */
 export function barcodeKey(ean: string): Key {
-  return { pk: `${PREFIX.barcode}${canonicalBarcode(ean)}`, sk: SORT_KEY.barcodeTarget };
+  return { pk: barcodePk(ean), sk: SORT_KEY.barcodeTarget };
+}
+
+/**
+ * `BARCODE#<EAN-13>` / `OFF`: the server's Open Food Facts result for the
+ * barcode, a hit (name, brand) or a miss with `expires_at` (TTL). Same
+ * partition as the barcode pointer, so both forms of one product share it.
+ */
+export function openFoodFactsCacheKey(ean: string): Key {
+  return { pk: barcodePk(ean), sk: SORT_KEY.openFoodFactsCache };
+}
+
+function barcodePk(ean: string): string {
+  return `${PREFIX.barcode}${canonicalBarcode(ean)}`;
 }
 
 // ---- aggregates, rater markers, rankings (written by the aggregator, M3) ----

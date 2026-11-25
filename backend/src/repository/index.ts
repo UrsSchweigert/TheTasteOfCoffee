@@ -3,7 +3,7 @@
 export * from './errors.ts';
 export * from './keys.ts';
 export { decodeCursor, encodeCursor } from './cursor.ts';
-export { ITEM_TYPE, Repository } from './repository.ts';
-export type { BeanRecord, BeanStatus, ListOptions, NewBean, Page, RepositoryOptions } from './repository.ts';
+export { ITEM_TYPE, LOOKUP_COUNTER_TTL_SECONDS, OPEN_FOOD_FACTS_MISS_TTL_SECONDS, Repository } from './repository.ts';
+export type { BeanRecord, BeanStatus, ListOptions, NewBean, OpenFoodFactsCacheEntry, Page, RepositoryOptions } from './repository.ts';
 export { REVIEW_QUEUE_INDEX, STREAM_VIEW_TYPE, TABLE_ATTRIBUTES, tableKeySchema } from './table.ts';
 export type { TableKeySchema } from './table.ts';

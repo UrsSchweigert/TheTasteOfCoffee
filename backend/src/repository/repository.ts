@@ -36,6 +36,7 @@ import {
   BeanAttributesSchema,
   BrewInputSchema,
   IdSchema,
+  OpenFoodFactsProductSchema,
   ProfileSchema,
   RecipeInputSchema,
   ShelfEntryInputSchema,
@@ -47,6 +48,7 @@ import type {
   BeanAttributes,
   Brew,
   BrewInput,
+  OpenFoodFactsProduct,
   Profile,
   Recipe,
   RecipeInput,
@@ -77,6 +79,8 @@ import {
   beanMetaKey,
   canonicalBarcode,
   brewKey,
+  lookupCounterKey,
+  openFoodFactsCacheKey,
   brewRefKey,
   brewSortKey,
   parseBrewSortKey,
@@ -126,8 +130,23 @@ export interface NewBean {
   readonly vocabularyVersion: VocabularyVersion;
   readonly barcode?: Barcode;
   readonly openFoodFactsMatch: boolean;
+  /** The Open Food Facts group, copied from the server's cache (M1-T4b). Only with `openFoodFactsMatch`. */
+  readonly openFoodFacts?: OpenFoodFactsProduct;
   readonly pickedAttributes: BeanAttributes;
 }
+
+/**
+ * The server's cached Open Food Facts result for a barcode (`BARCODE#<ean>` /
+ * `OFF`): a hit with the cleaned text, or a miss that has not expired yet.
+ */
+export type OpenFoodFactsCacheEntry =
+  | { readonly kind: 'hit'; readonly product: OpenFoodFactsProduct }
+  | { readonly kind: 'miss' };
+
+/** How long a cached miss stands before the barcode is fetched again (docs/05, Barcode lookup). */
+export const OPEN_FOOD_FACTS_MISS_TTL_SECONDS = 30 * 24 * 60 * 60;
+/** A daily lookup counter expires this long after the start of its UTC day (so 24 to 48 hours after its last use). */
+export const LOOKUP_COUNTER_TTL_SECONDS = 2 * 24 * 60 * 60;
 
 /** Item types, stored in the `type` attribute so stream consumers can tell items apart. */
 export const ITEM_TYPE = {
@@ -138,6 +157,8 @@ export const ITEM_TYPE = {
   recipe: 'RECIPE',
   bean: 'BEAN',
   barcode: 'BARCODE',
+  openFoodFactsCache: 'OFF_CACHE',
+  lookupCounter: 'LOOKUPS',
 } as const;
 
 const DEFAULT_LIMIT = 50;
@@ -173,10 +194,17 @@ const BeanItem = KeyAttributes.extend({
   vocabularyVersion: VocabularyVersionSchema,
   barcode: BarcodeSchema.optional(),
   openFoodFactsMatch: z.boolean(),
+  openFoodFacts: OpenFoodFactsProductSchema.optional(),
   pickedAttributes: BeanAttributesSchema,
   operatorAttributes: BeanAttributesSchema,
 });
 const BarcodeItem = KeyAttributes.extend({ beanId: IdSchema });
+/** Epoch seconds, as the table's TTL attribute `expires_at` holds them. */
+const EpochSeconds = z.number().int().nonnegative();
+const OpenFoodFactsCacheItem = z.discriminatedUnion('result', [
+  KeyAttributes.extend({ result: z.literal('hit'), product: OpenFoodFactsProductSchema, fetchedAt: z.string() }),
+  KeyAttributes.extend({ result: z.literal('miss'), fetchedAt: z.string(), expires_at: EpochSeconds }),
+]);
 const LastKey = z.object({ pk: z.string(), sk: z.string(), gsi1sk: z.string().optional() });
 
 type BeanItemShape = z.infer<typeof BeanItem>;
@@ -233,6 +261,10 @@ function rethrowConflict(error: unknown): void {
   }
 }
 
+function epochSeconds(date: Date): number {
+  return Math.floor(date.getTime() / 1000);
+}
+
 function limitOf(options: ListOptions): number {
   const limit = options.limit ?? DEFAULT_LIMIT;
   if (!Number.isInteger(limit) || limit < 1 || limit > MAX_LIMIT) throw new InvalidValuesError('invalid limit');
@@ -245,6 +277,7 @@ function beanOf(item: BeanItemShape): BeanRecord {
     vocabulary_version: item.vocabularyVersion,
     verified: item.status === 'verified',
     open_food_facts_match: item.openFoodFactsMatch,
+    ...(item.openFoodFacts === undefined ? {} : { open_food_facts: item.openFoodFacts }),
     picked_attributes: item.pickedAttributes,
     operator_attributes: item.operatorAttributes,
     ...(item.barcode === undefined ? {} : { barcode: item.barcode }),
@@ -749,6 +782,12 @@ export class Repository {
     // Stored and keyed in the canonical 13-digit form, so UPC-A and EAN-13 of one product collide.
     const barcode = input.barcode === undefined ? undefined : canonicalBarcodeValue(input.barcode);
     const openFoodFactsMatch = validValues(z.boolean(), input.openFoodFactsMatch, 'Open Food Facts match');
+    const openFoodFacts =
+      input.openFoodFacts === undefined ? undefined : validValues(OpenFoodFactsProductSchema, input.openFoodFacts, 'Open Food Facts product');
+    // The group is the source tag of its text (D5, ODbL): it exists only on a bean from a confirmed hit.
+    if (openFoodFacts !== undefined && (!openFoodFactsMatch || barcode === undefined)) {
+      throw new InvalidValuesError('Open Food Facts data needs a confirmed match and a barcode');
+    }
     const now = this.#now();
     const beanId = this.#newId(now);
     const key = beanMetaKey(beanId);
@@ -763,6 +802,7 @@ export class Repository {
       updatedAt: createdAt,
       vocabularyVersion,
       openFoodFactsMatch,
+      ...(openFoodFacts === undefined ? {} : { openFoodFacts }),
       pickedAttributes,
       operatorAttributes: {},
       ...(barcode === undefined ? {} : { barcode }),
@@ -822,6 +862,101 @@ export class Repository {
     const record = await this.getBean(beanId);
     if (record?.bean.barcode !== ean) throw new CorruptItemError('barcode pointer names no bean with this barcode');
     return record;
+  }
+
+  // ---- Open Food Facts cache and the daily lookup cap (M1-T4b; docs/05, Barcode lookup) ----
+
+  /**
+   * The cached Open Food Facts result for a barcode (either form), or undefined
+   * if there is none. A miss whose `expires_at` has passed is undefined too:
+   * TTL deletes it some time later, so the read compares with the clock.
+   */
+  public async getOpenFoodFactsCache(barcode: string): Promise<OpenFoodFactsCacheEntry | undefined> {
+    const key = openFoodFactsCacheKey(barcode);
+    const item = await this.#get(key);
+    if (item === undefined) return undefined;
+    return this.#cacheEntryOf(storedItem(OpenFoodFactsCacheItem, item, key.pk, 'Open Food Facts cache entry'));
+  }
+
+  /**
+   * Caches what a fetch found: a hit (cleaned name and brand; at least one) or
+   * a miss with `expires_at` now plus OPEN_FOOD_FACTS_MISS_TTL_SECONDS. A hit
+   * is never overwritten (it does not expire, and M1-T4c copies its image
+   * once): the put is conditional on no item or a miss, and if a hit is
+   * already there, that hit is returned. So the answer is always what is
+   * stored, even when two fetches of one barcode race.
+   */
+  public async cacheOpenFoodFactsResult(barcode: string, result: OpenFoodFactsCacheEntry): Promise<OpenFoodFactsCacheEntry> {
+    const key = openFoodFactsCacheKey(barcode);
+    const now = this.#now();
+    const fetchedAt = utcOf(now);
+    let item: Record<string, unknown>;
+    if (result.kind === 'hit') {
+      const product = validValues(OpenFoodFactsProductSchema, result.product, 'Open Food Facts product');
+      if (product.name === undefined && product.brand === undefined) throw new InvalidValuesError('an Open Food Facts hit needs a name or a brand');
+      if (product.image_id !== undefined) throw new InvalidValuesError('image copies arrive with M1-T4c');
+      item = { ...key, type: ITEM_TYPE.openFoodFactsCache, result: 'hit', product, fetchedAt };
+    } else {
+      item = { ...key, type: ITEM_TYPE.openFoodFactsCache, result: 'miss', fetchedAt, expires_at: epochSeconds(now) + OPEN_FOOD_FACTS_MISS_TTL_SECONDS };
+    }
+    try {
+      await this.#client.send(
+        new PutCommand({
+          TableName: this.#table,
+          Item: item,
+          ConditionExpression: 'attribute_not_exists(pk) OR #result = :miss',
+          ExpressionAttributeNames: { '#result': 'result' },
+          ExpressionAttributeValues: { ':miss': 'miss' },
+        }),
+      );
+    } catch (error) {
+      rethrowConflict(error);
+      if (!isConditionFailure(error)) throw error;
+      const stored = await this.getOpenFoodFactsCache(barcode);
+      if (stored?.kind !== 'hit') throw new WriteConflictError('the Open Food Facts cache entry changed during the write');
+      return stored;
+    }
+    const written = this.#cacheEntryOf(storedItem(OpenFoodFactsCacheItem, item, key.pk, 'Open Food Facts cache entry'));
+    if (written === undefined) throw new CorruptItemError('a fresh miss is already expired');
+    return written;
+  }
+
+  /**
+   * Counts one Open Food Facts fetch against the caller's cap for the current
+   * UTC day: one atomic update of `USER#<sub>` / `LOOKUPS#<day>`, `ADD lookups 1`
+   * on the condition that the count is below `cap`. True if counted, false if
+   * the cap is used up (nothing is written then). The item carries
+   * `expires_at`, the start of its day plus LOOKUP_COUNTER_TTL_SECONDS.
+   */
+  public async countLookup(user: UserId, cap: number): Promise<boolean> {
+    if (!Number.isSafeInteger(cap) || cap < 0) throw new InvalidValuesError('invalid lookup cap');
+    const now = this.#now();
+    const day = utcOf(now).slice(0, 10);
+    const key = lookupCounterKey(user, day);
+    if (cap === 0) return false;
+    const expiresAt = epochSeconds(new Date(`${day}T00:00:00.000Z`)) + LOOKUP_COUNTER_TTL_SECONDS;
+    try {
+      await this.#client.send(
+        new UpdateCommand({
+          TableName: this.#table,
+          Key: key,
+          UpdateExpression: 'SET #type = :type, expires_at = if_not_exists(expires_at, :expires) ADD lookups :one',
+          ConditionExpression: 'attribute_not_exists(lookups) OR lookups < :cap',
+          ExpressionAttributeNames: { '#type': 'type' },
+          ExpressionAttributeValues: { ':type': ITEM_TYPE.lookupCounter, ':expires': expiresAt, ':one': 1, ':cap': cap },
+        }),
+      );
+      return true;
+    } catch (error) {
+      rethrowConflict(error);
+      if (isConditionFailure(error)) return false;
+      throw error;
+    }
+  }
+
+  #cacheEntryOf(item: z.infer<typeof OpenFoodFactsCacheItem>): OpenFoodFactsCacheEntry | undefined {
+    if (item.result === 'hit') return { kind: 'hit', product: item.product };
+    return item.expires_at > epochSeconds(this.#now()) ? { kind: 'miss' } : undefined;
   }
 
   /** The operator verifies an unverified bean: it leaves the review queue. Its barcode keeps pointing to it. */

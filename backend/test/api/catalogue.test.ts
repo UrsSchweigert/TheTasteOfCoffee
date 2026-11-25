@@ -179,12 +179,12 @@ describe('POST /beans', () => {
     expect(h.store.calls).toEqual([]);
   });
 
-  it('open_food_facts_confirmed: true is 409 until the cache exists (M1-T4b), and writes nothing', async () => {
+  it('open_food_facts_confirmed: true without a cached entry is 409, and writes nothing', async () => {
     const h = harness();
     const response = await h.call('POST', '/beans', { json: beanBody({ barcode: EAN13, open_food_facts_confirmed: true }) });
     expect(response.status).toBe(409);
     expectNoBody(response);
-    expect(h.store.calls).toEqual([]);
+    expect(h.store.calls).toEqual(['getOpenFoodFactsCache']);
     expect(h.logs.at(-1)).toEqual({ operation: 'createBean', status: 409, request_id: 'request-1', error: 'OpenFoodFactsHitMissingError' });
     expect((await h.call('GET', `/barcodes/${EAN13}`)).status).toBe(404);
   });

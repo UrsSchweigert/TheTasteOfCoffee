@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Cupmark API
-  version: 0.3.2
+  version: 0.3.3
   description: >-
     Free-tier API of Cupmark (tasks M0-T2 and M1-T8). No request carries free
     text: every string a client sends is an id from the closed vocabulary in
@@ -54,8 +54,9 @@ paths:
         The server answers from its Open Food Facts cache in the catalogue, so
         each barcode is fetched from Open Food Facts at most once; on a miss
         it fetches the product with its own User-Agent and caches the result,
-        a hit or a miss. Each call counts against the caller's daily lookup
-        cap. The app shows the hit for confirmation; confirming it is POST
+        a hit or a miss. Each fetch from Open Food Facts counts against the
+        caller's daily lookup cap; answers from the cache, 400 and 409 do
+        not. The app shows the hit for confirmation; confirming it is POST
         /beans with open_food_facts_confirmed. Nothing is stored in the
         catalogue until then (docs/05-system-design.md, Barcode lookup).
       parameters:
@@ -78,7 +79,7 @@ paths:
         '429':
           description: Throttled, or the caller's daily lookup cap is used up.
         '503':
-          description: Open Food Facts could not be reached. Nothing was cached; try again later.
+          description: The lookup is unavailable (Open Food Facts could not be reached, or the server is not set up for it). Nothing was cached; try again later.
 
   /beans:
     post:

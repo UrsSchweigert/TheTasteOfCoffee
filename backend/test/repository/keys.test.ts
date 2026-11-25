@@ -16,6 +16,8 @@ import {
   brewRefKey,
   brewSortKey,
   fixedWidthUtc,
+  lookupCounterKey,
+  openFoodFactsCacheKey,
   parseBrewSortKey,
   parseRecipeSortKey,
   parseReviewQueueSortKey,
@@ -95,6 +97,7 @@ describe('user partition keys', () => {
       () => brewKey(user, '2026-11-25T10:15:30Z', ID),
       () => brewRefKey(user, ID),
       () => recipeKey(user, ID),
+      () => lookupCounterKey(user, '2026-11-25'),
       () => raterMarkerKey(BEAN, user),
     ]) {
       expect(build).toThrow(InvalidKeyError);
@@ -118,6 +121,21 @@ describe('user partition keys', () => {
 
   it('does not echo the bad value in the error', () => {
     expect(() => shelfEntryKey(USER, `USER#${OTHER_SUB}`)).toThrow(/^invalid shelf entry id$/);
+  });
+
+  it('the daily lookup counter is LOOKUPS#<YYYY-MM-DD> in the caller\'s partition', () => {
+    expect(lookupCounterKey(USER, '2026-11-25')).toEqual({ pk: `USER#${SUB}`, sk: 'LOOKUPS#2026-11-25' });
+    expect(lookupCounterKey(verifiedUserId(OTHER_SUB), '2026-11-25').pk).toBe(`USER#${OTHER_SUB}`);
+  });
+
+  it.each([
+    ['empty', ''],
+    ['a timestamp', '2026-11-25T00:00:00Z'],
+    ['a day that does not exist', '2026-02-30'],
+    ['a separator', '2026-11-25#x'],
+    ['another partition', `USER#${OTHER_SUB}`],
+  ])('rejects %s as a lookup day', (_name, value) => {
+    expect(() => lookupCounterKey(USER, value)).toThrow(InvalidKeyError);
   });
 });
 
@@ -203,6 +221,14 @@ describe('bean catalogue keys', () => {
     expect(barcodeKey('012345678905')).toEqual(barcodeKey('0012345678905'));
     expect(barcodeKey('036000291452')).toEqual({ pk: 'BARCODE#0036000291452', sk: 'BEAN' });
     expect(canonicalBarcode('4006381333931')).toBe('4006381333931');
+  });
+
+  it('the Open Food Facts cache is BARCODE#<EAN-13> / OFF, beside the pointer, for both forms', () => {
+    expect(openFoodFactsCacheKey('4006381333931')).toEqual({ pk: 'BARCODE#4006381333931', sk: 'OFF' });
+    expect(openFoodFactsCacheKey('036000291452')).toEqual({ pk: 'BARCODE#0036000291452', sk: 'OFF' });
+    expect(openFoodFactsCacheKey('036000291452')).toEqual(openFoodFactsCacheKey('0036000291452'));
+    expect(openFoodFactsCacheKey('036000291452').pk).toBe(barcodeKey('036000291452').pk);
+    for (const bad of ['4006381333932', 'USER#x', '', '40063813339AB']) expect(() => openFoodFactsCacheKey(bad)).toThrow(InvalidKeyError);
   });
 
   it.each([

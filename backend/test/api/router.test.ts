@@ -28,7 +28,7 @@ async function newShelf(h: Harness, sub = ALICE_SUB): Promise<string> {
 }
 
 describe('routes', () => {
-  it('serves exactly the shelf, brew, recipe and bean catalogue operations of the contract', () => {
+  it('serves exactly the shelf, brew, recipe, bean catalogue and Open Food Facts lookup operations of the contract', () => {
     const served = ROUTES.map((route) => `${route.method} ${route.segments.join('/')} ${route.operation}`).sort();
     const expected: string[] = [];
     for (const path of [
@@ -39,6 +39,7 @@ describe('routes', () => {
       '/recipes',
       '/recipes/{recipe_id}',
       '/barcodes/{barcode}',
+      '/barcodes/{barcode}/open_food_facts',
       '/beans',
       '/beans/{bean_id}',
     ]) {
@@ -47,7 +48,7 @@ describe('routes', () => {
       }
     }
     expect(served).toEqual(expected.sort());
-    expect(served).toHaveLength(18);
+    expect(served).toHaveLength(19);
   });
 
   it.each([
@@ -59,7 +60,8 @@ describe('routes', () => {
     ['POST', '/barcodes/4006381333931'],
     ['GET', '/barcodes'],
     ['GET', '/barcodes/4006381333931/'],
-    ['GET', '/barcodes/4006381333931/open_food_facts'],
+    ['POST', '/barcodes/4006381333931/open_food_facts'],
+    ['GET', '/barcodes/4006381333931/open_food_facts/'],
     ['GET', `/catalogue_images/${ID}`],
     ['GET', '/export'],
     ['DELETE', '/account'],

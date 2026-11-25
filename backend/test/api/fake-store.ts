@@ -4,7 +4,9 @@
 // references (a shelf entry needs a known bean, a brew needs the caller's
 // shelf entry; a rejected bean may stay on an entry but not be newly put on one) and the 409 on deleting a shelf entry that brews reference or
 // changing its bean (D14); the shared bean catalogue with its barcode
-// pointers (canonical EAN-13, one bean per barcode, a reject frees the barcode).
+// pointers (canonical EAN-13, one bean per barcode, a reject frees the barcode);
+// the Open Food Facts cache (a hit is never overwritten, a miss expires) and
+// the per-user daily lookup counter with its cap.
 // The real repository is tested against DynamoDB Local.
 import type { UserId } from '../../src/auth/user-id.ts';
 import type { Brew, BrewInput, Recipe, RecipeInput, ShelfEntry, ShelfEntryInput } from '../../src/generated/contract.ts';
@@ -30,7 +32,8 @@ import {
   shelfEntryKey,
   userPk,
 } from '../../src/repository/index.ts';
-import type { BeanRecord, ListOptions, NewBean, Page } from '../../src/repository/index.ts';
+import type { BeanRecord, ListOptions, NewBean, OpenFoodFactsCacheEntry, Page } from '../../src/repository/index.ts';
+import { InvalidValuesError, OPEN_FOOD_FACTS_MISS_TTL_SECONDS, lookupCounterKey, openFoodFactsCacheKey } from '../../src/repository/index.ts';
 
 interface Partition {
   readonly shelf: Map<string, ShelfEntry>;
@@ -57,6 +60,12 @@ export class FakeStore implements ApiStore {
   /** `BARCODE#` pointers: canonical EAN-13 to bean id. */
   public readonly barcodes = new Map<string, string>();
   readonly #partitions = new Map<string, Partition>();
+  /** The Open Food Facts cache: canonical EAN-13 to entry (a miss with its expiry in epoch seconds). */
+  public readonly openFoodFactsCache = new Map<string, { entry: OpenFoodFactsCacheEntry; expiresAt?: number }>();
+  /** Lookup counters by `pk|sk` of the counter key. */
+  public readonly lookupCounters = new Map<string, number>();
+  /** The clock for cache expiry and counter days; tests move it. */
+  public now = new Date('2026-11-25T12:00:00.000Z');
   /** Every call, by method name, for assertions. */
   public readonly calls: string[] = [];
   /** Ids are made one millisecond apart, so newest first is deterministic. */
@@ -213,6 +222,7 @@ export class FakeStore implements ApiStore {
         vocabulary_version: input.vocabularyVersion,
         verified: false,
         open_food_facts_match: input.openFoodFactsMatch,
+        ...(input.openFoodFacts === undefined ? {} : { open_food_facts: structuredClone(input.openFoodFacts) }),
         picked_attributes: structuredClone(input.pickedAttributes),
         operator_attributes: {},
         ...(barcode === undefined ? {} : { barcode }),
@@ -236,6 +246,36 @@ export class FakeStore implements ApiStore {
     this.calls.push('getBeanByBarcode');
     const beanId = this.barcodes.get(canonicalBarcode(barcode));
     return Promise.resolve(beanId === undefined ? undefined : structuredClone(this.catalogue.get(beanId)));
+  }
+
+  public getOpenFoodFactsCache(barcode: string): Promise<OpenFoodFactsCacheEntry | undefined> {
+    this.calls.push('getOpenFoodFactsCache');
+    openFoodFactsCacheKey(barcode);
+    const stored = this.openFoodFactsCache.get(canonicalBarcode(barcode));
+    if (stored === undefined) return Promise.resolve(undefined);
+    if (stored.expiresAt !== undefined && stored.expiresAt <= Math.floor(this.now.getTime() / 1000)) return Promise.resolve(undefined);
+    return Promise.resolve(structuredClone(stored.entry));
+  }
+
+  public cacheOpenFoodFactsResult(barcode: string, result: OpenFoodFactsCacheEntry): Promise<OpenFoodFactsCacheEntry> {
+    this.calls.push('cacheOpenFoodFactsResult');
+    const ean = canonicalBarcode(barcode);
+    const existing = this.openFoodFactsCache.get(ean);
+    if (existing?.entry.kind === 'hit') return Promise.resolve(structuredClone(existing.entry));
+    const expiresAt = result.kind === 'miss' ? Math.floor(this.now.getTime() / 1000) + OPEN_FOOD_FACTS_MISS_TTL_SECONDS : undefined;
+    this.openFoodFactsCache.set(ean, { entry: structuredClone(result), ...(expiresAt === undefined ? {} : { expiresAt }) });
+    return Promise.resolve(structuredClone(result));
+  }
+
+  public countLookup(user: UserId, cap: number): Promise<boolean> {
+    this.calls.push('countLookup');
+    if (!Number.isSafeInteger(cap) || cap < 0) return Promise.reject(new InvalidValuesError('invalid lookup cap'));
+    const key = lookupCounterKey(user, this.now.toISOString().slice(0, 10));
+    const id = `${key.pk}|${key.sk}`;
+    const count = this.lookupCounters.get(id) ?? 0;
+    if (count >= cap) return Promise.resolve(false);
+    this.lookupCounters.set(id, count + 1);
+    return Promise.resolve(true);
   }
 
   /** A shelf entry may newly name the bean: known, and not rejected (M1-T11). */

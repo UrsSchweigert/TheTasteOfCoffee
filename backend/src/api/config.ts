@@ -11,6 +11,13 @@
 //   keeps it in memory only. The key itself is never in the repo, the template
 //   or the environment (CLAUDE.md, invariant 8).
 //
+// - OFF_CONTACT: the operator mailbox named in the Open Food Facts User-Agent
+//   (`Cupmark/<version> (<contact>)`). Plain configuration, not a secret, and
+//   never in the repo. Missing or not an e-mail address: the lookup answers
+//   from the cache only and is otherwise 503, with no outbound call.
+// - OFF_LOOKUP_CAP: Open Food Facts fetches per user and UTC day, default 50
+//   (lookupCapFromEnv).
+//
 // Without a usable key the list routes answer 500 and issue or accept no
 // cursor; every other route keeps working. A failed read is retried after
 // 60 seconds at the earliest.
@@ -21,7 +28,28 @@ import { CursorSigner, MIN_CURSOR_KEY_BYTES } from './cursor.ts';
 export const ENV = {
   tableName: 'TABLE_NAME',
   cursorKeyParameter: 'CURSOR_KEY_PARAMETER',
+  openFoodFactsContact: 'OFF_CONTACT',
+  openFoodFactsLookupCap: 'OFF_LOOKUP_CAP',
 } as const;
+
+/** Open Food Facts fetches per user and UTC day when OFF_LOOKUP_CAP is not set (docs/05, Barcode lookup). */
+export const DEFAULT_LOOKUP_CAP = 50;
+/** The largest cap accepted; above it the setting is treated as a mistake. */
+export const MAX_LOOKUP_CAP = 10_000;
+
+/**
+ * OFF_LOOKUP_CAP: absent or empty is DEFAULT_LOOKUP_CAP; otherwise a plain
+ * integer from 0 (no fetches at all, the cache still answers) to
+ * MAX_LOOKUP_CAP. Anything else is undefined: the lookup then fails closed
+ * with 503 before it counts or fetches.
+ */
+export function lookupCapFromEnv(value: string | undefined): number | undefined {
+  if (value === undefined || value.trim() === '') return DEFAULT_LOOKUP_CAP;
+  const trimmed = value.trim();
+  if (!/^(?:0|[1-9][0-9]{0,4})$/.test(trimmed)) return undefined;
+  const cap = Number(trimmed);
+  return cap <= MAX_LOOKUP_CAP ? cap : undefined;
+}
 
 /** Only parameters this project owns (CLAUDE.md, invariant 9). */
 const PARAMETER_NAME = /^\/cupmark\/[A-Za-z0-9_./-]{1,200}$/;
