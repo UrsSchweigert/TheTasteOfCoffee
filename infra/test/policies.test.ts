@@ -178,15 +178,39 @@ describe('the boundary stays narrow', () => {
     expect(allows(boundary, 'cognito-idp:AdminDeleteUser', pool.replace(REGION, 'eu-west-1'))).toBe(false);
   });
 
-  it('allows object and version deletes and version listing only in Cupmark buckets, and no bucket-level delete (ADR 0017)', () => {
-    const photos = `arn:aws:s3:::cupmark-dev-photos-${FAKE_ACCOUNT}`;
-    for (const action of ['s3:DeleteObject', 's3:DeleteObjectVersion']) {
-      expect(allows(boundary, action, `${photos}/labels/x.jpg`)).toBe(true);
-      expect(allows(boundary, action, 'arn:aws:s3:::derschweigert-site/x.jpg')).toBe(false);
-      expect(allows(boundary, action, `arn:aws:s3:::cdk-cupmark-assets-${FAKE_ACCOUNT}-${REGION}/x.zip`)).toBe(false);
+  it('allows object and version deletes only under labels/ and uploads/ of Cupmark photo buckets (ADR 0017)', () => {
+    for (const stage of STAGES) {
+      const photos = `arn:aws:s3:::cupmark-${stage}-photos-${FAKE_ACCOUNT}`;
+      for (const action of ['s3:DeleteObject', 's3:DeleteObjectVersion']) {
+        expect(allows(boundary, action, `${photos}/labels/x.jpg`), `${action} ${stage} labels`).toBe(true);
+        expect(allows(boundary, action, `${photos}/uploads/x.jpg`), `${action} ${stage} uploads`).toBe(true);
+        for (const prefix of ['catalogue/', 'verified/', 'entries/', '']) {
+          expect(allows(boundary, action, `${photos}/${prefix}x.jpg`), `${action} ${stage} ${prefix}`).toBe(false);
+        }
+      }
     }
+  });
+
+  it.each(['backups', 'deletion-log'])('allows no delete and no version listing in the %s bucket', (part) => {
+    for (const stage of STAGES) {
+      const bucket = `arn:aws:s3:::cupmark-${stage}-${part}-${FAKE_ACCOUNT}`;
+      for (const prefix of ['labels/', 'uploads/', 'entries/', '']) {
+        for (const action of ['s3:DeleteObject', 's3:DeleteObjectVersion']) {
+          expect(allows(boundary, action, `${bucket}/${prefix}x`), `${action} ${bucket}/${prefix}x`).toBe(false);
+        }
+      }
+      expect(allows(boundary, 's3:ListBucketVersions', bucket)).toBe(false);
+    }
+  });
+
+  it('allows version listing only on Cupmark photo buckets, and no bucket-level delete or reconfiguration', () => {
+    const photos = `arn:aws:s3:::cupmark-dev-photos-${FAKE_ACCOUNT}`;
     expect(allows(boundary, 's3:ListBucketVersions', photos)).toBe(true);
     expect(allows(boundary, 's3:ListBucketVersions', 'arn:aws:s3:::derschweigert-site')).toBe(false);
+    for (const action of ['s3:DeleteObject', 's3:DeleteObjectVersion']) {
+      expect(allows(boundary, action, 'arn:aws:s3:::derschweigert-photos-x/labels/x.jpg')).toBe(false);
+      expect(allows(boundary, action, `arn:aws:s3:::cdk-cupmark-assets-${FAKE_ACCOUNT}-${REGION}/x.zip`)).toBe(false);
+    }
     for (const action of ['s3:DeleteBucket', 's3:DeleteBucketPolicy', 's3:PutLifecycleConfiguration', 's3:PutBucketVersioning']) {
       expect(allows(boundary, action, photos), action).toBe(false);
     }

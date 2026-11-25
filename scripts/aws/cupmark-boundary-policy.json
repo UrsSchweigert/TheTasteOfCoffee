@@ -37,17 +37,22 @@
       ]
     },
     {
-      "Sid": "AccountDeletionInCupmarkBuckets",
+      "Sid": "AccountDeletionOfLabelPhotos",
       "Effect": "Allow",
       "Action": [
         "s3:DeleteObject",
-        "s3:DeleteObjectVersion",
-        "s3:ListBucketVersions"
+        "s3:DeleteObjectVersion"
       ],
       "Resource": [
-        "arn:aws:s3:::cupmark-*",
-        "arn:aws:s3:::cupmark-*/*"
+        "arn:aws:s3:::cupmark-*-photos-*/labels/*",
+        "arn:aws:s3:::cupmark-*-photos-*/uploads/*"
       ]
+    },
+    {
+      "Sid": "AccountDeletionListPhotoVersions",
+      "Effect": "Allow",
+      "Action": "s3:ListBucketVersions",
+      "Resource": "arn:aws:s3:::cupmark-*-photos-*"
     },
     {
       "Sid": "CognitoOfCupmarkPools",

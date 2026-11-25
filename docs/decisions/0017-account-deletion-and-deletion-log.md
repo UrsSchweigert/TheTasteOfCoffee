@@ -43,7 +43,7 @@ D1 (consent) and D2 (aggregates) were still open. The lead decides them here.
 ## Consequences
 
 - **Boundary and guardrails.** The boundary policy (`scripts/aws/cupmark-boundary-policy.json`) gains:
-  - `s3:DeleteObject`, `s3:DeleteObjectVersion` and `s3:ListBucketVersions` on the photo bucket;
+  - `s3:DeleteObject` and `s3:DeleteObjectVersion` on `cupmark-*-photos-*/labels/*` and `/uploads/*`, and `s3:ListBucketVersions` on `cupmark-*-photos-*` (narrowed in the M1-T6 review, so the backups and the deletion log can never be deleted through the boundary);
   - `cognito-idp:AdminDeleteUser` on `userpool/*`, as for the Apple provider in ADR 0015.
 
   The owner re-applies the guardrails before the first deploy. This is a human task, tracked as a GitHub issue.

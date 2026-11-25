@@ -190,7 +190,7 @@ Check without decrypting: `aws ssm describe-parameters --region eu-central-1 --p
    - `test/policies.test.ts` checks that the boundary allows everything the stack's roles are granted, and that the execution policy can read the code.
 
    M1-T6 (account deletion, ADR 0017) changed `CupmarkBoundary` again, so re-apply it even if you already applied the M1-T2 version:
-   - a new statement `AccountDeletionInCupmarkBuckets`: `s3:DeleteObject`, `s3:DeleteObjectVersion` and `s3:ListBucketVersions` on `arn:aws:s3:::cupmark-*` and `cupmark-*/*` (the api role's own policy limits them to `labels/` and `uploads/` of the photo bucket);
+   - two new statements: `AccountDeletionOfLabelPhotos` (`s3:DeleteObject`, `s3:DeleteObjectVersion` on `arn:aws:s3:::cupmark-*-photos-*/labels/*` and `/uploads/*`) and `AccountDeletionListPhotoVersions` (`s3:ListBucketVersions` on `arn:aws:s3:::cupmark-*-photos-*`), so no other bucket, the backups and the deletion log included, can have objects or versions deleted through the boundary;
    - `cognito-idp:AdminDeleteUser` added to the user-pool statement, renamed from `AppleIdentityProviderOfCupmarkPools` to `CognitoOfCupmarkPools`.
 
    `CupmarkCfnExecution` is unchanged: its `s3:*` on `cupmark-*` already covers creating and configuring the deletion log bucket. Without the new boundary, `DELETE /account` fails with AccessDenied (500) at its first step; nothing else breaks.
