@@ -6,7 +6,7 @@ Status values: `todo`, `in-progress`, `done`, `blocked`, `needs-mac-verification
 
 Owners: `contract-keeper`, `backend-engineer`, `infra-engineer`, `ios-engineer`, `planner`, `human`.
 
-Milestones M0 and M1 are broken into tasks. M2 to M6 are planned with `/plan-milestone` when their turn comes, so the plan can use what was learned before.
+Milestones M0 to M2 are broken into tasks. M3 to M6 are planned with `/plan-milestone` when their turn comes, so the plan can use what was learned before.
 
 ---
 
@@ -298,9 +298,598 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
 
 ## M2 Personal log, iOS
 
-Goal: scan, shelf, brew, rate and personal statistics work offline and sync. Not yet planned; run `/plan-milestone M2`.
+Goal: scan, shelf, brew, rate and personal statistics work offline and sync.
 
 Scope: Sign in with Apple, barcode scanner, Open Food Facts lookup, pick-list bean entry with label photo, shelf, brew form per method, timer, rating screen, recipes and one-tap repeat, local store and sync outbox, personal statistics, CSV export, account deletion, onboarding with consent, accessibility pass.
+
+Planning notes (planned 2026-11-25):
+
+- **Order.** Contract and backend first (M2-T2 to M2-T5), then CI (M2-T6), then iOS. The iOS tasks follow the vertical slice sign in (T11), scan and lookup (T13, T14), store and sync (T15 to T17), shelf (T18), brew (T19), rate (T20). Everything else builds on that slice.
+- **Backend gaps.** The only contract and backend change M2 needs is D13 (M2-T2 to M2-T5). The app needs no review-queue listing route: the review queue belongs to the operator (D3, M5 CLI), and the app reads its own unverified beans with `GET /beans/{bean_id}`, which carries `verified`. Paging already exists on `/shelf`, `/brews` and `/recipes` (`cursor`, `limit` up to 100), and that is enough for a full pull. Possible additions are listed in the M2 plan report and are not in this backlog.
+- **Mac verification.** The CI job `ios` (macos-15, Xcode 16.4, iOS Simulator, signing off) builds the `Cupmark` scheme and runs its tests: `CupmarkTests`, plus `CupmarkUITests` from M2-T33. On a pull request it runs only when a path under `ios/`, `contracts/vocabulary/` or `contracts/i18n/` changes, or `scripts/generate-ios-vocabulary.mjs`, `scripts/check-ios-strings.mjs` or `ci.yml`. From M2-T6 on, `contracts/openapi.yaml` and `scripts/generate-ios-api.mjs` trigger it as well. Every iOS task below proves its acceptance with tests in that scheme, so it can end `done` when `ci-ok` passes with `ios` = success. The exceptions are the parts no simulator can check: the real sign-in (M2-T11), Xcode Cloud and TestFlight (M2-T12), the camera scanner (M2-T13), camera capture (M2-T23) and the real S3 upload (M2-T24). Those tasks end `needs-mac-verification` until the owner's checks in M2-T12 or M2-T34 pass.
+- **ADRs due in M2.** They are taken by the lead under ADR 0014 and none of them adds cloud cost: the local-only log (T1), D13 (T2), the Swift API generator (T7), the build stage (T9), Xcode Cloud (T12), the sync rules (T16), the personal statistics set (T28), and deletion when the token cannot be refreshed (T31).
+
+### M2-T1 Decide: optional local-only log without sign-in
+- status: done (ADR 0020, D16: not in M2; sign-in required)
+- owner: planner (the lead decides under ADR 0014)
+- depends: none
+- implements: docs/03-project-brief.md, In scope ("Sign in with Apple only"); docs/04-specification.md, Input model ("Identity comes from Sign in with Apple"); raised by the owner earlier
+- acceptance:
+  - An ADR records the lead's decision as "decided by: lead (ADR 0014)", and docs/07 gets an answered row for it (next free id, D16).
+  - Cloud cost: none. A local-only log keeps everything on the device and calls no route. The ADR states this and also what follows from it. Every route except `GET /health` needs a token, so without sign-in there is no barcode lookup, no Open Food Facts hit, no catalogue bean, no label photo, no CSV export through the API, and no sync or backup.
+  - The ADR answers these questions:
+    - Is a local-only mode offered at all?
+    - If so, what works without sign-in? At most: pick-list beans kept on the device, shelf, brew, timer, rating, recipes and statistics.
+    - What happens on a later sign-in? Either the local items are uploaded (their pick-list beans then become new unverified beans) or they stay apart.
+    - Consent stays opt-in (D1).
+  - The lead's default, if nothing else is decided before M2-T15 starts: sign-in is required, as docs/03 says, and local-only is a later addition. If the answer is yes, the planner adds the tasks, and M2-T15 (the store keyed by account) and M2-T29 (onboarding) change before they start.
+
+### M2-T2 Vocabulary v3 draft: method-dependent brew fields, grinders and grind setting (D13)
+- status: todo
+- owner: contract-keeper
+- depends: none
+- implements: docs/04-specification.md, F2 (Grinder, Grind setting, "Fields depend on the method"); docs/07-open-questions.md D13; ADR 0004
+- acceptance:
+  - The lead records the D13 decision under ADR 0014 in this pull request: an ADR, and the D13 row in docs/07 answered. The recommended default below is the starting point.
+  - `contracts/vocabulary/v3/` is copied from v2, with `"version": 3` and `"status": "draft"`. v1, v2 and their locks are unchanged, and the lock test passes.
+  - v3 adds:
+    - a `grinders` list. Each entry names its own scale (a range `{ minimum, maximum, multipleOf }`) or none. It includes `pre_ground` (no scale) and, as recommended, `other` (no scale).
+    - the method field rules: for each brew field that only some methods allow, the methods that allow it.
+  - Both use a shape that `contracts/README.md`, "File shapes", allows. If a new attribute shape is needed, the README, the schemas, `lib/vocabulary.mjs` and their tests are extended, as was done for `country` (ADR 0011).
+  - Every new id has a label in `en.json` and `de.json`, and the existing missing-label test covers them.
+  - New tests:
+    - every rule names a known method and a known `BrewParameters` field (never `method`);
+    - every grinder scale sits on its step, and the step is exact in binary floating point (ADR 0004);
+    - `pre_ground` and `other` have no scale.
+  - `vocabulary/CHANGELOG.md` has a v3 (draft) entry. `openapi.yaml` does not change yet, because a draft is not in the API.
+  - Recommended default (from F2; the lead may change it). A field not allowed for a method must be absent, and the server answers 400 (M2-T5):
+    - `water_temp_special` (`cold`): `cold_brew` only. `cold_brew` does not allow `water_temp_c`, because its range starts at 80 °C.
+    - `water_temp_c`: every method except `cold_brew`, `moka_pot` and `cezve`. On the stove the water heats in the pot, so a set temperature means nothing, and it would skew the temperature ranges of top recipes (F4).
+    - `grinder` and `grind_setting`: every method except `fully_automatic`, because its grinder is built in and F2 lists no machine models. `grind_normalised` stays allowed with every method, so a fully automatic brew still records coarseness.
+    - `grind_setting` needs a `grinder` that has a scale, and must lie on that grinder's scale. It is absent for `pre_ground` and `other`.
+    - `dose_dg`, `water_g`, `brew_time_s`, `water_type` and `milk`: every method. For `espresso`, the app labels `water_g` "yield" (F2: "Water or yield"); that is an app string, not a rule.
+    - Grinders: a curated list of common home hand and electric grinders, each with the numbers on its own dial as its scale, in steps of 1 or 0.5. The contract-keeper proposes the list, and the owner approves it when v3 is published (M2-T4).
+
+### M2-T3 Swift vocabulary generator: grinders and method field rules
+- status: todo
+- owner: ios-engineer
+- depends: M2-T2
+- implements: docs/04-specification.md, F2; CLAUDE.md invariant 2; ios/README.md, Vocabulary
+- acceptance:
+  - `scripts/generate-ios-vocabulary.mjs` emits:
+    - `Vocabulary.Grinder` with a typed `scale: VocabularyRange?`;
+    - the method field rules as a typed lookup, for example `Vocabulary.Method.allows(_: Vocabulary.BrewField) -> Bool`.
+  - Both are read from the vocabulary files. No list is written in the script.
+  - `scripts/ios-scripts.test.mjs` runs the generator on the v3 draft. The tests fail on a rule that names an unknown method or field, and on a scale off its step.
+  - The output for the bundled v2 is unchanged (`--check` passes). The app keeps bundling v2 until M2-T4.
+  - Mac: the script tests run on Linux, and the `ios` job runs because the generator changed.
+
+### M2-T4 Publish vocabulary v3 and follow it in the API
+- status: todo
+- owner: contract-keeper
+- needs: human (the owner approves the v3 draft, in particular the grinder list and the method field rules; contracts/README.md, Publishing a version, step 3)
+- depends: M2-T2, M2-T3
+- implements: contracts/README.md, Publishing a version; docs/04-specification.md, F2; ADR 0004
+- acceptance:
+  - After the owner approves, every v3 file is set to `published`, and `npm run lock -- 3` writes `v3.lock.json`.
+  - `openapi.yaml` 0.6.0 adds:
+    - a `Grinder` enum (`x-vocabulary: grinders`);
+    - optional `grinder` and `grind_setting` in `BrewParameters`. `grind_setting` is bounded by the widest grinder scale, with a step that is exact or scaled per ADR 0004, and has `dependentRequired: { grind_setting: [grinder] }`;
+    - the v3 rules in the `BrewParameters` description, replacing "not defined in vocabulary v1 yet";
+    - `VocabularyVersion.maximum: 3`;
+    - the export columns `grinder` and `grind_setting` in `x-csv-columns`, the description list and the table. The lint keeps all three in step.
+  - The lint and drift tests pass. Tests that used 3 as an unpublished version now use 4.
+  - `backend/` is regenerated (`npm run check:generated` passes). Rules and export are M2-T5, but any minimal backend change needed to keep its tests green goes in this pull request.
+  - The Xcode folder reference moves to `vocabulary/v3`, and `Generated/Vocabulary.swift` is regenerated (`--check` passes). The `ios` job passes.
+
+### M2-T5 Backend: method field rules and grinder scales from v3
+- status: todo
+- owner: backend-engineer
+- depends: M2-T4
+- implements: docs/04-specification.md, F2; docs/07 D13; the M1-T5 rule hook (`backend/src/vocabulary/method-rules.ts`)
+- acceptance:
+  - `methodRulesFor(3)` reads the rules from `src/generated/vocabulary.ts`, and no list is written in the backend. Versions 1 and 2 still have no rules, so existing brews and recipes stay valid.
+  - `POST` and `PUT` on `/brews` and `/recipes` answer 400 for:
+    - a field the method does not allow under v3;
+    - `grind_setting` outside the grinder's own scale or off its step;
+    - `grind_setting` with a grinder that has no scale;
+    - `grinder` with `vocabulary_version` 1 or 2.
+  - Unit tests cover every rule with an allowed and a disallowed method.
+  - `GET /export` writes `grinder` and `grind_setting`. The export test pins the header against the contract.
+
+### M2-T6 CI: run the ios job when the API contract changes
+- status: todo
+- owner: infra-engineer
+- depends: none
+- implements: CLAUDE.md, Definition of done; M0-T9 (path filter)
+- acceptance:
+  - `IOS_PATHS` in `.github/workflows/ci.yml` gains `contracts/openapi.yaml` and `scripts/generate-ios-api.mjs`, the Swift API generator of M2-T7. Without them, a contract change that the app is generated from would skip the `ios` job.
+  - A test in `scripts/check-workflows.test.mjs` fails if `IOS_PATHS` lacks any of the paths the iOS generators read.
+  - ios/README.md, "Build and test", lists the new paths.
+
+### M2-T7 Swift API types generated from the contract
+- status: todo
+- owner: ios-engineer
+- depends: M2-T6
+- implements: docs/05-system-design.md, Components (client); CLAUDE.md invariant 2 and Style; ADR 0004
+- acceptance:
+  - An ADR (lead, ADR 0014) records the choice.
+    - Chosen: an in-repo Node generator, `scripts/generate-ios-api.mjs`, writes `ios/Cupmark/Generated/API.swift` from `contracts/openapi.yaml`. It needs no Swift package and runs on Linux, like the vocabulary generator.
+    - Rejected: Apple's swift-openapi-generator, because it adds Swift packages and a package fetch to CI against the README's "no third-party packages".
+  - The generated file holds:
+    - Codable types for every request and response schema the app uses;
+    - `x-vocabulary` enums mapped to the existing `Vocabulary.*` types, so no list exists twice;
+    - `dose_dg` as an integer with a grams helper;
+    - `CalendarDate` as a day without a time zone, and timestamps as RFC 3339 with fractional seconds;
+    - the water temperature as one enum, so `water_temp_c` and `water_temp_special` cannot both be set.
+  - The contracts CI job runs `node scripts/generate-ios-api.mjs --check`, which fails on drift. Script tests are in `scripts/ios-scripts.test.mjs`.
+  - XCTests:
+    - a JSON round trip for every generated type;
+    - 18.5 g encodes as `dose_dg` 185;
+    - no unknown property is ever encoded;
+    - a response item with an id that the bundled vocabulary does not know fails to decode as that item only, never as a trap.
+  - Mac: the `ios` job.
+
+### M2-T8 API client
+- status: todo
+- owner: ios-engineer
+- depends: M2-T7
+- implements: contracts/openapi.yaml 0.5.0 (0.6.0 after M2-T4); docs/05-system-design.md, Security
+- acceptance:
+  - `APIClient` (async/await, URLSession, no packages) has one method per operation the app uses. The base URL is injected; M2-T9 provides it.
+  - Every call sends the bearer token from a `TokenProvider`. No call puts a user id in a path, query or body (invariant 3).
+  - Each route's documented statuses (400, 401, 404, 409, 429, 503, 5xx) map to typed errors. Error bodies are not parsed, and no response body is logged, so Open Food Facts text is never logged (docs/05).
+  - On a 401 the client asks the token provider to refresh once and retries once.
+  - A paging helper follows `next_cursor` with `limit=100` until it is absent.
+  - `GET /catalogue_images/{image_id}` is loaded with the token, not through `AsyncImage`, and cached on disk by id (the image is immutable).
+  - Tests use a `URLProtocol` stub. They check each route's method, path, headers and body; every listed status; refresh and retry once; and paging over three pages.
+  - Mac: the `ios` job.
+
+### M2-T9 Stage configuration
+- status: todo
+- owner: ios-engineer
+- depends: M2-T8
+- implements: docs/05-system-design.md, Components, Security; infra/src/identity.ts (`cupmark://auth`, `cupmark://signout`); infra/README.md (stack outputs)
+- acceptance:
+  - `ios/Config/Dev.xcconfig` and `Prod.xcconfig` set:
+    - the hosted domain `https://cupmark-<stage>.auth.eu-central-1.amazoncognito.com`;
+    - the app client id;
+    - the API URL;
+    - the redirect `cupmark://auth` and the sign-out URL `cupmark://signout`.
+  - The values reach the app through Info.plist keys and are read into a typed `StageConfig`. They are not secrets: the app client is public and has no secret (infra/src/identity.ts). Until M2-T10 they are placeholders.
+  - An ADR (lead, ADR 0014) records that Debug builds and the TestFlight builds of M2 use dev, until prod is deployed in M6.
+  - Missing or malformed values, or any region other than eu-central-1 (invariant 6), show a "not configured" screen and never crash. Tests cover valid, missing, malformed and wrong-region values.
+  - Mac: the `ios` job.
+
+### M2-T10 Dev stage values in the app
+- status: todo
+- owner: ios-engineer
+- needs: human (after the first dev deploy, the owner reads the outputs `AppClientId`, `ApiUrl` and `HostedDomain` of `cupmark-dev-core` and posts them on the task's issue)
+- depends: M1-T7, M2-T9
+- implements: infra/README.md, stack outputs
+- acceptance:
+  - `Config/Dev.xcconfig` holds the owner's values, and the `StageConfig` tests accept them.
+  - Nothing else changes. The values are configuration, not secrets (invariant 8 holds).
+
+### M2-T11 Sign in with Apple through the Cognito hosted UI with PKCE
+- status: todo
+- owner: ios-engineer
+- depends: M2-T8, M2-T9
+- implements: docs/03-project-brief.md (Sign in with Apple only); docs/05-system-design.md, Security (60-minute access tokens, refresh token in the Keychain); infra/src/identity.ts (public client, `openid`, `cupmark://auth`)
+- acceptance:
+  - The sign-in screen has one control, a Sign in with Apple button in Apple's style. There is no other input.
+  - The button opens `ASWebAuthenticationSession` on `/oauth2/authorize` with:
+    - `identity_provider=SignInWithApple`, `response_type=code`, `scope=openid`;
+    - `redirect_uri=cupmark://auth`, and the callback scheme `cupmark`;
+    - an S256 code challenge and a random `state`.
+  - The code is exchanged at `/oauth2/token` with the verifier, and no client secret is sent. The web flow goes through the Services ID, so the app needs no Sign in with Apple entitlement.
+  - Token storage:
+    - the refresh token goes in the Keychain (`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`);
+    - the access and id tokens are kept in memory only;
+    - refreshing is single-flight, before expiry and on a 401.
+  - Sign-out revokes the refresh token at `/oauth2/revoke` and clears the Keychain.
+  - The app reads no name and no email. It uses the token's `sub` only on the device, to key the local store (M2-T15), and never sends it.
+  - Tests:
+    - the RFC 7636 appendix B test vector;
+    - the authorize URL's parameters;
+    - a state mismatch, a missing code and a user cancel are rejected;
+    - token response decoding;
+    - a single refresh when two callers ask at once;
+    - a Keychain round trip.
+  - Mac: the unit tests run in the `ios` job. The task ends `needs-mac-verification` until the real sign-in against dev passes in M2-T34.
+
+### M2-T12 Development team and TestFlight through Xcode Cloud
+- status: todo
+- owner: ios-engineer
+- needs: human. On the owner's Mac, in Xcode: Integrate, then Create Workflow. Grant Xcode Cloud access to the GitHub repository. Pick team `2F695PTZC6` and the App Store Connect app of `app.cupmark.Cupmark`. Create an internal TestFlight group. Start the first build and report its build number once it is installed from TestFlight.
+- depends: M2-T11
+- implements: docs/03-project-brief.md, Suggested order of work (docs/07, step 4: ship to TestFlight); M0-T7 (Team ID)
+- acceptance:
+  - `project.pbxproj` sets `DEVELOPMENT_TEAM = 2F695PTZC6` on the app and test targets, with automatic signing. The Team ID is configuration, not a secret, and M1-T2 already names it. CI keeps `CODE_SIGNING_ALLOWED=NO` and still passes. The ios/README.md "Signing" section no longer says the team is set only locally.
+  - The upload is accepted by App Store Connect:
+    - `ITSAppUsesNonExemptEncryption` is `NO` (system HTTPS only);
+    - `PrivacyInfo.xcprivacy` declares no tracking and the required-reason APIs the app uses, for example `UserDefaults`.
+  - The build number comes from Xcode Cloud (`CI_BUILD_NUMBER`), either through `ios/ci_scripts/ci_pre_xcodebuild.sh` or through Xcode Cloud's managed versioning, as documented.
+  - ios/README.md, "TestFlight (Xcode Cloud)", documents the workflow:
+    - start condition: manual, or a tag on `main`;
+    - action: Archive iOS, scheme `Cupmark`, Release;
+    - post-action: TestFlight internal testing;
+    - stage: dev (M2-T9);
+    - no secrets in the workflow or the repository.
+  - ADR due (lead, ADR 0014): Xcode Cloud is the TestFlight route, and GitHub Actions stays the CI. Apple builds from the repository with read access that the owner grants. There is no AWS cost, and the compute is within the hours included in the Developer Program membership.
+  - Mac: ends `needs-mac-verification` until the owner reports a TestFlight build installed on a device.
+
+### M2-T13 Barcode scanner
+- status: todo
+- owner: ios-engineer
+- depends: M0-T6
+- implements: docs/04-specification.md, F1 step 1, Input model (camera scan, EAN-13 and UPC-A)
+- acceptance:
+  - The scanner wraps VisionKit's `DataScannerViewController` for SwiftUI. It reads EAN-13 and UPC-A only, and runs on the device only.
+  - `NSCameraUsageDescription` is localised in en and de through `InfoPlist.xcstrings`.
+  - When scanning is not supported or not available (no camera, the simulator, permission denied), the screen offers the pick-list entry (M2-T22) and a link to Settings. It never offers a text field.
+  - Normalisation: UPC-A becomes 13 digits with a leading 0, and the check digit is checked before any request. Invalid codes are ignored.
+  - After the first valid code the scan stops, and it reports the code once.
+  - Tests use a fake barcode source and cover valid and invalid codes, 12 and 13 digits, non-digits and duplicate reports.
+  - Mac: the unit tests run in the `ios` job. The task ends `needs-mac-verification` until camera scanning passes on a device in M2-T34.
+
+### M2-T14 Lookup and confirm flow
+- status: todo
+- owner: ios-engineer
+- depends: M2-T8, M2-T11, M2-T13
+- implements: docs/04-specification.md, F1 steps 2 and 3; docs/05-system-design.md, Barcode lookup; ADR 0005, ADR 0011
+- acceptance:
+  - A known barcode (`GET /barcodes/{barcode}`) shows the bean:
+    - its verified state;
+    - picked and operator attributes, with the operator's value winning;
+    - the Open Food Facts name, brand and image, if present.
+  - A 404 leads to `GET /barcodes/{barcode}/open_food_facts`. A 200 there shows:
+    - name and brand as plain text (`Text(verbatim:)`, never markup);
+    - the image through `GET /catalogue_images/{image_id}`;
+    - a localised Open Food Facts attribution (ODbL).
+  - Confirming sends `POST /beans` with the barcode, `open_food_facts_confirmed: true`, optional picks and the bundled `vocabulary_version`. Rejecting leads to the pick-list entry (M2-T22).
+  - Other answers:
+    - Open Food Facts 404: pick-list entry.
+    - 409 from either route: `GET /barcodes/{barcode}` again, and use that bean.
+    - 429: a localised "daily lookup limit reached" message, and pick-list entry offered.
+    - 503: retry later, or pick-list entry.
+  - The app never contacts Open Food Facts. A test asserts that the stub transport sees only the API host.
+  - Tests cover every path with a stubbed client. Until M2-T18 the flow ends at the bean; from M2-T18 on it continues to the shelf entry.
+  - Mac: the `ios` job.
+
+### M2-T15 SwiftData local store
+- status: todo
+- owner: ios-engineer
+- depends: M2-T1, M2-T7
+- implements: docs/04-specification.md, Non-functional (Offline: "the device holds a full copy of the user's own data"); docs/05-system-design.md, Components (SwiftData local store)
+- acceptance:
+  - `@Model` types for cached beans, shelf entries, brews with ratings, recipes and the profile. Each holds:
+    - a local id and an optional server id;
+    - its `vocabulary_version`;
+    - a sync state: synced, or pending create, update or delete;
+    - its values as vocabulary ids, decoded through the `Vocabulary` types.
+  - There is one store per account, keyed on the device by the token's `sub`. One account never sees another's data.
+  - A `VersionedSchema` starts at 1, so later migrations are explicit.
+  - The derived values are computed in one place:
+    - ratio: `water_g` / (`dose_dg` / 10);
+    - days since roast: from `roast_date` to `brewed_at`, in the device calendar.
+  - Tests use an in-memory `ModelContainer`. They cover create, update, delete, brews newest first, ratio and days since roast across a time-zone change.
+  - Mac: the `ios` job.
+
+### M2-T16 Sync outbox and conflict rules
+- status: todo
+- owner: ios-engineer
+- depends: M2-T8, M2-T11, M2-T15
+- implements: docs/04-specification.md, Non-functional (Offline, Durability); ADR 0012 (brew counts, `WriteConflictError`); docs/07 D14; ADR 0017, Addendum
+- acceptance:
+  - An ADR (lead, ADR 0014) records the rules below, and docs/05 gets a short "Client sync" paragraph.
+  - Every local write adds an outbox operation in the same SwiftData save. Operations go out in order, one at a time per account. That also avoids two of the user's own brew writes racing on one shelf entry (ADR 0012).
+  - An operation that names a local id (a shelf entry's bean, a brew's shelf entry) waits until the referenced item has its server id, and is then rewritten with that id.
+  - How each answer is handled:
+    - 2xx: the server id and values are stored, and the operation is removed.
+    - Network failure, 429 or 5xx: retried with exponential backoff and jitter.
+    - 401: one refresh, then a retry. If the refresh fails, the user is asked to sign in, and the operations are kept.
+    - 400: the operation is parked as failed and the item is flagged. It is never retried.
+    - 404 on `DELETE`: counts as done.
+    - 404 on `PUT`: the item is gone on the server, and the local item is removed.
+    - 409 on a shelf `DELETE`: brews still reference the entry, so it is restored locally.
+    - 409 on a shelf `PUT`: the bean change is reverted (D14).
+  - Two devices editing the same item: the last write to reach the server wins, because `PUT` replaces the whole item and the contract carries no version. The next pull (M2-T17) shows the winner.
+  - A create that fails ambiguously (sent, then no answer) is checked before it is retried. The client lists the resource and adopts a matching server item that has no local counterpart:
+    - a brew: the same `shelf_entry_id` and `brewed_at`;
+    - a shelf entry: the same bean and values;
+    - a recipe: the same parameters.
+    So a retry does not create a duplicate, with no contract change.
+  - Sign-out stops the outbox. Nothing is sent with another account's token.
+  - Tests cover each status rule, ordering, the rewrite across bean, shelf entry and brew, the adoption after an ambiguous create, and an outbox that survives a restart.
+  - Mac: the `ios` job.
+
+### M2-T17 Pull and reconcile
+- status: todo
+- owner: ios-engineer
+- depends: M2-T16
+- implements: docs/04-specification.md, Non-functional (Offline); docs/05-system-design.md, Persistence and recovery ("each phone keeps a full copy")
+- acceptance:
+  - A pull runs on sign-in, when the app comes to the foreground and after the outbox drains. It fetches, to the last page:
+    - `GET /shelf`, `/brews` and `/recipes`;
+    - `GET /profile`;
+    - `GET /beans/{bean_id}` for each shelf bean that is not cached, and again for each unverified one.
+  - The merge:
+    - a server item with no local item is inserted;
+    - a synced local item that the server no longer has is removed (deleted on another device);
+    - an item with a pending operation keeps its local values until that operation is answered.
+  - On a new device, an empty store ends with a full copy. The test uses 250 brews over three pages.
+  - An item that fails to decode, for example one with an id from a newer vocabulary, is skipped and counted, not fatal.
+  - Mac: the `ios` job.
+
+### M2-T18 Shelf
+- status: todo
+- owner: ios-engineer
+- depends: M2-T14, M2-T17
+- implements: docs/04-specification.md, F1 step 5; docs/07 D14; ADR 0012
+- acceptance:
+  - After a bean is found or confirmed, the user adds a shelf entry, which is saved locally and through the outbox. Its fields:
+    - purchase date: a date picker, default today;
+    - roast date: optional;
+    - bag size and price band: pick lists.
+  - The shelf list comes from the local store and works offline. Each row shows the bean (the Open Food Facts name and brand, or else its picked attributes), the roast date, days since roast and the brew count.
+  - While brews reference an entry, its bean cannot be changed (D14) and the entry cannot be deleted. Both controls are disabled, with a localised reason.
+  - Tests cover the mapping to `ShelfEntryInput`, the disabled states while the brew count is above 0, and days since roast.
+  - Mac: the `ios` job.
+
+### M2-T19 Brew form per method
+- status: todo
+- owner: ios-engineer
+- depends: M2-T18
+- implements: docs/04-specification.md, F2
+- acceptance:
+  - A brew is started from a shelf entry. The fields:
+    - method: a pick list, required;
+    - dose: a stepper from 5.0 to 100.0 g in steps of 0.1 g, sent as `dose_dg`;
+    - water or yield: a stepper from 10 to 1,500 g;
+    - temperature: a stepper from 80 to 100 °C, or `cold`, never both;
+    - water type and milk: pick lists;
+    - normalised grind: a stepper from 1 to 10 in half steps.
+  - Everything except the method is optional. Every range comes from `Vocabulary.Ranges`, and none is written in the view.
+  - The form shows the ratio and days since roast as values change. `brewed_at` is recorded on the device, and a save works offline through the outbox.
+  - Tests cover the mapping to `BrewInput`, 18.5 g as 185, the exclusive temperature, the ratio formatting, and `vocabulary_version` equal to the bundled version. `scripts/check-no-free-text.sh` passes.
+  - Mac: the `ios` job.
+
+### M2-T20 Rating screen
+- status: todo
+- owner: ios-engineer
+- depends: M2-T19
+- implements: docs/04-specification.md, F3
+- acceptance:
+  - Eight sliders from 1 to 10 in half steps, each with its criterion's question from contracts/i18n. A rating is saved only when all eight are set, because `Scores` requires them.
+  - Optional intensity of acidity, body and bitterness, each low, medium or high (segmented).
+  - Flavour notes in two levels, category then note. Up to `flavour_notes.max_picks` (5) can be picked, read from the vocabulary; further picks are disabled.
+  - A buy-again toggle.
+  - A brew can be rated straight after it is brewed, or later from the brew list (`PUT /brews/{brew_id}` through the outbox).
+  - Tests cover the mapping to `Rating`, half-step snapping, the limit from the vocabulary constant, and that an incomplete set of scores cannot be saved.
+  - Mac: the `ios` job.
+
+### M2-T21 Brew timer
+- status: todo
+- owner: ios-engineer
+- depends: M2-T19
+- implements: docs/04-specification.md, Input model (Timer), F2 (brew time)
+- acceptance:
+  - Start, stop and reset. The elapsed time is measured from the start instant, so it keeps counting while the app is in the background or the phone is locked.
+  - Stop fills `brew_time_s`, clamped to its vocabulary range.
+  - The readout follows Dynamic Type, and VoiceOver announces start and stop and reads the elapsed time.
+  - Tests use an injected clock: 30 s in the background counts as 30 s, and the clamp and reset work.
+  - Mac: the `ios` job.
+
+### M2-T22 Pick-list bean entry
+- status: todo
+- owner: ios-engineer
+- depends: M2-T14
+- implements: docs/04-specification.md, F1 step 4; ADR 0006, ADR 0011
+- acceptance:
+  - Pick lists for origin, species, process, variety and roast level (segmented). All are optional, and `other` and `unknown` are offered. In the origin list, regions are grouped under their country through `Vocabulary.Origin.country`.
+  - There is no roaster list (ADR 0006) and no search field (`.searchable` is typed text, invariant 1).
+  - Saving sends `POST /beans` with the bundled `vocabulary_version`, and the barcode if one was scanned.
+    - 409: the app looks up the barcode's bean and uses it.
+    - 400: shown as an error and not retried.
+  - Tests cover the body with no picks and with all picks, with and without a barcode, and the region grouping.
+  - Mac: the `ios` job.
+
+### M2-T23 Label photo: JPEG on the device
+- status: todo
+- owner: ios-engineer
+- depends: M2-T22
+- implements: docs/04-specification.md, F1 step 4; ADR 0016 (HEIC to JPEG on the device, at most 4096 px a side and 8 MiB); D12
+- acceptance:
+  - The label is photographed with the camera.
+  - The capture is converted to a baseline JPEG through ImageIO:
+    - the orientation is applied to the pixels;
+    - the longest side is at most 4096 px;
+    - the file is at most 8 MiB, lowering the quality until it fits;
+    - it carries no EXIF, GPS or XMP properties.
+    The server strips all metadata again (D12).
+  - Tests draw their images in code:
+    - 4032 × 3024 keeps its size;
+    - 5000 × 3000 becomes 4096 px on its longest side;
+    - the output starts with `FFD8` and is at most 8 MiB;
+    - `CGImageSource` finds no EXIF or GPS dictionary;
+    - an input with orientation 6 comes out rotated.
+  - Mac: the conversion is tested in the `ios` job. The task ends `needs-mac-verification` until a real HEIC capture passes on a device in M2-T34.
+
+### M2-T24 Label photo: presigned upload and completion
+- status: todo
+- owner: ios-engineer
+- depends: M2-T23
+- implements: ADR 0016; contracts/openapi.yaml, `createLabelPhotoUpload`, `completeLabelPhoto`
+- acceptance:
+  - For an unverified bean, the user adds up to 3 photos. Each one runs these steps:
+    1. `POST /beans/{bean_id}/label_photos`.
+    2. A `multipart/form-data` POST to `upload.url`, with every field under its S3 form field name (`key`, `bucket`, `Content-Type`, `Policy`, `X-Amz-*`) and `file` last.
+    3. `POST /label_photos/{photo_id}/complete`.
+  - The app uploads only to a URL that matches the contract's pattern (a `cupmark-` bucket in eu-central-1).
+  - How each case is handled:
+    - `expires_at` passed, or a 404 on completion: a new upload is started.
+    - 400 on completion: the photo was rejected, and a retake is offered.
+    - 409: no more photos for this bean.
+    - 429: a "try again tomorrow" message.
+  - After the 204 the photo file is deleted from the device. In this task an upload needs the network; queuing offline follows in M2-T25.
+  - Tests cover the multipart layout (field names, `file` last, the boundary) and every status path, with a stub transport.
+  - Mac: the unit tests run in the `ios` job. The task ends `needs-mac-verification` until a real upload to dev passes in M2-T34.
+
+### M2-T25 Offline scan and pending beans
+- status: todo
+- owner: ios-engineer
+- depends: M2-T18, M2-T24
+- implements: docs/04-specification.md, Non-functional (Offline: "Scan, brew and rate work offline and sync later")
+- acceptance:
+  - A barcode scanned offline is kept as a pending bean. It can be put on the shelf, and brews can be logged against it, at once.
+  - When the device is back online, the outbox resolves the pending bean:
+    - A barcode is looked up with `GET /barcodes/{barcode}`, then Open Food Facts.
+    - A known bean is used, and a bean entered offline from pick lists is created, without asking.
+    - An Open Food Facts hit needs the user's confirmation. The app asks the next time it is opened, and the operations that depend on the bean wait.
+  - Label photos taken offline are queued, and upload once the bean has a server id.
+  - Tests cover offline scan, shelf and brew, followed by each lookup result (known, hit confirmed, hit rejected, miss). In every case the brew ends up on the server under the right shelf entry.
+  - Mac: the `ios` job.
+
+### M2-T26 Brew form: method fields and grinder (vocabulary v3)
+- status: todo
+- owner: ios-engineer
+- depends: M2-T4, M2-T5, M2-T19
+- implements: docs/04-specification.md, F2; the D13 decision (M2-T2)
+- acceptance:
+  - The form shows only the fields that the method allows under the generated rules (M2-T3). Changing the method clears fields that are no longer allowed.
+  - A grinder pick list, including `pre_ground`. A grind setting stepper on the grinder's own scale, with the range and step from the vocabulary. The stepper is hidden for a grinder without a scale, and the normalised grind stays.
+  - Editing an old brew keeps its `vocabulary_version`, unless the edit sets a field that only v3 has.
+  - Tests:
+    - for every method, the visible fields match the generated rules;
+    - `BrewInput` never holds a disallowed field;
+    - the grind setting stays within each grinder's scale.
+  - Mac: the `ios` job.
+
+### M2-T27 Recipes and one-tap repeat
+- status: todo
+- owner: ios-engineer
+- depends: M2-T20, M2-T21
+- implements: docs/04-specification.md, F2 ("A brew can be saved as a recipe and repeated with one tap"); docs/03-project-brief.md, Goals (a repeat brew in under 30 seconds)
+- acceptance:
+  - A brew's parameters can be saved as a recipe (`POST /recipes`). Recipes can be listed, replaced and deleted, offline through the outbox.
+  - A recipe has no name (invariant 1). It is shown by method, dose, ratio, temperature and grind.
+  - One tap on a recipe, or on "repeat last brew", opens a new brew for the chosen shelf entry, prefilled and with the timer ready. Saving it goes on to the rating.
+  - Tests:
+    - a repeat gives a `BrewInput` with the recipe's parameters, a new `brewed_at` and the chosen shelf entry;
+    - in the flow model, a repeat can be saved without any further input.
+  - Mac: the `ios` job.
+
+### M2-T28 Personal statistics
+- status: todo
+- owner: ios-engineer
+- depends: M2-T20
+- implements: docs/03-project-brief.md, Tiers ("Own statistics and taste profile"); docs/04-specification.md, F2 and F3
+- acceptance:
+  - Before the task starts, the lead confirms the set of statistics under ADR 0014, because the spec does not list it.
+  - The default set uses the F4 measures on the user's own brews:
+    - brews in total and per week;
+    - the mean per criterion, overall and per method (the taste profile);
+    - the most-picked flavour notes;
+    - the best-rated method and bean, by mean overall score;
+    - the share of buy again.
+  - The statistics are computed on the device from the local store and work offline. No new route.
+  - Tests with fixture data cover the means, the empty state, and that unrated brews are excluded.
+  - Mac: the `ios` job.
+
+### M2-T29 Onboarding with consent (D1)
+- status: todo
+- owner: ios-engineer
+- depends: M2-T1, M2-T11, M2-T16
+- implements: docs/07 D1; ADR 0017 (opt-in); docs/03-project-brief.md, Risks ("Plain consent at onboarding; an opt-out that keeps the personal log working"); contracts `Profile`
+- acceptance:
+  - After the first sign-in, a 404 from `GET /profile` starts onboarding. It is a few intro screens, then a consent screen with a plain explanation and an explicit agree control. Not agreeing is the default, and skipping sends false.
+  - Onboarding ends with `PUT /profile`, through the outbox when offline. It carries:
+    - `locale`: de if the preferred language is German, else en;
+    - `consent.contribute_to_aggregates`.
+  - Onboarding is not shown again once a profile exists, locally or on the server.
+  - Settings has the consent toggle. Turning it off keeps every personal feature working.
+  - If M2-T1 decides for a local-only mode, onboarding offers it as decided there.
+  - Tests cover a 404 leading to onboarding and a 200 skipping it, the false default, the locale mapping, and the toggle sending `PUT`.
+  - Mac: the `ios` job.
+
+### M2-T30 CSV export
+- status: todo
+- owner: ios-engineer
+- depends: M2-T16
+- implements: docs/03-project-brief.md, Tiers (export own data); docs/05-system-design.md, Security (Export); ADR 0017
+- acceptance:
+  - Settings, then Export:
+    1. The app tries to drain the outbox. If changes are still pending, it says they are not in the file.
+    2. It calls `GET /export`.
+    3. It writes the bytes unchanged to a temporary `cupmark-export-<YYYY-MM-DD>.csv` and offers it with `ShareLink`.
+    4. The file is deleted afterwards.
+  - A 500 (an export over 5 MiB) and being offline each show a localised message.
+  - Tests cover the request, the file name, the bytes written unchanged, and the error states.
+  - Mac: the `ios` job.
+
+### M2-T31 Account deletion
+- status: todo
+- owner: ios-engineer
+- depends: M2-T16
+- implements: docs/04-specification.md, Non-functional (account deletion in the app); ADR 0017 and its Addendum; contracts `deleteAccount`
+- acceptance:
+  - Settings, then Delete account. Two steps confirm with buttons only, and they say what is deleted: the data, the label photos of unverified beans, and the sign-in.
+  - The outbox stops, and nothing more is sent. The app refreshes the token, then calls `DELETE /account`.
+  - 500, 429 and network failures are retried with backoff until a 204. The state "deletion in progress" is persisted and resumed after a restart. Until the 204, the user stays signed in.
+  - Never sign out or discard tokens before a 204 (ADR 0017).
+  - After the 204, the app deletes the local store, the outbox, the Keychain items and cached images, then signs out.
+  - If the token cannot be refreshed before a 204, the user is asked to sign in again, and the deletion is retried with the new token. If Cognito had already deleted the user, the new sign-in is a new, empty account; deleting it again answers 204 and leaves nothing. The lead records this rule (ADR 0014).
+  - Tests:
+    - three 500s, then a 204: the app signs out exactly once, and the store is empty;
+    - no sign-out on a 500;
+    - the deletion resumes after a restart;
+    - the refresh-failure path.
+  - Mac: the `ios` job.
+
+### M2-T32 Localisation pass (en, de)
+- status: todo
+- owner: ios-engineer
+- depends: M2-T25, M2-T26, M2-T27, M2-T28, M2-T29, M2-T30, M2-T31
+- implements: docs/04-specification.md, Non-functional (Localisation); docs/03-project-brief.md, In scope (German and English)
+- acceptance:
+  - `scripts/check-ios-strings.mjs` also checks `InfoPlist.xcstrings`: both languages, and `extractionState` manual. A test shows it failing on a missing language.
+  - Numbers, units, dates and durations go through Foundation formatters in the device locale. Tests check "18,5 g" in de and "18.5 g" in en, the ratio, dates, and the timer as mm:ss.
+  - Vocabulary labels use the same language rule as the profile locale (M2-T29), with en as the fallback.
+  - A test resolves every `L10n` key in both languages.
+  - Mac: the `ios` job.
+
+### M2-T33 Accessibility pass
+- status: todo
+- owner: ios-engineer
+- depends: M2-T32
+- implements: docs/04-specification.md, Non-functional (Accessibility: Dynamic Type and VoiceOver on every control)
+- acceptance:
+  - A UI test target, `CupmarkUITests`, is in the `Cupmark` scheme's test action, so the `ios` job runs it.
+  - The app has a launch argument, compiled only in Debug, that starts it with an in-memory store, fixture data and a stub API.
+  - `performAccessibilityAudit()` passes at the default text size and the largest accessibility size on these screens: sign-in, scanner fallback, lookup result, pick-list entry, shelf, brew form, timer, rating, recipes, statistics, onboarding and settings.
+  - Every slider, stepper and pick list has a VoiceOver label and value, for example "Aroma, 7.5 of 10". Scores and steppers support the adjustable action.
+  - Mac: the `ios` job. The VoiceOver walk-through on a device is in M2-T34.
+
+### M2-T34 Device run against dev
+- status: todo
+- owner: human
+- needs: human. On a device, with a TestFlight build (M2-T12) or a build from Xcode, and a test Apple ID, the owner runs the flow below and reports the result on the task's issue.
+- depends: M1-T7, M2-T10, M2-T12, M2-T33
+- implements: docs/03-project-brief.md, Goals; docs/04-specification.md, F1 to F3 and Non-functional
+- acceptance:
+  - The flow passes:
+    1. Sign in.
+    2. Scan one known and one unknown barcode, and confirm an Open Food Facts hit.
+    3. Enter a bean from pick lists with a camera label photo.
+    4. Add a shelf entry.
+    5. Brew with the timer, then rate the brew.
+    6. Repeat a recipe.
+    7. Log a brew in flight mode, then let it sync.
+    8. Export the data.
+    9. Delete the account. The app signs out only after the deletion succeeds, and signing in again shows an empty account.
+  - A VoiceOver and largest-text walk-through of the main flow passes.
+  - When their parts pass, M2-T11, M2-T13, M2-T23 and M2-T24 move from `needs-mac-verification` to `done`.
 
 ## M3 Aggregation
 
