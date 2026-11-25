@@ -28,6 +28,7 @@ The aggregator (M3) will need the bean of every brew, including of a removed bre
 ## Consequences
 
 - A brew create, replace or delete writes one or two more items in its transaction (about two more write units). Negligible at the expected volume (docs/06).
+- The shelf entry is a hot item: every brew write on it also writes `brewCount`. Two brew writes on the same entry at the same moment (two devices syncing offline brews, a burst of edits) make DynamoDB cancel one transaction with `TransactionConflict`; a plain delete or update of the entry during a brew transaction fails with `TransactionConflictException`. Nothing is written in either case. The repository turns both into `WriteConflictError` and the API tries the write up to three times in all, with 10 to 100 ms of random wait. Contention is limited to one user's own entry, so this should be rare; if it is not, batch or serialise brew sync on the client, or revisit the counter.
 - Shelf entry items change when brews change, so the table stream carries `SHELF` records for them. The aggregator ignores `SHELF` items, as it does `BREW_REF`.
 - Open: `PUT /shelf/{shelf_entry_id}` may change `bean_id` while brews reference the entry. The brews keep the bean recorded at their last write until they are written again. Whether such a change is allowed, and what it means for aggregates, is for M3 to decide (and the contract, which has no 409 on that route).
 - Account deletion (M1-T6) deletes the whole partition and need not maintain the counts.

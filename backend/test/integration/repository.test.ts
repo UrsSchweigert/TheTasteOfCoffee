@@ -283,7 +283,7 @@ describe.skipIf(!local.reachable)('repository on DynamoDB Local', () => {
     });
   });
 
-  describe('references (ADR 0011)', () => {
+  describe('references (ADR 0012)', () => {
     it('a shelf entry needs its bean in the catalogue, on create and on replace', async () => {
       const user = verifiedUserId('d1d1d1d1-d1d1-4d1d-8d1d-d1d1d1d1d1d1');
       await expect(repo.createShelfEntry(user, shelfInput({ bean_id: newUlid() }))).rejects.toThrow(BeanNotFoundError);

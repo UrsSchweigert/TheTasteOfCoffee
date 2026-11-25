@@ -324,18 +324,60 @@ describe('lists and signed cursors', () => {
 });
 
 describe('errors and logs', () => {
-  it('a write that raced is retried once; a second race is 500', async () => {
+  it('a write that raced is tried up to three times, with a wait before each retry; a third race is 500', async () => {
     const store = new FakeStore();
-    let failures = 1;
+    let failures = 2;
+    let tries = 0;
     const original = store.createRecipe.bind(store);
-    store.createRecipe = (user, input) => (failures-- > 0 ? Promise.reject(new WriteConflictError('raced')) : original(user, input));
-    const h = harness({ store });
+    store.createRecipe = (user, input) => {
+      tries += 1;
+      return failures-- > 0 ? Promise.reject(new WriteConflictError('raced')) : original(user, input);
+    };
+    const delays: number[] = [];
+    const h = harness({ store, retryDelayMs: (retry) => (delays.push(retry), 0) });
     expect((await h.call('POST', '/recipes', { json: recipeBody() })).status).toBe(201);
-    failures = 2;
+    expect(delays).toEqual([1, 2]);
+    expect(tries).toBe(3);
+
+    failures = 3;
+    delays.length = 0;
     const response = await h.call('POST', '/recipes', { json: recipeBody() });
     expect(response.status).toBe(500);
     expect(response.result.body).toBeUndefined();
+    expect(delays).toEqual([1, 2]);
+    expect(tries).toBe(6);
     expect(h.logs.at(-1)).toEqual({ operation: 'createRecipe', status: 500, request_id: 'request-1', error: 'WriteConflictError' });
+  });
+
+  it('replace and delete are retried the same way; other errors are not retried', async () => {
+    const store = new FakeStore();
+    const h = harness({ store, retryDelayMs: () => 0 });
+    const recipe = RecipeSchema.parse((await h.call('POST', '/recipes', { json: recipeBody() })).body);
+    for (const method of ['replaceRecipe', 'deleteRecipe'] as const) {
+      let failures = 1;
+      const original: (...args: never[]) => Promise<unknown> = store[method].bind(store);
+      store[method] = ((...args: never[]) =>
+        failures-- > 0 ? Promise.reject(new WriteConflictError('raced')) : original(...args)) as never;
+    }
+    expect((await h.call('PUT', `/recipes/${recipe.recipe_id}`, { json: recipeBody({ dose_dg: 200 }) })).status).toBe(200);
+    expect((await h.call('DELETE', `/recipes/${recipe.recipe_id}`)).status).toBe(204);
+    // A not-found is final: one call, 404.
+    const before = store.calls.length;
+    expect((await h.call('DELETE', `/recipes/${recipe.recipe_id}`)).status).toBe(404);
+    expect(store.calls.length - before).toBe(1);
+  });
+
+  it('the default wait before a retry is short and random', async () => {
+    const store = new FakeStore();
+    let failures = 2;
+    const original = store.createRecipe.bind(store);
+    store.createRecipe = (user, input) => (failures-- > 0 ? Promise.reject(new WriteConflictError('raced')) : original(user, input));
+    const h = harness({ store });
+    const started = Date.now();
+    expect((await h.call('POST', '/recipes', { json: recipeBody() })).status).toBe(201);
+    const elapsed = Date.now() - started;
+    expect(elapsed).toBeGreaterThanOrEqual(25);
+    expect(elapsed).toBeLessThan(1000);
   });
 
   it('an unexpected error is 500 with no body; the log names the class, never the message', async () => {

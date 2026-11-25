@@ -12,7 +12,7 @@ The contract promises cursors that the server signs with an HMAC and rejects if 
 
 - The API Lambda gets the environment variable `CURSOR_KEY_PARAMETER`, the name of a SecureString under `/cupmark/` (for example `/cupmark/<stage>/cursor-key`). Its value is standard base64 of at least 32 random bytes.
 - On the first list request after a cold start the function calls `ssm:GetParameter` with `WithDecryption`, checks that the parameter is a `SecureString` holding a key of at least 32 bytes, and keeps the key in memory. It never logs it.
-- Without a usable key the list routes answer 500 and neither accept nor issue a cursor (fail closed); a later request tries again. All other routes keep working.
+- Without a usable key the list routes answer 500 and neither accept nor issue a cursor (fail closed); the failure is remembered for 60 seconds, after which a list request asks Parameter Store again (one call a minute at most while the key is missing). All other routes keep working.
 - The cursor is `base64url(HMAC-SHA256(key, "cupmark-cursor-v1", list, caller, inner))` followed by the repository's own cursor, so it is bound to the list, the caller and the key.
 
 ## Alternatives

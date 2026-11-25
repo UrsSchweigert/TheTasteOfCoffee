@@ -15,8 +15,8 @@
 // 4. The operation. Repository errors map to 404 (not in the caller's
 //    partition, or a referenced bean or shelf entry is missing), 409 (a shelf
 //    entry still referenced by brews), 400 (a cursor the repository refuses)
-//    and 500 for anything else. A write that raced another write is retried
-//    once.
+//    and 500 for anything else. A write that raced another write is tried up
+//    to three times in all, with a short random wait in between.
 //
 // Matching uses `rawPath`, so the API must use the `$default` stage (no stage
 // prefix in the path). Every response except a 2xx with content has no body.
@@ -54,6 +54,15 @@ export interface ApiDependencies {
   /** The cursor signer, or undefined if the key is unavailable (list routes then answer 500). */
   readonly cursorSigner: () => Promise<CursorSigner | undefined>;
   readonly log?: (entry: LogEntry) => void;
+  /** Wait before retry number `retry` (1, 2) of a write that raced; for tests. Default: 10 to 50 ms, then 20 to 100 ms. */
+  readonly retryDelayMs?: (retry: number) => number;
+}
+
+/** A write that raced (WriteConflictError) is tried this many times in total. */
+export const WRITE_ATTEMPTS = 3;
+
+function jitteredDelay(retry: number): number {
+  return retry * (10 + Math.random() * 40);
 }
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
@@ -101,13 +110,20 @@ function outcomeOf(error: unknown): Outcome {
   return failed(500, error);
 }
 
-/** Runs a repository call, once more if it raced another write. */
-async function attempt<T>(call: () => Promise<T>): Promise<T> {
-  try {
-    return await call();
-  } catch (error) {
-    if (!(error instanceof WriteConflictError)) throw error;
-    return call();
+/**
+ * Runs a repository call, again after a short random wait if it raced another
+ * write: a failed condition that names a change in between, or a transaction
+ * cancelled by a concurrent one on the same item (hot shelf entry, ADR 0012).
+ * Such a write wrote nothing, so repeating it is safe.
+ */
+async function attempt<T>(call: () => Promise<T>, delayMs: (retry: number) => number): Promise<T> {
+  for (let retry = 1; ; retry += 1) {
+    try {
+      return await call();
+    } catch (error) {
+      if (!(error instanceof WriteConflictError) || retry >= WRITE_ATTEMPTS) throw error;
+      await new Promise((resolve) => setTimeout(resolve, delayMs(retry)));
+    }
   }
 }
 
@@ -166,7 +182,7 @@ function routesOf<I extends { vocabulary_version: number }, O>(resource: Resourc
       handle: async ({ event, user, deps }) => {
         const input = noQuery(event) ? body(event) : undefined;
         if (input === undefined) return BAD_REQUEST;
-        return run(async () => json(201, await attempt(() => resource.create(deps.store, user, input))));
+        return run(async () => json(201, await attempt(() => resource.create(deps.store, user, input), deps.retryDelayMs ?? jitteredDelay)));
       },
     },
     {
@@ -190,7 +206,7 @@ function routesOf<I extends { vocabulary_version: number }, O>(resource: Resourc
       handle: async (call) => {
         const input = noQuery(call.event) ? body(call.event) : undefined;
         if (input === undefined) return BAD_REQUEST;
-        return run(async () => json(200, await attempt(() => resource.replace(call.deps.store, call.user, idOf(call), input))));
+        return run(async () => json(200, await attempt(() => resource.replace(call.deps.store, call.user, idOf(call), input), call.deps.retryDelayMs ?? jitteredDelay)));
       },
     },
     {
@@ -201,7 +217,7 @@ function routesOf<I extends { vocabulary_version: number }, O>(resource: Resourc
       handle: async (call) => {
         if (!noQuery(call.event) || !hasNoBody(call.event)) return BAD_REQUEST;
         return run(async () => {
-          await attempt(() => resource.remove(call.deps.store, call.user, idOf(call)));
+          await attempt(() => resource.remove(call.deps.store, call.user, idOf(call)), call.deps.retryDelayMs ?? jitteredDelay);
           return empty(204);
         });
       },

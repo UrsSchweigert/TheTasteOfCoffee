@@ -70,7 +70,7 @@ For every request, in this order:
 1. **Route.** Method and `rawPath` against the table. No match is 404 with no body. That includes contract routes whose tasks have not landed yet (barcodes, beans, profile, export, account): the contract declares no 501, so they are 404 until their task adds them to the table. `/health` is its own Lambda (ADR 0007). A method a path does not declare is 404 too (the contract has no 405). Matching uses `rawPath`, so the HTTP API must use the `$default` stage.
 2. **Caller.** `userIdFromEvent`; none is 401.
 3. **Input**, 400 on any failure: path ids against the contract's `Id` pattern; the query (only `cursor` and `limit`, each at most once, and only on lists; `limit` is checked against `LimitQuery` by hand because parameters are not generated, and a test compares the two); the body (below).
-4. **Operation.** Repository errors map to 404 (not in the caller's partition; a missing bean or shelf entry), 409 (`DELETE /shelf/{id}` while brews reference it, ADR 0012) and 500. A write that raced another write is retried once.
+4. **Operation.** Repository errors map to 404 (not in the caller's partition; a missing bean or shelf entry), 409 (`DELETE /shelf/{id}` while brews reference it, ADR 0012) and 500. A write that raced another write (a changed condition, or a transaction cancelled with `TransactionConflict` by a concurrent one on the same shelf entry) is tried up to three times in all, with 10 to 100 ms of random wait.
 
 Every error has no body. One log line per request: `operation`, `status`, `request_id` and, on failure, the error class name. Never a body, header, query, token or user id.
 
@@ -91,7 +91,7 @@ The contract's `Cursor` is HMAC-signed (`src/api/cursor.ts`): `base64url(HMAC-SH
 | Variable | Value |
 | --- | --- |
 | `TABLE_NAME` | `cupmark-<stage>-main`. Missing: every request is 500. |
-| `CURSOR_KEY_PARAMETER` | Name of a Parameter Store **SecureString** under `/cupmark/` (for example `/cupmark/<stage>/cursor-key`), holding standard base64 of at least 32 random bytes (for example `openssl rand -base64 32`). Missing, unreadable, not a SecureString or too short: list routes are 500 and no cursor is accepted or issued (fail closed); other routes work. |
+| `CURSOR_KEY_PARAMETER` | Name of a Parameter Store **SecureString** under `/cupmark/` (for example `/cupmark/<stage>/cursor-key`), holding standard base64 of at least 32 random bytes (for example `openssl rand -base64 32`). Missing, unreadable, not a SecureString or too short: list routes are 500 and no cursor is accepted or issued (fail closed); other routes work. A failed read is retried after 60 s at the earliest. |
 
 The API role needs `ssm:GetParameter` on exactly that parameter's ARN; the AWS-managed key `alias/aws/ssm` needs no extra grant. The key is read once per cold start and kept in memory only (ADR 0013). Its value is created by a human and never passes through the repo or CI. Tests generate their own key.
 

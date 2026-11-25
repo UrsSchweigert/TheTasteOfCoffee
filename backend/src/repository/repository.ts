@@ -12,9 +12,13 @@
 // - References are kept in the same transaction as the write: a shelf entry
 //   needs its bean in the catalogue, a brew needs its shelf entry in the
 //   caller's partition, and each shelf entry counts the brews that reference it
-//   (`brewCount`, ADR 0011), so a shelf entry with brews cannot be deleted.
+//   (`brewCount`, ADR 0012), so a shelf entry with brews cannot be deleted.
 // - The aggregation pipeline (M3) is not here; keys.ts has its key builders.
-import { ConditionalCheckFailedException, TransactionCanceledException } from '@aws-sdk/client-dynamodb';
+import {
+  ConditionalCheckFailedException,
+  TransactionCanceledException,
+  TransactionConflictException,
+} from '@aws-sdk/client-dynamodb';
 import {
   DeleteCommand,
   GetCommand,
@@ -202,11 +206,29 @@ function isConditionFailure(error: unknown): boolean {
   return error instanceof ConditionalCheckFailedException;
 }
 
-/** Index of each item whose condition failed in a cancelled transaction; undefined if not a cancellation. */
+/**
+ * Index of each item whose condition failed in a cancelled transaction; undefined if not a cancellation.
+ *
+ * A transaction cancelled only because another transaction was writing one of
+ * its items at the same time (reason `TransactionConflict`, for example two
+ * brews counted on one shelf entry, ADR 0012) wrote nothing and is safe to
+ * repeat: it throws WriteConflictError, which the API retries.
+ */
 function failedConditions(error: unknown): number[] | undefined {
   if (!(error instanceof TransactionCanceledException)) return undefined;
   const reasons = error.CancellationReasons ?? [];
-  return reasons.flatMap((reason, index) => (reason.Code === 'ConditionalCheckFailed' ? [index] : []));
+  const failed = reasons.flatMap((reason, index) => (reason.Code === 'ConditionalCheckFailed' ? [index] : []));
+  if (failed.length === 0 && reasons.some((reason) => reason.Code === 'TransactionConflict')) {
+    throw new WriteConflictError('a concurrent transaction wrote the same item', { cause: error });
+  }
+  return failed;
+}
+
+/** A single-item write that met an item inside an ongoing transaction: nothing was written; safe to repeat. */
+function rethrowConflict(error: unknown): void {
+  if (error instanceof TransactionConflictException) {
+    throw new WriteConflictError('a concurrent transaction wrote the same item', { cause: error });
+  }
 }
 
 function limitOf(options: ListOptions): number {
@@ -351,7 +373,7 @@ export class Repository {
     return { shelf_entry_id: parseShelfSortKey(key.sk) ?? shelfEntryId, values };
   }
 
-  /** Deletes a shelf entry that no brew references; ShelfEntryInUseError otherwise (ADR 0011). */
+  /** Deletes a shelf entry that no brew references; ShelfEntryInUseError otherwise (ADR 0012). */
   public async deleteShelfEntry(user: UserId, shelfEntryId: string): Promise<void> {
     const key = shelfEntryKey(user, shelfEntryId);
     try {
@@ -364,6 +386,7 @@ export class Repository {
         }),
       );
     } catch (error) {
+      rethrowConflict(error);
       if (!isConditionFailure(error)) throw error;
       if ((await this.#get(key)) === undefined) throw new ItemNotFoundError('no such shelf entry');
       throw new ShelfEntryInUseError('brews reference the shelf entry');
@@ -782,7 +805,7 @@ export class Repository {
     };
   }
 
-  /** Update: one more brew references the shelf entry (atomic ADD; ADR 0011). */
+  /** Update: one more brew references the shelf entry (atomic ADD; ADR 0012). */
   #countBrew(shelf: z.infer<typeof ShelfItem>, by: 1): NonNullable<NonNullable<TransactWriteCommandInput['TransactItems']>[number]['Update']> {
     const condition = this.#shelfUnchanged(shelf);
     return {

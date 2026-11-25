@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 import type { GetParameterCommand } from '@aws-sdk/client-ssm';
 import type { SSMClient } from '@aws-sdk/client-ssm';
 import { afterEach, describe, expect, it } from 'vitest';
-import { cursorSignerFromParameterStore, decodeCursorKey, isCursorKeyParameterName } from '../../src/api/config.ts';
+import { CURSOR_KEY_FAILURE_TTL_MS, cursorSignerFromParameterStore, decodeCursorKey, isCursorKeyParameterName } from '../../src/api/config.ts';
 import { CursorSigner } from '../../src/api/cursor.ts';
 import { CursorSchema } from '../../src/generated/contract.ts';
 import { handler } from '../../src/handlers/api.ts';
@@ -81,12 +81,47 @@ describe('cursor key from Parameter Store', () => {
     ['a short key', { Parameter: { Type: 'SecureString', Value: randomBytes(16).toString('base64') } }],
     ['not base64', { Parameter: { Type: 'SecureString', Value: 'not base64 at all, but long enough to be a key!' } }],
     ['no parameter', {}],
-  ])('fails closed on %s, and tries again next time', async (_name, reply) => {
+  ])('fails closed on %s, remembers the failure for 60 s, then asks again', async (_name, reply) => {
     const stub = client(() => reply);
-    const load = cursorSignerFromParameterStore('/cupmark/dev/cursor-key', stub.client);
+    let now = 1_000_000;
+    const load = cursorSignerFromParameterStore('/cupmark/dev/cursor-key', stub.client, { now: () => now });
     expect(await load()).toBeUndefined();
+    for (const later of [0, 1, 30_000, CURSOR_KEY_FAILURE_TTL_MS - 1]) {
+      now = 1_000_000 + later;
+      expect(await load()).toBeUndefined();
+    }
+    expect(stub.sent).toHaveLength(1);
+    now = 1_000_000 + CURSOR_KEY_FAILURE_TTL_MS;
     expect(await load()).toBeUndefined();
     expect(stub.sent).toHaveLength(2);
+    // The second failure starts a new 60 s.
+    now += CURSOR_KEY_FAILURE_TTL_MS - 1;
+    expect(await load()).toBeUndefined();
+    expect(stub.sent).toHaveLength(2);
+  });
+
+  it('recovers once the key is there, after the failure window', async () => {
+    const stored: { value?: string } = {};
+    const stub = client(() => ({ Parameter: { Type: 'SecureString', ...(stored.value === undefined ? {} : { Value: stored.value }) } }));
+    let now = 0;
+    const load = cursorSignerFromParameterStore('/cupmark/dev/cursor-key', stub.client, { now: () => now });
+    expect(await load()).toBeUndefined();
+    stored.value = key;
+    now = CURSOR_KEY_FAILURE_TTL_MS - 1;
+    expect(await load()).toBeUndefined();
+    now = CURSOR_KEY_FAILURE_TTL_MS;
+    expect(await load()).toBeInstanceOf(CursorSigner);
+    now = 10 * CURSOR_KEY_FAILURE_TTL_MS;
+    expect(await load()).toBeInstanceOf(CursorSigner);
+    expect(stub.sent).toHaveLength(2);
+  });
+
+  it('concurrent calls share one read', async () => {
+    const stub = client(() => ({ Parameter: { Type: 'SecureString', Value: key } }));
+    const load = cursorSignerFromParameterStore('/cupmark/dev/cursor-key', stub.client);
+    const signers = await Promise.all([load(), load(), load()]);
+    expect(new Set(signers).size).toBe(1);
+    expect(stub.sent).toHaveLength(1);
   });
 
   it('fails closed when the call fails', async () => {

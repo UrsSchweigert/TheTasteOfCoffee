@@ -12,7 +12,8 @@
 //   or the environment (CLAUDE.md, invariant 8).
 //
 // Without a usable key the list routes answer 500 and issue or accept no
-// cursor; every other route keeps working.
+// cursor; every other route keeps working. A failed read is retried after
+// 60 seconds at the earliest.
 import { GetParameterCommand } from '@aws-sdk/client-ssm';
 import type { SSMClient } from '@aws-sdk/client-ssm';
 import { CursorSigner, MIN_CURSOR_KEY_BYTES } from './cursor.ts';
@@ -38,29 +39,54 @@ export function isCursorKeyParameterName(name: string | undefined): name is stri
   return name !== undefined && PARAMETER_NAME.test(name) && !name.includes('//') && !name.endsWith('/');
 }
 
+/** How long a failed key read is remembered before Parameter Store is asked again. */
+export const CURSOR_KEY_FAILURE_TTL_MS = 60_000;
+
+export interface CursorKeyLoaderOptions {
+  /** Clock in milliseconds, for tests. */
+  readonly now?: () => number;
+}
+
 /**
  * A loader for the cursor signer from Parameter Store. It caches the signer
- * after the first success; after a failure it resolves undefined and tries
- * again on the next call. It never throws and never exposes the key.
+ * after the first success. After a failure (no such parameter, no access, not
+ * a SecureString, a bad key) it resolves undefined, and keeps resolving
+ * undefined without calling Parameter Store for CURSOR_KEY_FAILURE_TTL_MS, so
+ * a missing key costs one call a minute, not one per list request. Concurrent
+ * calls share one read. It never throws and never exposes the key.
  */
 export function cursorSignerFromParameterStore(
   parameterName: string | undefined,
   client: Pick<SSMClient, 'send'>,
+  options: CursorKeyLoaderOptions = {},
 ): () => Promise<CursorSigner | undefined> {
+  const now = options.now ?? Date.now;
   let signer: CursorSigner | undefined;
-  return async () => {
-    if (signer !== undefined) return signer;
-    if (!isCursorKeyParameterName(parameterName)) return undefined;
+  let failedAt: number | undefined;
+  let pending: Promise<CursorSigner | undefined> | undefined;
+
+  const read = async (name: string): Promise<CursorSigner | undefined> => {
     try {
-      const result = await client.send(new GetParameterCommand({ Name: parameterName, WithDecryption: true }));
+      const result = await client.send(new GetParameterCommand({ Name: name, WithDecryption: true }));
       const parameter = result.Parameter;
       if (parameter?.Type !== 'SecureString' || parameter.Value === undefined) return undefined;
       const key = decodeCursorKey(parameter.Value);
-      if (key === undefined) return undefined;
-      signer = new CursorSigner(key);
-      return signer;
+      return key === undefined ? undefined : new CursorSigner(key);
     } catch {
       return undefined;
     }
+  };
+
+  return async () => {
+    if (signer !== undefined) return signer;
+    if (!isCursorKeyParameterName(parameterName)) return undefined;
+    if (failedAt !== undefined && now() - failedAt < CURSOR_KEY_FAILURE_TTL_MS) return undefined;
+    pending ??= read(parameterName).then((loaded) => {
+      pending = undefined;
+      if (loaded === undefined) failedAt = now();
+      else signer = loaded;
+      return loaded;
+    });
+    return pending;
   };
 }
