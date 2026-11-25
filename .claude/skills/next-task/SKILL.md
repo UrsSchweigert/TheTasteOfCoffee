@@ -42,6 +42,15 @@ You are the lead. You coordinate; the specialist agents do the work. Argument: a
   - nothing is left that a human must do first.
   Otherwise leave it open and say what is missing. Never merge a pull request that needs a human decision, spends money or touches a real account (for example a deploy). Never push to `main` directly.
 
+## GitHub issues (owner, 2026-11-25)
+
+`backlog/BACKLOG.md` stays the master queue for agent work. GitHub issues are for the owner's view:
+
+- **Milestone issue (label `milestone`):** one per active milestone, with a checklist of its open tasks. When a task's pull request merges, tick its box and link the pull request. When a milestone is planned, open its issue.
+- **Owner action items (label `human`):** one issue each, with what to do and why. Create one only when the item becomes actionable. Close it when the owner reports it done, and record the result in `docs/07` and the backlog as before.
+- **Owner input (labels `idea`, `bug`):** at step 1, check open `idea` and `bug` issues. Turn each into a backlog task or decision (ADR 0014), comment with where it went, and close it.
+- Do not create issues for work already done.
+
 ## Decisions and pushing
 
 - **Decisions (ADR 0014):** when a task raises an open product or design question, decide it on your own recommendation and record it as an ADR, or as an answered row in `docs/07` that references one, marked "decided by: lead (ADR 0014)". Ask the owner first only when the decision is likely to add cloud costs, and say the expected cost. Actions in real accounts, credentials, deletes, history rewrites, licences and invariants still go to the owner, as CLAUDE.md lists them.

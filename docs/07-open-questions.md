@@ -25,6 +25,8 @@ Record each answer as an ADR in `docs/decisions/`.
 
 ## Things only a human can do
 
+Open items are also tracked as GitHub issues with the label `human` (since 2026-11-25), which is the easiest place to follow them. This list stays the record.
+
 - [x] Enrol in the Apple Developer Program. The owner is already a member (2026-11-25).
 - [ ] Join the Small Business Program (15% commission; needed before the paid launch).
 - [x] Create the App ID `app.cupmark.Cupmark` with Sign in with Apple, and the app record in App Store Connect (owner, 2026-11-25).
