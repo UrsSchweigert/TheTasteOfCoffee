@@ -124,7 +124,7 @@ Goal: the repo builds, tests and checks itself; the shared contract exists.
 Goal: a signed-in user can store and read their own shelf, brews and recipes through the API, in the dev account.
 
 ### M1-T1 Table, buckets and safety properties
-- status: todo
+- status: in-progress
 - owner: infra-engineer
 - depends: M0-T4
 - implements: docs/05-system-design.md, Data model, Persistence and recovery
