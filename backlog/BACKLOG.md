@@ -140,7 +140,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
 - acceptance:
   - Cognito user pool (Lite plan, Sign in with Apple only) and an HTTP API with JWT authorizer and throttling are in the stack.
   - A test asserts every route except the App Store notifications route has the authorizer.
-  - The Cognito domain prefixes are exactly `cupmark-dev` and `cupmark-prod`, and the Apple identity provider uses the Services ID `app.cupmark.signin`. The owner registered both in Apple's portal with the return URL `https://cupmark-<stage>.auth.eu-central-1.amazoncognito.com/oauth2/idpresponse`. A test pins the prefixes.
+  - The Cognito domain prefixes are exactly `cupmark-dev` and `cupmark-prod`, and the Apple identity provider uses the Services ID `app.cupmark.signin`. The Sign in with Apple key id is `3WKKAZFM6M`. This is configuration, not a secret; the `.p8` private key goes only into a Parameter Store SecureString created by the owner. The owner registered both in Apple's portal with the return URL `https://cupmark-<stage>.auth.eu-central-1.amazoncognito.com/oauth2/idpresponse`. A test pins the prefixes.
   - From the M1-T1 review: the user pool is RETAIN with `DeletionProtection: ACTIVE`, and `AWS::Cognito::UserPool` joins the stateful guard. Losing the pool would orphan every `USER#<sub>` partition.
   - From the M1-T5 review (ADR 0013):
     - the HTTP API uses the `$default` stage, because the router matches on `rawPath`;
