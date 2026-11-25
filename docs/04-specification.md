@@ -7,12 +7,12 @@ The app has four flows (scan, brew, rate, explore) and one rule: no control acce
 | Allowed control | Used for |
 | --- | --- |
 | Camera scan | Barcode (EAN-13, UPC-A), optional label photo |
-| Single or multi pick list | Method, origin, process, variety, flavour notes, equipment |
+| Single or multi pick list | Method, milk, origin, process, variety, flavour notes, equipment |
 | Slider or segmented scale | Rating criteria, roast level |
 | Stepper or wheel | Dose, water, temperature, grind setting |
 | Timer | Brew time |
 | Date picker | Roast date, purchase date |
-| Toggle | Buy again, milk added |
+| Toggle | Buy again |
 
 Consequences: there is no username, no display name, no bean nickname, no comment and no support form in the app. Identity comes from Sign in with Apple. Support runs through a mailto link outside the app.
 
@@ -42,7 +42,7 @@ A brew references a bean on the shelf and a method. Fields depend on the method;
 | Water temperature | Stepper | 80 to 100 °C, or "cold" |
 | Brew time | Timer | Seconds |
 | Water type | Pick list | Tap, filtered, bottled, remineralised |
-| Milk | Pick list | None, dairy, oat, soy, other plant |
+| Milk | Pick list | None, dairy, oat, soy, almond, cashew, hazelnut, macadamia, coconut, rice, pea, other plant (see ADR 0003) |
 
 The app computes ratio and days since roast. A brew can be saved as a recipe and repeated with one tap, which is how the 30-second target is met.
 

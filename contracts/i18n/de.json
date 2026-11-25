@@ -26,6 +26,13 @@
       "dairy": "Kuhmilch",
       "oat": "Hafer",
       "soy": "Soja",
+      "almond": "Mandel",
+      "cashew": "Cashew",
+      "hazelnut": "Haselnuss",
+      "macadamia": "Macadamia",
+      "coconut": "Kokos",
+      "rice": "Reis",
+      "pea": "Erbse",
       "other_plant": "Andere pflanzliche"
     },
     "water_temp_special": {

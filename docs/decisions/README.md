@@ -27,3 +27,5 @@ What this costs, what it rules out, when to revisit.
 ## Index
 
 - [0001 Serverless AWS stack and iOS-only client](0001-stack.md)
+- [0002 Isolate from existing AWS resources](0002-isolate-from-existing-aws-resources.md)
+- [0003 Milk is a pick list of dairy, plant and nut drinks](0003-milk-as-pick-list.md)

@@ -4,6 +4,7 @@ import {
   LANGUAGES,
   checkI18n,
   checkSemantics,
+  checkVersionEntries,
   collectIds,
   listVersions,
   loadI18n,
@@ -22,19 +23,22 @@ test('at least version 1 exists', () => {
 });
 
 for (const version of versions) {
-  const files = loadVocabulary(version);
+  test(`v${version}: the directory holds only <name>.json files`, () => {
+    assert.deepEqual(checkVersionEntries(version), []);
+  });
 
   test(`v${version}: every file validates against its JSON Schema`, () => {
+    const files = loadVocabulary(version);
     assert.ok(Object.keys(files).length > 0);
     assert.deepEqual(validateVocabulary(files, schemas, version), []);
   });
 
-  test(`v${version}: ids are snake_case and unique per list`, () => {
-    assert.deepEqual(collectIds(files).problems, []);
+  test(`v${version}: every array is an id list, ids are snake_case and unique per list`, () => {
+    assert.deepEqual(collectIds(loadVocabulary(version)).problems, []);
   });
 
   test(`v${version}: ranges, bag sizes and price bands are consistent`, () => {
-    assert.deepEqual(checkSemantics(files), []);
+    assert.deepEqual(checkSemantics(loadVocabulary(version)), []);
   });
 }
 
@@ -47,7 +51,7 @@ test('v1 holds the lists and values the specification names', () => {
     'aeropress', 'french_press', 'cold_brew', 'cezve', 'siphon', 'fully_automatic',
   ]);
   assert.deepEqual(lists.water_types, ['tap', 'filtered', 'bottled', 'remineralised']);
-  assert.deepEqual(lists.milk_types, ['none', 'dairy', 'oat', 'soy', 'other_plant']);
+  assert.deepEqual(lists.milk_types, ['none', 'dairy', 'oat', 'soy', 'almond', 'cashew', 'hazelnut', 'macadamia', 'coconut', 'rice', 'pea', 'other_plant']);
   assert.deepEqual(lists.water_temp_special, ['cold']);
   assert.deepEqual(files.brew.ranges.dose_g, { minimum: 5, maximum: 100, multipleOf: 0.1 });
   assert.deepEqual(files.brew.ranges.water_g, { minimum: 10, maximum: 1500, multipleOf: 1 });
@@ -70,16 +74,21 @@ test('v1 holds the lists and values the specification names', () => {
   }
 });
 
-test('v1 flavour notes: two levels, about 80 terms, spec examples present, still draft', () => {
+test('v1 flavour notes: two levels, about 80 terms, spec examples present, published', () => {
   const { flavour_notes: file } = loadVocabulary(1);
   const count = file.flavour_categories.reduce((sum, category) => sum + category.flavour_notes.length, 0);
   assert.ok(count >= 70 && count <= 90, `expected about 80 notes, found ${count}`);
   const notesOf = (id) => file.flavour_categories.find((c) => c.id === id).flavour_notes.map((n) => n.id);
   assert.ok(notesOf('fruity').includes('berry'));
   assert.ok(notesOf('nutty').includes('hazelnut'));
-  // The owner has not approved the list (docs/07-open-questions.md). Change
-  // this assertion only together with the recorded approval.
-  assert.equal(file.status, 'draft');
+  // The owner approved v1, flavour notes included, on 2026-11-25
+  // (vocabulary/CHANGELOG.md). v1 is published and locked by v1.lock.json.
+  assert.equal(file.status, 'published');
+});
+
+test('v1: every file is published', () => {
+  const files = loadVocabulary(1);
+  for (const [name, file] of Object.entries(files)) assert.equal(file.status, 'published', `${name}.json`);
 });
 
 test('every vocabulary id has a non-empty label in every language, and no label is orphaned', () => {
@@ -94,8 +103,9 @@ test('every vocabulary id has a non-empty label in every language, and no label 
 // ---- The checks themselves must be able to fail. ----
 
 test('schema check fails: file without a schema', () => {
-  const files = { ...loadVocabulary(1), grinders: { version: 1, status: 'draft', grinders: [{ id: 'x' }] } };
-  assert.deepEqual(validateVocabulary(files, schemas, 1), ['grinders.json: no schema grinders.schema.json']);
+  const fixture = { version: 1, status: 'published', zz_test_fixture: [{ id: 'x' }] };
+  const files = { ...loadVocabulary(1), zz_test_fixture: fixture };
+  assert.deepEqual(validateVocabulary(files, schemas, 1), ['zz_test_fixture.json: no schema zz_test_fixture.schema.json']);
 });
 
 test('schema check fails: schema without a file', () => {
@@ -148,7 +158,7 @@ test('label check fails: missing, empty and orphan labels and questions', () => 
   delete en.labels.methods.espresso;
   en.labels.water_types.tap = '  ';
   en.labels.methods.pour_over = 'Pour over';
-  en.labels.grinders = { hand: 'Hand grinder' };
+  en.labels.zz_test_fixture = { x: 'Fixture' };
   delete en.labels.price_bands;
   delete en.questions.criteria.aroma;
   en.questions.criteria.bitterness = 'How bitter?';
@@ -157,7 +167,7 @@ test('label check fails: missing, empty and orphan labels and questions', () => 
     'en: missing label methods.espresso',
     'en: empty label water_types.tap',
     'en: orphan label methods.pour_over',
-    'en: orphan label namespace grinders',
+    'en: orphan label namespace zz_test_fixture',
     'en: missing label price_bands.under_15',
     'en: missing question criteria.aroma',
     'en: orphan question criteria.bitterness',
@@ -186,11 +196,38 @@ test('semantic check fails: off-step range, overlapping price bands, mixed statu
   files.brew.ranges.grind_normalised.maximum = 10.2;
   files.shelf.price_bands[1].maximum_exclusive = 35;
   files.shelf.bag_sizes[1].grams = 250;
-  files.bean.status = 'published';
+  files.bean.status = 'draft';
   assert.deepEqual(checkSemantics(files), [
     'range grind_normalised: minimum and maximum are not on the step 0.5',
     'bag_sizes: duplicate grams value',
     'price_bands: gap or overlap between from_15_to_30 and from_30_to_45',
     'status: files of one version must share one status',
   ]);
+});
+
+test('id check fails: an array of strings or other non-objects, even with a lax schema', () => {
+  // A lax schema accepts anything, so only collectIds can catch these.
+  const laxSchemas = { ...schemas, zz_test_fixture: { $id: 'zz_test_fixture.schema.json' } };
+  const withFixture = (body) => ({
+    ...clone(loadVocabulary(1)),
+    zz_test_fixture: { version: 1, status: 'published', ...body },
+  });
+  const cases = [
+    [{ zz_test_fixture: ['a', 'b'] }, '/zz_test_fixture'],
+    [{ zz_test_fixture: [1, 2] }, '/zz_test_fixture'],
+    [{ zz_test_fixture: [[{ id: 'a' }]] }, '/zz_test_fixture'],
+    [{ zz_test_fixture: [{ id: 'a' }, 'b'] }, '/zz_test_fixture'],
+    [{ zz_test_fixture: [{ name: 'a' }] }, '/zz_test_fixture'],
+    [{ zz_test_fixture: [] }, '/zz_test_fixture'],
+    [{ nested: { zz_test_fixture: [null] } }, '/nested/zz_test_fixture'],
+  ];
+  for (const [body, path] of cases) {
+    const files = withFixture(body);
+    assert.deepEqual(validateVocabulary(files, laxSchemas, 1), [], 'the lax schema lets it through');
+    assert.ok(
+      collectIds(files).problems.includes(`zz_test_fixture.json: ${path} is not a list of objects with an id`),
+      JSON.stringify(body),
+    );
+  }
+  assert.ok(collectIds({ zz_test_fixture: ['a'] }).problems.includes('zz_test_fixture.json: top level is an array, not an object'));
 });

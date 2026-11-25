@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "algorithm": "sha256",
+  "files": {
+    "bean.json": "4cc3299a0ce7848ed8584f15180eca765241a39402263219530efe30cf996da7",
+    "brew.json": "c3387425a1f342fdd3fa6fb671cd915301bafb20d62adf63dc8bb1abed5bc726",
+    "criteria.json": "4c0e7eab4d45709ad9ea978f7c6a30c8cc2e4ddb789f1953894ecbb104d5de76",
+    "flavour_notes.json": "a2a44d431dfaa3f06771b7cda02ea862af082dddf55fae102c0cd3c92ec6a899",
+    "shelf.json": "114dc1198a1cda5e5161d2fd61b89e1d589483125ce7bca23925e49921ec21bc"
+  }
+}
