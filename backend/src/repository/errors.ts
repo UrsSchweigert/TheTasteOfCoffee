@@ -69,3 +69,12 @@ export class ShelfEntryInUseError extends RepositoryError {
 export class ShelfEntryBeanLockedError extends RepositoryError {
   public override readonly name = 'ShelfEntryBeanLockedError';
 }
+
+/**
+ * `POST /beans` with `open_food_facts_confirmed`, but the server holds no cached
+ * Open Food Facts hit for the barcode (API: 409). Until M1-T4b adds the cache
+ * there is never a hit, so the API raises this for every such request.
+ */
+export class OpenFoodFactsHitMissingError extends RepositoryError {
+  public override readonly name = 'OpenFoodFactsHitMissingError';
+}

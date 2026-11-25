@@ -3,14 +3,19 @@
 // the repository's own cursor format (base64url sort key, checked on use),
 // references (a shelf entry needs a known bean, a brew needs the caller's
 // shelf entry) and the 409 on deleting a shelf entry that brews reference or
-// changing its bean (D14).
+// changing its bean (D14); the shared bean catalogue with its barcode
+// pointers (canonical EAN-13, one bean per barcode, a reject frees the barcode).
 // The real repository is tested against DynamoDB Local.
 import type { UserId } from '../../src/auth/user-id.ts';
 import type { Brew, BrewInput, Recipe, RecipeInput, ShelfEntry, ShelfEntryInput } from '../../src/generated/contract.ts';
 import type { ApiStore } from '../../src/api/resources.ts';
 import { newUlid } from '../../src/ids/ulid.ts';
 import {
+  BarcodeTakenError,
   BeanNotFoundError,
+  BeanNotUnverifiedError,
+  beanMetaKey,
+  canonicalBarcode,
   ItemNotFoundError,
   ShelfEntryBeanLockedError,
   ShelfEntryInUseError,
@@ -25,7 +30,7 @@ import {
   shelfEntryKey,
   userPk,
 } from '../../src/repository/index.ts';
-import type { ListOptions, Page } from '../../src/repository/index.ts';
+import type { BeanRecord, ListOptions, NewBean, Page } from '../../src/repository/index.ts';
 
 interface Partition {
   readonly shelf: Map<string, ShelfEntry>;
@@ -45,7 +50,12 @@ function page<T>(sorted: { sk: string; item: T }[], options: ListOptions, isSort
 }
 
 export class FakeStore implements ApiStore {
+  /** Bean ids a shelf entry may reference. createBean adds to it; tests may add ids directly. */
   public readonly beans = new Set<string>();
+  /** The catalogue: bean id to record. */
+  public readonly catalogue = new Map<string, BeanRecord>();
+  /** `BARCODE#` pointers: canonical EAN-13 to bean id. */
+  public readonly barcodes = new Map<string, string>();
   readonly #partitions = new Map<string, Partition>();
   /** Every call, by method name, for assertions. */
   public readonly calls: string[] = [];
@@ -187,5 +197,53 @@ export class FakeStore implements ApiStore {
     this.calls.push('deleteRecipe');
     if (!this.#of(user).recipes.delete(id)) return Promise.reject(new ItemNotFoundError('no such item'));
     return Promise.resolve();
+  }
+
+  public createBean(input: NewBean): Promise<BeanRecord> {
+    this.calls.push('createBean');
+    const barcode = input.barcode === undefined ? undefined : canonicalBarcode(input.barcode);
+    if (barcode !== undefined && this.barcodes.has(barcode)) return Promise.reject(new BarcodeTakenError('barcode taken'));
+    const beanId = this.#newId();
+    const record: BeanRecord = {
+      bean: {
+        bean_id: beanId,
+        vocabulary_version: input.vocabularyVersion,
+        verified: false,
+        open_food_facts_match: input.openFoodFactsMatch,
+        picked_attributes: structuredClone(input.pickedAttributes),
+        operator_attributes: {},
+        ...(barcode === undefined ? {} : { barcode }),
+      },
+      status: 'unverified',
+      createdAt: new Date(this.#clock).toISOString(),
+    };
+    this.catalogue.set(beanId, record);
+    this.beans.add(beanId);
+    if (barcode !== undefined) this.barcodes.set(barcode, beanId);
+    return Promise.resolve(structuredClone(record));
+  }
+
+  public getBean(beanId: string): Promise<BeanRecord | undefined> {
+    this.calls.push('getBean');
+    beanMetaKey(beanId); // throws for a bad id, like the repository
+    return Promise.resolve(structuredClone(this.catalogue.get(beanId)));
+  }
+
+  public getBeanByBarcode(barcode: string): Promise<BeanRecord | undefined> {
+    this.calls.push('getBeanByBarcode');
+    const beanId = this.barcodes.get(canonicalBarcode(barcode));
+    return Promise.resolve(beanId === undefined ? undefined : structuredClone(this.catalogue.get(beanId)));
+  }
+
+  /** The operator's reject (not an API route): status rejected, and the barcode pointer goes if it names this bean. */
+  public rejectBean(beanId: string): BeanRecord {
+    const record = this.catalogue.get(beanId);
+    if (record === undefined) throw new ItemNotFoundError('no such bean');
+    if (record.status !== 'unverified') throw new BeanNotUnverifiedError('not unverified');
+    const rejected: BeanRecord = { ...record, status: 'rejected' };
+    this.catalogue.set(beanId, rejected);
+    const barcode = record.bean.barcode;
+    if (barcode !== undefined && this.barcodes.get(barcode) === beanId) this.barcodes.delete(barcode);
+    return structuredClone(rejected);
   }
 }

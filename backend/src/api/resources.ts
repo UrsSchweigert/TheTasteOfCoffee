@@ -30,6 +30,9 @@ export type ApiStore = Pick<
   | 'getRecipe'
   | 'replaceRecipe'
   | 'deleteRecipe'
+  | 'createBean'
+  | 'getBean'
+  | 'getBeanByBarcode'
 >;
 
 export interface Resource<I extends { vocabulary_version: number }, O> {

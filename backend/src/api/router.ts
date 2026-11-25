@@ -1,43 +1,51 @@
 // The router of the API Lambda: one function behind the HTTP API, a fixed
 // table of routes. It dispatches only the routes that have landed: shelf,
-// brews and recipes, five operations each (task M1-T5).
+// brews and recipes, five operations each (task M1-T5), and the bean
+// catalogue: GET /barcodes/{barcode}, POST /beans, GET /beans/{bean_id}
+// (task M1-T4a, catalogue.ts).
 //
 // Order of checks for every request:
 // 1. Route: method and `rawPath` against the table. No match is 404 with no
 //    body. That includes the contract routes whose tasks have not landed yet
-//    (barcodes, beans, catalogue images, profile, export, account; the
+//    (Open Food Facts lookup, catalogue images, profile, export, account; the
 //    contract declares no 501 for them), /health (its own Lambda, ADR 0007), a
 //    trailing slash and any method a path does not declare (the contract
 //    declares no 405).
 // 2. Caller: `userIdFromEvent`, the token subject only. None is 401.
-// 3. Input: path ids against the contract pattern, the query (only `cursor`
-//    and `limit`, on lists only), the body (see http.ts, parseBody). Bad
-//    input is 400.
+// 3. Input: path parameters against the contract (ids against the `Id`
+//    pattern; a barcode against `Barcode` and its check digit), the query
+//    (only `cursor` and `limit`, on lists only), the body (see http.ts,
+//    parseBody). Bad input is 400.
 // 4. The operation. Repository errors map to 404 (not in the caller's
 //    partition, or a referenced bean or shelf entry is missing), 409 (a shelf
-//    entry that brews reference is deleted or would change its bean, D14),
-//    400 (a cursor the repository refuses) and 500 for anything else. A write that raced another write is tried up
-//    to three times in all, with a short random wait in between.
+//    entry that brews reference is deleted or would change its bean, D14; a
+//    bean for a barcode that already points to a bean; a bean from an Open
+//    Food Facts hit the server has not cached), 400 (a cursor the repository
+//    refuses) and 500 for anything else. A write that raced another write is
+//    tried up to three times in all, with a short random wait in between.
 //
 // Matching uses `rawPath`, so the API must use the `$default` stage (no stage
 // prefix in the path). Every response except a 2xx with content has no body.
 // One log line per request: operation, status, request id and, on failure,
-// the error class name. Never a body, token, header, query or user id.
+// the error class name. Never a body, token, header, query, barcode or user id.
 import type { z } from 'zod';
 import type { UserId } from '../auth/user-id.ts';
 import { userIdFromEvent } from '../auth/user-id.ts';
 import { IdSchema } from '../generated/contract.ts';
 import {
+  BarcodeTakenError,
   BeanNotFoundError,
   InvalidCursorError,
   InvalidKeyError,
   InvalidValuesError,
   ItemNotFoundError,
+  OpenFoodFactsHitMissingError,
   ShelfEntryBeanLockedError,
   ShelfEntryInUseError,
   ShelfEntryNotFoundError,
   WriteConflictError,
 } from '../repository/index.ts';
+import { BarcodeParameterSchema, createBean, getBean, lookupBarcode, parseBeanCreate } from './catalogue.ts';
 import type { CursorSigner } from './cursor.ts';
 import { empty, hasNoBody, json, parseBody, parseLimit, parseQuery } from './http.ts';
 import type { ApiEvent, ApiResult } from './http.ts';
@@ -105,7 +113,14 @@ function outcomeOf(error: unknown): Outcome {
   if (error instanceof ItemNotFoundError || error instanceof BeanNotFoundError || error instanceof ShelfEntryNotFoundError) {
     return failed(404, error);
   }
-  if (error instanceof ShelfEntryInUseError || error instanceof ShelfEntryBeanLockedError) return failed(409, error);
+  if (
+    error instanceof ShelfEntryInUseError ||
+    error instanceof ShelfEntryBeanLockedError ||
+    error instanceof BarcodeTakenError ||
+    error instanceof OpenFoodFactsHitMissingError
+  ) {
+    return failed(409, error);
+  }
   if (error instanceof InvalidCursorError || error instanceof InvalidKeyError || error instanceof InvalidValuesError) {
     return failed(400, error);
   }
@@ -227,8 +242,54 @@ function routesOf<I extends { vocabulary_version: number }, O>(resource: Resourc
   ];
 }
 
+/** The bean catalogue (M1-T4a). Shared, not user-scoped: the caller only has to be signed in. */
+const catalogueRoutes: Route[] = [
+  {
+    method: 'GET',
+    segments: ['', 'barcodes', '{barcode}'],
+    parameters: { barcode: BarcodeParameterSchema },
+    operation: 'lookupBarcode',
+    handle: async ({ event, params, deps }) => {
+      if (!noQuery(event) || !hasNoBody(event)) return BAD_REQUEST;
+      return run(async () => {
+        const found = await lookupBarcode(deps.store, params.barcode ?? '');
+        return found === undefined ? empty(404) : json(200, found);
+      });
+    },
+  },
+  {
+    method: 'POST',
+    segments: ['', 'beans'],
+    parameters: {},
+    operation: 'createBean',
+    handle: async ({ event, deps }) => {
+      const input = noQuery(event) ? parseBeanCreate(event) : undefined;
+      if (input === undefined) return BAD_REQUEST;
+      return run(async () => json(201, await attempt(() => createBean(deps.store, input), deps.retryDelayMs ?? jitteredDelay)));
+    },
+  },
+  {
+    method: 'GET',
+    segments: ['', 'beans', '{bean_id}'],
+    parameters: { bean_id: IdSchema },
+    operation: 'getBean',
+    handle: async ({ event, params, deps }) => {
+      if (!noQuery(event) || !hasNoBody(event)) return BAD_REQUEST;
+      return run(async () => {
+        const found = await getBean(deps.store, params.bean_id ?? '');
+        return found === undefined ? empty(404) : json(200, found);
+      });
+    },
+  },
+];
+
 /** Every route this Lambda serves. */
-export const ROUTES: readonly Route[] = [...routesOf(shelfResource), ...routesOf(brewResource), ...routesOf(recipeResource)];
+export const ROUTES: readonly Route[] = [
+  ...routesOf(shelfResource),
+  ...routesOf(brewResource),
+  ...routesOf(recipeResource),
+  ...catalogueRoutes,
+];
 
 const PARAMETER = /^\{([a-z][a-z0-9_]*)\}$/;
 

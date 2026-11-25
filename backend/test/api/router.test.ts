@@ -10,7 +10,7 @@ import { WriteConflictError, encodeCursor } from '../../src/repository/index.ts'
 import { OPENAPI_FILE, parseOpenApi } from '../../scripts/codegen/paths.ts';
 import { verifiedUserId } from '../events.ts';
 import { FakeStore } from './fake-store.ts';
-import { ALICE_SUB, BEAN, BOB_SUB, brewBody, harness, recipeBody, shelfBody, testSigner } from './helpers.ts';
+import { ALICE_SUB, BEAN, BOB_SUB, beanBody, brewBody, harness, recipeBody, shelfBody, testSigner } from './helpers.ts';
 import type { Harness } from './helpers.ts';
 
 const ID = '01ARZ3NDEKTSV4RRFFQ69G5FAV';
@@ -28,24 +28,37 @@ async function newShelf(h: Harness, sub = ALICE_SUB): Promise<string> {
 }
 
 describe('routes', () => {
-  it('serves exactly the shelf, brew and recipe operations of the contract', () => {
+  it('serves exactly the shelf, brew, recipe and bean catalogue operations of the contract', () => {
     const served = ROUTES.map((route) => `${route.method} ${route.segments.join('/')} ${route.operation}`).sort();
     const expected: string[] = [];
-    for (const path of ['/shelf', '/shelf/{shelf_entry_id}', '/brews', '/brews/{brew_id}', '/recipes', '/recipes/{recipe_id}']) {
+    for (const path of [
+      '/shelf',
+      '/shelf/{shelf_entry_id}',
+      '/brews',
+      '/brews/{brew_id}',
+      '/recipes',
+      '/recipes/{recipe_id}',
+      '/barcodes/{barcode}',
+      '/beans',
+      '/beans/{bean_id}',
+    ]) {
       for (const [method, operation] of Object.entries(contract.paths[path] ?? {})) {
         expected.push(`${method.toUpperCase()} ${path} ${operation.operationId}`);
       }
     }
     expect(served).toEqual(expected.sort());
-    expect(served).toHaveLength(15);
+    expect(served).toHaveLength(18);
   });
 
   it.each([
     ['GET', '/profile'],
     ['PUT', '/profile'],
-    ['POST', '/beans'],
-    ['GET', `/beans/${ID}`],
-    ['GET', '/barcodes/4006381333931'],
+    ['GET', '/beans'],
+    ['PUT', `/beans/${ID}`],
+    ['DELETE', `/beans/${ID}`],
+    ['POST', '/barcodes/4006381333931'],
+    ['GET', '/barcodes'],
+    ['GET', '/barcodes/4006381333931/'],
     ['GET', '/barcodes/4006381333931/open_food_facts'],
     ['GET', `/catalogue_images/${ID}`],
     ['GET', '/export'],
@@ -75,11 +88,17 @@ describe('routes', () => {
     expect(h.store.calls).toEqual([]);
   });
 
-  it.each(ROUTES.map((route) => [route.method, route.segments.join('/').replace(/\{[a-z_]+\}/, ID)]))(
+  it.each(ROUTES.map((route) => [route.method, route.segments.join('/').replace('{barcode}', '4006381333931').replace(/\{[a-z_]+\}/, ID)]))(
     '%s %s without a valid token is 401 with no body',
     async (method, path) => {
       const h = harness();
-      const json = path.startsWith('/brews') ? brewBody(ID) : path.startsWith('/shelf') ? shelfBody() : recipeBody();
+      const json = path.startsWith('/brews')
+        ? brewBody(ID)
+        : path.startsWith('/shelf')
+          ? shelfBody()
+          : path.startsWith('/beans')
+            ? beanBody()
+            : recipeBody();
       const body = method === 'POST' || method === 'PUT' ? { json } : {};
       for (const sub of [null, '', 'not-a-uuid', ALICE_SUB.toUpperCase()]) {
         const response = await h.call(method, path, { sub, ...body });
@@ -98,6 +117,7 @@ describe('routes', () => {
         expect((await h.call('GET', `/${collection}/${bad}`)).status).toBe(400);
         expect((await h.call('DELETE', `/${collection}/${bad}`)).status).toBe(400);
       }
+      expect((await h.call('GET', `/beans/${bad}`)).status).toBe(400);
       expect(h.store.calls).toEqual([]);
     },
   );
