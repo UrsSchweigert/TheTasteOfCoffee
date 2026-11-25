@@ -410,7 +410,7 @@ Planning notes (planned 2026-11-25):
   - ios/README.md, "Build and test", lists the new paths.
 
 ### M2-T7 Swift API types generated from the contract
-- status: in-progress
+- status: done (built and tested by the macOS `ios` job in its pull request; merged only with that job green)
 - owner: ios-engineer
 - depends: M2-T6
 - implements: docs/05-system-design.md, Components (client); CLAUDE.md invariant 2 and Style; ADR 0004
@@ -440,6 +440,7 @@ Planning notes (planned 2026-11-25):
 - depends: M2-T7
 - implements: contracts/openapi.yaml 0.5.0 (0.6.0 after M2-T4); docs/05-system-design.md, Security
 - acceptance:
+  - From the M2-T7 review: cache the `ISO8601DateFormatter`s used by `API.Timestamp` (one per format), and add a script test that `generate-ios-api.mjs --check` exits 1 on a stale file.
   - `APIClient` (async/await, URLSession, no packages) has one method per operation the app uses. The base URL is injected; M2-T9 provides it.
   - Every call sends the bearer token from a `TokenProvider`. No call puts a user id in a path, query or body (invariant 3).
   - Each route's documented statuses (400, 401, 404, 409, 429, 503, 5xx) map to typed errors. Error bodies are not parsed, and no response body is logged, so Open Food Facts text is never logged (docs/05).
