@@ -1,8 +1,8 @@
 # Open questions and human tasks
 
-## Decisions only the owner can make
+## Open decisions
 
-Agents must not decide these. Until one is answered, agents build to the stated default and mark the code path with the decision id.
+Since ADR 0014, the lead decides these on its own recommendation and records each answer here and in an ADR ("decided by: lead (ADR 0014)"). It asks the owner first only when a decision is likely to add cloud costs. Until a question is answered, agents build to the stated default and mark the code path with the decision id.
 
 | Id | Question | Default the agents build to |
 | --- | --- | --- |

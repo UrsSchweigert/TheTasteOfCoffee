@@ -39,3 +39,4 @@ What this costs, what it rules out, when to revisit.
 - [0011 Vocabulary v2: regions name their country, species is its own list; Open Food Facts images are copied](0011-vocabulary-v2-shape-and-open-food-facts-images.md)
 - [0012 Shelf entries count the brews that reference them](0012-shelf-entries-count-their-brews.md)
 - [0013 The cursor signing key is read from Parameter Store at cold start](0013-cursor-key-from-parameter-store.md)
+- [0014 The lead decides open questions on its recommendation, unless cloud costs are likely](0014-lead-decides-on-its-recommendation.md)
