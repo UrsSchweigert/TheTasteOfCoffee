@@ -246,6 +246,17 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - The stack deploys with the caller's credentials, not through `CupmarkCfnExecution`. The README gives the one-time manual deploy steps, including how to check whether a provider or a role named `CupmarkGitHubDeploy` already exists.
   - The guards add the M0-T4 review findings: IAM policies with `*` actions or resources, or with ARNs outside `cupmark-`, fail, and so do stateful resources without RETAIN. Tests show each guard failing.
 
+
+### M1-T10 Block changing the bean of a shelf entry that has brews
+- status: todo
+- owner: contract-keeper, then backend-engineer
+- depends: M1-T5
+- implements: docs/07-open-questions.md D14
+- acceptance:
+  - `contracts/openapi.yaml`: `PUT /shelf/{shelf_entry_id}` documents a 409 response when `bean_id` would change while brews reference the entry. The lint and drift tests pass.
+  - The backend replaces the entry conditionally, so a `bean_id` change fails when `brewCount` > 0 and the API answers 409 with no body. Any other change, and a `bean_id` change with no brews, still succeeds.
+  - Unit and DynamoDB Local tests cover both cases, plus the race with a concurrent brew create.
+
 ---
 
 ## M2 Personal log, iOS
