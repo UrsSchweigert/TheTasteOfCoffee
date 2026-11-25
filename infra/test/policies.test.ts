@@ -131,6 +131,26 @@ describe.each(STAGES)('stage %s', (stage) => {
     },
   );
 
+  it('CupmarkCfnExecution lets CloudFormation create and configure every bucket of the stack, unchanged by ADR 0017', () => {
+    const buckets = Object.values(template.Resources).filter((r) => r.Type === 'AWS::S3::Bucket');
+    expect(buckets).toHaveLength(3);
+    for (const b of buckets) {
+      const arn = `arn:aws:s3:::${arnOf(b.Properties.BucketName, template.Resources)}`;
+      for (const action of [
+        's3:CreateBucket',
+        's3:PutBucketPolicy',
+        's3:PutBucketVersioning',
+        's3:PutLifecycleConfiguration',
+        's3:PutBucketPublicAccessBlock',
+        's3:PutEncryptionConfiguration',
+        's3:PutBucketOwnershipControls',
+        's3:PutBucketTagging',
+      ]) {
+        expect(allows(execution, action, arn), `${action} on ${arn}`).toBe(true);
+      }
+    }
+  });
+
   it('CupmarkCfnExecution lets CloudFormation read the Lambda code from the Cupmark asset bucket', () => {
     const functions = Object.values(template.Resources).filter((r) => r.Type === 'AWS::Lambda::Function');
     expect(functions).toHaveLength(3);
@@ -146,12 +166,30 @@ describe.each(STAGES)('stage %s', (stage) => {
 });
 
 describe('the boundary stays narrow', () => {
-  it('allows the Cognito identity-provider actions only, and only on user pools in eu-central-1', () => {
+  it('allows the Cognito identity-provider actions and AdminDeleteUser only, and only on user pools in eu-central-1', () => {
     const pool = `arn:aws:cognito-idp:${REGION}:${FAKE_ACCOUNT}:userpool/${REGION}_Example1`;
     expect(allows(boundary, 'cognito-idp:UpdateIdentityProvider', pool)).toBe(true);
+    expect(allows(boundary, 'cognito-idp:AdminDeleteUser', pool)).toBe(true);
     expect(allows(boundary, 'cognito-idp:DeleteUserPool', pool)).toBe(false);
     expect(allows(boundary, 'cognito-idp:AdminCreateUser', pool)).toBe(false);
+    expect(allows(boundary, 'cognito-idp:AdminDisableUser', pool)).toBe(false);
+    expect(allows(boundary, 'cognito-idp:ListUsers', pool)).toBe(false);
     expect(allows(boundary, 'cognito-idp:UpdateIdentityProvider', pool.replace(REGION, 'eu-west-1'))).toBe(false);
+    expect(allows(boundary, 'cognito-idp:AdminDeleteUser', pool.replace(REGION, 'eu-west-1'))).toBe(false);
+  });
+
+  it('allows object and version deletes and version listing only in Cupmark buckets, and no bucket-level delete (ADR 0017)', () => {
+    const photos = `arn:aws:s3:::cupmark-dev-photos-${FAKE_ACCOUNT}`;
+    for (const action of ['s3:DeleteObject', 's3:DeleteObjectVersion']) {
+      expect(allows(boundary, action, `${photos}/labels/x.jpg`)).toBe(true);
+      expect(allows(boundary, action, 'arn:aws:s3:::derschweigert-site/x.jpg')).toBe(false);
+      expect(allows(boundary, action, `arn:aws:s3:::cdk-cupmark-assets-${FAKE_ACCOUNT}-${REGION}/x.zip`)).toBe(false);
+    }
+    expect(allows(boundary, 's3:ListBucketVersions', photos)).toBe(true);
+    expect(allows(boundary, 's3:ListBucketVersions', 'arn:aws:s3:::derschweigert-site')).toBe(false);
+    for (const action of ['s3:DeleteBucket', 's3:DeleteBucketPolicy', 's3:PutLifecycleConfiguration', 's3:PutBucketVersioning']) {
+      expect(allows(boundary, action, photos), action).toBe(false);
+    }
   });
 
   it('allows ConditionCheckItem only on Cupmark tables', () => {

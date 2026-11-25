@@ -5,8 +5,16 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { Template } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
-import { API_INDEX_ACTIONS, API_TABLE_ACTIONS, CATALOGUE_IMAGE_PREFIX, STAGE_LIMITS, cursorKeyParameter } from '../src/api.ts';
-import { LABEL_PHOTO_PREFIX, UPLOAD_PHOTO_PREFIX } from '../src/data.ts';
+import {
+  ACCOUNT_DELETION_PHOTO_PREFIXES,
+  API_COGNITO_ACTIONS,
+  API_INDEX_ACTIONS,
+  API_TABLE_ACTIONS,
+  CATALOGUE_IMAGE_PREFIX,
+  STAGE_LIMITS,
+  cursorKeyParameter,
+} from '../src/api.ts';
+import { DELETION_LOG_PREFIX, LABEL_PHOTO_PREFIX, UPLOAD_PHOTO_PREFIX } from '../src/data.ts';
 import { backendBundle } from '../src/functions.ts';
 import { STAGES } from '../src/config.ts';
 import type { StageName } from '../src/config.ts';
@@ -103,9 +111,32 @@ describe.each(STAGES)('stage %s', (stage) => {
   const [apiFnId, apiFn] = byName(template, 'AWS::Lambda::Function', 'FunctionName', `cupmark-${stage}-api`);
   const [healthFnId, healthFn] = byName(template, 'AWS::Lambda::Function', 'FunctionName', `cupmark-${stage}-health`);
   const [tableId] = only(template, 'AWS::DynamoDB::Table');
-  const photoBucketId = resources(template, 'AWS::S3::Bucket')
-    .filter(([, r]) => JSON.stringify(r.Properties.BucketName).includes(`"cupmark-${stage}-photos-"`))
-    .map(([id]) => id)[0];
+  const bucketId = (part: string): string | undefined =>
+    resources(template, 'AWS::S3::Bucket')
+      .filter(([, r]) => JSON.stringify(r.Properties.BucketName).includes(`"cupmark-${stage}-${part}-"`))
+      .map(([id]) => id)[0];
+  const photoBucketId = bucketId('photos');
+  const deletionLogBucketId = bucketId('deletion-log');
+  const photoObjects = (prefix: string) => ({ 'Fn::Join': ['', [{ 'Fn::GetAtt': [photoBucketId, 'Arn'] }, `/${prefix}*`]] });
+  const logObjects = (prefix: string) => ({ 'Fn::Join': ['', [{ 'Fn::GetAtt': [deletionLogBucketId, 'Arn'] }, `/${prefix}*`]] });
+  /** The exact account-deletion statements of the API role (ADR 0017). */
+  const accountDeletionStatements = () => [
+    {
+      Sid: 'AccountDeletionPhotos',
+      Effect: 'Allow',
+      Action: ['s3:DeleteObject', 's3:DeleteObjectVersion'],
+      Resource: [photoObjects('labels/'), photoObjects('uploads/')],
+    },
+    {
+      Sid: 'AccountDeletionPhotoVersions',
+      Effect: 'Allow',
+      Action: 's3:ListBucketVersions',
+      Resource: { 'Fn::GetAtt': [photoBucketId, 'Arn'] },
+      Condition: { StringLike: { 's3:prefix': ['labels/*', 'uploads/*'] } },
+    },
+    { Sid: 'DeletionLog', Effect: 'Allow', Action: 's3:PutObject', Resource: logObjects('entries/') },
+    { Sid: 'AccountDeletionUser', Effect: 'Allow', Action: 'cognito-idp:AdminDeleteUser', Resource: { 'Fn::GetAtt': [poolId, 'Arn'] } },
+  ];
 
   describe('the HTTP API', () => {
     it(`is an HTTP API named cupmark-${stage}-api`, () => {
@@ -269,6 +300,7 @@ describe.each(STAGES)('stage %s', (stage) => {
                 Action: 's3:PutObject',
                 Resource: { 'Fn::Join': ['', [{ 'Fn::GetAtt': [photoBucketId, 'Arn'] }, '/labels/*']] },
               },
+              ...accountDeletionStatements(),
             ];
       expect(role.Properties.Policies).toEqual([
         { PolicyName: name, PolicyDocument: { Version: '2012-10-17', Statement: expected } },
@@ -278,43 +310,102 @@ describe.each(STAGES)('stage %s', (stage) => {
     });
   });
 
-  it('lets the API role touch the photo bucket only under catalogue/, uploads/ and labels/, without List or Delete (ADR 0016)', () => {
-    const [, apiRole] = byName(template, 'AWS::IAM::Role', 'RoleName', `cupmark-${stage}-api`);
-    const statements = (apiRole.Properties.Policies as { PolicyDocument: { Statement: { Action: string | string[]; Resource: unknown }[] } }[])
-      .flatMap((p) => p.PolicyDocument.Statement);
-    const actions = statements.flatMap((st) => (Array.isArray(st.Action) ? st.Action : [st.Action]));
-    // No delete of any kind (s3:DeleteObject, s3:DeleteObjectVersion, ...) and no S3 listing.
-    expect(actions.filter((a) => /^s3:.*delete/i.test(a))).toEqual([]);
-    expect(actions.filter((a) => /^s3:List/i.test(a))).toEqual([]);
-    const s3 = statements
-      .filter((st) => (Array.isArray(st.Action) ? st.Action : [st.Action]).some((a) => a.startsWith('s3:')))
-      .map((st) => ({ actions: st.Action, resource: st.Resource }));
-    const objects = (prefix: string) => ({ 'Fn::Join': ['', [{ 'Fn::GetAtt': [photoBucketId, 'Arn'] }, `/${prefix}*`]] });
+  interface Stmt { Sid?: string; Action: string | string[]; Resource: unknown; Condition?: unknown }
+  const statementsOf = (r: Resource): Stmt[] =>
+    (r.Properties.Policies as { PolicyDocument: { Statement: Stmt[] } }[]).flatMap((p) => p.PolicyDocument.Statement);
+  const actionsOf = (st: Stmt): string[] => (Array.isArray(st.Action) ? st.Action : [st.Action]);
+  const resourcesOf = (st: Stmt): unknown[] => (Array.isArray(st.Resource) ? st.Resource : [st.Resource]);
+  const [, apiRole] = byName(template, 'AWS::IAM::Role', 'RoleName', `cupmark-${stage}-api`);
+
+  it('lets the API role touch the photo bucket only under catalogue/, uploads/ and labels/ (ADR 0016, ADR 0017)', () => {
+    const s3 = statementsOf(apiRole)
+      .filter((st) => actionsOf(st).some((a) => a.startsWith('s3:')))
+      .map((st) => ({ actions: st.Action, resource: st.Resource, condition: st.Condition }));
     expect(s3).toEqual([
-      { actions: ['s3:GetObject', 's3:PutObject'], resource: objects(CATALOGUE_IMAGE_PREFIX) },
-      { actions: ['s3:GetObject', 's3:PutObject'], resource: objects(UPLOAD_PHOTO_PREFIX) },
-      { actions: 's3:PutObject', resource: objects(LABEL_PHOTO_PREFIX) },
+      { actions: ['s3:GetObject', 's3:PutObject'], resource: photoObjects(CATALOGUE_IMAGE_PREFIX), condition: undefined },
+      { actions: ['s3:GetObject', 's3:PutObject'], resource: photoObjects(UPLOAD_PHOTO_PREFIX), condition: undefined },
+      { actions: 's3:PutObject', resource: photoObjects(LABEL_PHOTO_PREFIX), condition: undefined },
+      {
+        actions: ['s3:DeleteObject', 's3:DeleteObjectVersion'],
+        resource: [photoObjects(LABEL_PHOTO_PREFIX), photoObjects(UPLOAD_PHOTO_PREFIX)],
+        condition: undefined,
+      },
+      {
+        actions: 's3:ListBucketVersions',
+        resource: { 'Fn::GetAtt': [photoBucketId, 'Arn'] },
+        condition: { StringLike: { 's3:prefix': ['labels/*', 'uploads/*'] } },
+      },
+      { actions: 's3:PutObject', resource: logObjects(DELETION_LOG_PREFIX), condition: undefined },
     ]);
     expect([CATALOGUE_IMAGE_PREFIX, UPLOAD_PHOTO_PREFIX, LABEL_PHOTO_PREFIX]).toEqual(['catalogue/', 'uploads/', 'labels/']);
+    expect([...ACCOUNT_DELETION_PHOTO_PREFIXES]).toEqual(['labels/', 'uploads/']);
+    expect(DELETION_LOG_PREFIX).toBe('entries/');
   });
 
-  it('gives no role any delete action except the Apple identity-provider sync', () => {
+  it('has exactly the account-deletion statements on the API role (ADR 0017)', () => {
+    const sids = new Set(accountDeletionStatements().map((st) => st.Sid));
+    expect(statementsOf(apiRole).filter((st) => st.Sid !== undefined && sids.has(st.Sid))).toEqual(accountDeletionStatements());
+    expect([...API_COGNITO_ACTIONS]).toEqual(['cognito-idp:AdminDeleteUser']);
+  });
+
+  it('allows S3 deletes and version listing only under labels/ and uploads/ of the photo bucket', () => {
+    const allowed = [photoObjects('labels/'), photoObjects('uploads/')].map((r) => JSON.stringify(r));
     for (const [, r] of resources(template, 'AWS::IAM::Role')) {
-      const actions = (r.Properties.Policies as { PolicyDocument: { Statement: { Action: string | string[] }[] } }[])
-        .flatMap((p) => p.PolicyDocument.Statement)
-        .flatMap((st) => (Array.isArray(st.Action) ? st.Action : [st.Action]));
-      const deletes = actions.filter((a) => /delete/i.test(a) && a !== 'dynamodb:DeleteItem' && a !== 'cognito-idp:DeleteIdentityProvider');
-      expect(deletes, String(r.Properties.RoleName)).toEqual([]);
+      for (const st of statementsOf(r)) {
+        const deletes = actionsOf(st).filter((a) => /^s3:.*delete/i.test(a));
+        if (deletes.length > 0) {
+          expect(String(r.Properties.RoleName)).toBe(`cupmark-${stage}-api`);
+          expect(resourcesOf(st).map((x) => JSON.stringify(x)).sort()).toEqual([...allowed].sort());
+        }
+        const lists = actionsOf(st).filter((a) => /^s3:List/i.test(a));
+        if (lists.length > 0) {
+          expect(lists).toEqual(['s3:ListBucketVersions']);
+          expect(st.Resource).toEqual({ 'Fn::GetAtt': [photoBucketId, 'Arn'] });
+          expect(st.Condition).toEqual({ StringLike: { 's3:prefix': ['labels/*', 'uploads/*'] } });
+        }
+      }
     }
   });
 
-  it('gives the API function the table name, the cursor key parameter and the photo bucket, and nothing secret', () => {
+  it('never lets the API role read, list or delete the deletion log, only put entries', () => {
+    expect(deletionLogBucketId).toBeDefined();
+    const onLog = statementsOf(apiRole).filter((st) =>
+      resourcesOf(st).some((x) => JSON.stringify(x).includes(`"${String(deletionLogBucketId)}"`)),
+    );
+    expect(onLog.map((st) => ({ actions: st.Action, resource: st.Resource }))).toEqual([
+      { actions: 's3:PutObject', resource: logObjects('entries/') },
+    ]);
+    // No role at all reads the log: that is the operator's restore procedure (M5).
+    for (const [, r] of resources(template, 'AWS::IAM::Role')) {
+      for (const st of statementsOf(r)) {
+        if (!resourcesOf(st).some((x) => JSON.stringify(x).includes(`"${String(deletionLogBucketId)}"`))) continue;
+        expect(actionsOf(st).filter((a) => /^s3:(Get|List|Delete)/i.test(a)), String(r.Properties.RoleName)).toEqual([]);
+      }
+    }
+  });
+
+  it('gives no role any delete action except the Apple provider sync and account deletion', () => {
+    const expected: Record<string, string[]> = {
+      [`cupmark-${stage}-api`]: ['cognito-idp:AdminDeleteUser', 'dynamodb:DeleteItem', 's3:DeleteObject', 's3:DeleteObjectVersion'],
+      [`cupmark-${stage}-apple-idp`]: ['cognito-idp:DeleteIdentityProvider'],
+      [`cupmark-${stage}-health`]: [],
+    };
+    for (const [, r] of resources(template, 'AWS::IAM::Role')) {
+      const deletes = statementsOf(r).flatMap(actionsOf).filter((a) => /delete/i.test(a));
+      expect([...new Set(deletes)].sort(), String(r.Properties.RoleName)).toEqual(expected[String(r.Properties.RoleName)]);
+    }
+  });
+
+  it('gives the API function the table, the cursor key parameter, the buckets and the pool id, and nothing secret', () => {
     expect(photoBucketId).toBeDefined();
+    expect(deletionLogBucketId).toBeDefined();
     expect(apiFn.Properties.Environment).toEqual({
       Variables: {
         TABLE_NAME: { Ref: tableId },
         CURSOR_KEY_PARAMETER: cursorKeyParameter(stage),
         PHOTO_BUCKET: { Ref: photoBucketId },
+        DELETION_LOG_BUCKET: { Ref: deletionLogBucketId },
+        USER_POOL_ID: { Ref: poolId },
         NODE_OPTIONS: '--enable-source-maps',
       },
     });
@@ -325,19 +416,22 @@ describe.each(STAGES)('stage %s', (stage) => {
     expect(healthFn.Properties.Environment).toEqual({ Variables: { NODE_OPTIONS: '--enable-source-maps' } });
   });
 
-  it('gives the photo bucket name only to the API function, not to health or apple-idp', () => {
+  it('gives the bucket names and the pool id only to the API function, not to health or apple-idp', () => {
     const [, appleFn] = byName(template, 'AWS::Lambda::Function', 'FunctionName', `cupmark-${stage}-apple-idp`);
     for (const fn of [healthFn, appleFn]) {
       const variables = (fn.Properties.Environment as { Variables?: Record<string, unknown> } | undefined)?.Variables ?? {};
-      expect(variables).not.toHaveProperty('PHOTO_BUCKET');
+      for (const name of ['PHOTO_BUCKET', 'DELETION_LOG_BUCKET', 'USER_POOL_ID']) expect(variables).not.toHaveProperty(name);
     }
   });
 
-  it('names the photo bucket so the backend accepts it (PHOTO_BUCKET pattern, no `--`)', () => {
-    // The backend's check of PHOTO_BUCKET (M1-T4c). The name is
+  it.each([
+    ['photos', 'PHOTO_BUCKET'],
+    ['deletion-log', 'DELETION_LOG_BUCKET'],
+  ])('names the %s bucket so the backend accepts it (%s pattern, no `--`, at most 63 characters)', (part) => {
+    // The backend's check of bucket names (M1-T4c). The name is
     // Fn::Join of a literal prefix and AWS::AccountId; resolve it with a realistic id.
     const accepted = /^cupmark-[a-z0-9][a-z0-9-]{0,53}[a-z0-9]$/;
-    const bucket = resources(template, 'AWS::S3::Bucket').find(([id]) => id === photoBucketId);
+    const bucket = resources(template, 'AWS::S3::Bucket').find(([id]) => id === bucketId(part));
     const join = bucket?.[1].Properties.BucketName as { 'Fn::Join': [string, unknown[]] };
     const [separator, parts] = join['Fn::Join'];
     for (const account of ['123456789012', '000000000001', '999999999999']) {
@@ -348,9 +442,10 @@ describe.each(STAGES)('stage %s', (stage) => {
           return account;
         })
         .join(separator);
-      expect(name).toBe(`cupmark-${stage}-photos-${account}`);
+      expect(name).toBe(`cupmark-${stage}-${part}-${account}`);
       expect(name).toMatch(accepted);
       expect(name).not.toContain('--');
+      expect(name.length).toBeLessThanOrEqual(63);
     }
   });
 

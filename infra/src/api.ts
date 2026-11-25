@@ -17,7 +17,7 @@ import { Construct } from 'constructs';
 import { NAME_PREFIX } from './config.ts';
 import type { StageName } from './config.ts';
 import type { CupmarkData } from './data.ts';
-import { LABEL_PHOTO_PREFIX, REVIEW_QUEUE_INDEX, UPLOAD_PHOTO_PREFIX } from './data.ts';
+import { DELETION_LOG_PREFIX, LABEL_PHOTO_PREFIX, REVIEW_QUEUE_INDEX, UPLOAD_PHOTO_PREFIX } from './data.ts';
 import { cupmarkFunction } from './functions.ts';
 import { API_ROUTES, routeKey } from './routes.ts';
 import type { RouteTarget } from './routes.ts';
@@ -45,6 +45,15 @@ export const API_TABLE_ACTIONS = [
 ] as const;
 /** On the review-queue index only reads. */
 export const API_INDEX_ACTIONS = ['dynamodb:Query'] as const;
+
+/**
+ * ADR 0017: account deletion removes every version of the user's label photos under
+ * `labels/` and `uploads/`, and nowhere else. These are the only photo prefixes the
+ * API may list versions of or delete in.
+ */
+export const ACCOUNT_DELETION_PHOTO_PREFIXES = [LABEL_PHOTO_PREFIX, UPLOAD_PHOTO_PREFIX] as const;
+/** The only Cognito action the API may call, on the stage pool only (ADR 0017). */
+export const API_COGNITO_ACTIONS = ['cognito-idp:AdminDeleteUser'] as const;
 
 export interface StageLimits {
   /** HTTP API stage throttling: steady requests per second, and burst. */
@@ -106,6 +115,10 @@ export class CupmarkApi extends Construct {
         // signs label photo uploads to `uploads/` and writes stripped ones to `labels/`
         // (ADR 0016).
         PHOTO_BUCKET: data.photoBucket.bucketName,
+        // Account deletion (ADR 0017): the log entry goes to this bucket, then the
+        // Cognito user is deleted from this pool.
+        DELETION_LOG_BUCKET: data.deletionLogBucket.bucketName,
+        USER_POOL_ID: props.userPool.userPoolId,
       },
       statements: [
         new iam.PolicyStatement({
@@ -140,6 +153,32 @@ export class CupmarkApi extends Construct {
           sid: 'LabelPhotos',
           actions: ['s3:PutObject'],
           resources: [data.photoBucket.arnForObjects(`${LABEL_PHOTO_PREFIX}*`)],
+        }),
+        // Account deletion (ADR 0017). Every version and delete marker of the user's
+        // photos goes, so only these two prefixes; catalogue/ and verified/ are not the
+        // user's data.
+        new iam.PolicyStatement({
+          sid: 'AccountDeletionPhotos',
+          actions: ['s3:DeleteObject', 's3:DeleteObjectVersion'],
+          resources: ACCOUNT_DELETION_PHOTO_PREFIXES.map((p) => data.photoBucket.arnForObjects(`${p}*`)),
+        }),
+        // ListObjectVersions with the exact key as prefix, to find the version ids.
+        new iam.PolicyStatement({
+          sid: 'AccountDeletionPhotoVersions',
+          actions: ['s3:ListBucketVersions'],
+          resources: [data.photoBucket.bucketArn],
+          conditions: { StringLike: { 's3:prefix': ACCOUNT_DELETION_PHOTO_PREFIXES.map((p) => `${p}*`) } },
+        }),
+        // Write only: reading the log is for the operator's restore procedure (M5).
+        new iam.PolicyStatement({
+          sid: 'DeletionLog',
+          actions: ['s3:PutObject'],
+          resources: [data.deletionLogBucket.arnForObjects(`${DELETION_LOG_PREFIX}*`)],
+        }),
+        new iam.PolicyStatement({
+          sid: 'AccountDeletionUser',
+          actions: [...API_COGNITO_ACTIONS],
+          resources: [props.userPool.userPoolArn],
         }),
       ],
     });

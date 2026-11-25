@@ -143,7 +143,7 @@ const requiredName = (prop: string): NameRule => ({ path: [prop], prefixes: [STA
  */
 export const ALLOWED_RESOURCE_TYPES: Readonly<Record<string, ResourceRule>> = {
   'AWS::DynamoDB::Table': { why: 'the one table', names: [optionalName('TableName')] },
-  'AWS::S3::Bucket': { why: 'photo and backup buckets', names: [optionalName('BucketName')] },
+  'AWS::S3::Bucket': { why: 'photo, backup and deletion-log buckets', names: [optionalName('BucketName')] },
   'AWS::S3::BucketPolicy': { why: 'TLS-only bucket policy', names: [] },
   'AWS::Lambda::Function': { why: 'API and worker functions', names: [optionalName('FunctionName')] },
   'AWS::Lambda::Permission': { why: 'API Gateway and Scheduler invoke', names: [] },
