@@ -86,7 +86,7 @@ Goal: the repo builds, tests and checks itself; the shared contract exists.
 
 
 ### M0-T8 Harden the existing workflows
-- status: todo
+- status: in-progress
 - owner: infra-engineer
 - depends: M0-T5
 - acceptance:
