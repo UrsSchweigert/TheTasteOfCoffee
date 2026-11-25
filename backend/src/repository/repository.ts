@@ -12,7 +12,8 @@
 // - References are kept in the same transaction as the write: a shelf entry
 //   needs its bean in the catalogue, a brew needs its shelf entry in the
 //   caller's partition, and each shelf entry counts the brews that reference it
-//   (`brewCount`, ADR 0012), so a shelf entry with brews cannot be deleted.
+//   (`brewCount`, ADR 0012), so a shelf entry with brews cannot be deleted
+//   and cannot change its bean (D14).
 // - The aggregation pipeline (M3) is not here; keys.ts has its key builders.
 import {
   ConditionalCheckFailedException,
@@ -64,6 +65,7 @@ import {
   InvalidValuesError,
   ItemExistsError,
   ItemNotFoundError,
+  ShelfEntryBeanLockedError,
   ShelfEntryInUseError,
   ShelfEntryNotFoundError,
   WriteConflictError,
@@ -338,6 +340,16 @@ export class Repository {
     return { shelf_entry_id: stored.shelfEntryId, values: stored.values };
   }
 
+  /**
+   * Replaces a shelf entry. `bean_id` may change only while no brew references
+   * the entry (D14): one condition on the entry item, `beanId` unchanged or
+   * `brewCount` 0 (or absent), decides atomically. A brew create racing with a
+   * bean change is conditional on the bean it read (#countBrew), so one of the
+   * two transactions fails: either this replace (ShelfEntryBeanLockedError) or
+   * the brew (WriteConflictError, retried against the new bean).
+   * A failed condition reads the item once: gone is ItemNotFoundError, an
+   * unknown bean is BeanNotFoundError, otherwise ShelfEntryBeanLockedError.
+   */
   public async replaceShelfEntry(user: UserId, shelfEntryId: string, input: ShelfEntryInput): Promise<ShelfEntry> {
     const key = shelfEntryKey(user, shelfEntryId);
     const values = validValues(ShelfEntryInputSchema, input, 'shelf entry');
@@ -351,13 +363,15 @@ export class Repository {
                 TableName: this.#table,
                 Key: key,
                 UpdateExpression: 'SET beanId = :bean, purchaseDate = :date, #values = :values, updatedAt = :now',
-                ConditionExpression: 'attribute_exists(pk)',
+                ConditionExpression:
+                  'attribute_exists(pk) AND (beanId = :bean OR attribute_not_exists(brewCount) OR brewCount = :zero)',
                 ExpressionAttributeNames: { '#values': 'values' },
                 ExpressionAttributeValues: {
                   ':bean': values.bean_id,
                   ':date': values.purchase_date,
                   ':values': values,
                   ':now': utcOf(this.#now()),
+                  ':zero': 0,
                 },
               },
             },
@@ -366,7 +380,12 @@ export class Repository {
       );
     } catch (error) {
       const failed = failedConditions(error);
-      if (failed?.includes(1)) throw new ItemNotFoundError('no such shelf entry');
+      if (failed?.includes(1)) {
+        // The item cannot reappear under this id (ids are server-generated ULIDs), so present now means present then.
+        if ((await this.#get(key)) === undefined) throw new ItemNotFoundError('no such shelf entry');
+        if (failed.includes(0)) throw new BeanNotFoundError('no such bean');
+        throw new ShelfEntryBeanLockedError('brews reference the shelf entry');
+      }
       if (failed?.includes(0)) throw new BeanNotFoundError('no such bean');
       throw error;
     }

@@ -15,8 +15,8 @@
 //    input is 400.
 // 4. The operation. Repository errors map to 404 (not in the caller's
 //    partition, or a referenced bean or shelf entry is missing), 409 (a shelf
-//    entry still referenced by brews), 400 (a cursor the repository refuses)
-//    and 500 for anything else. A write that raced another write is tried up
+//    entry that brews reference is deleted or would change its bean, D14),
+//    400 (a cursor the repository refuses) and 500 for anything else. A write that raced another write is tried up
 //    to three times in all, with a short random wait in between.
 //
 // Matching uses `rawPath`, so the API must use the `$default` stage (no stage
@@ -33,6 +33,7 @@ import {
   InvalidKeyError,
   InvalidValuesError,
   ItemNotFoundError,
+  ShelfEntryBeanLockedError,
   ShelfEntryInUseError,
   ShelfEntryNotFoundError,
   WriteConflictError,
@@ -104,7 +105,7 @@ function outcomeOf(error: unknown): Outcome {
   if (error instanceof ItemNotFoundError || error instanceof BeanNotFoundError || error instanceof ShelfEntryNotFoundError) {
     return failed(404, error);
   }
-  if (error instanceof ShelfEntryInUseError) return failed(409, error);
+  if (error instanceof ShelfEntryInUseError || error instanceof ShelfEntryBeanLockedError) return failed(409, error);
   if (error instanceof InvalidCursorError || error instanceof InvalidKeyError || error instanceof InvalidValuesError) {
     return failed(400, error);
   }

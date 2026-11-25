@@ -130,4 +130,27 @@ describe.skipIf(!local.reachable)('API routes on DynamoDB Local', () => {
     expect(await partition(BOB_SUB)).toEqual([]);
     expect(await partition(ALICE_SUB)).toEqual(before);
   });
+
+  it('PUT /shelf/{id} answers 409 with no body when the bean would change while brews reference the entry (D14)', async () => {
+    const repository = new Repository({ client: documentClient, tableName });
+    const other = (await repository.createBean({ vocabularyVersion: 1, openFoodFactsMatch: false, pickedAttributes: {} })).bean.bean_id;
+    const sub = 'c0c0c0c0-c0c0-4c0c-8c0c-c0c0c0c0c0c0';
+    const shelf = ShelfEntrySchema.parse((await call('POST', '/shelf', { sub, json: shelfBody({ bean_id: beanId }) })).body);
+    const path = `/shelf/${shelf.shelf_entry_id}`;
+    const brew = BrewSchema.parse((await call('POST', '/brews', { sub, json: brewBody(shelf.shelf_entry_id) })).body);
+    const before = await partition(sub);
+
+    const result = await api(apiEvent('PUT', path, { sub, json: shelfBody({ bean_id: other }) }));
+    expect(result.statusCode).toBe(409);
+    expect(result.body).toBeUndefined();
+    expect(logs.at(-1)).toMatchObject({ operation: 'replaceShelfEntry', status: 409, error: 'ShelfEntryBeanLockedError' });
+    expect(await partition(sub)).toEqual(before);
+    expect((await call('PUT', path, { sub, json: shelfBody({ bean_id: '01ARZ3NDEKTSV4RRFFQ69G5FAV' }) })).status).toBe(404);
+    expect((await call('PUT', path, { sub, json: shelfBody({ bean_id: beanId, bag_size: 'g_1000' }) })).status).toBe(200);
+
+    expect((await call('DELETE', `/brews/${brew.brew_id}`, { sub })).status).toBe(204);
+    const moved = await call('PUT', path, { sub, json: shelfBody({ bean_id: other }) });
+    expect(moved.status).toBe(200);
+    expect(ShelfEntrySchema.parse(moved.body).values.bean_id).toBe(other);
+  });
 });

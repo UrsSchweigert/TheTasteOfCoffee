@@ -2,8 +2,10 @@
 // conditional writes fail as documented, the review-queue index is sparse, and
 // one user cannot read, change, delete or list another user's items.
 // Run with `npm run test:integration`; see test/integration/dynamodb-local.ts.
-import { GetCommand, PutCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, PutCommand, QueryCommand, TransactWriteCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { WRITE_ATTEMPTS } from '../../src/api/router.ts';
 import type { UserId } from '../../src/auth/user-id.ts';
 import { BrewInputSchema, ProfileSchema, RecipeInputSchema, ShelfEntryInputSchema } from '../../src/generated/contract.ts';
 import type { BrewInput, RecipeInput, ShelfEntryInput } from '../../src/generated/contract.ts';
@@ -21,8 +23,10 @@ import {
   REVIEW_QUEUE_INDEX,
   REVIEW_QUEUE_PK,
   Repository,
+  ShelfEntryBeanLockedError,
   ShelfEntryInUseError,
   ShelfEntryNotFoundError,
+  WriteConflictError,
   aggregateAllKey,
   aggregateMethodKey,
   barcodeKey,
@@ -348,11 +352,175 @@ describe.skipIf(!local.reachable)('repository on DynamoDB Local', () => {
     it('the brew records the bean of its shelf entry at the time of the write', async () => {
       const user = verifiedUserId('d5d5d5d5-d5d5-4d5d-8d5d-d5d5d5d5d5d5');
       const other = (await repo.createBean({ vocabularyVersion: 1, openFoodFactsMatch: false, pickedAttributes: {} })).bean.bean_id;
+      const entry = (await repo.createShelfEntry(user, shelfInput({ bean_id: other }))).shelf_entry_id;
+      await repo.createBrew(user, brewInput(entry, '2026-11-25T07:00:00Z'));
+      expect((await partition(userPk(user))).find((i) => i.type === 'BREW')).toMatchObject({ shelfEntryId: entry, beanId: other });
+    });
+  });
+
+  describe('changing the bean of a shelf entry (D14)', () => {
+    let OTHER_BEAN = '';
+    beforeAll(async () => {
+      OTHER_BEAN = (await repo.createBean({ vocabularyVersion: 1, openFoodFactsMatch: false, pickedAttributes: {} })).bean.bean_id;
+    });
+
+    /** Every brew item of the user names the bean its shelf entry names now, and each entry counts its brews. */
+    async function expectConsistent(user: UserId): Promise<{ brews: number }> {
+      const items = await partition(userPk(user));
+      const entries = items.filter((i) => i.type === 'SHELF');
+      const brews = items.filter((i) => i.type === 'BREW');
+      for (const entry of entries) {
+        const own = brews.filter((b) => b.shelfEntryId === entry.shelfEntryId);
+        for (const brew of own) expect(brew.beanId).toBe(entry.beanId);
+        expect(entry.brewCount).toBe(own.length);
+      }
+      expect(items.filter((i) => i.type === 'BREW_REF')).toHaveLength(brews.length);
+      return { brews: brews.length };
+    }
+
+    it('a bean change with no brews passes', async () => {
+      const user = verifiedUserId('e1e1e1e1-e1e1-4e1e-8e1e-e1e1e1e1e1e1');
       const entry = (await repo.createShelfEntry(user, shelfInput())).shelf_entry_id;
-      const brew = await repo.createBrew(user, brewInput(entry, '2026-11-25T07:00:00Z'));
-      await repo.replaceShelfEntry(user, entry, shelfInput({ bean_id: other }));
-      await repo.replaceBrew(user, brew.brew_id, brewInput(entry, '2026-11-25T07:00:00Z', 9));
-      expect((await partition(userPk(user))).find((i) => i.type === 'BREW')).toMatchObject({ beanId: other });
+      const replaced = await repo.replaceShelfEntry(user, entry, shelfInput({ bean_id: OTHER_BEAN }));
+      expect(replaced.values.bean_id).toBe(OTHER_BEAN);
+      expect(await raw(shelfEntryKey(user, entry))).toMatchObject({ beanId: OTHER_BEAN, brewCount: 0 });
+    });
+
+    it('a bean change on an entry stored without brewCount passes (attribute_not_exists)', async () => {
+      const user = verifiedUserId('e2e2e2e2-e2e2-4e2e-8e2e-e2e2e2e2e2e2');
+      const entry = (await repo.createShelfEntry(user, shelfInput())).shelf_entry_id;
+      await documentClient.send(
+        new UpdateCommand({ TableName: tableName, Key: shelfEntryKey(user, entry), UpdateExpression: 'REMOVE brewCount' }),
+      );
+      await repo.replaceShelfEntry(user, entry, shelfInput({ bean_id: OTHER_BEAN }));
+      expect((await raw(shelfEntryKey(user, entry)))?.beanId).toBe(OTHER_BEAN);
+    });
+
+    it('a bean change with one brew is ShelfEntryBeanLockedError and writes nothing', async () => {
+      const user = verifiedUserId('e3e3e3e3-e3e3-4e3e-8e3e-e3e3e3e3e3e3');
+      const entry = (await repo.createShelfEntry(user, shelfInput())).shelf_entry_id;
+      await repo.createBrew(user, brewInput(entry, '2026-11-25T07:00:00Z'));
+      const before = await partition(userPk(user));
+      await expect(repo.replaceShelfEntry(user, entry, shelfInput({ bean_id: OTHER_BEAN }))).rejects.toThrow(ShelfEntryBeanLockedError);
+      expect(await partition(userPk(user))).toEqual(before);
+      // An unknown bean is still 404, and a missing entry too, brews or not.
+      await expect(repo.replaceShelfEntry(user, entry, shelfInput({ bean_id: newUlid() }))).rejects.toThrow(BeanNotFoundError);
+      await expect(repo.replaceShelfEntry(user, newUlid(), shelfInput({ bean_id: OTHER_BEAN }))).rejects.toThrow(ItemNotFoundError);
+      expect(await partition(userPk(user))).toEqual(before);
+    });
+
+    it('a change that keeps the bean passes while brews reference the entry', async () => {
+      const user = verifiedUserId('e4e4e4e4-e4e4-4e4e-8e4e-e4e4e4e4e4e4');
+      const entry = (await repo.createShelfEntry(user, shelfInput())).shelf_entry_id;
+      await repo.createBrew(user, brewInput(entry, '2026-11-25T07:00:00Z'));
+      await repo.createBrew(user, brewInput(entry, '2026-11-25T08:00:00Z'));
+      const replaced = await repo.replaceShelfEntry(user, entry, shelfInput({ price_band: 'from_80', bag_size: 'g_1000' }));
+      expect(await repo.getShelfEntry(user, entry)).toEqual(replaced);
+      expect(await raw(shelfEntryKey(user, entry))).toMatchObject({ beanId: BEAN_ID, brewCount: 2 });
+      expect(await expectConsistent(user)).toEqual({ brews: 2 });
+    });
+
+    it('after the brews are deleted, a bean change passes', async () => {
+      const user = verifiedUserId('e5e5e5e5-e5e5-4e5e-8e5e-e5e5e5e5e5e5');
+      const entry = (await repo.createShelfEntry(user, shelfInput())).shelf_entry_id;
+      const a = await repo.createBrew(user, brewInput(entry, '2026-11-25T07:00:00Z'));
+      const b = await repo.createBrew(user, brewInput(entry, '2026-11-25T08:00:00Z'));
+      await repo.deleteBrew(user, a.brew_id);
+      await expect(repo.replaceShelfEntry(user, entry, shelfInput({ bean_id: OTHER_BEAN }))).rejects.toThrow(ShelfEntryBeanLockedError);
+      await repo.deleteBrew(user, b.brew_id);
+      await repo.replaceShelfEntry(user, entry, shelfInput({ bean_id: OTHER_BEAN }));
+      expect(await raw(shelfEntryKey(user, entry))).toMatchObject({ beanId: OTHER_BEAN, brewCount: 0 });
+      // A brew logged now records the new bean.
+      await repo.createBrew(user, brewInput(entry, '2026-11-25T09:00:00Z'));
+      expect((await partition(userPk(user))).find((i) => i.type === 'BREW')).toMatchObject({ beanId: OTHER_BEAN });
+    });
+
+    it('moving a brew onto an entry whose bean was just changed records the new bean', async () => {
+      const user = verifiedUserId('e6e6e6e6-e6e6-4e6e-8e6e-e6e6e6e6e6e6');
+      const first = (await repo.createShelfEntry(user, shelfInput())).shelf_entry_id;
+      const second = (await repo.createShelfEntry(user, shelfInput())).shelf_entry_id;
+      const brew = await repo.createBrew(user, brewInput(first, '2026-11-25T07:00:00Z'));
+      await repo.replaceShelfEntry(user, second, shelfInput({ bean_id: OTHER_BEAN }));
+      await repo.replaceBrew(user, brew.brew_id, brewInput(second, '2026-11-25T07:00:00Z'));
+      // Now the second entry has a brew: its bean is locked; the first has none: its bean is free.
+      await expect(repo.replaceShelfEntry(user, second, shelfInput())).rejects.toThrow(ShelfEntryBeanLockedError);
+      await repo.replaceShelfEntry(user, first, shelfInput({ bean_id: OTHER_BEAN }));
+      expect(await expectConsistent(user)).toEqual({ brews: 1 });
+      expect((await partition(userPk(user))).find((i) => i.type === 'BREW')).toMatchObject({ shelfEntryId: second, beanId: OTHER_BEAN });
+    });
+
+    /** As the API does: a write that raced is tried up to WRITE_ATTEMPTS times in all. */
+    async function withRetry<T>(write: () => Promise<T>): Promise<T> {
+      for (let attempt = 1; ; attempt += 1) {
+        try {
+          return await write();
+        } catch (error) {
+          if (!(error instanceof WriteConflictError) || attempt >= WRITE_ATTEMPTS) throw error;
+          await new Promise((resolve) => setTimeout(resolve, Math.random() * 20));
+        }
+      }
+    }
+
+    it('a brew that read the old bean before a bean change lands fails its condition and, retried, records the new bean', async () => {
+      const user = verifiedUserId('e7e7e7e7-e7e7-4e7e-8e7e-e7e7e7e7e7e7');
+      const entry = (await repo.createShelfEntry(user, shelfInput())).shelf_entry_id;
+      // Hold the brew transaction after its read of the shelf entry until the bean change is done.
+      let release: () => void = () => undefined;
+      let held: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      const reached = new Promise<void>((resolve) => (held = resolve));
+      let gated = 0;
+      const gatedClient = {
+        send: async (command: unknown, ...rest: unknown[]) => {
+          if (command instanceof TransactWriteCommand && gated++ === 0) {
+            held();
+            await gate;
+          }
+          return (documentClient.send as (c: unknown, ...r: unknown[]) => Promise<unknown>)(command, ...rest);
+        },
+      } as unknown as DynamoDBDocumentClient;
+      const slow = new Repository({ client: gatedClient, tableName });
+
+      const brewing = withRetry(() => slow.createBrew(user, brewInput(entry, '2026-11-25T07:00:00Z')));
+      await reached;
+      await repo.replaceShelfEntry(user, entry, shelfInput({ bean_id: OTHER_BEAN }));
+      release();
+      const brew = await brewing;
+      expect(gated).toBe(2); // the first transaction failed its condition; the retry read the new bean
+      expect(await raw(shelfEntryKey(user, entry))).toMatchObject({ beanId: OTHER_BEAN, brewCount: 1 });
+      expect((await partition(userPk(user))).find((i) => i.type === 'BREW')).toMatchObject({ brewId: brew.brew_id, beanId: OTHER_BEAN });
+      // And the bean is locked again now.
+      await expect(repo.replaceShelfEntry(user, entry, shelfInput())).rejects.toThrow(ShelfEntryBeanLockedError);
+    });
+
+    it('the race: parallel brew creates and a bean change always leave every brew under its entry’s bean', async () => {
+      const outcomes = { replaced: 0, locked: 0, brewsFailed: 0 };
+      for (let round = 0; round < 25; round += 1) {
+        const user = verifiedUserId(`f0f0f0f0-f0f0-4f0f-8f0f-${String(round).padStart(12, '0')}`);
+        const entry = (await repo.createShelfEntry(user, shelfInput())).shelf_entry_id;
+        const settled = await Promise.allSettled([
+          withRetry(() => repo.createBrew(user, brewInput(entry, '2026-11-25T07:00:00Z'))),
+          withRetry(() => repo.replaceShelfEntry(user, entry, shelfInput({ bean_id: OTHER_BEAN }))),
+          withRetry(() => repo.createBrew(user, brewInput(entry, '2026-11-25T08:00:00Z'))),
+        ]);
+        const [brewA, replace, brewB] = settled;
+        if (replace.status === 'fulfilled') outcomes.replaced += 1;
+        else {
+          expect(replace.reason).toBeInstanceOf(ShelfEntryBeanLockedError);
+          outcomes.locked += 1;
+        }
+        for (const result of [brewA, brewB]) {
+          if (result.status === 'rejected') {
+            // Only a race that kept losing may fail a brew, and then it wrote nothing.
+            expect(result.reason).toBeInstanceOf(WriteConflictError);
+            outcomes.brewsFailed += 1;
+          }
+        }
+        const stored = await raw(shelfEntryKey(user, entry));
+        expect(stored?.beanId).toBe(replace.status === 'fulfilled' ? OTHER_BEAN : BEAN_ID);
+        await expectConsistent(user);
+      }
+      expect(outcomes.replaced + outcomes.locked).toBe(25);
     });
   });
 

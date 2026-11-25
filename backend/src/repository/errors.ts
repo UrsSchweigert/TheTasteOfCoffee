@@ -64,3 +64,8 @@ export class ShelfEntryNotFoundError extends RepositoryError {
 export class ShelfEntryInUseError extends RepositoryError {
   public override readonly name = 'ShelfEntryInUseError';
 }
+
+/** A shelf entry replace would change `bean_id` while brews reference the entry (API: 409; D14). */
+export class ShelfEntryBeanLockedError extends RepositoryError {
+  public override readonly name = 'ShelfEntryBeanLockedError';
+}
