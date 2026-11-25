@@ -35,3 +35,4 @@ What this costs, what it rules out, when to revisit.
 - [0007 The health route needs no token](0007-unauthenticated-health-route.md)
 - [0008 MPL-2.0 is allowed in dev-only tooling](0008-mpl-licensed-dev-tooling.md)
 - [0009 One shared AWS account for both stages; a Cupmark stack creates the GitHub deploy role](0009-shared-account-and-github-oidc-stack.md)
+- [0010 Shelf, brew and recipe sort keys carry the item id](0010-sort-keys-carry-item-ids.md)

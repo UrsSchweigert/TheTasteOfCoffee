@@ -1,0 +1,531 @@
+// The repository against DynamoDB Local (M1-T3): every item type round-trips,
+// conditional writes fail as documented, the review-queue index is sparse, and
+// one user cannot read, change, delete or list another user's items.
+// Run with `npm run test:integration`; see test/integration/dynamodb-local.ts.
+import { GetCommand, PutCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { UserId } from '../../src/auth/user-id.ts';
+import { BrewInputSchema, ProfileSchema, RecipeInputSchema, ShelfEntryInputSchema } from '../../src/generated/contract.ts';
+import type { BrewInput, RecipeInput, ShelfEntryInput } from '../../src/generated/contract.ts';
+import { newUlid } from '../../src/ids/ulid.ts';
+import {
+  BarcodeTakenError,
+  BeanNotUnverifiedError,
+  CorruptItemError,
+  InvalidCursorError,
+  InvalidKeyError,
+  InvalidValuesError,
+  ItemExistsError,
+  ItemNotFoundError,
+  REVIEW_QUEUE_INDEX,
+  REVIEW_QUEUE_PK,
+  Repository,
+  aggregateAllKey,
+  aggregateMethodKey,
+  barcodeKey,
+  beanMetaKey,
+  brewRefKey,
+  rankingKey,
+  raterMarkerKey,
+  shelfEntryKey,
+  userPk,
+} from '../../src/repository/index.ts';
+import { verifiedUserId } from '../events.ts';
+import { validBrewInput } from '../fixtures.ts';
+import { connectDynamoDbLocal, createTestTable, deleteTestTable } from './dynamodb-local.ts';
+
+const local = await connectDynamoDbLocal();
+
+const ALICE = verifiedUserId('3f1c2b4a-9d8e-4f70-a1b2-c3d4e5f60718');
+const BOB = verifiedUserId('0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d');
+const BEAN_ID = '01JDQ8Z6V3W4X5Y6Z7A8B9C0DF';
+
+function shelfInput(overrides: Partial<ShelfEntryInput> = {}): ShelfEntryInput {
+  return ShelfEntryInputSchema.parse({
+    vocabulary_version: 1,
+    bean_id: BEAN_ID,
+    purchase_date: '2026-11-20',
+    roast_date: '2026-11-10',
+    bag_size: 'g_250',
+    price_band: 'from_15_to_30',
+    ...overrides,
+  });
+}
+
+function brewInput(brewedAt: string, overall = 8): BrewInput {
+  const input = validBrewInput();
+  const rating = input.rating as { scores: Record<string, number> };
+  rating.scores.overall = overall;
+  return BrewInputSchema.parse({ ...input, brewed_at: brewedAt });
+}
+
+function recipeInput(dose = 150): RecipeInput {
+  return RecipeInputSchema.parse({ vocabulary_version: 1, parameters: { method: 'aeropress', dose_dg: dose, water_g: 200 } });
+}
+
+describe.skipIf(!local.reachable)('repository on DynamoDB Local', () => {
+  let tableName = '';
+  let repo: Repository;
+  const { client, documentClient } = local;
+
+  /** Every item in a partition, read directly from the table. */
+  async function partition(pk: string): Promise<Record<string, unknown>[]> {
+    const result = await documentClient.send(
+      new QueryCommand({ TableName: tableName, KeyConditionExpression: 'pk = :pk', ExpressionAttributeValues: { ':pk': pk } }),
+    );
+    return (result.Items ?? []) as Record<string, unknown>[];
+  }
+
+  async function raw(key: { pk: string; sk: string }): Promise<Record<string, unknown> | undefined> {
+    const result = await documentClient.send(new GetCommand({ TableName: tableName, Key: key, ConsistentRead: true }));
+    return result.Item as Record<string, unknown> | undefined;
+  }
+
+  async function reviewQueue(): Promise<string[]> {
+    const result = await documentClient.send(
+      new QueryCommand({
+        TableName: tableName,
+        IndexName: REVIEW_QUEUE_INDEX.indexName,
+        KeyConditionExpression: 'gsi1pk = :q',
+        ExpressionAttributeValues: { ':q': REVIEW_QUEUE_PK },
+      }),
+    );
+    return (result.Items ?? []).map((item) => String(item.beanId));
+  }
+
+  /** A repository whose clock and ids the test controls. */
+  function repoWith(options: { now?: () => Date; newId?: (now: Date) => string }): Repository {
+    return new Repository({ client: documentClient, tableName, ...options });
+  }
+
+  beforeAll(async () => {
+    tableName = await createTestTable(client);
+    repo = new Repository({ client: documentClient, tableName });
+  });
+
+  afterAll(async () => {
+    if (tableName !== '') await deleteTestTable(client, tableName);
+  });
+
+  describe('profile', () => {
+    it('is absent, then created, then replaced', async () => {
+      const user = verifiedUserId('11111111-1111-4111-8111-111111111111');
+      expect(await repo.getProfile(user)).toBeUndefined();
+      const first = ProfileSchema.parse({ locale: 'de', consent: { contribute_to_aggregates: true } });
+      expect(await repo.putProfile(user, first)).toEqual(first);
+      expect(await repo.getProfile(user)).toEqual(first);
+      const second = ProfileSchema.parse({ locale: 'en', consent: { contribute_to_aggregates: false } });
+      await repo.putProfile(user, second);
+      expect(await repo.getProfile(user)).toEqual(second);
+      expect((await raw({ pk: userPk(user), sk: 'PROFILE' }))?.type).toBe('PROFILE');
+    });
+
+    it('keeps other profile attributes (the entitlement, M4) when consent and locale change', async () => {
+      const user = verifiedUserId('22222222-2222-4222-8222-222222222222');
+      await repo.putProfile(user, { locale: 'de', consent: { contribute_to_aggregates: true } });
+      await documentClient.send(
+        new UpdateCommand({
+          TableName: tableName,
+          Key: { pk: userPk(user), sk: 'PROFILE' },
+          UpdateExpression: 'SET entitlement = :e',
+          ExpressionAttributeValues: { ':e': 'paid' },
+        }),
+      );
+      await repo.putProfile(user, { locale: 'en', consent: { contribute_to_aggregates: true } });
+      expect((await raw({ pk: userPk(user), sk: 'PROFILE' }))?.entitlement).toBe('paid');
+    });
+  });
+
+  describe('shelf entries', () => {
+    it('round-trip: create, get, replace, list, delete', async () => {
+      const user = verifiedUserId('33333333-3333-4333-8333-333333333333');
+      const created = await repo.createShelfEntry(user, shelfInput());
+      expect(created.values).toEqual(shelfInput());
+      expect(await repo.getShelfEntry(user, created.shelf_entry_id)).toEqual(created);
+
+      const stored = await raw(shelfEntryKey(user, created.shelf_entry_id));
+      expect(stored).toMatchObject({ type: 'SHELF', beanId: BEAN_ID, purchaseDate: '2026-11-20' });
+
+      const replaced = await repo.replaceShelfEntry(user, created.shelf_entry_id, shelfInput({ price_band: 'from_80' }));
+      expect(replaced.values.price_band).toBe('from_80');
+      expect(await repo.getShelfEntry(user, created.shelf_entry_id)).toEqual(replaced);
+      expect((await raw(shelfEntryKey(user, created.shelf_entry_id)))?.createdAt).toBe(stored?.createdAt);
+
+      expect((await repo.listShelfEntries(user)).items).toEqual([replaced]);
+      await repo.deleteShelfEntry(user, created.shelf_entry_id);
+      expect(await repo.getShelfEntry(user, created.shelf_entry_id)).toBeUndefined();
+      expect(await partition(userPk(user))).toEqual([]);
+    });
+
+    it('keeps two purchases of the same bean on the same day apart (ADR 0010)', async () => {
+      const user = verifiedUserId('44444444-4444-4444-8444-444444444444');
+      const a = await repo.createShelfEntry(user, shelfInput());
+      const b = await repo.createShelfEntry(user, shelfInput());
+      expect(a.shelf_entry_id).not.toBe(b.shelf_entry_id);
+      expect((await repo.listShelfEntries(user)).items).toHaveLength(2);
+    });
+
+    it('create is conditional on the item not existing', async () => {
+      const user = verifiedUserId('55555555-5555-4555-8555-555555555555');
+      const fixed = newUlid();
+      const sameId = repoWith({ newId: () => fixed });
+      await sameId.createShelfEntry(user, shelfInput());
+      await expect(sameId.createShelfEntry(user, shelfInput({ price_band: 'from_80' }))).rejects.toThrow(ItemExistsError);
+      expect((await repo.getShelfEntry(user, fixed))?.values.price_band).toBe('from_15_to_30');
+    });
+
+    it('replace and delete are conditional on the item existing', async () => {
+      const user = verifiedUserId('66666666-6666-4666-8666-666666666666');
+      const missing = newUlid();
+      await expect(repo.replaceShelfEntry(user, missing, shelfInput())).rejects.toThrow(ItemNotFoundError);
+      await expect(repo.deleteShelfEntry(user, missing)).rejects.toThrow(ItemNotFoundError);
+      // The failed replace must not have created the item (no upsert).
+      expect(await partition(userPk(user))).toEqual([]);
+    });
+
+    it('pages with cursors, newest first', async () => {
+      const user = verifiedUserId('77777777-7777-4777-8777-777777777777');
+      let t = Date.UTC(2026, 10, 1);
+      const ticking = repoWith({ now: () => new Date((t += 1000)) });
+      const ids: string[] = [];
+      for (let i = 0; i < 5; i += 1) ids.push((await ticking.createShelfEntry(user, shelfInput())).shelf_entry_id);
+      const first = await repo.listShelfEntries(user, { limit: 2 });
+      expect(first.items.map((e) => e.shelf_entry_id)).toEqual([ids[4], ids[3]]);
+      expect(first.nextCursor).toBeDefined();
+      const second = await repo.listShelfEntries(user, { limit: 2, ...(first.nextCursor ? { cursor: first.nextCursor } : {}) });
+      expect(second.items.map((e) => e.shelf_entry_id)).toEqual([ids[2], ids[1]]);
+      const third = await repo.listShelfEntries(user, { limit: 2, ...(second.nextCursor ? { cursor: second.nextCursor } : {}) });
+      expect(third.items.map((e) => e.shelf_entry_id)).toEqual([ids[0]]);
+      await expect(repo.listShelfEntries(user, { cursor: 'not!a!cursor' })).rejects.toThrow(InvalidCursorError);
+      await expect(repo.listShelfEntries(user, { limit: 101 })).rejects.toThrow();
+    });
+  });
+
+  describe('brews', () => {
+    it('round-trip: create, get by id, replace, delete; brew and pointer move together', async () => {
+      const user = verifiedUserId('88888888-8888-4888-8888-888888888888');
+      const created = await repo.createBrew(user, brewInput('2026-11-25T07:30:00.250+01:00'));
+      expect(await repo.getBrew(user, created.brew_id)).toEqual(created);
+
+      const items = await partition(userPk(user));
+      expect(items.map((i) => i.sk).sort()).toEqual(
+        [`BREW#2026-11-25T06:30:00.250Z#${created.brew_id}`, `BREWID#${created.brew_id}`].sort(),
+      );
+      expect(items.find((i) => i.type === 'BREW')?.values).toEqual(created.values);
+
+      // Same time: updated in place.
+      const sameTime = await repo.replaceBrew(user, created.brew_id, brewInput('2026-11-25T07:30:00.250+01:00', 9));
+      expect((await repo.getBrew(user, created.brew_id))?.values.rating?.scores.overall).toBe(9);
+      expect(sameTime.brew_id).toBe(created.brew_id);
+
+      // New time: the brew item moves to its new sort key, the pointer follows.
+      await repo.replaceBrew(user, created.brew_id, brewInput('2026-11-26T08:00:00Z', 6));
+      const moved = await partition(userPk(user));
+      expect(moved.map((i) => i.sk).sort()).toEqual(
+        [`BREW#2026-11-26T08:00:00.000Z#${created.brew_id}`, `BREWID#${created.brew_id}`].sort(),
+      );
+      expect((await raw(brewRefKey(user, created.brew_id)))?.brewSk).toBe(`BREW#2026-11-26T08:00:00.000Z#${created.brew_id}`);
+      const read = await repo.getBrew(user, created.brew_id);
+      expect(read?.values.brewed_at).toBe('2026-11-26T08:00:00Z');
+      expect(read?.values.rating?.scores.overall).toBe(6);
+
+      await repo.deleteBrew(user, created.brew_id);
+      expect(await repo.getBrew(user, created.brew_id)).toBeUndefined();
+      expect(await partition(userPk(user))).toEqual([]);
+    });
+
+    it('lists newest brewed_at first, whatever the creation order or offset, and pages', async () => {
+      const user = verifiedUserId('99999999-9999-4999-8999-999999999999');
+      const times = ['2026-11-20T10:00:00Z', '2026-11-25T10:00:00+05:00', '2026-11-22T10:00:00Z', '2026-11-25T06:00:00Z'];
+      const ids = new Map<string, string>();
+      for (const t of times) ids.set(t, (await repo.createBrew(user, brewInput(t))).brew_id);
+      const order = ['2026-11-25T06:00:00Z', '2026-11-25T10:00:00+05:00', '2026-11-22T10:00:00Z', '2026-11-20T10:00:00Z'];
+      const all = await repo.listBrews(user);
+      expect(all.items.map((b) => b.values.brewed_at)).toEqual(order);
+      expect(all.items.map((b) => b.brew_id)).toEqual(order.map((t) => ids.get(t)));
+
+      const page1 = await repo.listBrews(user, { limit: 3 });
+      expect(page1.items).toHaveLength(3);
+      const page2 = await repo.listBrews(user, { limit: 3, ...(page1.nextCursor ? { cursor: page1.nextCursor } : {}) });
+      expect(page2.items.map((b) => b.values.brewed_at)).toEqual([order[3]]);
+      // The pointer items are never listed as brews.
+      await expect(repo.listBrews(user, { cursor: Buffer.from(`BREWID#${String(ids.get(order[0] ?? ''))}`).toString('base64url') })).rejects.toThrow(
+        InvalidCursorError,
+      );
+    });
+
+    it('create is conditional; replace and delete need the brew to exist', async () => {
+      const user = verifiedUserId('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+      const fixed = newUlid();
+      const sameId = repoWith({ newId: () => fixed });
+      await sameId.createBrew(user, brewInput('2026-11-25T07:00:00Z'));
+      // Same id at another time: the pointer exists, so nothing is written.
+      await expect(sameId.createBrew(user, brewInput('2026-11-24T07:00:00Z'))).rejects.toThrow(ItemExistsError);
+      expect(await partition(userPk(user))).toHaveLength(2);
+
+      const missing = newUlid();
+      await expect(repo.replaceBrew(user, missing, brewInput('2026-11-25T07:00:00Z'))).rejects.toThrow(ItemNotFoundError);
+      await expect(repo.deleteBrew(user, missing)).rejects.toThrow(ItemNotFoundError);
+      expect(await partition(userPk(user))).toHaveLength(2);
+    });
+  });
+
+  describe('recipes', () => {
+    it('round-trip and conditions', async () => {
+      const user = verifiedUserId('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
+      const created = await repo.createRecipe(user, recipeInput());
+      expect(await repo.getRecipe(user, created.recipe_id)).toEqual(created);
+      const replaced = await repo.replaceRecipe(user, created.recipe_id, recipeInput(180));
+      expect(replaced.values.parameters.dose_dg).toBe(180);
+      expect((await repo.listRecipes(user)).items).toEqual([replaced]);
+      await repo.deleteRecipe(user, created.recipe_id);
+      expect(await repo.getRecipe(user, created.recipe_id)).toBeUndefined();
+
+      const missing = newUlid();
+      await expect(repo.replaceRecipe(user, missing, recipeInput())).rejects.toThrow(ItemNotFoundError);
+      await expect(repo.deleteRecipe(user, missing)).rejects.toThrow(ItemNotFoundError);
+      const fixed = newUlid();
+      const sameId = repoWith({ newId: () => fixed });
+      await sameId.createRecipe(user, recipeInput());
+      await expect(sameId.createRecipe(user, recipeInput())).rejects.toThrow(ItemExistsError);
+    });
+  });
+
+  describe('bean catalogue and the sparse review queue', () => {
+    it('an unverified bean carries the gsi1 keys; verifying removes both', async () => {
+      const createdAt = new Date('2026-11-25T08:15:30.5+01:00');
+      const record = await repoWith({ now: () => createdAt }).createBean({
+        vocabularyVersion: 1,
+        openFoodFactsMatch: false,
+        pickedAttributes: { process: 'washed' },
+      });
+      const id = record.bean.bean_id;
+      expect(record).toMatchObject({ status: 'unverified', createdAt: '2026-11-25T07:15:30.500Z' });
+      expect(record.bean).toEqual({
+        bean_id: id,
+        vocabulary_version: 1,
+        verified: false,
+        open_food_facts_match: false,
+        picked_attributes: { process: 'washed' },
+        operator_attributes: {},
+      });
+      const stored = await raw(beanMetaKey(id));
+      expect(stored?.gsi1pk).toBe('REVIEW#UNVERIFIED');
+      expect(stored?.gsi1sk).toBe(`2026-11-25T07:15:30.500Z#${id}`);
+      expect(await reviewQueue()).toContain(id);
+      expect(await repo.getBean(id)).toEqual(record);
+
+      const verified = await repo.verifyBean(id, { process: 'natural', roast_level: 'light' });
+      expect(verified.bean.verified).toBe(true);
+      expect(verified.bean.operator_attributes).toEqual({ process: 'natural', roast_level: 'light' });
+      const after = await raw(beanMetaKey(id));
+      expect(after).not.toHaveProperty('gsi1pk');
+      expect(after).not.toHaveProperty('gsi1sk');
+      expect(await reviewQueue()).not.toContain(id);
+      await expect(repo.verifyBean(id)).rejects.toThrow(BeanNotUnverifiedError);
+      await expect(repo.rejectBean(id)).rejects.toThrow(BeanNotUnverifiedError);
+    });
+
+    it('rejecting removes both gsi1 keys too', async () => {
+      const { bean } = await repo.createBean({ vocabularyVersion: 1, openFoodFactsMatch: false, pickedAttributes: {} });
+      expect(await reviewQueue()).toContain(bean.bean_id);
+      const rejected = await repo.rejectBean(bean.bean_id);
+      expect(rejected.status).toBe('rejected');
+      expect(rejected.bean.verified).toBe(false);
+      const after = await raw(beanMetaKey(bean.bean_id));
+      expect(after).not.toHaveProperty('gsi1pk');
+      expect(after).not.toHaveProperty('gsi1sk');
+      expect(await reviewQueue()).not.toContain(bean.bean_id);
+    });
+
+    it('verifying an unknown bean is not found', async () => {
+      await expect(repo.verifyBean(newUlid())).rejects.toThrow(ItemNotFoundError);
+      await expect(repo.rejectBean(newUlid())).rejects.toThrow(ItemNotFoundError);
+    });
+
+    it('a barcode points to its bean; a second bean cannot take it and nothing of it is written', async () => {
+      const barcode = '4006381333931';
+      const { bean } = await repo.createBean({ vocabularyVersion: 1, barcode, openFoodFactsMatch: true, pickedAttributes: {} });
+      expect(bean.barcode).toBe(barcode);
+      expect(await repo.findBeanIdByBarcode(barcode)).toBe(bean.bean_id);
+      expect(await raw(barcodeKey(barcode))).toMatchObject({ type: 'BARCODE', beanId: bean.bean_id });
+      expect(await repo.findBeanIdByBarcode('0012345678905')).toBeUndefined();
+
+      const fixed = newUlid();
+      await expect(
+        repoWith({ newId: () => fixed }).createBean({ vocabularyVersion: 1, barcode, openFoodFactsMatch: true, pickedAttributes: {} }),
+      ).rejects.toThrow(BarcodeTakenError);
+      expect(await repo.getBean(fixed)).toBeUndefined();
+      expect(await reviewQueue()).not.toContain(fixed);
+    });
+
+    it('one product by its UPC-A and its EAN-13 form is one barcode', async () => {
+      const upcA = '036000291452';
+      const ean13 = '0036000291452';
+      const { bean } = await repo.createBean({ vocabularyVersion: 1, barcode: upcA, openFoodFactsMatch: true, pickedAttributes: {} });
+      expect(bean.barcode).toBe(ean13);
+      expect((await raw(beanMetaKey(bean.bean_id)))?.barcode).toBe(ean13);
+      expect(await raw({ pk: `BARCODE#${ean13}`, sk: 'BEAN' })).toMatchObject({ beanId: bean.bean_id, barcode: ean13 });
+      expect(await raw({ pk: `BARCODE#${upcA}`, sk: 'BEAN' })).toBeUndefined();
+
+      const fixed = newUlid();
+      await expect(
+        repoWith({ newId: () => fixed }).createBean({ vocabularyVersion: 1, barcode: ean13, openFoodFactsMatch: true, pickedAttributes: {} }),
+      ).rejects.toThrow(BarcodeTakenError);
+      expect(await repo.getBean(fixed)).toBeUndefined();
+      expect(await repo.findBeanIdByBarcode(upcA)).toBe(bean.bean_id);
+      expect(await repo.findBeanIdByBarcode(ean13)).toBe(bean.bean_id);
+    });
+
+    it('a barcode with a wrong check digit is refused and writes nothing', async () => {
+      const fixed = newUlid();
+      await expect(
+        repoWith({ newId: () => fixed }).createBean({ vocabularyVersion: 1, barcode: '0012345678901', openFoodFactsMatch: true, pickedAttributes: {} }),
+      ).rejects.toThrow(InvalidValuesError);
+      expect(await repo.getBean(fixed)).toBeUndefined();
+      await expect(repo.findBeanIdByBarcode('0012345678901')).rejects.toThrow(InvalidKeyError);
+    });
+
+    it('bean create is conditional on the item not existing', async () => {
+      const fixed = newUlid();
+      const sameId = repoWith({ newId: () => fixed });
+      await sameId.createBean({ vocabularyVersion: 1, openFoodFactsMatch: false, pickedAttributes: {} });
+      await expect(sameId.createBean({ vocabularyVersion: 1, openFoodFactsMatch: false, pickedAttributes: {} })).rejects.toThrow(
+        ItemExistsError,
+      );
+    });
+
+    it('lists the queue oldest first, in pages', async () => {
+      // A separate table, so beans from the other tests do not interleave.
+      const own = await createTestTable(client);
+      try {
+        let t = Date.UTC(2026, 10, 1, 9);
+        const r = new Repository({ client: documentClient, tableName: own, now: () => new Date((t += 60_000)) });
+        const ids: string[] = [];
+        for (let i = 0; i < 3; i += 1) {
+          ids.push((await r.createBean({ vocabularyVersion: 1, openFoodFactsMatch: false, pickedAttributes: {} })).bean.bean_id);
+        }
+        await r.verifyBean(ids[1] ?? '');
+        const page1 = await r.listReviewQueue({ limit: 1 });
+        expect(page1.items.map((b) => b.bean.bean_id)).toEqual([ids[0]]);
+        const page2 = await r.listReviewQueue({ limit: 1, ...(page1.nextCursor ? { cursor: page1.nextCursor } : {}) });
+        expect(page2.items.map((b) => b.bean.bean_id)).toEqual([ids[2]]);
+        const page3 = await r.listReviewQueue({ limit: 1, ...(page2.nextCursor ? { cursor: page2.nextCursor } : {}) });
+        expect(page3.items).toEqual([]);
+        await expect(r.listReviewQueue({ cursor: Buffer.from(`SHELF#${ids[0] ?? ''}`).toString('base64url') })).rejects.toThrow(
+          InvalidCursorError,
+        );
+      } finally {
+        await deleteTestTable(client, own);
+      }
+    });
+  });
+
+  describe('aggregate, rater marker and ranking keys (written in M3)', () => {
+    it('address distinct items in the bean partition and the ranking partitions', async () => {
+      const { bean } = await repo.createBean({ vocabularyVersion: 1, openFoodFactsMatch: false, pickedAttributes: {} });
+      const keys = [
+        aggregateAllKey(bean.bean_id),
+        aggregateMethodKey(bean.bean_id, 'v60'),
+        aggregateMethodKey(bean.bean_id, 'espresso'),
+        raterMarkerKey(bean.bean_id, ALICE),
+        raterMarkerKey(bean.bean_id, BOB),
+      ];
+      for (const key of keys) {
+        await documentClient.send(new PutCommand({ TableName: tableName, Item: { ...key }, ConditionExpression: 'attribute_not_exists(pk)' }));
+      }
+      const items = await partition(beanMetaKey(bean.bean_id).pk);
+      expect(items.map((i) => i.sk).sort()).toEqual(
+        ['AGG#ALL', 'AGG#METHOD#espresso', 'AGG#METHOD#v60', 'META', `RATER#${ALICE.value}`, `RATER#${BOB.value}`].sort(),
+      );
+      // The bean is still readable and still in the queue: the other items do not disturb it.
+      expect((await repo.getBean(bean.bean_id))?.status).toBe('unverified');
+      // Only META is in the review queue; aggregates and markers carry no gsi1 keys.
+      expect((await reviewQueue()).filter((id) => id === bean.bean_id)).toHaveLength(1);
+
+      const ranking = rankingKey({ kind: 'method', value: 'v60' }, '2026-11-25');
+      await documentClient.send(new PutCommand({ TableName: tableName, Item: { ...ranking, top: [bean.bean_id] } }));
+      expect((await raw(ranking))?.top).toEqual([bean.bean_id]);
+    });
+  });
+
+  describe('cross-user isolation', () => {
+    it('Bob cannot read, replace, delete or list any of Alice’s items', async () => {
+      const shelf = await repo.createShelfEntry(ALICE, shelfInput());
+      const brew = await repo.createBrew(ALICE, brewInput('2026-11-25T07:00:00Z'));
+      const recipe = await repo.createRecipe(ALICE, recipeInput());
+      await repo.putProfile(ALICE, { locale: 'de', consent: { contribute_to_aggregates: true } });
+      const before = await partition(userPk(ALICE));
+
+      expect(await repo.getShelfEntry(BOB, shelf.shelf_entry_id)).toBeUndefined();
+      expect(await repo.getBrew(BOB, brew.brew_id)).toBeUndefined();
+      expect(await repo.getRecipe(BOB, recipe.recipe_id)).toBeUndefined();
+      expect(await repo.getProfile(BOB)).toBeUndefined();
+
+      await expect(repo.replaceShelfEntry(BOB, shelf.shelf_entry_id, shelfInput({ price_band: 'from_80' }))).rejects.toThrow(
+        ItemNotFoundError,
+      );
+      await expect(repo.replaceBrew(BOB, brew.brew_id, brewInput('2026-11-26T07:00:00Z'))).rejects.toThrow(ItemNotFoundError);
+      await expect(repo.replaceRecipe(BOB, recipe.recipe_id, recipeInput(999))).rejects.toThrow(ItemNotFoundError);
+      await expect(repo.deleteShelfEntry(BOB, shelf.shelf_entry_id)).rejects.toThrow(ItemNotFoundError);
+      await expect(repo.deleteBrew(BOB, brew.brew_id)).rejects.toThrow(ItemNotFoundError);
+      await expect(repo.deleteRecipe(BOB, recipe.recipe_id)).rejects.toThrow(ItemNotFoundError);
+
+      expect((await repo.listShelfEntries(BOB)).items).toEqual([]);
+      expect((await repo.listBrews(BOB)).items).toEqual([]);
+      expect((await repo.listRecipes(BOB)).items).toEqual([]);
+
+      // Bob's failed writes left nothing in his partition and changed nothing in Alice's.
+      expect(await partition(userPk(BOB))).toEqual([]);
+      expect(await partition(userPk(ALICE))).toEqual(before);
+    });
+
+    it('a cursor from Alice’s list only ever pages through Bob’s own partition', async () => {
+      for (let i = 0; i < 3; i += 1) await repo.createShelfEntry(ALICE, shelfInput());
+      const own = await repo.createShelfEntry(BOB, shelfInput({ purchase_date: '2026-01-01' }));
+      const alicePage = await repo.listShelfEntries(ALICE, { limit: 1 });
+      expect(alicePage.nextCursor).toBeDefined();
+      const bobPage = await repo.listShelfEntries(BOB, alicePage.nextCursor ? { cursor: alicePage.nextCursor } : {});
+      for (const item of bobPage.items) expect(item.shelf_entry_id).toBe(own.shelf_entry_id);
+      // A cursor that names Alice's partition is refused outright.
+      await expect(
+        repo.listShelfEntries(BOB, { cursor: Buffer.from(userPk(ALICE)).toString('base64url') }),
+      ).rejects.toThrow(InvalidCursorError);
+    });
+
+    it('no method accepts a raw string as the user, at the type level or at run time', async () => {
+      const raw = ALICE.value;
+      // @ts-expect-error a raw string is not a UserId
+      await expect(repo.getProfile(raw)).rejects.toThrow(InvalidKeyError);
+      // @ts-expect-error a partition key string is not a UserId either
+      await expect(repo.listShelfEntries(`USER#${raw}`)).rejects.toThrow(InvalidKeyError);
+      // @ts-expect-error a look-alike object is not a UserId
+      await expect(repo.getBrew({ value: raw }, newUlid())).rejects.toThrow(InvalidKeyError); // eslint-disable-line @typescript-eslint/no-unsafe-class-instance-assignment -- deliberate forgery attempt
+      const forged = raw as unknown as UserId;
+      await expect(repo.createShelfEntry(forged, shelfInput())).rejects.toThrow(InvalidKeyError);
+      await expect(repo.deleteRecipe(forged, newUlid())).rejects.toThrow(InvalidKeyError);
+    });
+
+    it('an injected item id cannot reach another partition', async () => {
+      const shelf = await repo.createShelfEntry(ALICE, shelfInput());
+      for (const bad of [`${shelf.shelf_entry_id}#`, userPk(ALICE), '', '#', `../${shelf.shelf_entry_id}`]) {
+        await expect(repo.getShelfEntry(BOB, bad)).rejects.toThrow(InvalidKeyError);
+        await expect(repo.deleteShelfEntry(BOB, bad)).rejects.toThrow(InvalidKeyError);
+      }
+    });
+  });
+
+  describe('stored items are checked on read', () => {
+    it('an item that does not match its schema is refused', async () => {
+      const user = verifiedUserId('cccccccc-cccc-4ccc-8ccc-cccccccccccc');
+      const id = newUlid();
+      await documentClient.send(
+        new PutCommand({
+          TableName: tableName,
+          Item: { ...shelfEntryKey(user, id), shelfEntryId: id, values: { vocabulary_version: 1, bean_id: BEAN_ID, purchase_date: 'x' } },
+        }),
+      );
+      await expect(repo.getShelfEntry(user, id)).rejects.toThrow(CorruptItemError);
+    });
+  });
+});

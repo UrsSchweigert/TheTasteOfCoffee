@@ -8,7 +8,9 @@
 // - no `pull_request_target` trigger;
 // - top-level `permissions` is present and grants no write scope;
 // - every job has `timeout-minutes` (reusable-workflow call jobs excepted);
-// - `actions/checkout` runs with `persist-credentials: false`.
+// - `actions/checkout` runs with `persist-credentials: false`;
+// - every job `container` and `services` image is pinned to a sha256 digest
+//   (`name:tag@sha256:<digest>` or `name@sha256:<digest>`).
 //
 // Strict files (STRICT_FILES) fail the run (exit 1). In a strict file a job may
 // only grant the write scopes listed for that job in its policy (`jobWrites`);
@@ -54,6 +56,7 @@ function loadYaml() {
 
 const SHA_REF = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(\/[^@\s]+)?@[0-9a-f]{40}$/;
 const DOCKER_DIGEST = /^docker:\/\/[^@\s]+@sha256:[0-9a-f]{64}$/;
+const IMAGE_DIGEST = /^[^@\s]+@sha256:[0-9a-f]{64}$/;
 const SECRETS_EXPR = /\$\{\{[^}]*\bsecrets\b[^}]*\}\}/;
 
 function isObject(v) {
@@ -92,6 +95,14 @@ function checkUses(ref, where, findings) {
   }
   if (!SHA_REF.test(ref)) {
     findings.push(`${where}: "${ref}" is not pinned to a full 40-character commit SHA`);
+  }
+}
+
+/** A job's `container` or one of its `services`: a string image or a mapping with `image`. */
+function checkImage(spec, where, findings) {
+  const image = isObject(spec) ? spec.image : spec;
+  if (typeof image !== 'string' || !IMAGE_DIGEST.test(image)) {
+    findings.push(`${where}: image "${String(image)}" is not pinned to a sha256 digest`);
   }
 }
 
@@ -180,6 +191,11 @@ export function checkWorkflow(text, { strict, readOnly = false, jobWrites = {}, 
       continue;
     }
     if (job['timeout-minutes'] === undefined) findings.push(`job ${id}: no timeout-minutes`);
+    if (job.container !== undefined) checkImage(job.container, `job ${id}, container`, findings);
+    if (job.services !== undefined) {
+      if (!isObject(job.services)) findings.push(`job ${id}: services is not a mapping`);
+      else for (const [name, spec] of Object.entries(job.services)) checkImage(spec, `job ${id}, service ${name}`, findings);
+    }
     const steps = Array.isArray(job.steps) ? job.steps : [];
     steps.forEach((step, i) => {
       if (!isObject(step) || step.uses === undefined) return;

@@ -144,7 +144,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - From the M1-T1 review: a test snapshots the logical ids of the table, the buckets and the pool, so a construct rename that would replace them fails at test time.
 
 ### M1-T3 Repository module
-- status: todo
+- status: done
 - owner: backend-engineer
 - depends: M0-T3
 - implements: docs/05-system-design.md, Data model
@@ -162,6 +162,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - Look up a barcode; create an unverified bean from pick-list attributes or a confirmed Open Food Facts hit, with the source tagged per field.
   - Issue a presigned upload URL for a label photo (size and content-type limited).
   - Tests cover known, unknown and malformed barcodes.
+  - Rejecting a bean frees its barcode: the `BARCODE#` pointer is removed in the same write, so the next scan can submit a fresh entry. The rejected bean stays recorded for the operator (owner decision, 2026-11-25).
   - The uploader of each label photo is recorded, so account deletion (M1-T6) can find that user's photos. Photo handling follows D10 to D12 in `docs/07-open-questions.md`.
 
 ### M1-T5 Shelf, brew and recipe routes
