@@ -204,7 +204,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - Any metadata-stripping dependency has a permissive licence and passes the licence check.
 
 ### M1-T4d Label photo upload
-- status: todo
+- status: in-progress
 - owner: backend-engineer
 - depends: M1-T4a
 - implements: docs/04-specification.md, F1; D10 to D12

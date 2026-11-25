@@ -669,6 +669,41 @@ export const vocabularyBindings: Readonly<Record<string, VocabularyBinding>> = {
       }
     }
   },
+  "LabelPhotoUpload": {
+    "properties": {
+      "photo_id": {
+        "ref": "Id"
+      },
+      "upload": {
+        "ref": "LabelPhotoUploadForm"
+      },
+      "expires_at": {
+        "ref": "Timestamp"
+      },
+      "max_bytes": {}
+    }
+  },
+  "LabelPhotoUploadForm": {
+    "properties": {
+      "url": {},
+      "fields": {
+        "ref": "LabelPhotoUploadFields"
+      }
+    }
+  },
+  "LabelPhotoUploadFields": {
+    "properties": {
+      "key": {},
+      "bucket": {},
+      "content_type": {},
+      "policy": {},
+      "x_amz_algorithm": {},
+      "x_amz_credential": {},
+      "x_amz_date": {},
+      "x_amz_security_token": {},
+      "x_amz_signature": {}
+    }
+  },
   "ShelfEntryInput": {
     "properties": {
       "vocabulary_version": {

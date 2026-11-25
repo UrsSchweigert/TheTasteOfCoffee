@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Cupmark API
-  version: 0.3.3
+  version: 0.4.0
   description: >-
     Free-tier API of Cupmark (tasks M0-T2 and M1-T8). No request carries free
     text: every string a client sends is an id from the closed vocabulary in
@@ -11,7 +11,10 @@ info:
     server fetched from Open Food Facts, length-limited and marked
     x-free-text-from (ADR 0005). Open Food Facts images are served from the
     server's own stored copy (ADR 0011); the app never contacts Open Food
-    Facts. The user is always the subject of the bearer
+    Facts. Label photos (M1-T4d, ADR 0016) are uploaded straight to S3 with
+    a server-generated presigned POST, then stripped of metadata by the API;
+    the presigned form fields are server-generated, pattern-constrained
+    strings, not user text. The user is always the subject of the bearer
     token; no path, query or body field names a user. Every route needs the
     token except GET /health (ADR 0007). Paid and aggregate routes are not
     part of this document yet. Rules for this file, including the x-vocabulary
@@ -133,6 +136,49 @@ paths:
         '429':
           $ref: '#/components/responses/TooManyRequests'
 
+  /beans/{bean_id}/label_photos:
+    post:
+      operationId: createLabelPhotoUpload
+      summary: Start the upload of one label photo for an unverified bean (F1 step 4, ADR 0016).
+      description: >-
+        Returns a new photo_id and an S3 presigned POST for it. The app sends
+        the photo straight to S3 as a multipart/form-data POST to upload.url:
+        every entry of upload.fields under its S3 form field name (listed on
+        LabelPhotoUploadFields), then the JPEG as the last field, named
+        file. The POST policy allows exactly the key
+        uploads/<photo_id>.jpg, Content-Type image/jpeg and 1 byte to
+        max_bytes (8 MiB), and expires 10 minutes after issue (expires_at).
+        JPEG only: the app converts the camera's HEIC to JPEG on the device.
+        After the upload, the app calls POST
+        /label_photos/{photo_id}/complete; nothing is recorded or queued for
+        review before that. Label photos go to the operator's private review
+        queue and are never shown to other users; no route returns them to
+        anyone. No request body.
+      parameters:
+        - $ref: '#/components/parameters/BeanIdPath'
+      responses:
+        '201':
+          description: The photo id and the presigned POST for its upload.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LabelPhotoUpload'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: The bean does not exist or was rejected.
+        '409':
+          description: >-
+            The bean is already verified, so it takes no label photos, or the
+            caller already has 3 label photos for this bean (the server checks
+            again on completion).
+        '429':
+          description: >-
+            Throttled. The server may also count new uploads against a daily
+            per-caller cap; over that cap it answers 429 as well.
+
   /catalogue_images/{image_id}:
     get:
       operationId: getCatalogueImage
@@ -161,6 +207,45 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           description: No stored catalogue image has this id.
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /label_photos/{photo_id}/complete:
+    post:
+      operationId: completeLabelPhoto
+      summary: Check, strip and store an uploaded label photo (ADR 0016).
+      description: >-
+        Call after the presigned POST from POST /beans/{bean_id}/label_photos
+        succeeded. The server reads the upload, accepts only a baseline or
+        progressive 8-bit JPEG of at most 8 MiB and at most 4096 pixels on
+        each side, strips all metadata (EXIF, XMP, GPS, ICC, IPTC, comments;
+        D12) and stores the stripped copy for the operator's private review
+        queue. Only then is the photo recorded. Label photos are never shown
+        to other users. No request body.
+      parameters:
+        - $ref: '#/components/parameters/PhotoIdPath'
+      responses:
+        '204':
+          description: The photo was stripped and stored for review.
+        '400':
+          description: >-
+            The photo_id is malformed, or the upload is not an acceptable JPEG
+            or is larger than 8 MiB. The photo is rejected for good and
+            nothing is recorded: the upload is no longer pending, so a later
+            call with this photo_id answers 404. To try again, start a new
+            upload.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: >-
+            The caller has no pending upload with this photo_id (unknown,
+            another caller's, or rejected), or nothing was uploaded for it (the
+            upload never happened, or the staging copy has expired).
+        '409':
+          description: >-
+            The photo is already completed, the bean is no longer unverified
+            (verified or rejected meanwhile), or the caller already has 3 label
+            photos for this bean.
         '429':
           $ref: '#/components/responses/TooManyRequests'
 
@@ -555,7 +640,10 @@ paths:
       summary: Export every item of the caller as CSV.
       responses:
         '200':
-          description: All of the caller's items. Columns are defined in task M1-T6.
+          description: >-
+            All of the caller's items. Columns are defined in task M1-T6.
+            Label photos still linked to the caller (D10) are listed by
+            photo_id and bean_id; the image bytes are not part of the CSV.
           content:
             text/csv:
               schema:
@@ -572,7 +660,9 @@ paths:
       summary: Delete the caller's whole partition and label photos.
       description: >-
         Removes the profile, shelf, brews, recipes and label photos of the
-        caller. What happens to the caller's contribution to aggregates is
+        caller. Every version of the caller's label photos of unverified beans
+        is deleted at once; photos of verified beans stay in the catalogue but
+        lose their link to the caller (D10). What happens to the caller's contribution to aggregates is
         open decision D2 (default: subtract it, then delete).
       responses:
         '204':
@@ -617,6 +707,12 @@ components:
         $ref: '#/components/schemas/Barcode'
     BeanIdPath:
       name: bean_id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    PhotoIdPath:
+      name: photo_id
       in: path
       required: true
       schema:
@@ -1023,6 +1119,108 @@ components:
             /catalogue_images/{image_id}. Left out when there is no stored
             copy. The app never loads images from Open Food Facts.
           $ref: '#/components/schemas/Id'
+
+    # ---- Label photos (F1 step 4, ADR 0016) ----
+
+    LabelPhotoUpload:
+      description: >-
+        A new label photo upload: its id and the presigned S3 POST for it.
+        Every value is generated by the server; none is typed by a user.
+      type: object
+      additionalProperties: false
+      required: [photo_id, upload, expires_at, max_bytes]
+      properties:
+        photo_id:
+          $ref: '#/components/schemas/Id'
+        upload:
+          $ref: '#/components/schemas/LabelPhotoUploadForm'
+        expires_at:
+          description: When the presigned POST stops working, 10 minutes after issue.
+          $ref: '#/components/schemas/Timestamp'
+        max_bytes:
+          description: The largest accepted upload, 8 MiB. The POST policy enforces it.
+          type: integer
+          minimum: 8388608
+          maximum: 8388608
+
+    LabelPhotoUploadForm:
+      description: >-
+        The presigned S3 POST, as the AWS SDK v3 createPresignedPost returns
+        it. url is the endpoint of our own photo bucket in eu-central-1 and
+        names the same bucket as fields.bucket.
+      type: object
+      additionalProperties: false
+      required: [url, fields]
+      properties:
+        url:
+          description: Virtual-hosted endpoint of the cupmark photo bucket, with a trailing slash.
+          type: string
+          maxLength: 120
+          pattern: '^https://cupmark-[a-z0-9-]{1,55}\.s3\.eu-central-1\.amazonaws\.com/$'
+        fields:
+          $ref: '#/components/schemas/LabelPhotoUploadFields'
+
+    LabelPhotoUploadFields:
+      description: >-
+        The form fields of the presigned POST. Property names are snake_case
+        here (the generators need that); each property's description names the
+        S3 form field it is sent as, exactly as written there (key, bucket,
+        Content-Type, Policy, X-Amz-Algorithm, X-Amz-Credential, X-Amz-Date,
+        X-Amz-Security-Token, X-Amz-Signature). The backend maps
+        createPresignedPost's fields to these names, and the app maps them
+        back. Send every field present, in any order, before the file field.
+      type: object
+      additionalProperties: false
+      required: [key, bucket, content_type, policy, x_amz_algorithm, x_amz_credential, x_amz_date, x_amz_signature]
+      properties:
+        key:
+          description: Form field key. The staging key of the photo; it holds the photo id only, no user id (ADR 0016).
+          type: string
+          maxLength: 38
+          pattern: '^uploads/[0-9A-HJKMNP-TV-Z]{26}\.jpg$'
+        bucket:
+          description: Form field bucket. The photo bucket, the same as in url.
+          type: string
+          maxLength: 63
+          pattern: '^cupmark-[a-z0-9-]{1,55}$'
+        content_type:
+          description: Form field Content-Type. Always image/jpeg; the policy requires it.
+          type: string
+          maxLength: 10
+          pattern: '^image/jpeg$'
+        policy:
+          description: Form field Policy. The base64-encoded POST policy.
+          type: string
+          maxLength: 8192
+          pattern: '^[A-Za-z0-9+/=]{1,8192}$'
+        x_amz_algorithm:
+          description: Form field X-Amz-Algorithm.
+          type: string
+          maxLength: 16
+          pattern: '^AWS4-HMAC-SHA256$'
+        x_amz_credential:
+          description: Form field X-Amz-Credential. Access key id, date, region, service and terminator.
+          type: string
+          maxLength: 170
+          pattern: '^[A-Z0-9]{16,128}/[0-9]{8}/eu-central-1/s3/aws4_request$'
+        x_amz_date:
+          description: Form field X-Amz-Date. ISO 8601 basic format, UTC.
+          type: string
+          maxLength: 16
+          pattern: '^[0-9]{8}T[0-9]{6}Z$'
+        x_amz_security_token:
+          description: >-
+            Form field X-Amz-Security-Token. The session token of the API's
+            temporary credentials; present whenever the server signs with
+            them, as in Lambda.
+          type: string
+          maxLength: 4096
+          pattern: '^[A-Za-z0-9+/=]{1,4096}$'
+        x_amz_signature:
+          description: Form field X-Amz-Signature. Hex-encoded SigV4 signature.
+          type: string
+          maxLength: 64
+          pattern: '^[0-9a-f]{64}$'
 
     # ---- Shelf (F1 step 5) ----
 
