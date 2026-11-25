@@ -45,3 +45,13 @@ You are the lead. You coordinate; the specialist agents do the work. Argument: a
 ## 6. Report
 
 Reply with three lines: what was built, the pull request link, and the next task in the queue (or what is blocking it).
+
+## 7. Continue
+
+If the pull request was merged and the next task in the queue is unblocked, start it right away at step 1 without waiting to be asked (the owner decided this on 2026-11-25). Stop only when one of these holds:
+
+- the next task is blocked or needs a human;
+- a pull request cannot be merged under the rules in step 5;
+- the owner says stop.
+
+When you stop, report what is blocking.
