@@ -711,3 +711,122 @@ describe('permissions boundary', () => {
     expect(JSON.stringify(template?.toJSON())).not.toContain('SomethingElse');
   });
 });
+
+describe('(h) M1-T9: wildcards, trust policies and bucket policies', () => {
+  const lambdaPrincipal = new iam.ServicePrincipal('lambda.amazonaws.com');
+  const fake = { context: { 'cupmark:dev:account': FAKE_ACCOUNT } };
+
+  function roleWith(stack: Stack, ...statements: iam.PolicyStatement[]): iam.Role {
+    return new iam.Role(stack, 'Role', {
+      assumedBy: lambdaPrincipal,
+      inlinePolicies: { probe: new iam.PolicyDocument({ statements }) },
+    });
+  }
+
+  it.each([
+    ['a table prefix', 'arn:aws:dynamodb:eu-central-1:123456789012:table/cupmark-dev-*'],
+    ['an index wildcard', 'arn:aws:dynamodb:eu-central-1:123456789012:table/cupmark-dev-main/index/*'],
+    ['a function prefix', 'arn:aws:lambda:eu-central-1:123456789012:function:cupmark-dev-*'],
+    ['a parameter path', 'arn:aws:ssm:eu-central-1:123456789012:parameter/cupmark/dev/*'],
+    ['a role prefix', 'arn:aws:iam::123456789012:role/cupmark-dev-*'],
+    ['a bucket prefix', 'arn:aws:s3:::cupmark-dev-*'],
+    ['a bucket wildcard before the key', 'arn:aws:s3:::cupmark-dev-*/catalogue/*'],
+    ['a single-character wildcard', 'arn:aws:s3:::cupmark-dev-photo?'],
+    ['a log group prefix', 'arn:aws:logs:eu-central-1:123456789012:log-group:/aws/lambda/cupmark-dev-*'],
+  ])('fails on a resource wildcard after a Cupmark prefix: %s', (_label, resource) => {
+    const violations = violationsAfter((stack) => {
+      roleWith(stack, new iam.PolicyStatement({ actions: ['s3:GetObject'], resources: [resource] }));
+    }, fake);
+    expect(violations.filter((v) => v.guard === 'iam')).toHaveLength(1);
+    expectViolation(violations, 'iam', /has a wildcard; only RESOURCE_WILDCARD_EXCEPTIONS allow one/);
+  });
+
+  it('passes the documented wildcard exceptions: objects of a bucket or a key prefix, and the streams of one log group', () => {
+    const violations = violationsAfter((stack) => {
+      const bucket = new s3.Bucket(stack, 'Bucket', {
+        versioned: true,
+        blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+        removalPolicy: RemovalPolicy.RETAIN,
+      });
+      roleWith(
+        stack,
+        new iam.PolicyStatement({
+          actions: ['s3:GetObject'],
+          resources: [bucket.arnForObjects('*'), bucket.arnForObjects('catalogue/*'), 'arn:aws:s3:::cupmark-dev-x/a/b/*'],
+        }),
+        new iam.PolicyStatement({
+          actions: ['logs:PutLogEvents'],
+          resources: ['arn:aws:logs:eu-central-1:123456789012:log-group:/aws/lambda/cupmark-dev-x:*'],
+        }),
+      );
+    }, fake);
+    expect(formatViolations(violations)).toBe('');
+  });
+
+  it('fails on a single-character wildcard in an action', () => {
+    const violations = violationsAfter((stack) => {
+      // PolicyStatement rejects `?` itself; a raw document does not.
+      new iam.CfnRole(stack, 'Raw', {
+        assumeRolePolicyDocument: {
+          Version: '2012-10-17',
+          Statement: [{ Effect: 'Allow', Principal: { Service: 'lambda.amazonaws.com' }, Action: 'sts:AssumeRole' }],
+        },
+        policies: [
+          {
+            policyName: 'probe',
+            policyDocument: { Statement: [{ Effect: 'Allow', Action: 'dynamodb:GetIte?', Resource: 'arn:aws:s3:::cupmark-dev-x' }] },
+          },
+        ],
+      });
+    });
+    expectViolation(violations, 'iam', /action "dynamodb:GetIte\?" has a wildcard/);
+  });
+
+  it('fails on a stage role that names a cdk-cupmark bootstrap role (only the GitHub deploy role may)', () => {
+    const violations = violationsAfter((stack) => {
+      roleWith(
+        stack,
+        new iam.PolicyStatement({
+          actions: ['sts:AssumeRole'],
+          resources: ['arn:aws:iam::123456789012:role/cdk-cupmark-deploy-role-123456789012-eu-central-1'],
+        }),
+      );
+    }, fake);
+    expectViolation(violations, 'iam', /is not a Cupmark resource: it must start with iam:role\/cupmark-/);
+  });
+
+  it('fails on a bucket policy that allows anything', () => {
+    const violations = violationsAfter((stack) => {
+      const bucket = new s3.Bucket(stack, 'Bucket', {
+        versioned: true,
+        blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+        removalPolicy: RemovalPolicy.RETAIN,
+      });
+      bucket.addToResourcePolicy(
+        new iam.PolicyStatement({ actions: ['s3:GetObject'], resources: [bucket.arnForObjects('*')], principals: [new iam.AccountRootPrincipal()] }),
+      );
+    });
+    expectViolation(violations, 'iam', /AWS::S3::BucketPolicy: Statement\[\d\]: a bucket policy may only Deny/);
+  });
+
+  it.each<[string, () => iam.IPrincipal, RegExp]>([
+    ['a service that is not reviewed', () => new iam.ServicePrincipal('ec2.amazonaws.com'), /service principal "ec2.amazonaws.com" is not on TRUSTED_SERVICE_PRINCIPALS/],
+    ['another account', () => new iam.AccountPrincipal('999999999999'), /AWS principals are not allowed/],
+    ['anyone', () => new iam.AnyPrincipal(), /AWS principals are not allowed/],
+    ['a federated provider in a stage stack', () => new iam.WebIdentityPrincipal('token.actions.githubusercontent.com'), /Federated principal is only allowed in cupmark-github-oidc/],
+  ])('fails on a role that trusts %s', (_label, principal, message) => {
+    const violations = violationsAfter((stack) => {
+      new iam.Role(stack, 'Role', { assumedBy: principal() });
+    });
+    expectViolation(violations, 'trust', message);
+  });
+
+  it('fails on a GitHub OIDC provider or the deploy role in a stage stack', () => {
+    const violations = violationsAfter((stack) => {
+      new iam.CfnOIDCProvider(stack, 'Provider', { url: 'https://token.actions.githubusercontent.com', clientIdList: ['sts.amazonaws.com'] });
+      new iam.Role(stack, 'Deploy', { roleName: 'CupmarkGitHubDeploy', assumedBy: lambdaPrincipal });
+    });
+    expectViolation(violations, 'resource-type', /AWS::IAM::OIDCProvider is not on the reviewed allow list/);
+    expectViolation(violations, 'name', /RoleName "CupmarkGitHubDeploy" must start with cupmark-dev-/);
+  });
+});

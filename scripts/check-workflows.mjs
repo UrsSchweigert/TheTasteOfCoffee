@@ -19,6 +19,17 @@
 // job-level permissions at all, and no reference to secrets.
 // Every other workflow file is reported as advisory only (exit 0).
 //
+// AWS deploy role (M1-T9, ADR 0018): CupmarkGitHubDeploy trusts only the `sub`
+// values `environment:dev` and `environment:prod`, and those environments are
+// limited to `main`. So:
+// - a job that runs aws-actions/configure-aws-credentials must declare the
+//   literal environment `dev` or `prod`. This fails the run in strict files
+//   and is reported as advisory elsewhere, like every other finding; the
+//   deploy workflow (M1-T7) is added to STRICT_FILES. The trust and the
+//   environments' branch limits are the real control;
+// - in a strict file, every job that grants `id-token: write` must declare one
+//   too, unless its policy lists it in `oidcWithoutEnvironment` (with a reason).
+//
 // Needs Node 22 and `npm ci` in contracts/ (for the `yaml` package).
 // Usage: node scripts/check-workflows.mjs [workflow-dir]
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
@@ -32,15 +43,21 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
  * Strict workflow files and the narrow exceptions each one needs.
  * jobWrites: job id -> write scopes that job may grant. Each entry is justified
  * in a comment in the workflow file itself.
- * @type {Map<string, { readOnly?: boolean, jobWrites?: Record<string, string[]> }>}
+ * oidcWithoutEnvironment: jobs that may request a GitHub OIDC token without
+ * declaring an AWS environment, because they never assume the AWS role.
+ * @type {Map<string, { readOnly?: boolean, jobWrites?: Record<string, string[]>, oidcWithoutEnvironment?: string[] }>}
  */
 export const STRICT_FILES = new Map([
   // Untrusted PR code runs here: read-only token, no secrets.
   ['ci.yml', { readOnly: true }],
   // claude-code-action fetches a GitHub OIDC token and exchanges it for the
   // Claude GitHub App token, which does all of its writes.
-  ['claude.yml', { jobWrites: { claude: ['id-token'] } }],
-  // configure-aws-credentials assumes the deploy role through GitHub OIDC.
+  // It declares no environment; its `sub` (issue_comment runs on the default
+  // branch) is `ref:refs/heads/main`, which the AWS deploy role does not trust
+  // (ADR 0018), so it cannot assume that role.
+  ['claude.yml', { jobWrites: { claude: ['id-token'] }, oidcWithoutEnvironment: ['claude'] }],
+  // configure-aws-credentials assumes the deploy role through GitHub OIDC,
+  // in the `dev` environment (its sub is environment:dev).
   ['aws-oidc-check.yml', { jobWrites: { check: ['id-token'] } }],
 ]);
 
@@ -77,6 +94,16 @@ function writeScopes(permissions) {
   return Object.entries(permissions)
     .filter(([, level]) => level === 'write')
     .map(([scope]) => scope);
+}
+
+/** The environments the AWS deploy role trusts (infra/src/github-oidc.ts). */
+export const AWS_ENVIRONMENTS = ['dev', 'prod'];
+const AWS_CREDENTIALS_ACTION = 'aws-actions/configure-aws-credentials@';
+
+/** A job's literal environment name, or undefined (none, or an expression). */
+function environmentName(job) {
+  const env = isObject(job.environment) ? job.environment.name : job.environment;
+  return typeof env === 'string' && !env.includes('${{') ? env : undefined;
 }
 
 function describe(scope) {
@@ -132,9 +159,9 @@ function checkVersionComments(doc, text, yaml, findings) {
 /**
  * Returns the findings for one workflow file. An empty array means it is safe.
  * @param {string} text workflow YAML
- * @param {{ strict: boolean, readOnly?: boolean, jobWrites?: Record<string, string[]>, yaml?: typeof import('yaml') }} options
+ * @param {{ strict: boolean, readOnly?: boolean, jobWrites?: Record<string, string[]>, oidcWithoutEnvironment?: string[], yaml?: typeof import('yaml') }} options
  */
-export function checkWorkflow(text, { strict, readOnly = false, jobWrites = {}, yaml = loadYaml() }) {
+export function checkWorkflow(text, { strict, readOnly = false, jobWrites = {}, oidcWithoutEnvironment = [], yaml = loadYaml() }) {
   const findings = [];
   let wf;
   let doc;
@@ -197,6 +224,16 @@ export function checkWorkflow(text, { strict, readOnly = false, jobWrites = {}, 
       else for (const [name, spec] of Object.entries(job.services)) checkImage(spec, `job ${id}, service ${name}`, findings);
     }
     const steps = Array.isArray(job.steps) ? job.steps : [];
+    const env = environmentName(job);
+    const awsEnv = env !== undefined && AWS_ENVIRONMENTS.includes(env);
+    const usesAws = steps.some((st) => isObject(st) && typeof st.uses === 'string' && st.uses.startsWith(AWS_CREDENTIALS_ACTION));
+    if (usesAws && !awsEnv) {
+      findings.push(`job ${id}: configure-aws-credentials needs the literal environment ${AWS_ENVIRONMENTS.join(' or ')} (the deploy role trusts only those)`);
+    }
+    const oidc = writeScopes(job.permissions).some((sc) => sc === 'id-token' || sc === 'write-all');
+    if (strict && oidc && !awsEnv && !oidcWithoutEnvironment.includes(id)) {
+      findings.push(`job ${id}: requests an OIDC token (id-token: write) without the environment ${AWS_ENVIRONMENTS.join(' or ')}`);
+    }
     steps.forEach((step, i) => {
       if (!isObject(step) || step.uses === undefined) return;
       const where = `job ${id}, step ${i + 1}`;

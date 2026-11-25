@@ -14,7 +14,11 @@ TOOLKIT_STACK="CDKToolkit-cupmark"
 DEPLOY_ROLE="CupmarkGitHubDeploy"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 APPLY=0
-[[ "${1:-}" == "--apply" ]] && APPLY=1
+case "${1:-}" in
+  "") ;;
+  --apply) APPLY=1 ;;
+  *) echo "Usage: $0 [--apply]   (without --apply: dry run, changes nothing)" >&2; exit 2 ;;
+esac
 
 export AWS_PAGER=""
 ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
@@ -26,7 +30,9 @@ if [[ "$ARN" == *":root" && "${ALLOW_ROOT:-}" != "1" ]]; then
 fi
 
 render() { sed -e "s/\${ACCOUNT}/$ACCOUNT/g" -e "s/\${REGION}/$REGION/g" "$1"; }
-run() { echo "+ $*"; [[ $APPLY -eq 1 ]] && "$@" || true; }
+# Prints every change; runs it only with --apply. A failed change stops the script
+# (set -e), so a partial apply is never reported as done.
+run() { echo "+ $*"; if [[ $APPLY -eq 1 ]]; then "$@"; fi; }
 
 upsert_policy() { # name file
   local name="$1" file="$2" arn="arn:aws:iam::$ACCOUNT:policy/$1" tmp
@@ -59,16 +65,15 @@ run npx cdk bootstrap "aws://$ACCOUNT/$REGION" \
   --trust "$ACCOUNT" \
   --tags project=cupmark
 
-# 3. Point the GitHub deploy role at the Cupmark bootstrap roles only.
-tmp="$(mktemp)"
-cat > "$tmp" <<EOF
-{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"sts:AssumeRole","Resource":[
-"arn:aws:iam::$ACCOUNT:role/cdk-$QUALIFIER-deploy-role-$ACCOUNT-$REGION",
-"arn:aws:iam::$ACCOUNT:role/cdk-$QUALIFIER-file-publishing-role-$ACCOUNT-$REGION",
-"arn:aws:iam::$ACCOUNT:role/cdk-$QUALIFIER-image-publishing-role-$ACCOUNT-$REGION",
-"arn:aws:iam::$ACCOUNT:role/cdk-$QUALIFIER-lookup-role-$ACCOUNT-$REGION"]}]}
-EOF
-run aws iam put-role-policy --role-name "$DEPLOY_ROLE" \
-  --policy-name AssumeCdkBootstrapRoles --policy-document "file://$tmp"
+# 3. The GitHub deploy role CupmarkGitHubDeploy is owned by the CDK stack
+#    cupmark-github-oidc since M1-T9 (ADR 0009, ADR 0018): its trust and its inline
+#    policy AssumeCdkBootstrapRoles are defined in infra/src/github-oidc.ts and changed
+#    only through that stack (infra/README.md, "The GitHub deploy role"). This script
+#    never writes, tags or deletes the role, so it cannot drift from the stack.
+echo "= $DEPLOY_ROLE: owned by the stack cupmark-github-oidc (infra/src/github-oidc.ts); not changed here."
 
-[[ $APPLY -eq 0 ]] && echo "Dry run only. Re-run with --apply to make these changes."
+if [[ $APPLY -eq 0 ]]; then
+  echo "Dry run only. Re-run with --apply to make these changes."
+else
+  echo "Applied."
+fi

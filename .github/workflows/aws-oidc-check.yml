@@ -1,6 +1,9 @@
 # Manual check that GitHub Actions can assume the Cupmark deploy role through OIDC
 # and reach only the cdk-cupmark bootstrap roles. Read-only: it creates nothing.
-# Run it from main (the role trusts main and the dev environment only).
+# The job declares the GitHub environment `dev`, so its OIDC `sub` is
+# repo:UrsSchweigert/TheTasteOfCoffee:environment:dev. The role trusts only the
+# `dev` and `prod` environments (ADR 0018), and both are limited to `main` in
+# the repository settings, so this runs only from main.
 #
 # Strict file in scripts/check-workflows.mjs: actions pinned to a commit SHA
 # with a version comment, no token scopes at the top level, and the job grants
@@ -15,6 +18,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    environment: dev
     permissions:
       id-token: write
     steps:

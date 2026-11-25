@@ -11,12 +11,18 @@
 // only the types docs/05-system-design.md needs; any other type fails as "not
 // reviewed" until someone adds it here, with its name rule, in a reviewed pull
 // request. A deny list alone would let a new fixed-fee type through unnoticed.
+//
+// Two kinds of stack exist: the stage stacks (CupmarkStack, deployed by CI through
+// CupmarkCfnExecution) and the one `cupmark-github-oidc` (CupmarkGitHubOidcStack,
+// deployed once by the owner, ADR 0009). The second has its own, much shorter allow
+// list and a few documented differences, each marked "GitHub OIDC stack" below.
 
-import { CfnResource, DefaultStackSynthesizer, Resource, Stack, Stage, TagManager, Token } from 'aws-cdk-lib';
+import { CfnResource, CliCredentialsStackSynthesizer, DefaultStackSynthesizer, Resource, Stack, Stage, TagManager, Token } from 'aws-cdk-lib';
 import type { App } from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as s3assets from 'aws-cdk-lib/aws-s3-assets';
 import { CfnInclude } from 'aws-cdk-lib/cloudformation-include';
+import { AssetManifestArtifact } from 'aws-cdk-lib/cx-api';
 import type { IConstruct } from 'constructs';
 import {
   BOOTSTRAP_QUALIFIER,
@@ -28,6 +34,15 @@ import {
   STAGES,
 } from './config.ts';
 import type { StageName } from './config.ts';
+import {
+  CupmarkGitHubOidcStack,
+  GITHUB_DEPLOY_ROLE_NAME,
+  GITHUB_DEPLOY_SUBJECTS,
+  GITHUB_OIDC_AUDIENCE,
+  GITHUB_OIDC_HOST,
+  GITHUB_OIDC_STACK_NAME,
+  GITHUB_REPOSITORY,
+} from './github-oidc.ts';
 import { CupmarkStack } from './stage.ts';
 
 export type GuardName =
@@ -41,7 +56,8 @@ export type GuardName =
   | 'boundary'
   | 'isolation'
   | 'stateful'
-  | 'iam';
+  | 'iam'
+  | 'trust';
 
 export interface Violation {
   readonly guard: GuardName;
@@ -185,6 +201,23 @@ export const ALLOWED_RESOURCE_TYPES: Readonly<Record<string, ResourceRule>> = {
   },
 };
 
+/**
+ * GitHub OIDC stack: the only types it may hold, with exact names. In no other stack
+ * is `AWS::IAM::OIDCProvider` allowed, and no other role may be `CupmarkGitHubDeploy`
+ * (a stage role must start with `cupmark-<stage>-`).
+ */
+export const GITHUB_OIDC_RESOURCE_TYPES: Readonly<Record<string, ResourceRule>> = {
+  'AWS::IAM::Role': {
+    why: 'the GitHub deploy role (ADR 0009)',
+    names: [{ path: ['RoleName'], prefixes: [GITHUB_DEPLOY_ROLE_NAME], required: true, exact: true }],
+  },
+  'AWS::IAM::OIDCProvider': {
+    why: 'the GitHub OIDC provider, create mode only (ADR 0009)',
+    // IAM names the provider after its URL; invariant 9's prefix cannot apply.
+    names: [{ path: ['Url'], prefixes: [`https://${GITHUB_OIDC_HOST}`], required: true, exact: true }],
+  },
+};
+
 function deniedReason(type: string): string | undefined {
   const hit = DENIED_RESOURCE_TYPES.find((d) => (d.match.endsWith('::') ? type.startsWith(d.match) : type === d.match));
   return hit?.reason;
@@ -231,8 +264,13 @@ export const STATEFUL_RESOURCE_TYPES: readonly string[] = [
 
 const PUBLIC_ACCESS_BLOCK = ['BlockPublicAcls', 'BlockPublicPolicy', 'IgnorePublicAcls', 'RestrictPublicBuckets'];
 
-function statefulProblems(type: string, resource: unknown, props: Record<string, unknown>): string[] {
-  if (!STATEFUL_RESOURCE_TYPES.includes(type)) return [];
+/**
+ * `retainAll`: GitHub OIDC stack. Its role and provider hold no data, but deleting them
+ * would cut off every deploy, and the role predates the stack (ADR 0009), so every
+ * resource there must be Retain too.
+ */
+function statefulProblems(type: string, resource: unknown, props: Record<string, unknown>, retainAll = false): string[] {
+  if (!retainAll && !STATEFUL_RESOURCE_TYPES.includes(type)) return [];
   const found: string[] = [];
   for (const policy of ['DeletionPolicy', 'UpdateReplacePolicy']) {
     const value = get(resource, [policy]);
@@ -269,8 +307,9 @@ function statefulProblems(type: string, resource: unknown, props: Record<string,
  */
 export const AWS_MANAGED_ARN_EXCEPTIONS: readonly string[] = [];
 
-/** Placeholder for a `Ref` or `Fn::GetAtt` of a resource in the same template. */
-const OWNED = '${owned}';
+/** Placeholder for a `Ref` or `Fn::GetAtt` of a resource in the same template: `${owned:<Type>}`. */
+const OWNED = '${owned';
+const ownedToken = (type: unknown): string => `${OWNED}:${typeof type === 'string' ? type : '?'}}`;
 const UNKNOWN = '${unknown}';
 const ACCOUNT_PLACEHOLDER = '${account}';
 
@@ -281,14 +320,15 @@ const PSEUDO: Readonly<Record<string, string>> = {
   'AWS::URLSuffix': 'amazonaws.com',
 };
 
-/** A policy value as text, with references to this template's resources as OWNED. */
+/** A policy value as text, with references to this template's resources as `${owned:<Type>}`. */
 function renderArn(value: unknown, resources: Json, depth = 0): string {
   if (typeof value === 'string') return value;
   if (depth > 5) return UNKNOWN;
+  const typeOf = (id: string): string => ownedToken(get(resources[id], ['Type']));
   const ref = get(value, ['Ref']);
-  if (typeof ref === 'string') return PSEUDO[ref] ?? (ref in resources ? OWNED : UNKNOWN);
+  if (typeof ref === 'string') return PSEUDO[ref] ?? (ref in resources ? typeOf(ref) : UNKNOWN);
   const att = get(value, ['Fn::GetAtt']);
-  if (Array.isArray(att)) return typeof att[0] === 'string' && att[0] in resources ? OWNED : UNKNOWN;
+  if (Array.isArray(att)) return typeof att[0] === 'string' && att[0] in resources ? typeOf(att[0]) : UNKNOWN;
   const join = get(value, ['Fn::Join']);
   if (Array.isArray(join) && join.length === 2 && typeof join[0] === 'string' && Array.isArray(join[1])) {
     const parts = join[1] as unknown[];
@@ -299,7 +339,8 @@ function renderArn(value: unknown, resources: Json, depth = 0): string {
     return sub.replace(/\$\{([^}]+)\}/g, (_m, name: string) => {
       const pseudo = PSEUDO[name];
       if (pseudo !== undefined) return pseudo;
-      return (name.split('.')[0] ?? '') in resources ? OWNED : UNKNOWN;
+      const id = name.split('.')[0] ?? '';
+      return id in resources ? typeOf(id) : UNKNOWN;
     });
   }
   return UNKNOWN;
@@ -322,23 +363,76 @@ export const OWNED_ARN_PREFIXES: Readonly<Record<string, readonly string[]>> = {
   iam: ['role/cupmark-', 'role/Cupmark', 'policy/Cupmark'],
 };
 
-function iamResourceProblem(value: unknown, resources: Json, ownAccount: string | undefined): string | undefined {
+/**
+ * GitHub OIDC stack only, on top of OWNED_ARN_PREFIXES: the roles of the `cupmark`
+ * bootstrap (CDKToolkit-cupmark), which the deploy role assumes. No stage role may name
+ * them: a function that could assume the deploy role could change every stack.
+ */
+export const GITHUB_OIDC_ARN_PREFIXES: Readonly<Record<string, readonly string[]>> = {
+  iam: ['role/cdk-cupmark-'],
+};
+
+/**
+ * Where an Allow statement's Resource may contain a wildcard (`*` or `?`). Everywhere
+ * else a wildcard fails, even after a Cupmark prefix (`table/cupmark-*`), because it
+ * would also match resources created later, by anyone. The resource up to the wildcard
+ * must already pass the prefix check.
+ */
+// Known limitation: `index/*` or `stream/*` on a table of this template (for example
+// `${table.tableArn}/index/*`) fails, because only S3 and logs have an exception. Name the
+// index or stream exactly instead (the api role names `index/gsi1`); add an exception here,
+// with its reason, only if a role really needs every index or stream.
+export const RESOURCE_WILDCARD_EXCEPTIONS: readonly { readonly service: string; readonly pattern: RegExp; readonly why: string }[] = [
+  {
+    service: 's3',
+    pattern: /^[^*?]+\/\*$/,
+    why: 'objects of one bucket, or under one key prefix of it (`<bucket>/catalogue/*`): object keys are ids generated at run time',
+  },
+  {
+    service: 'logs',
+    pattern: /^[^*?]+:log-group:[^*?]+:\*$/,
+    why: 'the log streams of one named log group (`log-group:<name>:*`): Lambda generates the stream names',
+  },
+];
+
+/** The service of an ARN text, also for `${owned:<Type>}...`. */
+function serviceOf(text: string): string {
+  const owned = /^\$\{owned:AWS::([A-Za-z0-9]+)::/.exec(text);
+  if (owned?.[1] !== undefined) return owned[1].toLowerCase();
+  return text.split(':')[2] ?? '';
+}
+
+function wildcardProblem(text: string): string | undefined {
+  if (!/[*?]/.test(text)) return undefined;
+  const service = serviceOf(text);
+  if (RESOURCE_WILDCARD_EXCEPTIONS.some((e) => e.service === service && e.pattern.test(text))) return undefined;
+  return `resource "${text}" has a wildcard; only RESOURCE_WILDCARD_EXCEPTIONS allow one (S3 objects "<bucket>[/<prefix>]/*", log streams "log-group:<name>:*")`;
+}
+
+function iamResourceProblem(
+  value: unknown,
+  resources: Json,
+  ownAccount: string | undefined,
+  prefixesFor: Readonly<Record<string, readonly string[]>>,
+): string | undefined {
   const text = renderArn(value, resources);
   if (AWS_MANAGED_ARN_EXCEPTIONS.includes(text)) return undefined;
   if (text.includes(UNKNOWN)) return `resource ${JSON.stringify(value)} cannot be checked at synth time`;
   if (text === '*') return 'Resource "*" is not allowed';
-  if (text.startsWith(OWNED)) return undefined;
+  if (text.startsWith(OWNED)) return wildcardProblem(text);
   if (!text.startsWith('arn:')) return `resource "${text}" is not an ARN of this stack`;
   const parts = text.split(':');
   const service = parts[2] ?? '';
   const account = parts[4] ?? '';
   const resource = parts.slice(5).join(':');
   if (account !== '' && account !== ACCOUNT_PLACEHOLDER && account !== ownAccount) return `resource "${text}" is in another account`;
-  if (resource.startsWith(OWNED)) return undefined;
-  const prefixes = OWNED_ARN_PREFIXES[service];
+  if (resource.startsWith(OWNED)) return wildcardProblem(text);
+  const prefixes = prefixesFor[service];
   if (prefixes === undefined) return `resource "${text}": service ${service} is not on OWNED_ARN_PREFIXES; name a resource of this template instead`;
-  if (prefixes.some((p) => resource.startsWith(p))) return undefined;
-  return `resource "${text}" is not a Cupmark resource: it must start with ${prefixes.map((p) => `${service}:${p}`).join(' or ')}`;
+  if (!prefixes.some((p) => resource.startsWith(p))) {
+    return `resource "${text}" is not a Cupmark resource: it must start with ${prefixes.map((p) => `${service}:${p}`).join(' or ')}`;
+  }
+  return wildcardProblem(text);
 }
 
 function asList(value: unknown): unknown[] {
@@ -347,7 +441,12 @@ function asList(value: unknown): unknown[] {
 }
 
 /** Every problem of one identity policy document. */
-function policyDocumentProblems(doc: unknown, resources: Json, ownAccount: string | undefined): string[] {
+function policyDocumentProblems(
+  doc: unknown,
+  resources: Json,
+  ownAccount: string | undefined,
+  prefixesFor: Readonly<Record<string, readonly string[]>>,
+): string[] {
   const found: string[] = [];
   for (const [i, statement] of asList(get(doc, ['Statement'])).entries()) {
     const at = `Statement[${String(i)}]`;
@@ -359,27 +458,121 @@ function policyDocumentProblems(doc: unknown, resources: Json, ownAccount: strin
     if (actions.length === 0) found.push(`${at}: no Action`);
     for (const action of actions) {
       if (typeof action !== 'string') found.push(`${at}: action ${JSON.stringify(action)} is not a literal`);
-      else if (action.includes('*')) found.push(`${at}: action "${action}" has a wildcard`);
+      else if (/[*?]/.test(action)) found.push(`${at}: action "${action}" has a wildcard`);
     }
     const targets = asList(get(statement, ['Resource']));
     if (targets.length === 0) found.push(`${at}: no Resource`);
     for (const target of targets) {
-      const problem = iamResourceProblem(target, resources, ownAccount);
+      const problem = iamResourceProblem(target, resources, ownAccount, prefixesFor);
       if (problem !== undefined) found.push(`${at}: ${problem}`);
     }
   }
   return found;
 }
 
-function iamProblems(type: string, props: Json, resources: Json, ownAccount: string | undefined): string[] {
+/** Service principals a stage role may trust. Each new one needs a reviewed pull request. */
+export const TRUSTED_SERVICE_PRINCIPALS: readonly string[] = ['lambda.amazonaws.com'];
+
+const GITHUB_PROVIDER_ARN = `arn:aws:iam::${ACCOUNT_PLACEHOLDER}:oidc-provider/${GITHUB_OIDC_HOST}`;
+
+/**
+ * Every problem of a role's trust policy. Stage roles may only trust a service in
+ * TRUSTED_SERVICE_PRINCIPALS with `sts:AssumeRole`. GitHub OIDC stack: the role may only
+ * trust the GitHub provider (by its ARN, the one documented foreign ARN, or the provider
+ * of the same template in create mode) with `sts:AssumeRoleWithWebIdentity`, `aud`
+ * `sts.amazonaws.com` and only the `environment:dev` / `environment:prod` subjects of this
+ * repository, all `StringEquals`. No `AWS`
+ * principal (another account or role) and no `*` principal anywhere.
+ */
+function trustProblems(doc: unknown, resources: Json, githubOidc: boolean): string[] {
   const found: string[] = [];
-  if (type === 'AWS::IAM::Policy') {
-    found.push(...policyDocumentProblems(props.PolicyDocument, resources, ownAccount));
+  const statements = asList(get(doc, ['Statement']));
+  if (statements.length === 0) found.push('trust policy has no statement');
+  for (const [i, statement] of statements.entries()) {
+    const at = `trust Statement[${String(i)}]`;
+    if (get(statement, ['Effect']) !== 'Allow') {
+      found.push(`${at}: only Allow statements are expected`);
+      continue;
+    }
+    for (const key of ['NotAction', 'NotPrincipal']) {
+      if (get(statement, [key]) !== undefined) found.push(`${at}: ${key} is not allowed`);
+    }
+    const principal = get(statement, ['Principal']);
+    const kinds = isRecord(principal) ? Object.keys(principal) : [];
+    const actions = asList(get(statement, ['Action']));
+    if (!isRecord(principal) || kinds.length !== 1) {
+      found.push(`${at}: principal ${JSON.stringify(principal)} must be exactly one Service or Federated principal`);
+      continue;
+    }
+    if (kinds[0] === 'Service') {
+      for (const service of asList(principal.Service)) {
+        if (typeof service !== 'string' || !TRUSTED_SERVICE_PRINCIPALS.includes(service)) {
+          found.push(`${at}: service principal ${JSON.stringify(service)} is not on TRUSTED_SERVICE_PRINCIPALS`);
+        }
+      }
+      if (actions.length !== 1 || actions[0] !== 'sts:AssumeRole') found.push(`${at}: a service may only be trusted with sts:AssumeRole`);
+      continue;
+    }
+    if (kinds[0] !== 'Federated') {
+      found.push(`${at}: ${String(kinds[0])} principals are not allowed; only a service or the GitHub provider may assume a role`);
+      continue;
+    }
+    if (!githubOidc) {
+      found.push(`${at}: a Federated principal is only allowed in ${GITHUB_OIDC_STACK_NAME}`);
+      continue;
+    }
+    const providers = asList(principal.Federated).map((p) => renderArn(p, resources));
+    if (providers.length !== 1 || !(providers[0] === GITHUB_PROVIDER_ARN || providers[0] === ownedToken('AWS::IAM::OIDCProvider'))) {
+      found.push(`${at}: Federated must be the GitHub provider ${GITHUB_PROVIDER_ARN}; got ${JSON.stringify(providers)}`);
+    }
+    if (actions.length !== 1 || actions[0] !== 'sts:AssumeRoleWithWebIdentity') {
+      found.push(`${at}: the GitHub provider may only be trusted with sts:AssumeRoleWithWebIdentity`);
+    }
+    const condition = get(statement, ['Condition']);
+    const operators = isRecord(condition) ? Object.keys(condition) : [];
+    if (operators.length !== 1 || operators[0] !== 'StringEquals') {
+      found.push(`${at}: Condition must use StringEquals only (no StringLike, no wildcard subjects); got ${JSON.stringify(operators)}`);
+    }
+    const aud = get(condition, ['StringEquals', `${GITHUB_OIDC_HOST}:aud`]);
+    if (aud !== GITHUB_OIDC_AUDIENCE) found.push(`${at}: ${GITHUB_OIDC_HOST}:aud must be exactly ${GITHUB_OIDC_AUDIENCE}`);
+    const subs = asList(get(condition, ['StringEquals', `${GITHUB_OIDC_HOST}:sub`]));
+    if (subs.length === 0) found.push(`${at}: ${GITHUB_OIDC_HOST}:sub must be set`);
+    for (const sub of subs) {
+      // Only the environment subjects (ADR 0018): a `ref:` subject would also match jobs
+      // without an environment, such as claude.yml's issue_comment job on main.
+      if (typeof sub !== 'string' || !GITHUB_DEPLOY_SUBJECTS.includes(sub)) {
+        found.push(`${at}: sub ${JSON.stringify(sub)} must be one of ${GITHUB_DEPLOY_SUBJECTS.join(', ')} (environment subjects of repo:${GITHUB_REPOSITORY} only)`);
+      }
+    }
   }
+  return found;
+}
+
+/**
+ * Bucket policies may only deny. The TLS-only policy is the one documented use of
+ * `s3:*` and Principal `*`: in Deny statements they take access away from everyone
+ * without TLS 1.2. An Allow in a bucket policy would grant access outside IAM roles.
+ */
+function bucketPolicyProblems(props: Json): string[] {
+  return asList(get(props, ['PolicyDocument', 'Statement']))
+    .map((s, i) => (get(s, ['Effect']) === 'Deny' ? undefined : `Statement[${String(i)}]: a bucket policy may only Deny`))
+    .filter((p): p is string => p !== undefined);
+}
+
+function iamProblems(type: string, props: Json, resources: Json, ownAccount: string | undefined, githubOidc: boolean): string[] {
+  const found: string[] = [];
+  const prefixesFor: Record<string, readonly string[]> = { ...OWNED_ARN_PREFIXES };
+  if (githubOidc) {
+    for (const [service, extra] of Object.entries(GITHUB_OIDC_ARN_PREFIXES)) prefixesFor[service] = [...(prefixesFor[service] ?? []), ...extra];
+  }
+  if (type === 'AWS::IAM::Policy') {
+    found.push(...policyDocumentProblems(props.PolicyDocument, resources, ownAccount, prefixesFor));
+  }
+  if (type === 'AWS::S3::BucketPolicy') found.push(...bucketPolicyProblems(props));
   if (type === 'AWS::IAM::Role') {
     for (const [i, policy] of asList(props.Policies).entries()) {
       const name = get(policy, ['PolicyName']);
-      for (const p of policyDocumentProblems(get(policy, ['PolicyDocument']), resources, ownAccount)) {
+      for (const p of policyDocumentProblems(get(policy, ['PolicyDocument']), resources, ownAccount, prefixesFor)) {
         found.push(`Policies[${String(i)}] (${typeof name === 'string' ? name : '?'}) ${p}`);
       }
     }
@@ -573,12 +766,19 @@ function checkStack(stack: Stack): Violation[] {
     add('resource-type', stack.node.path, 'nested stacks are not allowed');
     return out;
   }
-  if (!(stack instanceof CupmarkStack)) {
+  const githubOidc = stack instanceof CupmarkGitHubOidcStack;
+  if (!(stack instanceof CupmarkStack) && !githubOidc) {
     add('name', stack.node.path, 'every stack must extend CupmarkStack (src/stage.ts)');
   }
   const stage: StageName | undefined = stack instanceof CupmarkStack ? stack.cupmarkStage : undefined;
   const stagePrefix = `${NAME_PREFIX}${stage ?? '<stage>'}-`;
-  if (!name.startsWith(stagePrefix)) add('name', 'stackName', `stack name ${name} must start with ${stagePrefix}`);
+  if (githubOidc) {
+    // GitHub OIDC stack: one fixed name, at the top of the app, never inside a stage.
+    if (name !== GITHUB_OIDC_STACK_NAME) add('name', 'stackName', `stack name ${name} must be ${GITHUB_OIDC_STACK_NAME}`);
+    if (Stage.of(stack) !== stack.node.root) add('name', stack.node.path, `${GITHUB_OIDC_STACK_NAME} must not be inside a stage`);
+  } else if (!name.startsWith(stagePrefix)) {
+    add('name', 'stackName', `stack name ${name} must start with ${stagePrefix}`);
+  }
 
   // Region: construct, manifest and every string in the template.
   if (stack.region !== REGION) add('region', 'env', `stack region is ${stack.region}, must be ${REGION}`);
@@ -599,11 +799,35 @@ function checkStack(stack: Stack): Violation[] {
 
   // Bootstrap: the Cupmark qualifier, never the shared default bootstrap.
   const bootstrapParam = `/cdk-bootstrap/${BOOTSTRAP_QUALIFIER}/version`;
-  if (get(template, ['Parameters', 'BootstrapVersion', 'Default']) !== bootstrapParam) {
-    add('bootstrap', 'Parameters.BootstrapVersion', `must default to ${bootstrapParam} (DefaultStackSynthesizer qualifier ${BOOTSTRAP_QUALIFIER})`);
-  }
-  if (artifact.assumeRoleArn?.includes(`cdk-${BOOTSTRAP_QUALIFIER}-deploy-role-`) !== true) {
-    add('bootstrap', 'manifest', `deploy role must be cdk-${BOOTSTRAP_QUALIFIER}-deploy-role-*; got ${String(artifact.assumeRoleArn)}`);
+  if (githubOidc) {
+    // GitHub OIDC stack (ADR 0009): deployed with the caller's credentials, so no
+    // bootstrap role and no CupmarkCfnExecution. The template still goes to the Cupmark
+    // asset bucket, and the stack has no other asset (no Lambda code).
+    const synth = stack.synthesizer;
+    if (!(synth instanceof CliCredentialsStackSynthesizer) || synth.bootstrapQualifier !== BOOTSTRAP_QUALIFIER) {
+      add('bootstrap', 'synthesizer', `must be CliCredentialsStackSynthesizer with qualifier ${BOOTSTRAP_QUALIFIER}`);
+    }
+    if (artifact.assumeRoleArn !== undefined || artifact.cloudFormationExecutionRoleArn !== undefined) {
+      add('bootstrap', 'manifest', 'must deploy with the caller\'s credentials: no assume role and no CloudFormation execution role');
+    }
+    if (artifact.stackTemplateAssetObjectUrl?.startsWith(`s3://cdk-${BOOTSTRAP_QUALIFIER}-assets-`) !== true) {
+      add('bootstrap', 'manifest', `template must go to cdk-${BOOTSTRAP_QUALIFIER}-assets-*; got ${String(artifact.stackTemplateAssetObjectUrl)}`);
+    }
+    for (const dep of artifact.dependencies) {
+      if (!(dep instanceof AssetManifestArtifact)) continue;
+      const { files = {}, dockerImages = {} } = dep.contents;
+      const others = Object.values(files).filter((f) => f.source.path !== artifact.templateFile);
+      if (others.length > 0 || Object.keys(dockerImages).length > 0) {
+        add('bootstrap', 'assets', `${GITHUB_OIDC_STACK_NAME} must have no assets besides its template`);
+      }
+    }
+  } else {
+    if (get(template, ['Parameters', 'BootstrapVersion', 'Default']) !== bootstrapParam) {
+      add('bootstrap', 'Parameters.BootstrapVersion', `must default to ${bootstrapParam} (DefaultStackSynthesizer qualifier ${BOOTSTRAP_QUALIFIER})`);
+    }
+    if (artifact.assumeRoleArn?.includes(`cdk-${BOOTSTRAP_QUALIFIER}-deploy-role-`) !== true) {
+      add('bootstrap', 'manifest', `deploy role must be cdk-${BOOTSTRAP_QUALIFIER}-deploy-role-*; got ${String(artifact.assumeRoleArn)}`);
+    }
   }
   if ((templateText + JSON.stringify(artifact.manifest)).includes('hnb659fds')) {
     add('bootstrap', 'template', 'references the shared default bootstrap (qualifier hnb659fds)');
@@ -633,8 +857,13 @@ function checkStack(stack: Stack): Violation[] {
     }
   }
 
+  // GitHub OIDC stack in import mode (ADR 0018): no tags at all, so the template matches
+  // the hand-made role. The one documented exception to the tag guard; the committed
+  // state (no import flag) is checked like every other stack.
+  const tagExempt = stack instanceof CupmarkGitHubOidcStack && stack.importMode;
+
   // Stack tags (CloudFormation propagates them to every resource that supports tags).
-  if (artifact.tags[PROJECT_TAG_KEY] !== PROJECT_TAG_VALUE) {
+  if (!tagExempt && artifact.tags[PROJECT_TAG_KEY] !== PROJECT_TAG_VALUE) {
     add('tag', 'manifest', `stack tag ${PROJECT_TAG_KEY}=${PROJECT_TAG_VALUE} is missing`);
   }
 
@@ -651,14 +880,18 @@ function checkStack(stack: Stack): Violation[] {
       continue;
     }
     for (const f of fixedFeeProperties(type, props)) add('fixed-fee-property', id, `${type}: ${f}`);
-    for (const p of statefulProblems(type, res, props)) add('stateful', id, `${type}: ${p}`);
-    for (const p of iamProblems(type, props, byId, ownAccount)) add('iam', id, `${type}: ${p}`);
+    for (const p of statefulProblems(type, res, props, githubOidc)) add('stateful', id, `${type}: ${p}`);
+    for (const p of iamProblems(type, props, byId, ownAccount, githubOidc)) add('iam', id, `${type}: ${p}`);
+    if (type === 'AWS::IAM::Role') {
+      for (const p of trustProblems(props.AssumeRolePolicyDocument, byId, githubOidc)) add('trust', id, `${type}: ${p}`);
+    }
     const denied = deniedReason(type);
-    const rule = ALLOWED_RESOURCE_TYPES[type];
+    const rule = (githubOidc ? GITHUB_OIDC_RESOURCE_TYPES : ALLOWED_RESOURCE_TYPES)[type];
     if (denied !== undefined) {
       add('resource-type', id, `${type} is forbidden: ${denied}`);
     } else if (rule === undefined) {
-      add('resource-type', id, `${type} is not on the reviewed allow list in src/guards.ts`);
+      const list = githubOidc ? 'GITHUB_OIDC_RESOURCE_TYPES' : 'the reviewed allow list';
+      add('resource-type', id, `${type} is not on ${list} in src/guards.ts`);
     } else {
       for (const n of rule.names) {
         const value = get(props, n.path);
@@ -678,7 +911,10 @@ function checkStack(stack: Stack): Violation[] {
         }
       }
     }
-    if (type === 'AWS::IAM::Role') {
+    // GitHub OIDC stack: no boundary. The hand-made role has none, the stack is not
+    // deployed through CupmarkCfnExecution (which requires it), and CupmarkBoundary does
+    // not allow sts:AssumeRole on the bootstrap roles. Its own policy is pinned instead.
+    if (type === 'AWS::IAM::Role' && !githubOidc) {
       if (lastLiteral(props.PermissionsBoundary)?.endsWith(`:policy/${PERMISSIONS_BOUNDARY_NAME}`) !== true) {
         add('boundary', id, `IAM role without the ${PERMISSIONS_BOUNDARY_NAME} permissions boundary`);
       }
@@ -693,7 +929,7 @@ function checkStack(stack: Stack): Violation[] {
     const logicalId: unknown = stack.resolve(c.logicalId);
     const id = typeof logicalId === 'string' ? logicalId : c.node.path;
     const tags = get(byId[id], ['Properties', capitalise(tm.tagPropertyName)]);
-    if (!hasProjectTag(tags)) add('tag', id, `${c.cfnResourceType} lacks tag ${PROJECT_TAG_KEY}=${PROJECT_TAG_VALUE}`);
+    if (!tagExempt && !hasProjectTag(tags)) add('tag', id, `${c.cfnResourceType} lacks tag ${PROJECT_TAG_KEY}=${PROJECT_TAG_VALUE}`);
   }
 
   return out;

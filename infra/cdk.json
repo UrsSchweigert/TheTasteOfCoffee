@@ -105,6 +105,7 @@
     "@aws-cdk/customresources:installLatestAwsSdkDefault": false,
     "@aws-cdk/s3-notifications:addS3TrustKeyPolicyForSnsSubscriptions": true,
     "cupmark:dev:appleKeyRotation": "1",
+    "cupmark:githubOidcProvider": "reference",
     "cupmark:prod:appleKeyRotation": "1"
   }
 }
