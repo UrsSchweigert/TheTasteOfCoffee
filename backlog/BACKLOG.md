@@ -86,7 +86,7 @@ Goal: the repo builds, tests and checks itself; the shared contract exists.
 
 
 ### M0-T8 Harden the existing workflows
-- status: in-progress
+- status: done
 - owner: infra-engineer
 - depends: M0-T5
 - acceptance:
@@ -106,6 +106,16 @@ Goal: the repo builds, tests and checks itself; the shared contract exists.
   - The generator renames the milk id `none` to a Swift case that cannot be confused with `Optional.none`, for example `noMilk`, while the raw value stays `none`.
   - `Localizable.xcstrings` entries carry `extractionState: manual`, so Xcode does not mark them stale.
   - The `ios` CI job is skipped on changes that cannot affect the app, and `ci-ok` still passes when it is skipped.
+
+
+### M0-T10 Licence allowlist in CI
+- status: todo
+- owner: infra-engineer
+- depends: M0-T8
+- acceptance:
+  - A CI step checks every package in the contracts, backend and infra lockfiles against an allowlist of permissive licences, plus the MPL-2.0 dev-only exception from ADR 0008, and fails on anything else, including an unknown licence.
+  - A test shows the check failing on a lockfile entry with a GPL or unknown licence.
+  - This guards the Dependabot npm updates from M0-T8, which can bring in new transitive dependencies.
 
 ---
 

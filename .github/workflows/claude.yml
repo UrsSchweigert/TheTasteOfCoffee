@@ -13,7 +13,10 @@
 # - no token scopes at the top level; the job grants only what it uses (below);
 # - checkout without persisted credentials. The action does not need them: it
 #   removes checkout's credential itself and points origin at the Claude App
-#   token (src/github/operations/git-config.ts at the pinned commit).
+#   token (src/github/operations/git-config.ts at the pinned commit). The action
+#   runs one `git fetch` before it installs that token, which works only while
+#   this repository is public. If it ever goes private, that fetch fails: set
+#   persist-credentials back to true here and add a documented exception.
 name: Claude Code
 on:
   issue_comment:
