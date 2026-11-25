@@ -1,18 +1,24 @@
 # Manual check that GitHub Actions can assume the Cupmark deploy role through OIDC
 # and reach only the cdk-cupmark bootstrap roles. Read-only: it creates nothing.
 # Run it from main (the role trusts main and the dev environment only).
+#
+# Strict file in scripts/check-workflows.mjs: actions pinned to a commit SHA
+# with a version comment, no token scopes at the top level, and the job grants
+# only id-token: write, which configure-aws-credentials needs to fetch the
+# GitHub OIDC token for AssumeRoleWithWebIdentity. The job checks out nothing,
+# so it needs no contents scope.
 name: AWS OIDC check
 on:
   workflow_dispatch:
-permissions:
-  id-token: write
-  contents: read
+permissions: {}
 jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      id-token: write
     steps:
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
