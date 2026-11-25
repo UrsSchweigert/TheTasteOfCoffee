@@ -25,7 +25,7 @@ Goal: the repo builds, tests and checks itself; the shared contract exists.
   - A JSON Schema validates every vocabulary file; a test runs it.
 
 ### M0-T2 OpenAPI skeleton
-- status: todo
+- status: done
 - owner: contract-keeper
 - depends: M0-T1
 - implements: docs/05-system-design.md, Data model

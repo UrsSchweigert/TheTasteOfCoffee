@@ -2,7 +2,7 @@
   "name": "cupmark-contracts",
   "version": "0.0.0",
   "private": true,
-  "description": "Cupmark shared contract: closed vocabulary, i18n labels and their checks",
+  "description": "Cupmark shared contract: closed vocabulary, i18n labels, OpenAPI and their checks",
   "license": "UNLICENSED",
   "type": "module",
   "engines": { "node": ">=22" },
@@ -11,6 +11,7 @@
     "lock": "node bin/lock-version.mjs"
   },
   "devDependencies": {
-    "ajv": "^8.17.1"
+    "ajv": "^8.17.1",
+    "yaml": "^2.9.1"
   }
 }

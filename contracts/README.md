@@ -6,8 +6,8 @@ Everything the app and the backend agree on. Owned by the `contract-keeper` agen
 - `vocabulary/v<N>.lock.json`: sha256 of every file of a published version. It makes "never edited" a test, not a promise.
 - `vocabulary/schema/`: one JSON Schema per vocabulary file (`<name>.schema.json` for `<name>.json`), plus `common.schema.json` with the shared shapes.
 - `i18n/<lang>.json`: display labels for every id, German and English. Vocabulary files hold no display text.
-- `openapi.yaml`: the API (created in task M0-T2).
-- `lib/`, `test/`, `bin/`, `package.json`: the checks and the lock tool. Run `npm ci && npm test` here (Node 22).
+- `openapi.yaml`: the API, OpenAPI 3.1. See "The API" below.
+- `lib/`, `test/`, `bin/`, `package.json`: the checks, the lock tool and the API lint (`bin/lint-openapi.mjs`, also run by `scripts/check-no-free-text.sh`). Run `npm ci && npm test` here (Node 22).
 
 ## Vocabulary v1
 
@@ -56,3 +56,51 @@ A published version is never edited. To change any list, value or range:
 Never regenerate, edit or delete an existing lock file. If a test reports `changed in a published version`, undo the edit and make it in a new version instead.
 
 Adding a list means: add it to a vocabulary file, extend that file's schema, add labels in both languages.
+
+## The API
+
+`openapi.yaml` holds the free-tier routes: barcode lookup, bean create and read, shelf, brews with ratings, recipes, profile, CSV export and account deletion. Paid and aggregate routes, the label-photo upload URL (task M1-T4) and a health route (open question D9) are not in it yet. Every route requires the bearer token; an unauthenticated route would need an explicit, documented exception in the lint. The reasons for the choices below are in `docs/decisions/0004-api-representation-of-vocabulary-values.md`.
+
+### Rules the lint enforces
+
+`lib/openapi.mjs` walks every schema: components, parameters, request and response bodies, nested properties, `items`, `oneOf`, `anyOf`, `not`, and every `$ref` target. It fails on:
+
+- a string without `enum`, an anchored `pattern` (`^...$`) or a `format` of `date` or `date-time`. The only other string is the CSV export body, `{ type: string, contentMediaType: text/csv }` under `text/csv`;
+- a `pattern` that is wide or unbounded: `.`, `\S`, `\s`, `\w`, `\W`, `\D`, `\p{...}`, `\P{...}`, a negated class `[^...]`, or a `*`, `+` or `{n,}` quantifier. A pattern must name its characters and bound its length, like `^[0-9]{12,13}$`;
+- any schema keyword outside an allowlist (`SCHEMA_KEYWORDS` in `lib/openapi.mjs`), so `prefixItems`, `contains`, `if`/`then`/`else`, `dependentSchemas`, `propertyNames`, `unevaluated*`, `patternProperties`, `const` and exclusive bounds cannot slip in unchecked;
+- a number or integer without `minimum` and `maximum`, or with a `multipleOf` that is not exact in binary floating point (see "Decimal steps");
+- an object without `additionalProperties: false`, or with `required` names it does not define;
+- an array without `items` or `maxItems`;
+- a schema without one `type` (unless it is a `$ref`, `oneOf` or `anyOf`), any `allOf` (it defeats `additionalProperties: false`; nest objects instead), a `$ref` with sibling keywords other than `description`, a non-local or dangling `$ref`, `patternProperties`, and a `not` other than `{ required: [...] }`;
+- a property, parameter or path segment that would name a user. The name is turned into snake_case (`ownerId` becomes `owner_id`) and fails if any whole token is `user`, `users`, `owner`, `owners`, `sub` or `uid`, or if it is one of a few exact names such as `subject` or `account_id`. So `cognito_sub` fails and `subscription` does not. The user is always the token's subject.
+
+The structural check covers: OpenAPI `3.1.x`, `info`, lowercase paths with `{snake_case}` parameters, unique camelCase `operationId`, path parameters that match the template, a 2xx and a 401 response on every operation, request bodies that are required and `application/json` only, responses that are `application/json` or `text/csv` only, no body on 204, the `bearerAuth` scheme (HTTP bearer, JWT) required at the top level and never overridden, every `$ref` resolving, and no unused component schema. The component schemas are also compiled with ajv in strict mode, so a misspelt keyword fails. This is not a full OpenAPI validator; it checks what the generators and the gateway rely on.
+
+### Binding to the vocabulary
+
+Enums and ranges are written by hand in `openapi.yaml` and tagged with the vocabulary value they come from. The tests compare each tagged value with the vocabulary, so the two cannot drift:
+
+| Tag | On | The test requires |
+| --- | --- | --- |
+| `x-vocabulary: <namespace>` | string enum | the enum equals the ids of that list, in order, across all published versions |
+| `x-i18n-languages: true` | string enum | the enum equals the languages in `i18n/` |
+| `x-vocabulary-range: <file>.<path>` | number or integer | bounds and step equal the range, times `x-vocabulary-scale` if given |
+| `x-vocabulary-scale: <n>` | integer | the API value is the vocabulary value times n |
+| `x-vocabulary-keys: <namespace>` | object | the property names equal the ids of that list, in order |
+| `x-vocabulary-max-items: <file>.<path>` | array | `maxItems` equals that value |
+| `x-vocabulary-version: true` | integer | minimum 1, maximum the latest published version |
+
+An enum without a tag fails, so does an unknown `x-vocabulary*` keyword, and so does a vocabulary range that no schema uses. Every request body that holds a vocabulary value has a required top-level `vocabulary_version`; the server validates each value against that version (task M1-T5). Where the enum spans versions it is the union of their ids, since ids are never reused.
+
+When a new vocabulary version is published: add its new ids to the enums, raise `VocabularyVersion.maximum`, and run `npm test`. The test names every enum that is missing an id.
+
+### Decimal steps
+
+A step that is exact in binary (whole numbers, 0.5) stays a JSON number with `multipleOf`. A step that is not (0.1) is sent as an integer count of that step, so no client or validator meets `0.3 / 0.1 = 2.9999999999999996`. In v1 this applies only to the dose: `dose_dg` is tenths of a gram, 50 to 1000 (5.0 to 100.0 g), tagged `x-vocabulary-scale: 10`. Scores and normalised grind stay numbers with `multipleOf: 0.5`. The lint rejects any `multipleOf` that is not a multiple of 2^-20.
+
+### Shapes
+
+- Ids are server-generated ULIDs: `^[0-9A-HJKMNP-TV-Z]{26}$`. Barcodes are 12 or 13 digits (UPC-A, EAN-13); the server checks the check digit and stores the 13-digit form. List pages hold at most 100 items and an opaque `cursor`.
+- A response wraps the stored request in `values` next to its id (`{ brew_id, values: BrewInput }`), so request and response cannot drift and no `allOf` is needed.
+- A bean's attributes are grouped by source: `picked_attributes` (picked in the app) and `operator_attributes` (set when the operator verifies). `open_food_facts_match` says whether a user confirmed an Open Food Facts hit for the barcode. Open Food Facts name and brand are not sent or returned until open question D7 in `docs/07-open-questions.md` is answered, and roaster, origin and variety stay out until a vocabulary version has those lists (D8). This is the conservative default, not a settled rule.
+- Error responses have no body; the status code is the answer.
