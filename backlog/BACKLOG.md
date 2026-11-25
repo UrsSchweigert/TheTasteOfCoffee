@@ -398,7 +398,7 @@ Planning notes (planned 2026-11-25):
   - `GET /export` writes `grinder` and `grind_setting`. The export test pins the header against the contract.
 
 ### M2-T6 CI: run the ios job when the API contract changes
-- status: todo
+- status: done
 - owner: infra-engineer
 - depends: none
 - implements: CLAUDE.md, Definition of done; M0-T9 (path filter)
@@ -413,6 +413,7 @@ Planning notes (planned 2026-11-25):
 - depends: M2-T6
 - implements: docs/05-system-design.md, Components (client); CLAUDE.md invariant 2 and Style; ADR 0004
 - acceptance:
+  - From M2-T6: the test `IOS_PATHS covers every path the iOS generators read` follows the generator's imports. If `scripts/generate-ios-api.mjs` imports `contracts/lib/openapi.mjs`, add it to `IOS_PATHS` in `.github/workflows/ci.yml` and to ios/README.md in the same pull request.
   - An ADR (lead, ADR 0014) records the choice.
     - Chosen: an in-repo Node generator, `scripts/generate-ios-api.mjs`, writes `ios/Cupmark/Generated/API.swift` from `contracts/openapi.yaml`. It needs no Swift package and runs on Linux, like the vocabulary generator.
     - Rejected: Apple's swift-openapi-generator, because it adds Swift packages and a package fetch to CI against the README's "no third-party packages".

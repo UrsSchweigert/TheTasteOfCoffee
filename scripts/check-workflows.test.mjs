@@ -3,11 +3,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { checkWorkflow, STRICT_FILES } from './check-workflows.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -319,7 +319,7 @@ test('ci.yml: ci-ok needs every job, including changes and ios, and runs unless 
 test('path filter: changes that cannot affect the app give ios=false', () => {
   assert.equal(filterAfter(editing('backend/src/a.ts')).ios, 'false');
   assert.equal(filterAfter(editing('docs/README.md', 'backlog/BACKLOG.md')).ios, 'false');
-  assert.equal(filterAfter(editing('contracts/openapi.yaml')).ios, 'false');
+  assert.equal(filterAfter(editing('contracts/README.md', 'contracts/test/a.test.mjs', 'contracts/lib/other.mjs')).ios, 'false');
   assert.equal(filterAfter(editing('.github/workflows/claude.yml')).ios, 'false');
   assert.equal(filterAfter(editing('iosx/a.swift', 'scripts/check-ios-strings.mjs.bak')).ios, 'false');
   assert.equal(filterAfter(() => {}).ios, 'false', 'an empty diff');
@@ -331,13 +331,111 @@ test('path filter: changes under each app path give ios=true', () => {
     'ios/New Folder/Été.swift',
     'contracts/vocabulary/v2/brew.json',
     'contracts/i18n/de.json',
+    'contracts/openapi.yaml',
+    'contracts/lib/vocabulary.mjs',
+    'contracts/lib/lock.mjs',
     'scripts/generate-ios-vocabulary.mjs',
+    'scripts/generate-ios-api.mjs',
     'scripts/check-ios-strings.mjs',
     '.github/workflows/ci.yml',
   ]) {
     const { ios, log } = filterAfter(editing('docs/README.md', path));
     assert.equal(ios, 'true', `${path}: ${log}`);
   }
+});
+
+// Paths the iOS generators read (M2-T6). Derived from the scripts, not listed
+// a second time: the generators are every scripts/generate-ios-*.mjs and
+// scripts/check-ios-*.mjs; what they read is the transitive closure of their
+// relative imports, plus every exported `*_DIR` / `*_FILE` path constant of a
+// module in that closure (VOCABULARY_DIR, I18N_DIR, OPENAPI_FILE, ...). A
+// package root (a directory holding package.json, such as CONTRACTS_DIR) is an
+// anchor for other paths, not an input, and is skipped. npm dependencies are
+// out of scope. scripts/generate-ios-api.mjs (M2-T7) and contracts/openapi.yaml,
+// its input, are required even before the script exists.
+const IOS_PATHS = changesStep.env.IOS_PATHS.split(/\s+/).filter(Boolean);
+const PENDING_GENERATOR_INPUTS = ['scripts/generate-ios-api.mjs', 'contracts/openapi.yaml'];
+const toRepoPath = (abs) => relative(root, abs).split(sep).join('/');
+const insideRepo = (abs) => {
+  const rel = relative(root, abs);
+  return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel);
+};
+
+function iosGenerators() {
+  return readdirSync(join(root, 'scripts'))
+    .filter((name) => /^(generate|check)-ios-[a-z0-9-]+\.mjs$/.test(name) && !name.endsWith('.test.mjs'))
+    .sort()
+    .map((name) => join(root, 'scripts', name));
+}
+
+/** Absolute paths of the relative static and literal dynamic imports of a module. */
+function relativeImports(file) {
+  const text = readFileSync(file, 'utf8');
+  const specifiers = [
+    ...text.matchAll(/^\s*(?:import|export)\s[^;]*?\bfrom\s+['"]([^'"]+)['"]/gms),
+    ...text.matchAll(/^\s*import\s+['"]([^'"]+)['"]/gm),
+    ...text.matchAll(/\bimport\(\s*['"]([^'"]+)['"]\s*\)/g),
+  ].map((m) => m[1]);
+  return specifiers.filter((s) => s.startsWith('./') || s.startsWith('../')).map((s) => resolve(dirname(file), s));
+}
+
+async function iosGeneratorInputs() {
+  const modules = new Set();
+  const queue = iosGenerators();
+  while (queue.length > 0) {
+    const file = queue.shift();
+    if (modules.has(file)) continue;
+    assert.ok(existsSync(file), `${toRepoPath(file)} is imported but does not exist`);
+    modules.add(file);
+    queue.push(...relativeImports(file));
+  }
+  const inputs = new Map(); // repo path -> 'file' | 'dir'
+  for (const file of modules) {
+    assert.ok(insideRepo(file), `${file} is outside the repository`);
+    inputs.set(toRepoPath(file), 'file');
+    const exported = await import(pathToFileURL(file).href);
+    for (const [name, value] of Object.entries(exported)) {
+      if (!/_(DIR|FILE)$/.test(name) || typeof value !== 'string' || !isAbsolute(value) || !insideRepo(value)) continue;
+      const isDir = existsSync(value) ? statSync(value).isDirectory() : name.endsWith('_DIR');
+      if (isDir && existsSync(join(value, 'package.json'))) continue;
+      inputs.set(toRepoPath(value), isDir ? 'dir' : 'file');
+    }
+  }
+  for (const path of PENDING_GENERATOR_INPUTS) if (!inputs.has(path)) inputs.set(path, 'file');
+  return inputs;
+}
+
+/**
+ * The entries of `paths` that make the changes step see a change to `path`,
+ * with the shell's rule: equal, or a prefix ending in `/`. A directory is
+ * covered only by a prefix that covers everything below it.
+ */
+const coveringEntries = (paths, path, kind) =>
+  paths.filter((p) => (kind === 'file' && p === path) || (p.endsWith('/') && `${path}/`.startsWith(p)));
+
+test('IOS_PATHS covers every path the iOS generators read', async () => {
+  const generators = iosGenerators().map(toRepoPath);
+  assert.ok(generators.includes('scripts/generate-ios-vocabulary.mjs'), `generators found: ${generators}`);
+  assert.ok(generators.includes('scripts/check-ios-strings.mjs'), `generators found: ${generators}`);
+  const inputs = await iosGeneratorInputs();
+  // The derivation reaches the inputs we know of, so it is not vacuous.
+  for (const known of ['contracts/vocabulary', 'contracts/i18n', 'contracts/lib/vocabulary.mjs', 'contracts/lib/lock.mjs', ...PENDING_GENERATOR_INPUTS]) {
+    assert.ok(inputs.has(known), `derived inputs lack ${known}: ${[...inputs.keys()]}`);
+  }
+  const missing = [...inputs].filter(([path, kind]) => coveringEntries(IOS_PATHS, path, kind).length === 0).map(([path]) => path);
+  assert.deepEqual(missing, [], `IOS_PATHS in ci.yml lacks paths the iOS generators read: ${missing.join(', ')}`);
+  assert.ok(IOS_PATHS.includes('ios/'));
+  assert.ok(IOS_PATHS.includes('.github/workflows/ci.yml'));
+});
+
+test('IOS_PATHS coverage: dropping the entry for any generator input is caught', async () => {
+  for (const [path, kind] of await iosGeneratorInputs()) {
+    const without = IOS_PATHS.filter((p) => !coveringEntries(IOS_PATHS, path, kind).includes(p));
+    assert.deepEqual(coveringEntries(without, path, kind), [], path);
+  }
+  assert.deepEqual(coveringEntries(['contracts/vocabulary'], 'contracts/vocabulary', 'dir'), [], 'a directory needs a `/` prefix');
+  assert.deepEqual(coveringEntries(['contracts/'], 'contracts/i18n', 'dir'), ['contracts/']);
+  assert.deepEqual(coveringEntries(['contracts/open'], 'contracts/openapi.yaml', 'file'), []);
 });
 
 test('path filter: deleting or moving a file out of ios/ gives ios=true', () => {
