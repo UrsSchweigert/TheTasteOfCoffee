@@ -1,0 +1,26 @@
+{
+  "version": 3,
+  "status": "draft",
+  "scale": { "minimum": 1, "maximum": 10, "multipleOf": 0.5 },
+  "criteria": [
+    { "id": "aroma" },
+    { "id": "flavour" },
+    { "id": "aftertaste" },
+    { "id": "acidity" },
+    { "id": "body" },
+    { "id": "sweetness" },
+    { "id": "balance" },
+    { "id": "overall" }
+  ],
+  "intensity_dimensions": [
+    { "id": "acidity" },
+    { "id": "body" },
+    { "id": "bitterness" }
+  ],
+  "intensity_levels": [
+    { "id": "low" },
+    { "id": "medium" },
+    { "id": "high" }
+  ],
+  "buy_again": { "type": "boolean" }
+}

@@ -2,6 +2,47 @@
 
 A published version is immutable. Every change to a list goes into the next `v<N>/` directory and is recorded here. Removing or renaming an id is a breaking change and needs an ADR in `docs/decisions/`.
 
+## v3 (draft)
+
+Task M2-T2, D13, ADR 0021. Copied from v2 with `"version": 3` and `"status": "draft"` in every file. Not in the API yet: `openapi.yaml` is unchanged until v3 is published (M2-T4).
+
+- New list `grinders` in `brew.json`, 21 ids, labelled in en and de: 7 hand grinders, 12 electric grinders, then `pre_ground` and `other`. Each entry may carry `scale`, the range of the numbers on its own dial or of its clicks from zero (burrs touching), in steps of 1 or 0.5. `pre_ground` and `other` have no scale. `1Zpresso` ids start with `onezpresso_`, because ids start with a letter.
+- New object `field_rules` in `brew.json`: for each `BrewParameters` field that only some methods allow, the methods that allow it. `water_temp_special` for `cold_brew` only; `water_temp_c` for every method except `cold_brew`, `moka_pot` and `cezve`; `grinder` and `grind_setting` for every method except `fully_automatic`. Every other field is allowed with every method. `grind_setting` needs a grinder with a scale and lies on it.
+- `schema/brew.schema.json` requires `grinders` and `field_rules` from version 3 on and forbids them before. `lib/vocabulary.mjs` gains `ENTRY_RANGES`, `UNSCALED_IDS`, `SCALED_FIELDS`, `checkEntryRanges` and `checkFieldRules`.
+- Not breaking: no id was removed or renamed, and every other file is v2 except `version` and `status`. The flavour notes did not change.
+
+The grinders and their scales (minimum to maximum, step):
+
+| Id | Kind | Scale | Basis | Confidence |
+| --- | --- | --- | --- | --- |
+| `comandante_c40` | hand | 0 to 50, 1 | clicks from zero | uncertain |
+| `onezpresso_jx_pro` | hand | 0 to 200, 1 | clicks from zero (40 per turn) | uncertain |
+| `onezpresso_k_ultra` | hand | 0 to 200, 1 | clicks from zero (100 per turn) | uncertain |
+| `timemore_chestnut_c3` | hand | 0 to 36, 1 | clicks from zero | uncertain |
+| `kingrinder_k6` | hand | 0 to 240, 1 | clicks from zero (60 per turn) | uncertain |
+| `hario_skerton_pro` | hand | 0 to 30, 1 | clicks from zero | uncertain |
+| `porlex_mini_ii` | hand | 0 to 20, 1 | clicks from zero | uncertain |
+| `baratza_encore` | electric | 1 to 40, 1 | numbered settings | confident |
+| `baratza_encore_esp` | electric | 1 to 40, 1 | numbered settings | confident |
+| `baratza_virtuoso_plus` | electric | 1 to 40, 1 | numbered settings | confident |
+| `fellow_ode_gen_2` | electric | none | dial 1 to 11 in thirds | owner to decide |
+| `fellow_opus` | electric | none | dial 1 to 11 in thirds, plus an inner ring | owner to decide |
+| `wilfa_uniform` | electric | 0 to 40, 1 | numbered settings | uncertain |
+| `graef_cm_800` | electric | 1 to 40, 1 | numbered settings | uncertain |
+| `sage_smart_grinder_pro` | electric | 1 to 60, 1 | numbered settings | fairly confident |
+| `sage_dose_control_pro` | electric | 1 to 60, 1 | numbered settings | fairly confident |
+| `niche_zero` | electric | 0 to 50, 0.5 | stepless dial numbered 0 to 50 | fairly confident |
+| `df64` | electric | 0 to 90, 1 | stepless dial | uncertain |
+| `eureka_mignon_specialita` | electric | none | stepless dial | owner to decide |
+| `pre_ground` | | none | | |
+| `other` | | none | | |
+
+For the owner to check before v3 is published (M2-T4, "Publishing a version" step 3):
+
+- The uncertain scales above. Each is a wide range so that it does not reject a real setting; narrow it where the manual says otherwise. Hand grinders are counted in clicks from zero, not in the rotation and number marks some of them print (the 1Zpresso and Kingrinder dials), so a user converts "1 turn and 5" to 45 clicks on a JX-Pro.
+- `fellow_ode_gen_2`, `fellow_opus` and `eureka_mignon_specialita` have no scale: the Fellow dials step in thirds, which is neither 1 nor 0.5, and the Mignon numbering is not confirmed. Either keep them without a scale (the normalised grind still applies), or give them a scale such as 1 to 31 clicks.
+- Whether to add more models (for example the Baratza Sette 270, whose micro step is a letter, the Mahlkönig X54, Melitta Calibra, De'Longhi grinders or the Kinu M47) and whether `Sage / Breville` is the right label in both languages.
+
 ## 2026-11-25: v2 published
 
 - The owner approved v2 with the amendments of ADR 0011 (task M1-T8). All five files went from `draft` to `published`, and `v2.lock.json` locks them. v2 is now immutable.
