@@ -51,7 +51,7 @@ Goal: the repo builds, tests and checks itself; the shared contract exists.
   - An assertion test fails if the template contains a forbidden resource type (see CLAUDE.md, invariant 5).
 
 ### M0-T5 Continuous integration
-- status: in-progress
+- status: done
 - owner: infra-engineer
 - depends: M0-T3, M0-T4
 - acceptance:
@@ -74,8 +74,20 @@ Goal: the repo builds, tests and checks itself; the shared contract exists.
 - depends: none
 - acceptance:
   - Apple Developer Program membership active; App ID and Sign in with Apple key created.
-  - In the shared AWS account (ADR 0009): root has MFA; `scripts/aws/apply-guardrails.sh --apply` has run; it is known whether a GitHub OIDC provider already exists; `cupmark-github-oidc` (M1-T9) has been deployed once by hand.
+  - In the shared AWS account (ADR 0009): root has MFA; `scripts/aws/apply-guardrails.sh --apply` has run (done); the GitHub OIDC provider exists, so `reference` is used (done); `cupmark-github-oidc` (M1-T9) has been deployed once by hand.
   - Repository secrets set for the Claude GitHub workflow.
+
+
+### M0-T8 Harden the existing workflows
+- status: todo
+- owner: infra-engineer
+- depends: M0-T5
+- acceptance:
+  - `claude.yml` and `aws-oidc-check.yml` pin every action to a commit SHA with a version comment, set top-level permissions, keep job-level write scopes only where the action needs them, and use `persist-credentials: false`. Both are added to `STRICT_FILES` in `scripts/check-workflows.mjs`.
+  - From the M0-T5 review:
+    - the version-comment check covers every `uses:` line, not only the first occurrence;
+    - the ci.yml concurrency comment, or the push group, matches GitHub's single-pending-run behaviour.
+  - A Dependabot config for `github-actions` keeps the pinned SHAs current.
 
 ---
 
@@ -170,7 +182,8 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
 - implements: docs/decisions/0009
 - acceptance:
   - A separate stack `cupmark-github-oidc` creates the role `CupmarkGitHubDeploy`, which GitHub Actions in this repository may assume, and the prod stage only from `main`. The role may assume only the `cdk-cupmark-*` bootstrap roles.
-  - The context flag `cupmark:githubOidcProvider` is `create` or `reference`. With `create`, the stack makes the provider for `token.actions.githubusercontent.com`. With `reference`, it trusts the existing provider by ARN and never modifies it. Tests cover both modes.
+  - The context flag `cupmark:githubOidcProvider` is `create` or `reference`, and the committed default is `reference`, because the provider already exists in the shared account. With `create`, the stack makes the provider for `token.actions.githubusercontent.com`. With `reference`, it trusts the existing provider by ARN and never modifies it. Tests cover both modes.
+  - The role `CupmarkGitHubDeploy` already exists. The README gives the owner two documented paths: import it into the stack with `cdk import` and a resource mapping file, or delete it first. The stack never creates a second role under another name. A test pins the role name and its trust policy.
   - The stack deploys with the caller's credentials, not through `CupmarkCfnExecution`. The README gives the one-time manual deploy steps, including how to check whether a provider or a role named `CupmarkGitHubDeploy` already exists.
   - The guards add the M0-T4 review findings: IAM policies with `*` actions or resources, or with ARNs outside `cupmark-`, fail, and so do stateful resources without RETAIN. Tests show each guard failing.
 

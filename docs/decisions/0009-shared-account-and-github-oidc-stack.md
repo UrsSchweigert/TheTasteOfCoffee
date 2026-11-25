@@ -31,5 +31,6 @@ An account can hold only one GitHub OIDC provider for `token.actions.githubuserc
 ## Consequences
 
 - Before the first deploy, the owner checks IAM → Identity providers for `token.actions.githubusercontent.com` and sets the flag. If a role named `CupmarkGitHubDeploy` already exists from earlier manual setup, it must be deleted or imported first, by the owner.
+- Update, 2026-11-25: the owner confirmed that the provider already exists, so the flag is `reference`. The role `CupmarkGitHubDeploy` also already exists. M1-T9 must either import it into `cupmark-github-oidc` or have the owner delete it first, and it must never silently create a second role.
 - Task M1-T9 builds the stack, and M1-T7 (deploy pipeline) depends on it.
 - With `reference`, deleting the other project's provider would break Cupmark deploys. That is acceptable, because a separate account removes the dependency.

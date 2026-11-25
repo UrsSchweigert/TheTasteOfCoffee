@@ -22,7 +22,10 @@ Record each answer as an ADR in `docs/decisions/`.
 
 - [ ] Enrol in the Apple Developer Program and the Small Business Program.
 - [ ] Create the App ID, the Sign in with Apple service and key, and the subscription products in App Store Connect.
-- [ ] In the shared AWS account (ADR 0009): confirm MFA on root, run `scripts/aws/apply-guardrails.sh --apply`, check whether a GitHub OIDC provider already exists, then deploy `cupmark-github-oidc` once by hand.
+- [x] In the shared AWS account (ADR 0009): run `scripts/aws/apply-guardrails.sh --apply` and the `cupmark` CDK bootstrap. Done by the owner on 2026-11-25; both match the repo.
+- [x] Check whether a GitHub OIDC provider already exists. It does, so `cupmark-github-oidc` uses `reference` (owner, 2026-11-25).
+- [ ] Confirm MFA on root in the shared account.
+- [ ] Once M1-T9 is built, deploy `cupmark-github-oidc` once by hand, importing or replacing the existing role `CupmarkGitHubDeploy`.
 - [ ] Add repository secrets: `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`, and the AWS role ARN.
 - [ ] Approve every production deployment.
 - [x] Review and approve version 1 of the flavour vocabulary before it ships (it is expensive to change later). Approved by the owner on 2026-11-25.
