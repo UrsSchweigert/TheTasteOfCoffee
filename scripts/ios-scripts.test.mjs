@@ -941,3 +941,32 @@ test('Open Food Facts name and brand are shown only with Text(verbatim:) (M2-T14
   assert.match(views, /Text\(verbatim: name\)/);
   assert.match(views, /Text\(verbatim: brand\)/);
 });
+
+// ---- Pick-list bean entry (M2-T22, ADR 0006, ADR 0011) ----
+
+test('the pick-list entry has no roaster, no typed text and no hand-written vocabulary (M2-T22)', () => {
+  const files = m2t14Files('ios/Cupmark/BeanEntry').filter((file) => file.endsWith('.swift'));
+  assert.ok(files.some((file) => file.endsWith('BeanEntryModel.swift')), 'the bean entry sources are scanned');
+  for (const file of files) {
+    // Comments and string contents blanked: only code counts.
+    const code = lexSwift(readFileSync(join(repoRoot, file), 'utf8')).masked;
+    assert.doesNotMatch(code, /roaster/i, `${file}: no roaster pick (ADR 0006)`);
+    assert.doesNotMatch(code, /\.searchable\b|\bTextField\b|\bTextEditor\b/, `${file}: no typed text (invariant 1)`);
+    // Values are Vocabulary enums: no id is written as a string.
+    assert.doesNotMatch(code, /\.rawValue\s*==|rawValue:\s*"/, `${file}: no vocabulary id as a string`);
+  }
+  const sections = readFileSync(join(repoRoot, 'ios/Cupmark/BeanEntry/PickListSections.swift'), 'utf8');
+  assert.match(sections, /\$0\.country == nil/, 'origins are grouped through Vocabulary.Origin.country');
+  assert.match(sections, /\$0\.country == country/);
+});
+
+test('the scan flow pushes the pick-list entry with the scanned barcode, and the scanner stops its camera (M2-T22)', () => {
+  const flow = lexSwift(readFileSync(join(repoRoot, 'ios/Cupmark/Lookup/LookupScreen.swift'), 'utf8')).masked;
+  assert.match(flow, /openEntry\(barcode: lookup\.barcode\)/);
+  assert.match(flow, /openEntry\(barcode: nil\)/);
+  assert.match(flow, /BeanEntryScreen\(/);
+  const screen = lexSwift(readFileSync(join(repoRoot, 'ios/Cupmark/Scanner/ScannerScreen.swift'), 'utf8')).masked;
+  assert.match(screen, /\.onDisappear\s*\{[^}]*source\?\.stop\(\)/);
+  const model = lexSwift(readFileSync(join(repoRoot, 'ios/Cupmark/Scanner/ScannerViewModel.swift'), 'utf8')).masked;
+  assert.match(model, /Task\.isCancelled[^}]*source\.stop\(\)/);
+});

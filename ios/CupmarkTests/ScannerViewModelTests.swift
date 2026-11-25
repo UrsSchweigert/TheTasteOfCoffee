@@ -170,6 +170,43 @@ final class ScannerViewModelTests: XCTestCase {
         XCTAssertEqual(model.state, .scanning)
     }
 
+    // M2-T13 review, fixed in M2-T22: pushing the pick-list entry over the scanner cancels the
+    // screen's `.task`. The run must stop the source then, or the camera keeps running.
+    func testCancellingTheRunStopsTheSource() async {
+        let model = await scanningModel()
+        let source = FakeBarcodeSource([], finish: false)
+        let run = Task { await model.consume(source) }
+        run.cancel()
+        await run.value
+        XCTAssertEqual(source.stopCount, 1)
+        XCTAssertTrue(reported.isEmpty)
+        XCTAssertEqual(model.state, .scanning)
+    }
+
+    func testCancellingARunThatIsAlreadyReadingStopsTheSource() async {
+        let model = await scanningModel()
+        let source = FakeBarcodeSource([], finish: false)
+        let run = Task { await model.consume(source) }
+        // Let the run reach the `for await` and handle a report before it is cancelled.
+        source.send(.payload("not a code"))
+        await Task.yield()
+        await Task.yield()
+        run.cancel()
+        await run.value
+        XCTAssertEqual(source.stopCount, 1)
+        XCTAssertTrue(reported.isEmpty)
+    }
+
+    func testACancelledRunAfterTheScanDoesNotStopTheSourceAgain() async {
+        let model = await scanningModel()
+        let source = FakeBarcodeSource([.payload("4006381333931")], finish: false)
+        let run = Task { await model.consume(source) }
+        await run.value
+        run.cancel()
+        XCTAssertEqual(source.stopCount, 1)
+        XCTAssertEqual(reported.map(\.digits), ["4006381333931"])
+    }
+
     func testTheScannerReadsEAN13Only() {
         // UPC-A arrives within EAN-13 (leading 0); VisionKit has no separate UPC-A symbology.
         XCTAssertEqual(ScannerSymbologies.recognized, [.barcode(symbologies: [VNBarcodeSymbology.ean13])])

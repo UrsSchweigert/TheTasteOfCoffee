@@ -75,4 +75,15 @@ enum L10n {
     static var beanAttributeRoastLevel: LocalizedStringKey { "bean.attribute.roast_level" }
     static var beanSourceOperator: LocalizedStringKey { "bean.source.operator" }
     static var beanSourcePicked: LocalizedStringKey { "bean.source.picked" }
+    static var beanEntryTitle: LocalizedStringKey { "bean_entry.title" }
+    static var beanEntryBarcode: LocalizedStringKey { "bean_entry.barcode" }
+    static var beanEntryPicksHeader: LocalizedStringKey { "bean_entry.picks.header" }
+    static var beanEntryPicksFooter: LocalizedStringKey { "bean_entry.picks.footer" }
+    static var beanEntrySave: LocalizedStringKey { "bean_entry.save" }
+    static var beanEntryClear: LocalizedStringKey { "bean_entry.clear" }
+    static var beanEntryRoastLevelClear: LocalizedStringKey { "bean_entry.roast_level.clear" }
+    static var beanEntryRejectedTitle: LocalizedStringKey { "bean_entry.rejected.title" }
+    static var beanEntryRejectedMessage: LocalizedStringKey { "bean_entry.rejected.message" }
+    static var beanEntryFailedTitle: LocalizedStringKey { "bean_entry.failed.title" }
+    static var beanEntryFailedMessage: LocalizedStringKey { "bean_entry.failed.message" }
 }

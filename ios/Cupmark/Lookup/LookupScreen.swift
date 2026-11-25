@@ -2,7 +2,7 @@ import SwiftUI
 
 /// F1 steps 2 and 3 on screen (M2-T14): shows the state of a `LookupModel`. A known bean, an
 /// Open Food Facts hit to confirm or reject, or a message with the pick-list entry.
-/// `onPickListEntry` opens the pick-list entry (connected in M2-T22).
+/// `onPickListEntry` opens the pick-list entry (`ScanFlowView` pushes `BeanEntryScreen`, M2-T22).
 struct LookupScreen: View {
     @Bindable var model: LookupModel
     let vocabulary: VocabularyStore
@@ -157,23 +157,61 @@ struct LookupFallbackView: View {
 
 /// The "Scan a bag" flow: the scanner until the first valid barcode, then the lookup for it,
 /// in place, so no extra tap is needed between scan and bean.
+///
+/// The pick-list entry (`BeanEntryScreen`, M2-T22) is pushed from either screen: from the
+/// scanner's "Describe the bean instead" without a barcode, from the lookup's fallback or its
+/// Reject with the scanned barcode. The scanner stops its camera while the entry covers it.
 struct ScanFlowView: View {
     let client: APIClient
     let vocabulary: VocabularyStore
     let language: VocabularyLanguage
-    let onPickListEntry: @MainActor () -> Void
+    /// Called after the pick-list entry was opened. This view pushes the entry itself, so the
+    /// caller does not need to do anything here.
+    var onPickListEntry: @MainActor () -> Void = {}
     @State private var lookup: LookupModel? = nil
+    @State private var entry: BeanEntryModel? = nil
 
     var body: some View {
+        flow
+            .navigationDestination(isPresented: isShowingEntry) {
+                if let entry {
+                    BeanEntryScreen(model: entry, vocabulary: vocabulary, language: language)
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var flow: some View {
         if let lookup {
-            LookupScreen(model: lookup, vocabulary: vocabulary, language: language, onPickListEntry: onPickListEntry)
+            LookupScreen(model: lookup, vocabulary: vocabulary, language: language, onPickListEntry: {
+                openEntry(barcode: lookup.barcode)
+            })
         } else {
             ScannerScreen(
                 onScanned: { barcode in
                     lookup = LookupModel(barcode: barcode, client: client)
                 },
-                onPickListEntry: onPickListEntry
+                onPickListEntry: {
+                    openEntry(barcode: nil)
+                }
             )
         }
+    }
+
+    /// Whether the entry is pushed. Going back clears it, so the next opening starts afresh.
+    private var isShowingEntry: Binding<Bool> {
+        Binding(
+            get: { entry != nil },
+            set: { isShown in
+                if !isShown {
+                    entry = nil
+                }
+            }
+        )
+    }
+
+    private func openEntry(barcode: CanonicalBarcode?) {
+        entry = BeanEntryModel(barcode: barcode, client: client)
+        onPickListEntry()
     }
 }
