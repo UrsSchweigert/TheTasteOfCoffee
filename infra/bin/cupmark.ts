@@ -1,6 +1,6 @@
 // CDK entry point (cdk.json "app"). Builds the dev and prod stages, synthesises
-// them and refuses to finish if any guard in src/guards.ts finds a violation, so a
-// bad template never reaches cdk.out.
+// them and exits 1 if any guard in src/guards.ts finds a violation. The templates
+// are written to cdk.out before the check runs, so a failed synth must never be deployed.
 import { buildApp } from '../src/app.ts';
 import { checkApp, formatViolations } from '../src/guards.ts';
 

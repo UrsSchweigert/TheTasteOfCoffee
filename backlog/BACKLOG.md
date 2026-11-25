@@ -43,7 +43,7 @@ Goal: the repo builds, tests and checks itself; the shared contract exists.
   - A health handler with a passing test exists.
 
 ### M0-T4 Infra workspace
-- status: in-progress
+- status: done
 - owner: infra-engineer
 - depends: M0-T3
 - acceptance:
