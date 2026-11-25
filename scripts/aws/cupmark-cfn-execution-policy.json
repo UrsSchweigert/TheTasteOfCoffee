@@ -1,0 +1,142 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CupmarkNamedResources",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:*",
+        "s3:*",
+        "lambda:*",
+        "logs:*",
+        "events:*",
+        "scheduler:*",
+        "cloudwatch:*",
+        "sns:*",
+        "budgets:*",
+        "ssm:*",
+        "cloudformation:*"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:${REGION}:${ACCOUNT}:table/cupmark-*",
+        "arn:aws:s3:::cupmark-*",
+        "arn:aws:s3:::cupmark-*/*",
+        "arn:aws:lambda:${REGION}:${ACCOUNT}:function:cupmark-*",
+        "arn:aws:lambda:${REGION}:${ACCOUNT}:event-source-mapping:*",
+        "arn:aws:logs:${REGION}:${ACCOUNT}:log-group:/aws/lambda/cupmark-*",
+        "arn:aws:logs:${REGION}:${ACCOUNT}:log-group:/cupmark/*",
+        "arn:aws:events:${REGION}:${ACCOUNT}:rule/cupmark-*",
+        "arn:aws:scheduler:${REGION}:${ACCOUNT}:schedule/cupmark-*/*",
+        "arn:aws:scheduler:${REGION}:${ACCOUNT}:schedule-group/cupmark-*",
+        "arn:aws:cloudwatch:${REGION}:${ACCOUNT}:alarm:cupmark-*",
+        "arn:aws:sns:${REGION}:${ACCOUNT}:cupmark-*",
+        "arn:aws:budgets::${ACCOUNT}:budget/cupmark-*",
+        "arn:aws:ssm:${REGION}:${ACCOUNT}:parameter/cupmark/*",
+        "arn:aws:cloudformation:${REGION}:${ACCOUNT}:stack/cupmark-*/*"
+      ]
+    },
+    {
+      "Sid": "CupmarkIamRolesWithBoundary",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole",
+        "iam:PutRolePolicy",
+        "iam:AttachRolePolicy",
+        "iam:DetachRolePolicy",
+        "iam:DeleteRolePolicy",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:TagRole",
+        "iam:UntagRole"
+      ],
+      "Resource": "arn:aws:iam::${ACCOUNT}:role/cupmark-*",
+      "Condition": {
+        "StringEquals": {
+          "iam:PermissionsBoundary": "arn:aws:iam::${ACCOUNT}:policy/CupmarkBoundary"
+        }
+      }
+    },
+    {
+      "Sid": "CupmarkIamOther",
+      "Effect": "Allow",
+      "Action": [
+        "iam:DeleteRole",
+        "iam:GetRole",
+        "iam:GetRolePolicy",
+        "iam:ListRolePolicies",
+        "iam:ListAttachedRolePolicies",
+        "iam:PassRole",
+        "iam:CreatePolicy",
+        "iam:DeletePolicy",
+        "iam:GetPolicy",
+        "iam:CreatePolicyVersion",
+        "iam:DeletePolicyVersion",
+        "iam:ListPolicyVersions",
+        "iam:GetPolicyVersion"
+      ],
+      "Resource": [
+        "arn:aws:iam::${ACCOUNT}:role/cupmark-*",
+        "arn:aws:iam::${ACCOUNT}:policy/cupmark-*"
+      ]
+    },
+    {
+      "Sid": "ServicesThatCannotBeNameScoped",
+      "Effect": "Allow",
+      "Action": [
+        "apigateway:*",
+        "cognito-idp:*",
+        "cognito-identity:*"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": { "aws:RequestedRegion": "${REGION}" }
+      }
+    },
+    {
+      "Sid": "DenyEverythingOutsideEuCentral1",
+      "Effect": "Deny",
+      "NotAction": ["iam:*", "sts:*", "support:*", "budgets:*"],
+      "Resource": "*",
+      "Condition": {
+        "StringNotEquals": { "aws:RequestedRegion": "${REGION}" }
+      }
+    },
+    {
+      "Sid": "DenyFixedFeeAndForeignServices",
+      "Effect": "Deny",
+      "Action": [
+        "route53:*",
+        "route53domains:*",
+        "route53resolver:*",
+        "cloudfront:*",
+        "acm:*",
+        "wafv2:*",
+        "waf:*",
+        "waf-regional:*",
+        "rds:*",
+        "es:*",
+        "aoss:*",
+        "elasticache:*",
+        "secretsmanager:*",
+        "kms:CreateKey",
+        "ec2:CreateNatGateway",
+        "ec2:CreateVpc*",
+        "lambda:PutProvisionedConcurrencyConfig"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyExistingSharedResources",
+      "Effect": "Deny",
+      "Action": "*",
+      "Resource": [
+        "arn:aws:iam::${ACCOUNT}:role/cdk-hnb659fds-*",
+        "arn:aws:iam::${ACCOUNT}:role/LastLookGitHubDeploy",
+        "arn:aws:iam::${ACCOUNT}:role/basicwebapp-*",
+        "arn:aws:iam::${ACCOUNT}:role/derschweigert-*",
+        "arn:aws:iam::${ACCOUNT}:role/ffm-*",
+        "arn:aws:iam::${ACCOUNT}:oidc-provider/*",
+        "arn:aws:cloudformation:*:${ACCOUNT}:stack/CDKToolkit/*"
+      ]
+    }
+  ]
+}

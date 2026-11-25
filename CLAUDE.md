@@ -14,6 +14,7 @@ Read `docs/03-project-brief.md`, `docs/04-specification.md` and `docs/05-system-
 6. **Region is eu-central-1.** No data leaves the EU.
 7. **No third-party SDKs** for analytics, ads, crash reporting or subscriptions.
 8. **No secrets in the repo.** Not in code, tests, fixtures or docs.
+9. **Never touch existing infrastructure.** The AWS account is shared with other projects (for example DerSchweigert). This repo may only create, change or delete resources that it owns: every resource it creates is named with the `cupmark-` prefix (or `Cupmark` for IAM) and tagged `project=cupmark`. Never read, modify, import, look up for reuse, or delete any other bucket, site, Route 53 zone or record, CloudFront distribution, Lambda, role, table or stack. No new Route 53 hosted zones. No `fromLookup`, `fromBucketName`, `importValue` or `CfnInclude` against resources this repo did not create. The only exception is the shared CDK bootstrap stack, which is used as is and never modified.
 
 ## Repository layout
 

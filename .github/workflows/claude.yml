@@ -2,9 +2,10 @@
 # pull request comment, for example "@claude /next-task" or "@claude /status".
 #
 # Setup (once): install the Claude GitHub App on this repository and add the
-# ANTHROPIC_API_KEY repository secret. If you use a Claude subscription instead,
-# add CLAUDE_CODE_OAUTH_TOKEN and replace the anthropic_api_key line with:
-#   claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+# CLAUDE_CODE_OAUTH_TOKEN repository secret (Claude subscription). If you use an
+# API key instead, add ANTHROPIC_API_KEY and replace the claude_code_oauth_token
+# line with:
+#   anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
 name: Claude Code
 on:
   issue_comment:
@@ -31,4 +32,4 @@ jobs:
           fetch-depth: 1
       - uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

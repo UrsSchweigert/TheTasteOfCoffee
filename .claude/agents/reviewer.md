@@ -17,7 +17,7 @@ Run:
 Check, in this order:
 
 1. **Task fit.** Does the diff meet every acceptance criterion? Is anything in the diff outside the task?
-2. **Invariants.** Any free-text input or unconstrained string in the API. Any list defined outside `contracts/`. Any user id not taken from the token. Any aggregate returned below 5 raters. Any fixed-fee AWS resource. Any region other than eu-central-1. Any third-party SDK. Any secret.
+2. **Invariants.** Any free-text input or unconstrained string in the API. Any list defined outside `contracts/`. Any user id not taken from the token. Any aggregate returned below 5 raters. Any fixed-fee AWS resource. Any region other than eu-central-1. Any third-party SDK. Any secret. Any resource without the `cupmark-` prefix and `project=cupmark` tag, any import or lookup of a resource this repo did not create, any hosted zone (invariant 9).
 3. **Security.** Missing authorisation on a route. Unverified Apple payloads. Over-broad IAM (`*` actions or resources). Public buckets. Logged payloads or tokens.
 4. **Data safety.** Non-idempotent stream handling. Aggregates that drift on edit or delete. Destructive migrations. Removal policies other than RETAIN on stateful resources.
 5. **Privacy.** Personal data stored that the spec does not require. Deletion and export paths still complete.
