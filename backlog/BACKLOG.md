@@ -59,7 +59,7 @@ Goal: the repo builds, tests and checks itself; the shared contract exists.
   - Third-party actions are pinned; the workflow has read-only permissions.
 
 ### M0-T6 iOS project skeleton
-- status: in-progress
+- status: done
 - owner: ios-engineer
 - depends: M0-T1
 - acceptance:
@@ -95,6 +95,17 @@ Goal: the repo builds, tests and checks itself; the shared contract exists.
     - the version-comment check covers every `uses:` line, not only the first occurrence;
     - the ci.yml concurrency comment, or the push group, matches GitHub's single-pending-run behaviour.
   - A Dependabot config for `github-actions` keeps the pinned SHAs current.
+
+
+### M0-T9 Harden the iOS checks
+- status: todo
+- owner: ios-engineer
+- depends: M0-T6
+- acceptance:
+  - `scripts/check-ios-strings.mjs` also catches `Text(verbatim:)` with a literal, literals on the line after the call, and literals passed through a variable. Tests show each case failing.
+  - The generator renames the milk id `none` to a Swift case that cannot be confused with `Optional.none`, for example `noMilk`, while the raw value stays `none`.
+  - `Localizable.xcstrings` entries carry `extractionState: manual`, so Xcode does not mark them stale.
+  - The `ios` CI job is skipped on changes that cannot affect the app, and `ci-ok` still passes when it is skipped.
 
 ---
 

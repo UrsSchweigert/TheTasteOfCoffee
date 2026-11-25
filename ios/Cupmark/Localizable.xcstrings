@@ -1,0 +1,74 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "app.title" : {
+      "comment" : "App name, shown as the title of the root screen.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cupmark"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cupmark"
+          }
+        }
+      }
+    },
+    "root.methods.header" : {
+      "comment" : "Section header above the list of brew methods on the root screen.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zubereitungsarten"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brew methods"
+          }
+        }
+      }
+    },
+    "root.vocabulary_error.message" : {
+      "comment" : "Shown when the bundled vocabulary cannot be loaded.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Kaffeebegriffe der App konnten nicht geladen werden. Bitte installiere die App neu."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The app could not load its coffee terms. Please reinstall the app."
+          }
+        }
+      }
+    },
+    "root.vocabulary_error.title" : {
+      "comment" : "Title shown when the bundled vocabulary cannot be loaded.",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Begriffe nicht verfügbar"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terms unavailable"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

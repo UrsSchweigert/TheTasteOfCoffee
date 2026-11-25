@@ -65,6 +65,65 @@ jobs:
         run: npm test
       - name: No free text
         run: scripts/check-no-free-text.sh
+      # iOS checks that need no Mac (M0-T6): the generated Swift vocabulary
+      # matches contracts/, and the String Catalog has English and German.
+      - name: iOS scripts tests
+        run: node --test scripts/ios-scripts.test.mjs
+      - name: iOS generated vocabulary is up to date
+        run: node scripts/generate-ios-vocabulary.mjs --check
+      - name: iOS String Catalog is complete
+        run: node scripts/check-ios-strings.mjs
+
+  # Builds the app and runs its unit tests on the iOS Simulator (M0-T6).
+  # The runner image and the Xcode version are pinned, so an upgrade is a
+  # deliberate change here. Signing is off; no certificates or secrets.
+  ios:
+    name: ios
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      XCODE_APP: /Applications/Xcode_16.4.app
+      SIMULATOR_DESTINATION: platform=iOS Simulator,name=iPhone 16,OS=latest
+      DERIVED_DATA: ${{ github.workspace }}/ios/DerivedData
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          if [ ! -d "$XCODE_APP" ]; then
+            echo "$XCODE_APP is not on this runner image. Installed:"
+            ls -d /Applications/Xcode*.app
+            exit 1
+          fi
+          sudo xcode-select --switch "$XCODE_APP"
+          xcodebuild -version
+      - name: Available simulators
+        run: xcrun simctl list devices available
+      - name: Build for testing
+        run: |
+          set -euo pipefail
+          xcodebuild build-for-testing \
+            -project Cupmark.xcodeproj \
+            -scheme Cupmark \
+            -configuration Debug \
+            -destination "$SIMULATOR_DESTINATION" \
+            -derivedDataPath "$DERIVED_DATA" \
+            CODE_SIGNING_ALLOWED=NO
+      - name: Test
+        run: |
+          set -euo pipefail
+          xcodebuild test-without-building \
+            -project Cupmark.xcodeproj \
+            -scheme Cupmark \
+            -configuration Debug \
+            -destination "$SIMULATOR_DESTINATION" \
+            -derivedDataPath "$DERIVED_DATA" \
+            CODE_SIGNING_ALLOWED=NO
 
   backend:
     name: backend
@@ -122,7 +181,7 @@ jobs:
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [workflow-lint, contracts, backend, infra]
+    needs: [workflow-lint, contracts, ios, backend, infra]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
