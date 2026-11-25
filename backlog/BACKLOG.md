@@ -372,7 +372,7 @@ Planning notes (planned 2026-11-25):
 - depends: M2-T2, M2-T3
 - implements: contracts/README.md, Publishing a version; docs/04-specification.md, F2; ADR 0004
 - acceptance:
-  - From M2-T22 (lead, ADR 0014): v2 does not offer `other` and `unknown` in every bean list (roast levels have neither, processes lack `unknown`, species lack `other`). The app treats "Not set" as unknown, which is enough. When reviewing the v3 draft, decide whether processes gain `unknown` for consistency; roast level stays a scale without either.
+  - From M2-T22 (lead, ADR 0014): v2 does not offer `other` and `unknown` in every bean list (roast levels have neither, processes lack `unknown`, species lack `other`). The app treats "Not set" as unknown, which is enough. When reviewing the v3 draft, decide whether processes gain `unknown` and species gain `other` for consistency; roast level stays a scale without either.
   - From the M2-T2 review, for the owner's check before publishing: the uncertain scales in the CHANGELOG; the three grinders without a scale (Fellow Ode Gen 2, Fellow Opus, Eureka Mignon); a 0.5 step for `df64`; the `sage_` ids (the EU brand name, permanent once published). Also make `checkFieldRules` run for every version from 3 on, and share one exact-step helper between `lib/vocabulary.mjs` and `lib/openapi.mjs`.
   - After the owner approves, every v3 file is set to `published`, and `npm run lock -- 3` writes `v3.lock.json`.
   - `openapi.yaml` 0.6.0 adds:
@@ -612,7 +612,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T17 Pull and reconcile
-- status: needs-mac-verification
+- status: done (built and tested by the macOS `ios` job in #60)
 - owner: ios-engineer
 - depends: M2-T16
 - implements: docs/04-specification.md, Non-functional (Offline); docs/05-system-design.md, Persistence and recovery ("each phone keeps a full copy")
@@ -690,7 +690,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T22 Pick-list bean entry
-- status: needs-mac-verification
+- status: done (built and tested by the macOS `ios` job in #60)
 - owner: ios-engineer
 - depends: M2-T14
 - implements: docs/04-specification.md, F1 step 4; ADR 0006, ADR 0011

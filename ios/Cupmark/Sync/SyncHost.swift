@@ -36,16 +36,26 @@ final class SyncHost {
     @ObservationIgnored private var pullRequested = false
     /// `SyncEngine.finishedOperations` when the last pull started.
     @ObservationIgnored private var finishedAtLastPull = 0
+    /// When the last pull completed, nil before.
+    @ObservationIgnored private var lastPullCompletedAt: Date?
+    /// A pull that only follows a drain waits until this long after the last completed pull;
+    /// the drain's own answers are already stored. Sign-in and foreground always pull.
+    @ObservationIgnored let drainPullInterval: TimeInterval
+    @ObservationIgnored private let now: @Sendable () -> Date
 
     /// Nonisolated, so `CupmarkApp.init` can build it whatever its isolation.
     nonisolated init(
         makeStore: @escaping @MainActor @Sendable (AccountID) throws -> AccountStore,
         makeEngine: @escaping @MainActor @Sendable (AccountID, AccountStore) -> SyncEngine,
-        makePuller: @escaping @MainActor @Sendable (AccountID, AccountStore) -> Puller? = { _, _ in nil }
+        makePuller: @escaping @MainActor @Sendable (AccountID, AccountStore) -> Puller? = { _, _ in nil },
+        drainPullInterval: TimeInterval = 30,
+        now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.makeStore = makeStore
         self.makeEngine = makeEngine
         self.makePuller = makePuller
+        self.drainPullInterval = drainPullInterval
+        self.now = now
     }
 
     /// The host of the app: the account's file store, the app's client, the session's check.
@@ -81,6 +91,7 @@ final class SyncHost {
         signInRequired = false
         lastPull = nil
         finishedAtLastPull = 0
+        lastPullCompletedAt = nil
         // A sign-in (or a new account) pulls once the outbox is empty.
         pullRequested = true
         guard let next else {
@@ -135,12 +146,22 @@ final class SyncHost {
         requestPull()
     }
 
-    /// Runs in the engine's idle slot (`SyncEngine.onIdle`): pulls when one was asked for or
-    /// a drain finished an operation since the last pull.
+    /// Runs in the engine's idle slot (`SyncEngine.onIdle`): pulls when one was asked for
+    /// (sign-in, foreground, a failed pull), or when a drain finished an operation since the
+    /// last pull and that pull completed at least `drainPullInterval` ago. A drain-only pull
+    /// that is too soon stays due and runs at a later idle slot.
     func pullIfDue(engine: SyncEngine) async -> SyncEngine.IdleOutcome {
         let finished = engine.finishedOperations
-        guard let puller, self.engine === engine, pullRequested || finished != finishedAtLastPull else {
+        guard let puller, self.engine === engine else {
             return .done
+        }
+        if !pullRequested {
+            guard finished != finishedAtLastPull else {
+                return .done
+            }
+            if let completed = lastPullCompletedAt, now().timeIntervalSince(completed) < drainPullInterval {
+                return .done
+            }
         }
         pullRequested = false
         finishedAtLastPull = finished
@@ -153,6 +174,7 @@ final class SyncHost {
         switch result {
         case .completed(let report):
             lastPull = report
+            lastPullCompletedAt = now()
             return .done
         case .signInRequired:
             pullRequested = true

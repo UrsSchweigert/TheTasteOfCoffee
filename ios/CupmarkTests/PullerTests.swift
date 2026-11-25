@@ -349,7 +349,109 @@ final class PullerTests: XCTestCase {
         XCTAssertNotNil(try store.shelfEntry(localID: entry.localID))
     }
 
+    func testAnUndecodableBeanIsSkippedAndCountedAndKeepsItsCachedCopy() async throws {
+        let store = try AccountStore.inMemory()
+        let server = try FakeSyncServer()
+        let cachedID = id(901)
+        let uncachedID = id(902)
+        // Cached and unverified, so it is fetched again; the answer does not decode.
+        let cached = StoredBean(serverBean(cachedID, verified: false))
+        try store.addBean(cached, syncState: .synced)
+        server.backend.seed(bean: serverBean(cachedID, verified: true))
+        server.backend.seed(shelfEntry: id(911), try shelfValues(beanID: cachedID))
+        // Not cached, and its answer does not decode either: its entry stays out.
+        server.backend.seed(bean: serverBean(uncachedID))
+        server.backend.seed(shelfEntry: id(912), try shelfValues(beanID: uncachedID))
+        let unreadable = Data(#"{"bean_id":"not a bean"}"#.utf8)
+        server.backend.setOverride { request in
+            request.method == "GET" && request.path.hasPrefix("/beans/") ? StubResponse(status: 200, body: unreadable) : nil
+        }
+
+        let report = try completed(await puller(store, server).pull())
+
+        XCTAssertEqual(report.undecodableItems, 2)
+        XCTAssertEqual(report.unresolvedItems, 1)
+        XCTAssertEqual(report.skippedItems, 3)
+        XCTAssertEqual(report.beansFetched, 0)
+        let kept = try XCTUnwrap(try store.bean(serverID: cachedID))
+        XCTAssertEqual(kept.localID, cached.localID)
+        XCTAssertFalse(kept.verified)
+        XCTAssertEqual(try store.shelfEntry(serverID: id(911))?.bean?.localID, cached.localID)
+        XCTAssertNil(try store.shelfEntry(serverID: id(912)))
+        XCTAssertNil(try store.bean(serverID: uncachedID))
+    }
+
     // MARK: - Profile
+
+    func testAnUndecodableProfileIsSkippedAndCountedAndTheLocalOneStays() async throws {
+        let store = try AccountStore.inMemory()
+        let server = try FakeSyncServer()
+        let local = StoredProfile(profileValues(consent: false))
+        local.syncState = .synced
+        store.context.insert(local)
+        try store.save()
+        let newer = Data(#"{"locale":"zz_newer_language","consent":{"contribute_to_aggregates":true}}"#.utf8)
+        server.backend.setOverride { request in
+            request.method == "GET" && request.path == "/profile" ? StubResponse(status: 200, body: newer) : nil
+        }
+
+        let report = try completed(await puller(store, server).pull())
+
+        XCTAssertEqual(report.undecodableItems, 1)
+        XCTAssertEqual(report.skippedItems, 1)
+        // Not a 404: the server has a profile this build cannot read.
+        XCTAssertTrue(report.profileFound)
+        XCTAssertEqual(report.updated, 0)
+        let profile = try XCTUnwrap(try store.profile())
+        XCTAssertEqual(profile.localID, local.localID)
+        XCTAssertFalse(profile.contributeToAggregates)
+        XCTAssertEqual(profile.syncState, .synced)
+    }
+
+    // MARK: - Unchanged values and parked operations
+
+    func testFlavourNotesInAnotherOrderAreNotAChange() async throws {
+        let store = try AccountStore.inMemory()
+        let server = try FakeSyncServer()
+        let entry = try syncedShelfEntry(store, server)
+        let brew = try syncedBrew(store, server, on: entry, brewID: 40, minute: 1)
+        var reordered = try brewValues(shelfEntryID: try XCTUnwrap(entry.serverID), minute: 1)
+        let notes = try XCTUnwrap(reordered.rating?.flavourNotes)
+        XCTAssertGreaterThan(Set(notes).count, 1, "the fixture needs two different notes")
+        reordered.rating?.flavourNotes = Array(notes.reversed())
+        server.backend.seed(brew: id(40), reordered)
+        let before = brew.rating?.flavourNotes
+
+        let report = try completed(await puller(store, server).pull())
+
+        XCTAssertEqual(report.updated, 0)
+        XCTAssertEqual(try store.brew(localID: brew.localID)?.rating?.flavourNotes, before)
+        XCTAssertTrue(Puller.sameValues(try brew.apiInput(), reordered))
+    }
+
+    func testASyncedItemWithAParkedOperationKeepsItsValues() async throws {
+        let store = try AccountStore.inMemory()
+        let server = try FakeSyncServer()
+        let recipe = StoredRecipe(try recipeValues(dose: 180), serverID: id(50))
+        try store.addRecipe(recipe, syncState: .synced)
+        server.backend.seed(recipe: id(50), try recipeValues(dose: 200))
+        // A local edit whose update was refused and parked; the item is synced again, as a
+        // screen might leave it, but the parked operation still protects it.
+        recipe.doseDg = 150
+        try store.markUpdated(recipe)
+        let operation = try XCTUnwrap(try store.outboxOperations(for: recipe.localID).first)
+        operation.parked = true
+        operation.parkReason = .rejected
+        recipe.syncState = .synced
+        try store.save()
+
+        let report = try completed(await puller(store, server).pull())
+
+        XCTAssertEqual(report.keptPending, 1)
+        XCTAssertEqual(report.updated, 0)
+        XCTAssertEqual(try store.recipe(localID: recipe.localID)?.doseDg, 150)
+        XCTAssertEqual(try store.outboxOperations(for: recipe.localID).first?.parked, true)
+    }
 
     func testAProfile404CreatesNoProfile() async throws {
         let store = try AccountStore.inMemory()
@@ -414,12 +516,13 @@ final class PullerTests: XCTestCase {
 
     // MARK: - SyncHost
 
-    private func makeHost(_ server: FakeSyncServer, tokens: FakeTokenProvider = FakeTokenProvider()) -> SyncHost {
+    private func makeHost(_ server: FakeSyncServer, tokens: FakeTokenProvider = FakeTokenProvider(), clock: TestClock = TestClock()) -> SyncHost {
         let client = server.client(tokens: tokens)
         return SyncHost(
             makeStore: { _ in try AccountStore.inMemory() },
             makeEngine: { _, store in SyncEngine(store: store, client: client) },
-            makePuller: { _, store in Puller(store: store, client: client) }
+            makePuller: { _, store in Puller(store: store, client: client) },
+            now: { clock.now }
         )
     }
 
@@ -478,6 +581,35 @@ final class PullerTests: XCTestCase {
 
         host.sceneBecameActive()
         try await waitUntil("foreground pull") { self.count("GET /shelf", in: server) == 2 }
+    }
+
+    func testDrainPullsWaitForTheIntervalButTheForegroundAlwaysPulls() async throws {
+        let server = try FakeSyncServer()
+        let clock = TestClock()
+        let host = makeHost(server, clock: clock)
+        defer { host.switchTo(nil) }
+        XCTAssertEqual(host.drainPullInterval, 30)
+
+        host.switchTo(AccountID(subject: AuthFixtures.subject))
+        let store = try XCTUnwrap(host.store)
+        try await waitUntil("sign-in pull") { host.lastPull != nil }
+        XCTAssertEqual(count("GET /shelf", in: server), 1)
+
+        // A drain right after the pull: no second pull within the interval.
+        let recipe = StoredRecipe(try recipeValues())
+        try store.addRecipe(recipe)
+        try await waitUntil("recipe sent") { recipe.syncState == .synced }
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(count("GET /shelf", in: server), 1)
+
+        // Later, the next idle slot runs the pull the drain left due.
+        clock.advance(31)
+        host.kick()
+        try await waitUntil("drain pull after the interval") { self.count("GET /shelf", in: server) == 2 }
+
+        // The foreground does not wait for the interval (the clock has not moved since).
+        host.sceneBecameActive()
+        try await waitUntil("foreground pull") { self.count("GET /shelf", in: server) == 3 }
     }
 
     func testAPullThatNeedsSignInStopsTheEngine() async throws {

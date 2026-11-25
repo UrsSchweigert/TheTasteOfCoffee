@@ -98,6 +98,9 @@ final class Puller {
         do {
             return .completed(try merge(fetched))
         } catch {
+            // Discards only the merge's own unsaved changes: screens never leave a model
+            // changed and unsaved, they write drafts through `AccountStore`, which saves at once
+            // (ADR 0025). So nothing of the user's is lost here.
             store.context.rollback()
             return .storeFailed
         }
@@ -116,8 +119,12 @@ final class Puller {
         var brews: AllPages<API.Brew>
         var recipes: AllPages<API.Recipe>
         var profile: API.Profile?
+        /// False when `GET /profile` answered 404.
+        var profileFound: Bool
         /// The beans `GET /beans/{bean_id}` returned, by bean id.
         var beans: [String: API.Bean]
+        /// Single answers (a bean, the profile) that did not decode and were skipped.
+        var undecodableItems: Int
     }
 
     private func fetch() async throws -> Fetched {
@@ -125,12 +132,20 @@ final class Puller {
         let brews = try await call { try await self.client.allBrews() }
         let recipes = try await call { try await self.client.allRecipes() }
 
+        var undecodable = 0
         var profile: API.Profile?
+        var profileFound = true
         do {
             profile = try await call { try await self.client.getProfile() }
         } catch Stop.failed(.notFound) {
             // No profile yet (onboarding, M2-T29). Nothing is created.
             profile = nil
+            profileFound = false
+        } catch Stop.failed(.undecodable) {
+            // There is one, but this build cannot read it (for example a newer vocabulary):
+            // skipped and counted, the local profile stays as it is.
+            profile = nil
+            undecodable += 1
         }
 
         var beans: [String: API.Bean] = [:]
@@ -146,9 +161,22 @@ final class Puller {
                 // Gone or not visible to this account: a cached copy stays as it is, an entry
                 // without one is not stored.
                 continue
+            } catch Stop.failed(.undecodable) {
+                // This build cannot read it (for example an id from a newer vocabulary): the
+                // same as a 404, and counted. Never fails the pull.
+                undecodable += 1
+                continue
             }
         }
-        return Fetched(shelf: shelf, brews: brews, recipes: recipes, profile: profile, beans: beans)
+        return Fetched(
+            shelf: shelf,
+            brews: brews,
+            recipes: recipes,
+            profile: profile,
+            profileFound: profileFound,
+            beans: beans,
+            undecodableItems: undecodable
+        )
     }
 
     /// The beans of the server's and the device's shelf entries that are not cached, or are
@@ -207,6 +235,7 @@ final class Puller {
         report.undecodableItems = fetched.shelf.undecodableItems.count
             + fetched.brews.undecodableItems.count
             + fetched.recipes.undecodableItems.count
+            + fetched.undecodableItems
 
         // Every item with an operation in the outbox, parked ones included: those keep their
         // local values until the operation is answered (or the user discards it, M2-T18).
@@ -297,7 +326,7 @@ final class Puller {
                     report.unresolvedItems += 1
                     continue
                 }
-                if (try? local.apiInput()) != server.values {
+                if !Puller.sameValues(try? local.apiInput(), server.values) {
                     do {
                         // Throws before it changes anything.
                         try local.apply(server.values)
@@ -387,9 +416,10 @@ final class Puller {
             }
         }
 
-        // Profile: 404 created nothing; a local profile stays as it is.
+        // Profile: 404 created nothing; an undecodable one was counted. In both cases a local
+        // profile stays as it is.
+        report.profileFound = fetched.profileFound
         if let server = fetched.profile {
-            report.profileFound = true
             if let local = try store.profile() {
                 if isPending(local) {
                     report.keptPending += 1
@@ -409,6 +439,25 @@ final class Puller {
             try store.save()
         }
         return report
+    }
+
+    /// Whether a local brew already has the server's values. The order of `flavour_notes`
+    /// (the only id list in a brew) does not count, so a server that lists them in another
+    /// order causes no rewrite.
+    static func sameValues(_ local: API.BrewInput?, _ server: API.BrewInput) -> Bool {
+        guard let local else {
+            return false
+        }
+        return unordered(local) == unordered(server)
+    }
+
+    /// `input` with its flavour notes in a fixed order.
+    private static func unordered(_ input: API.BrewInput) -> API.BrewInput {
+        var copy = input
+        if let notes = copy.rating?.flavourNotes {
+            copy.rating?.flavourNotes = notes.sorted { lhs, rhs in lhs.rawValue < rhs.rawValue }
+        }
+        return copy
     }
 
     /// True for a local item the server had (it has a server id) and no longer lists.
