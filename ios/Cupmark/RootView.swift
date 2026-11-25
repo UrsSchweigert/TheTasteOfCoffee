@@ -8,12 +8,17 @@ struct RootView: View {
     let stage: StageConfigLoadState
     /// Set by `CupmarkApp` when the stage is configured (M2-T14).
     @Environment(\.apiClient) private var apiClient
+    /// The signed-in account, which the navigation stack is keyed by (M2-T18).
+    @Environment(AuthModel.self) private var auth: AuthModel?
 
     var body: some View {
         NavigationStack {
             content
                 .navigationTitle(Text(L10n.appTitle))
         }
+        // A new stack on every account change and on sign-out, so no pushed screen (a shelf
+        // entry, the scan flow) of the previous account stays on the path.
+        .id(auth?.accountID)
     }
 
     @ViewBuilder

@@ -308,4 +308,62 @@ final class ShelfModelTests: XCTestCase {
         _ = try StoreFixtures.syncedShelfEntry(in: store)
         wait(for: [saved], timeout: 1)
     }
+
+    // MARK: - Review fixes
+
+    private struct WriteFailed: Error {}
+
+    func testAFailedAddRollsBackTheCachedBeanInsert() throws {
+        let store = try AccountStore.inMemory()
+        let now = try today()
+        let failing = ShelfEntryEditorModel(
+            mode: .add(try StoreFixtures.bean()),
+            store: store,
+            now: { now },
+            calendar: try calendar(),
+            addEntry: { _, _, _ in throw WriteFailed() }
+        )
+
+        XCTAssertNil(failing.save())
+
+        XCTAssertEqual(failing.failure, .saveFailed)
+        XCTAssertFalse(store.context.hasChanges, "the bean inserted for the entry was rolled back")
+        XCTAssertTrue(try store.beans().isEmpty)
+        XCTAssertTrue(try store.shelfEntries().isEmpty)
+        XCTAssertEqual(try queue(store), [])
+
+        // A later save of anything does not carry the half-made bean with it.
+        let working = try editor(.add(try StoreFixtures.bean()), store)
+        XCTAssertNotNil(working.save())
+        XCTAssertEqual(try store.beans().count, 1)
+        XCTAssertEqual(try queue(store), ["create shelf_entry"])
+    }
+
+    func testTodayStaysPickableAllDay() throws {
+        let store = try AccountStore.inMemory()
+        let calendar = try calendar()
+        // 07:00 in Berlin: noon of today, which the picker holds, lies after now.
+        let morning = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-11-25T06:00:00Z"))
+        let model = ShelfEntryEditorModel(mode: .add(try StoreFixtures.bean()), store: store, now: { morning }, calendar: calendar)
+
+        XCTAssertGreaterThanOrEqual(model.latestDate, model.purchaseDateValue)
+        XCTAssertEqual(ShelfDates.day(of: model.latestDate, calendar: calendar), try StoreFixtures.day("2026-11-25"))
+        let tomorrow = try XCTUnwrap(ShelfDates.date(of: try StoreFixtures.day("2026-11-26"), calendar: calendar))
+        XCTAssertLessThan(model.latestDate, tomorrow)
+        model.setHasRoastDate(true)
+        XCTAssertGreaterThanOrEqual(model.latestDate, model.roastDateValue)
+    }
+
+    func testAfterItsOwnRemovalTheEditorDoesNotReportTheEntryAsGone() throws {
+        let store = try AccountStore.inMemory()
+        let entry = try StoreFixtures.syncedShelfEntry(in: store)
+        let model = try editor(.edit(entry.localID), store)
+
+        XCTAssertTrue(model.delete())
+        // The screen reads again on the store's save notification while it closes.
+        model.refresh()
+
+        XCTAssertTrue(model.didDelete)
+        XCTAssertNil(model.failure)
+    }
 }

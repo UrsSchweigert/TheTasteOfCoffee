@@ -114,9 +114,11 @@ extension AccountStore {
 
     /// Redo: a parked operation goes back into the queue at its own place, with a fresh
     /// attempt count and no wait, and is sent from the item's current values. A parked
-    /// operation of the item it references (a shelf entry's bean, a brew's shelf entry and
-    /// that entry's bean) is redone with it, since it would otherwise be parked again as
-    /// `missing_reference`. The flags are cleared. For a flag only, clearing it is all.
+    /// create of the item it references (a shelf entry's bean, a brew's shelf entry and that
+    /// entry's bean) is redone with it, since without it the item would only be parked again
+    /// as `missing_reference` (ADR 0025, Addendum). A referenced item's other parked
+    /// operations (a refused update or delete) stay parked with their flag: they are its own
+    /// issues. The flags of the redone items are cleared. For a flag only, clearing it is all.
     func redo(_ issue: SyncIssueItem) throws {
         // The item itself, then the items it references.
         var targets: [(resource: OutboxResource, localID: UUID)] = [(issue.resource, issue.localID)]
@@ -138,9 +140,12 @@ extension AccountStore {
             }
         }
         for (index, target) in targets.enumerated() {
-            let operations = try outboxOperations(for: target.localID).filter { operation in operation.parked }
+            let operations = try outboxOperations(for: target.localID).filter { operation in
+                // The item itself: every parked operation. A referenced item: its create only.
+                operation.parked && (index == 0 || operation.action == .create)
+            }
             if index > 0, operations.isEmpty {
-                // A referenced item with nothing parked keeps its flag.
+                // A referenced item with no parked create keeps its flag.
                 continue
             }
             for operation in operations {
@@ -163,15 +168,19 @@ extension AccountStore {
     /// - A parked update or delete: the parked operations are removed and the item counts as
     ///   synced again (pending, if another operation still waits), so the next pull gives it
     ///   the server's values. A rejected delete brings the item back into the lists.
-    /// - A flag only: it is cleared, as with redo.
+    /// - A flag only, or a row read before its operation was redone elsewhere (nothing of the
+    ///   item is parked any more): the flag is cleared and nothing is removed.
     func discard(_ issue: SyncIssueItem) throws {
-        guard case .parked(let action, _) = issue.kind else {
+        // Read again: the row may be stale (redone meanwhile), and then nothing is dropped.
+        let parked = try outboxOperations(for: issue.localID).filter { operation in operation.parked }
+        guard issue.isParked, let first = parked.first else {
             if let item = try syncTrackedItem(issue.resource, issue.localID) {
                 item.syncIssue = nil
             }
             try save()
             return
         }
+        let action = first.action
         guard try syncTrackedItem(issue.resource, issue.localID) != nil else {
             try removeOutboxOperations(for: issue.localID)
             try save()
@@ -194,9 +203,9 @@ extension AccountStore {
             for operation in operations where operation.parked {
                 context.delete(operation)
             }
-            let waiting = operations.contains { operation in !operation.parked }
+            let waiting = operations.filter { operation in !operation.parked }.compactMap(\.action)
             if let item = try syncTrackedItem(issue.resource, issue.localID) {
-                item.syncState = waiting ? .pendingUpdate : .synced
+                item.syncState = AccountStore.syncState(whileWaiting: waiting)
                 item.syncIssue = nil
             }
         }
@@ -204,6 +213,22 @@ extension AccountStore {
     }
 
     // MARK: - Helpers
+
+    /// The sync state of a kept item whose parked operations were dropped, from the
+    /// operations still waiting: a waiting delete keeps it `pendingDelete` (hidden), a waiting
+    /// create `pendingCreate`, a waiting update `pendingUpdate`; nothing waiting is `synced`.
+    static func syncState(whileWaiting actions: [OutboxAction]) -> SyncState {
+        if actions.contains(.delete) {
+            return .pendingDelete
+        }
+        if actions.contains(.create) {
+            return .pendingCreate
+        }
+        if actions.contains(.update) {
+            return .pendingUpdate
+        }
+        return .synced
+    }
 
     /// Whether discarding the parked operation removes the item: a create, or any operation
     /// of an item that has no server id (the profile has none by design and is never removed).

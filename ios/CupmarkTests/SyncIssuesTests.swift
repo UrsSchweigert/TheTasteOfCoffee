@@ -376,4 +376,84 @@ final class SyncIssuesTests: XCTestCase {
         XCTAssertEqual(model.rows, [])
         XCTAssertNil(model.failure)
     }
+
+    // MARK: - Review fixes
+
+    func testRedoingABrewRedoesOnlyAParkedCreateOfItsShelfEntryNotARefusedUpdate() async throws {
+        let harness = try makeHarness()
+        let entry = try syncedShelfEntry(harness)
+        entry.bagSizeID = try StoreFixtures.last(Vocabulary.BagSize.self).rawValue
+        try harness.store.markUpdated(entry)
+        let brew = try StoredBrew(try StoreFixtures.brewInput())
+        try harness.store.addBrew(brew, shelfEntry: entry)
+        let firstBrew = FirstAnswer("POST", "/brews", status: 400)
+        harness.server.backend.setOverride { request in
+            if request.method == "PUT", request.path.hasPrefix("/shelf/") {
+                return StubResponse(status: 400)
+            }
+            return firstBrew.answer(request)
+        }
+        await drainToIdle(harness)
+        XCTAssertEqual(try queue(harness.store), ["update shelf_entry parked", "create brew parked"])
+
+        let brewIssue = try XCTUnwrap(harness.store.syncIssues().first { item in item.localID == brew.localID })
+        try harness.store.redo(brewIssue)
+
+        // The entry's refused update is its own issue: still parked, still flagged.
+        XCTAssertEqual(try queue(harness.store), ["update shelf_entry parked", "create brew"])
+        XCTAssertEqual(entry.syncIssue, .rejected)
+        XCTAssertNil(brew.syncIssue)
+        XCTAssertEqual(try harness.store.syncIssues().map(\.localID), [entry.localID])
+    }
+
+    func testDiscardingAStaleRowAfterARedoOnlyClearsTheFlag() async throws {
+        let harness = try makeHarness()
+        let entry = try await rejectedNewEntry(harness)
+        let stale = try onlyIssue(harness.store)
+        try harness.store.redo(stale)
+        entry.syncIssue = .rejected
+        try harness.store.save()
+
+        try harness.store.discard(stale)
+
+        XCTAssertNotNil(try harness.store.shelfEntry(localID: entry.localID), "nothing is removed")
+        XCTAssertEqual(try queue(harness.store), ["create shelf_entry"], "the redone create still waits")
+        XCTAssertEqual(entry.syncState, .pendingCreate)
+        XCTAssertNil(entry.syncIssue)
+    }
+
+    func testDiscardingARefusedUpdateKeepsAWaitingDeletePending() throws {
+        let harness = try makeHarness()
+        let entry = try syncedShelfEntry(harness)
+        // An update sent without an answer, then a delete queued behind it (ADR 0025), then a
+        // 400 for the update: the delete still waits.
+        entry.bagSizeID = try StoreFixtures.last(Vocabulary.BagSize.self).rawValue
+        try harness.store.markUpdated(entry)
+        let update = try XCTUnwrap(harness.store.outboxOperations().first)
+        update.sentWithoutAnswer = true
+        try harness.store.save()
+        try harness.store.markDeleted(entry)
+        update.sentWithoutAnswer = false
+        update.parked = true
+        update.parkReason = .rejected
+        entry.syncIssue = .rejected
+        try harness.store.save()
+        XCTAssertEqual(try queue(harness.store), ["update shelf_entry parked", "delete shelf_entry"])
+
+        let issue = try onlyIssue(harness.store)
+        XCTAssertEqual(issue.kind, .parked(.update, .rejected))
+        try harness.store.discard(issue)
+
+        XCTAssertEqual(entry.syncState, .pendingDelete, "the waiting delete keeps it removed")
+        XCTAssertTrue(try harness.store.shelfEntries().isEmpty)
+        XCTAssertEqual(try queue(harness.store), ["delete shelf_entry"])
+        XCTAssertNil(entry.syncIssue)
+    }
+
+    func testTheStateAfterADiscardFollowsTheWaitingAction() {
+        XCTAssertEqual(AccountStore.syncState(whileWaiting: []), .synced)
+        XCTAssertEqual(AccountStore.syncState(whileWaiting: [.update]), .pendingUpdate)
+        XCTAssertEqual(AccountStore.syncState(whileWaiting: [.create, .update]), .pendingCreate)
+        XCTAssertEqual(AccountStore.syncState(whileWaiting: [.update, .delete]), .pendingDelete)
+    }
 }

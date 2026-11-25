@@ -983,11 +983,36 @@ test('the scan flow pushes the pick-list entry with the scanned barcode, and the
  * closures (`LabeledContent { ... }`) are not arguments; the `Text` inside them is checked
  * on its own.
  */
-const m2t18OffCall = /\b(Text|LabeledContent|Label|Button|navigationTitle|accessibilityLabel|accessibilityValue)\s*\(/g;
+const m2t18OffCall =
+  /\b(Text|LabeledContent|Label|Button|navigationTitle|accessibilityLabel|accessibilityValue|NavigationLink|Section|Toggle|Picker|alert|confirmationDialog|ContentUnavailableView|LocalizedStringKey)\s*\(/g;
 const m2t18OffField = /\b(name|brand|openFoodFactsName|openFoodFactsBrand)\b/;
+// In interpolations a bare `name` is everywhere (file names, path parameters), so there only
+// a member `.name`, any `brand` and the stored columns count.
+const m2t18OffInterpolated = /\.\s*name\b|\b(brand|openFoodFactsName|openFoodFactsBrand)\b/;
 function m2t18OpenFoodFactsTextOutsideVerbatim(source) {
-  const { masked } = lexSwift(source);
+  const { masked, strings } = lexSwift(source);
   const found = [];
+  // Any string interpolation of the fields, wherever the string goes (review of M2-T18):
+  // `"\(name)"` turns untrusted text into a literal's content, a key or a log line.
+  for (const [start, end] of strings) {
+    const literal = source.slice(start, end);
+    const hashes = /^#*/.exec(literal)[0];
+    const opener = `\\${hashes}(`;
+    let at = literal.indexOf(opener);
+    while (at !== -1) {
+      let depth = 1;
+      let k = at + opener.length;
+      for (; k < literal.length && depth > 0; k += 1) {
+        if (literal[k] === '(') depth += 1;
+        else if (literal[k] === ')') depth -= 1;
+      }
+      const inner = literal.slice(at + opener.length, k - 1).replace(/\bL10n\s*\.\s*\w+/g, '');
+      if (m2t18OffInterpolated.test(inner)) {
+        found.push({ line: source.slice(0, start).split('\n').length, call: 'interpolation' });
+      }
+      at = literal.indexOf(opener, k);
+    }
+  }
   for (const match of masked.matchAll(m2t18OffCall)) {
     const open = match.index + match[0].length;
     let depth = 1;
@@ -1019,7 +1044,7 @@ test('Open Food Facts text check: only Text(verbatim:) passes, also across lines
   assert.deepEqual(flagged('Text(name)'), ['Text']);
   assert.deepEqual(flagged('Text(product.brand)'), ['Text']);
   assert.deepEqual(flagged('Text(\n    bean.openFoodFactsName ?? fallback\n)'), ['Text']);
-  assert.deepEqual(flagged('Text(\n    LocalizedStringKey(name)\n)'), ['Text']);
+  assert.deepEqual(flagged('Text(\n    LocalizedStringKey(name)\n)'), ['Text', 'LocalizedStringKey']);
   assert.deepEqual(flagged('LabeledContent("Name", value: name)'), ['LabeledContent']);
   assert.deepEqual(flagged('LabeledContent(L10n.openFoodFactsName, value: product.brand ?? other)'), ['LabeledContent']);
   assert.deepEqual(flagged('Label(name, systemImage: "cup.and.saucer")'), ['Label']);
@@ -1028,6 +1053,30 @@ test('Open Food Facts text check: only Text(verbatim:) passes, also across lines
   assert.deepEqual(flagged('.accessibilityLabel(Text(name))'), ['accessibilityLabel', 'Text']);
   // A comment or a string that mentions the fields is not code.
   assert.deepEqual(flagged('Text(L10n.shelfBeanUnnamed) // not Text(name)'), []);
+  assert.deepEqual(flagged('let note = "name and brand"'), []);
+  // String interpolations, anywhere, also in raw strings and nested parentheses.
+  assert.deepEqual(flagged('let title = "\\(product.name)"'), ['interpolation']);
+  assert.deepEqual(flagged('let title = "\\(brand) roast"'), ['interpolation']);
+  // A bare `name` in an interpolation is a file or parameter name, not Open Food Facts text.
+  assert.deepEqual(flagged('let file = "\\(name).json"'), []);
+  assert.deepEqual(flagged('log("bean \\(bean.openFoodFactsBrand ?? (other))")'), ['interpolation']);
+  assert.deepEqual(flagged('let raw = #"\\#(summary.name)"#'), ['interpolation']);
+  assert.deepEqual(flagged('let id = "\\(row.valueID) \\(count)"'), []);
+  assert.deepEqual(flagged('Text(verbatim: "\\(brand)")').sort(), ['interpolation']);
+  // The other calls that put text on screen.
+  assert.deepEqual(flagged('NavigationLink(name, value: route)'), ['NavigationLink']);
+  assert.deepEqual(flagged('Section(product.brand ?? other) {\n    Text(verbatim: x)\n}'), ['Section']);
+  assert.deepEqual(flagged('Toggle(name, isOn: $on)'), ['Toggle']);
+  assert.deepEqual(flagged('Picker(\n    summary.name ?? other,\n    selection: $pick\n) {}'), ['Picker']);
+  assert.deepEqual(flagged('.alert(name, isPresented: $shown) {}'), ['alert']);
+  assert.deepEqual(flagged('.confirmationDialog(bean.openFoodFactsName ?? other, isPresented: $shown) {}'), ['confirmationDialog']);
+  assert.deepEqual(flagged('ContentUnavailableView(brand, systemImage: "cup.and.saucer")'), ['ContentUnavailableView']);
+  assert.deepEqual(flagged('Text(LocalizedStringKey(name))'), ['Text', 'LocalizedStringKey']);
+  // Not text: these keep passing.
+  assert.deepEqual(flagged('Section {\n    Text(verbatim: name)\n} header: {\n    Text(L10n.openFoodFactsHeader)\n}'), []);
+  assert.deepEqual(flagged('OpenFoodFactsSection(product: product, loadImage: load)'), []);
+  assert.deepEqual(flagged('Toggle(isOn: $on) {\n    Text(L10n.shelfEntryRoastDateKnown)\n}'), []);
+  assert.deepEqual(flagged('.confirmationDialog(L10n.syncIssuesDiscardConfirmTitle, isPresented: $shown) {}'), []);
 });
 
 test('the committed iOS sources show Open Food Facts name and brand only with Text(verbatim:) (M2-T18)', () => {

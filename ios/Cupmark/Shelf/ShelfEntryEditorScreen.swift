@@ -51,7 +51,8 @@ struct ShelfEntryEditorScreen: View {
             if !model.isAdding {
                 deleteSection
             }
-            if let failure = model.failure {
+            // Not while the screen closes after its own removal.
+            if let failure = model.failure, !model.didDelete {
                 Section {
                     Label {
                         Text(ShelfEntryEditorScreen.message(for: failure))

@@ -8,6 +8,18 @@ enum ShelfDates {
         API.CalendarDate(date: date, timeZone: calendar.timeZone)
     }
 
+    /// The last second of the day `date` falls on in `calendar`'s time zone, for the upper
+    /// bound of a date picker. `date` itself if the calendar cannot say.
+    static func endOfDay(of date: Date, calendar: Calendar = .current) -> Date {
+        var gregorian = Calendar(identifier: .gregorian)
+        gregorian.timeZone = calendar.timeZone
+        let start = gregorian.startOfDay(for: date)
+        guard let next = gregorian.date(byAdding: .day, value: 1, to: start) else {
+            return date
+        }
+        return max(date, next.addingTimeInterval(-1))
+    }
+
     /// Noon of `day` in `calendar`'s time zone: far from midnight, so a daylight saving change
     /// never moves it to another day, and `day(of:calendar:)` gives `day` back.
     static func date(of day: API.CalendarDate, calendar: Calendar = .current) -> Date? {

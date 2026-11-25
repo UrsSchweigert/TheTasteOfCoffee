@@ -52,18 +52,33 @@ final class ShelfEntryEditorModel {
     private(set) var brewCount = 0
     private(set) var issue: SyncIssue?
     private(set) var failure: Failure?
+    /// True once this editor removed the entry: the screen is closing, so a read on the
+    /// store's save notification must not report the entry as gone.
+    private(set) var didDelete = false
 
     let store: AccountStore
     private let now: () -> Date
     private let calendar: Calendar
     private var savedDraft: ShelfEntryDraft
     private var savedBeanLocalID: UUID?
+    /// Adds the new entry for the bean and saves (`AccountStore.addShelfEntry`). Tests replace
+    /// it to make the write fail.
+    private let addEntry: (AccountStore, StoredShelfEntry, StoredBean) throws -> Void
 
-    init(mode: Mode, store: AccountStore, now: @escaping () -> Date = { Date() }, calendar: Calendar = .current) {
+    init(
+        mode: Mode,
+        store: AccountStore,
+        now: @escaping () -> Date = { Date() },
+        calendar: Calendar = .current,
+        addEntry: @escaping (AccountStore, StoredShelfEntry, StoredBean) throws -> Void = { store, entry, bean in
+            try store.addShelfEntry(entry, bean: bean)
+        }
+    ) {
         self.mode = mode
         self.store = store
         self.now = now
         self.calendar = calendar
+        self.addEntry = addEntry
         let draft: ShelfEntryDraft
         switch mode {
         case .add(let apiBean):
@@ -159,9 +174,11 @@ final class ShelfEntryEditorModel {
         }
     }
 
-    /// The latest day a picker offers: today.
+    /// The upper bound of the date pickers: the last second of today in the calendar's time
+    /// zone. Not `now()`: the pickers hold noon of the picked day, which for today is later
+    /// than the current time in the morning, and today must stay pickable all day.
     var latestDate: Date {
-        now()
+        ShelfDates.endOfDay(of: now(), calendar: calendar)
     }
 
     /// Days from the draft's roast date to today, as the shelf will show it.
@@ -233,7 +250,14 @@ final class ShelfEntryEditorModel {
                 failure = .hasBrews
                 return false
             }
-            try store.markDeleted(entry)
+            // Set before the write: its save notification already reaches `refresh()`.
+            didDelete = true
+            do {
+                try store.markDeleted(entry)
+            } catch {
+                didDelete = false
+                throw error
+            }
             return true
         } catch LocalStoreError.shelfEntryHasBrews {
             failure = .hasBrews
@@ -247,7 +271,7 @@ final class ShelfEntryEditorModel {
 
     /// Reads the brew count and the flag again (a pull or the engine may have changed them).
     func refresh() {
-        guard case .edit(let entryID) = mode else {
+        guard case .edit(let entryID) = mode, !didDelete else {
             return
         }
         guard let entry = try? store.shelfEntry(localID: entryID), entry.syncState != .pendingDelete else {
@@ -265,7 +289,7 @@ final class ShelfEntryEditorModel {
         let bean = try store.catalogueBean(apiBean)
         let entry = StoredShelfEntry(purchaseDate: purchaseDate)
         draft.apply(to: entry)
-        try store.addShelfEntry(entry, bean: bean)
+        try addEntry(store, entry, bean)
         return entry.localID
     }
 
