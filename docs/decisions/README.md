@@ -37,3 +37,5 @@ What this costs, what it rules out, when to revisit.
 - [0009 One shared AWS account for both stages; a Cupmark stack creates the GitHub deploy role](0009-shared-account-and-github-oidc-stack.md)
 - [0010 Shelf, brew and recipe sort keys carry the item id](0010-sort-keys-carry-item-ids.md)
 - [0011 Vocabulary v2: regions name their country, species is its own list; Open Food Facts images are copied](0011-vocabulary-v2-shape-and-open-food-facts-images.md)
+- [0012 Shelf entries count the brews that reference them](0012-shelf-entries-count-their-brews.md)
+- [0013 The cursor signing key is read from Parameter Store at cold start](0013-cursor-key-from-parameter-store.md)

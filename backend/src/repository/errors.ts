@@ -49,3 +49,18 @@ export class CorruptItemError extends RepositoryError {
 export class InvalidValuesError extends RepositoryError {
   public override readonly name = 'InvalidValuesError';
 }
+
+/** A shelf entry names a bean that is not in the catalogue (API: 404). */
+export class BeanNotFoundError extends RepositoryError {
+  public override readonly name = 'BeanNotFoundError';
+}
+
+/** A brew names a shelf entry that is not in the caller's partition (API: 404). */
+export class ShelfEntryNotFoundError extends RepositoryError {
+  public override readonly name = 'ShelfEntryNotFoundError';
+}
+
+/** A shelf entry cannot be deleted while brews reference it (API: 409). */
+export class ShelfEntryInUseError extends RepositoryError {
+  public override readonly name = 'ShelfEntryInUseError';
+}
