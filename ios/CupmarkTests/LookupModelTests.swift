@@ -505,4 +505,35 @@ final class LookupModelTests: XCTestCase {
         XCTAssertEqual(Set(seen), apiHosts)
         XCTAssertTrue(servers.allSatisfy { !$0.requests.isEmpty })
     }
+
+    // MARK: - Sign-in required (M2-T18)
+
+    func testA401AfterTheRefreshAsksForSignInInsteadOfARetry() async throws {
+        // Every answer is 401: the request, the client's refresh, the one retry, then stop.
+        let (model, server) = try makeModel([catalogue: [status(401)]])
+
+        await model.lookUp()
+
+        XCTAssertEqual(model.state, .signInRequired)
+        XCTAssertFalse(model.canLookUp)
+        await model.lookUp()
+        XCTAssertEqual(calls(server), [catalogue, catalogue])
+    }
+
+    func testA401FromTheOpenFoodFactsRouteOrTheConfirmationAsksForSignIn() async throws {
+        let (lookup, first) = try makeModel([catalogue: [status(404)], openFoodFacts: [status(401)]])
+        await lookup.lookUp()
+        XCTAssertEqual(lookup.state, .signInRequired)
+        XCTAssertEqual(calls(first), [catalogue, openFoodFacts, openFoodFacts])
+
+        let (confirming, second) = try makeModel([
+            catalogue: [status(404)],
+            openFoodFacts: [try json(product())],
+            createBean: [status(401)],
+        ])
+        await confirming.lookUp()
+        await confirming.confirm()
+        XCTAssertEqual(confirming.state, .signInRequired)
+        XCTAssertEqual(calls(second), [catalogue, openFoodFacts, createBean, createBean])
+    }
 }

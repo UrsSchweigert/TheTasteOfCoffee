@@ -630,7 +630,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T18 Shelf
-- status: in-progress
+- status: needs-mac-verification (written on Linux, not compiled; `done` once the `ios` job builds it and its XCTests pass)
 - owner: ios-engineer
 - depends: M2-T14, M2-T17
 - implements: docs/04-specification.md, F1 step 5; docs/07 D14; ADR 0012
@@ -705,7 +705,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T23 Label photo: JPEG on the device
-- status: in-progress
+- status: needs-mac-verification
 - owner: ios-engineer
 - depends: M2-T22
 - implements: docs/04-specification.md, F1 step 4; ADR 0016 (HEIC to JPEG on the device, at most 4096 px a side and 8 MiB); D12

@@ -59,3 +59,11 @@ The app writes to its SwiftData store first and syncs later (docs/04, Non-functi
 - A pick-list bean without a barcode has nothing to match, so a lost answer to its `POST /beans` can leave an unused duplicate bean in the catalogue. It holds no user data and is harmless.
 - A head-of-line retry delays every later write by up to 5 minutes per attempt. That is the price of keeping the order.
 - Parked operations stay on the device with their flagged items until the screens (M2-T18) offer to remove or redo them. The flags are not cleared by later successes; the screens clear them once shown.
+
+## Addendum (M2-T18, lead, ADR 0014; no cloud cost)
+
+The screens offer the two ways out (`AccountStore.syncIssues()`, `redo(_:)`, `discard(_:)`):
+
+- **Redo** of a parked operation clears `parked`, its reason, the attempt count and the wait, so it goes out again at its own sequence, built from the item's current values. A parked create of the item it references (a shelf entry's bean; a brew's shelf entry and that entry's bean) is redone with it; otherwise it would only be parked again as `missing_reference`. The flags of the redone items are cleared.
+- **Discard** of a parked create, or of any parked operation of an item with no server id, removes the item and its operations, but not while brews on the device reference the shelf entry or shelf entries name the bean. Discard of a parked update or delete removes the parked operations and marks the item synced (pending, if another operation still waits), so the next pull gives it the server's values; a refused delete brings the item back into the lists. The screen asks for that pull.
+- A flag without a parked operation (`bean_change_reverted`, `delete_restored`, an old `rejected`) has nothing to send or drop: the screen's "OK" clears it.

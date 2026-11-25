@@ -970,3 +970,109 @@ test('the scan flow pushes the pick-list entry with the scanned barcode, and the
   const model = lexSwift(readFileSync(join(repoRoot, 'ios/Cupmark/Scanner/ScannerViewModel.swift'), 'utf8')).masked;
   assert.match(model, /Task\.isCancelled[^}]*source\.stop\(\)/);
 });
+
+// ---- Shelf (M2-T18, ADR 0005, ADR 0025, D14) ----
+
+/**
+ * Places in a Swift file where Open Food Facts text (`name`, `brand`, `openFoodFactsName`,
+ * `openFoodFactsBrand`) reaches a view other than through `Text(verbatim:)`: any argument of
+ * `Text(` that is not `verbatim:`, and any argument of `LabeledContent(`, `Label(`,
+ * `Button(`, `navigationTitle(`, `accessibilityLabel(` or `accessibilityValue(`. The
+ * arguments run to the matching parenthesis, across lines; comments and string contents are
+ * blanked first, and `L10n.` keys (such as `L10n.openFoodFactsName`) are not text. Trailing
+ * closures (`LabeledContent { ... }`) are not arguments; the `Text` inside them is checked
+ * on its own.
+ */
+const m2t18OffCall = /\b(Text|LabeledContent|Label|Button|navigationTitle|accessibilityLabel|accessibilityValue)\s*\(/g;
+const m2t18OffField = /\b(name|brand|openFoodFactsName|openFoodFactsBrand)\b/;
+function m2t18OpenFoodFactsTextOutsideVerbatim(source) {
+  const { masked } = lexSwift(source);
+  const found = [];
+  for (const match of masked.matchAll(m2t18OffCall)) {
+    const open = match.index + match[0].length;
+    let depth = 1;
+    let close = open;
+    for (; close < masked.length; close += 1) {
+      const ch = masked[close];
+      if (ch === '(' || ch === '[' || ch === '{') depth += 1;
+      else if (ch === ')' || ch === ']' || ch === '}') {
+        depth -= 1;
+        if (depth === 0) break;
+      }
+    }
+    const args = masked.slice(open, close).replace(/\bL10n\s*\.\s*\w+/g, '');
+    if (match[1] === 'Text' && /^\s*verbatim\s*:/.test(args)) continue;
+    if (m2t18OffField.test(args)) {
+      found.push({ line: masked.slice(0, match.index).split('\n').length, call: match[1] });
+    }
+  }
+  return found;
+}
+
+test('Open Food Facts text check: only Text(verbatim:) passes, also across lines and in LabeledContent and Label (M2-T18)', () => {
+  const flagged = (source) => m2t18OpenFoodFactsTextOutsideVerbatim(source).map(({ call }) => call);
+  assert.deepEqual(flagged('Text(verbatim: name)'), []);
+  assert.deepEqual(flagged('Text(\n    verbatim: summary.brand\n)'), []);
+  assert.deepEqual(flagged('Text(L10n.openFoodFactsName)'), []);
+  assert.deepEqual(flagged('LabeledContent {\n    Text(verbatim: name)\n} label: {\n    Text(L10n.openFoodFactsName)\n}'), []);
+  assert.deepEqual(flagged('Image(systemName: "x")'), []);
+  assert.deepEqual(flagged('Text(name)'), ['Text']);
+  assert.deepEqual(flagged('Text(product.brand)'), ['Text']);
+  assert.deepEqual(flagged('Text(\n    bean.openFoodFactsName ?? fallback\n)'), ['Text']);
+  assert.deepEqual(flagged('Text(\n    LocalizedStringKey(name)\n)'), ['Text']);
+  assert.deepEqual(flagged('LabeledContent("Name", value: name)'), ['LabeledContent']);
+  assert.deepEqual(flagged('LabeledContent(L10n.openFoodFactsName, value: product.brand ?? other)'), ['LabeledContent']);
+  assert.deepEqual(flagged('Label(name, systemImage: "cup.and.saucer")'), ['Label']);
+  assert.deepEqual(flagged('Label(\n    summary.name ?? other,\n    systemImage: "cup.and.saucer"\n)'), ['Label']);
+  assert.deepEqual(flagged('.navigationTitle(bean.openFoodFactsBrand ?? other)'), ['navigationTitle']);
+  assert.deepEqual(flagged('.accessibilityLabel(Text(name))'), ['accessibilityLabel', 'Text']);
+  // A comment or a string that mentions the fields is not code.
+  assert.deepEqual(flagged('Text(L10n.shelfBeanUnnamed) // not Text(name)'), []);
+});
+
+test('the committed iOS sources show Open Food Facts name and brand only with Text(verbatim:) (M2-T18)', () => {
+  const swift = m2t14Files('ios/Cupmark').filter((file) => file.endsWith('.swift'));
+  assert.ok(swift.some((file) => file.endsWith('ShelfViews.swift')), 'the shelf sources are scanned');
+  const offenders = swift.flatMap((file) =>
+    m2t18OpenFoodFactsTextOutsideVerbatim(readFileSync(join(repoRoot, file), 'utf8')).map(({ line, call }) => `${file}:${line} ${call}`),
+  );
+  assert.deepEqual(offenders, []);
+  const views = readFileSync(join(repoRoot, 'ios/Cupmark/Shelf/ShelfViews.swift'), 'utf8');
+  assert.match(views, /Text\(verbatim: name\)/);
+  assert.match(views, /Text\(verbatim: brand\)/);
+});
+
+test('the shelf has no typed text, no hand-written vocabulary and writes only through AccountStore (M2-T18)', () => {
+  const files = m2t14Files('ios/Cupmark/Shelf').filter((file) => file.endsWith('.swift'));
+  assert.ok(files.some((file) => file.endsWith('ShelfEntryEditorModel.swift')), 'the shelf sources are scanned');
+  for (const file of files) {
+    const code = lexSwift(readFileSync(join(repoRoot, file), 'utf8')).masked;
+    assert.doesNotMatch(code, /\.searchable\b|\bTextField\b|\bTextEditor\b|\bSecureField\b/, `${file}: no typed text (invariant 1)`);
+    assert.doesNotMatch(code, /\.rawValue\s*==|rawValue:\s*"/, `${file}: no vocabulary id as a string`);
+    // Screens edit drafts; the store's methods insert, save and queue (ADR 0025).
+    assert.doesNotMatch(code, /\bcontext\s*\.\s*(insert|save|delete)\(/, `${file}: no direct insert, save or delete on the context`);
+  }
+  const editor = lexSwift(readFileSync(join(repoRoot, 'ios/Cupmark/Shelf/ShelfEntryEditorModel.swift'), 'utf8')).masked;
+  assert.match(editor, /store\.addShelfEntry\(/);
+  assert.match(editor, /store\.markUpdated\(entry\)/);
+  assert.match(editor, /store\.markDeleted\(entry\)/);
+  assert.match(editor, /liveBrewCount/);
+  const screen = lexSwift(readFileSync(join(repoRoot, 'ios/Cupmark/Shelf/ShelfEntryEditorScreen.swift'), 'utf8')).masked;
+  assert.match(screen, /\.disabled\(!model\.canChangeBean\)/, 'the bean change is disabled while brews reference the entry (D14)');
+  assert.match(screen, /\.disabled\(!model\.canDelete\)/, 'the removal is disabled while brews reference the entry (ADR 0012)');
+  assert.match(screen, /L10n\.shelfEntryLockedReason/, 'with a localised reason');
+});
+
+test('the shelf is the signed-in root and the scan flow can add to it (M2-T18)', () => {
+  const root = lexSwift(readFileSync(join(repoRoot, 'ios/Cupmark/RootView.swift'), 'utf8')).masked;
+  assert.match(root, /AuthGate\s*\{\s*account in\s*signedInContent\(account\)/);
+  assert.match(root, /ShelfRoot\(account: account/);
+  const shelf = lexSwift(readFileSync(join(repoRoot, 'ios/Cupmark/Shelf/ShelfScreen.swift'), 'utf8')).masked;
+  assert.match(shelf, /ScanFlowView\([^)]*shelf: ShelfAddContext\(/s);
+  assert.match(shelf, /AccountStore\.didSaveNotification/);
+  const lookup = lexSwift(readFileSync(join(repoRoot, 'ios/Cupmark/Lookup/LookupScreen.swift'), 'utf8')).masked;
+  assert.match(lookup, /AddToShelfBar\(bean: bean/);
+  assert.match(lookup, /case \.signInRequired:\s*SignInAgainView\(\)/);
+  const entry = lexSwift(readFileSync(join(repoRoot, 'ios/Cupmark/BeanEntry/BeanEntryScreen.swift'), 'utf8')).masked;
+  assert.match(entry, /AddToShelfBar\(bean: bean/);
+});

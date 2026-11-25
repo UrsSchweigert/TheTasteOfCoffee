@@ -16,6 +16,8 @@ struct BeanEntryScreen: View {
     @Bindable var model: BeanEntryModel
     let vocabulary: VocabularyStore
     let language: VocabularyLanguage
+    /// Where the saved bean is put on the shelf (M2-T18); nil offers no "Add to Shelf".
+    var shelf: ShelfAddContext? = nil
     /// Whether the label photo step is offered (M2-T23). Read on appear and on return to the
     /// foreground, since camera access may have been changed in Settings.
     let camera: any LabelPhotoCameraEnvironment
@@ -28,11 +30,13 @@ struct BeanEntryScreen: View {
         model: BeanEntryModel,
         vocabulary: VocabularyStore,
         language: VocabularyLanguage,
+        shelf: ShelfAddContext? = nil,
         camera: any LabelPhotoCameraEnvironment = LiveLabelPhotoCameraEnvironment()
     ) {
         self.model = model
         self.vocabulary = vocabulary
         self.language = language
+        self.shelf = shelf
         self.camera = camera
     }
 
@@ -54,6 +58,13 @@ struct BeanEntryScreen: View {
     private var content: some View {
         if case .saved(let bean) = model.state {
             BeanDetailView(bean: bean, vocabulary: vocabulary, language: language, loadImage: loadImage)
+                .safeAreaInset(edge: .bottom) {
+                    if let shelf {
+                        AddToShelfBar(bean: bean, context: shelf, vocabulary: vocabulary, language: language)
+                    }
+                }
+        } else if model.state == .failed(.signInRequired) {
+            SignInAgainView()
         } else {
             form
         }
@@ -174,7 +185,7 @@ struct BeanEntryScreen: View {
         switch model.state {
         case .saving: L10n.lookupSaving
         case .failed(.retryable): L10n.lookupRetry
-        case .editing, .saved, .failed(.rejected): L10n.beanEntrySave
+        case .editing, .saved, .failed(.rejected), .failed(.signInRequired): L10n.beanEntrySave
         }
     }
 
@@ -193,6 +204,7 @@ struct BeanEntryScreen: View {
         switch failure {
         case .rejected: L10n.beanEntryRejectedTitle
         case .retryable: L10n.beanEntryFailedTitle
+        case .signInRequired: L10n.signInAgainTitle
         }
     }
 
@@ -200,6 +212,7 @@ struct BeanEntryScreen: View {
         switch failure {
         case .rejected: L10n.beanEntryRejectedMessage
         case .retryable: L10n.beanEntryFailedMessage
+        case .signInRequired: L10n.signInAgainMessage
         }
     }
 }

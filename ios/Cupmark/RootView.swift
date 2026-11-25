@@ -21,11 +21,22 @@ struct RootView: View {
         switch stage {
         case .configured:
             // Signed-in content only (M2-T11); the closure gets the local store's AccountID.
-            AuthGate { _ in
-                vocabularyContent
+            AuthGate { account in
+                signedInContent(account)
             }
         case .notConfigured:
             NotConfiguredView()
+        }
+    }
+
+    /// The signed-in root (M2-T18): the shelf of the account's local store, with "Scan a bag"
+    /// on it. Without a vocabulary, the error below.
+    @ViewBuilder
+    private func signedInContent(_ account: AccountID) -> some View {
+        if case .loaded(let store, let language) = state {
+            ShelfRoot(account: account, vocabulary: store, language: language)
+        } else {
+            vocabularyContent
         }
     }
 

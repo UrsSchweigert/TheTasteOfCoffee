@@ -23,6 +23,9 @@ final class BeanEntryModel {
         case rejected
         /// Anything else: no network, 429, 5xx, a 409 whose bean could not be read, and so on.
         case retryable
+        /// 401, also after the client's refresh: the user has to sign in again (M2-T18).
+        /// Not retried; the screen offers the sign-in instead.
+        case signInRequired
     }
 
     enum State: Equatable, Sendable {
@@ -77,7 +80,7 @@ final class BeanEntryModel {
     /// Whether `save()` would send a request now: not while saving, not once saved, and not
     /// the body a 400 answered.
     var canSave: Bool {
-        isEditable && request != rejectedRequest
+        isEditable && request != rejectedRequest && state != .failed(.signInRequired)
     }
 
     /// Sends `POST /beans`. Does nothing unless `canSave`.
@@ -128,6 +131,9 @@ final class BeanEntryModel {
     private static func failureState(after error: any Error) -> State {
         if error is CancellationError {
             return .editing
+        }
+        if case .unauthorized? = error as? APIError {
+            return .failed(.signInRequired)
         }
         return .failed(.retryable)
     }

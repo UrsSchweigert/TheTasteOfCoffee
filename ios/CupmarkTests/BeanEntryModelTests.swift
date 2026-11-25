@@ -317,4 +317,18 @@ final class BeanEntryModelTests: XCTestCase {
         XCTAssertTrue(model.canSave)
         XCTAssertEqual(model.barcode?.digits, digits)
     }
+
+    // MARK: - Sign-in required (M2-T18)
+
+    func testA401AsksForSignInAndIsNotSentAgain() async throws {
+        let (model, server) = try makeModel(barcode: nil, [createBean: [status(401)]])
+
+        await model.save()
+
+        XCTAssertEqual(model.state, .failed(.signInRequired))
+        XCTAssertFalse(model.canSave)
+        await model.save()
+        // The request and the client's one retry after its refresh, nothing more.
+        XCTAssertEqual(calls(server), [createBean, createBean])
+    }
 }

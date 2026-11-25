@@ -185,7 +185,8 @@ final class AccountStore {
     }
 
     /// Saves the context; on failure, the unsaved changes are rolled back and the error thrown.
-    /// After a save `onSave` is called, so the sync engine can look at the outbox.
+    /// After a save `onSave` is called, so the sync engine can look at the outbox, and
+    /// `didSaveNotification` is posted with this store as its object, so screens read again.
     func save() throws {
         do {
             try context.save()
@@ -194,7 +195,13 @@ final class AccountStore {
             throw error
         }
         onSave?()
+        NotificationCenter.default.post(name: AccountStore.didSaveNotification, object: self)
     }
+
+    /// Posted on the saving thread (the main actor in the app) after every successful
+    /// `save()`, by screen writes, the sync engine and the pull alike (M2-T18). The object is
+    /// the `AccountStore`.
+    static let didSaveNotification = Notification.Name("app.cupmark.AccountStore.didSave")
 
     // MARK: - Reads (items removed on the device are left out)
 
