@@ -85,9 +85,8 @@ export function userAgent(contact: string): string {
 
 /** The product URL for a barcode (canonicalised to EAN-13; throws InvalidKeyError for a bad one). */
 export function productUrl(barcode: string): string {
-  const url = new URL(`/api/v2/product/${canonicalBarcode(barcode)}.json`, OPEN_FOOD_FACTS_ORIGIN);
-  url.searchParams.set('fields', OPEN_FOOD_FACTS_FIELDS);
-  return url.toString();
+  // 13 digits and constants only; new URL() normalises it, so it equals a response's `url`.
+  return new URL(`${OPEN_FOOD_FACTS_ORIGIN}/api/v2/product/${canonicalBarcode(barcode)}.json?fields=${OPEN_FOOD_FACTS_FIELDS}`).toString();
 }
 
 const unavailable = (reason: UnavailableReason): FetchOutcome => ({ kind: 'unavailable', reason });

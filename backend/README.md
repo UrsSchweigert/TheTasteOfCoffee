@@ -23,6 +23,7 @@ Run in `backend/` with Node `^22.18.0` or 24 and later; `.npmrc` sets `engine-st
 src/handlers/          one file per Lambda entry point (each exports `handler`): api, health, apple-idp
 src/apple-idp/         the deploy-time custom resource for the Sign in with Apple provider (ADR 0015)
 src/api/               the API Lambda: router, resources, body and query parsing, signed cursors, configuration
+src/openfoodfacts/     the outbound Open Food Facts client and the cleaning of its text (M1-T4b)
 src/vocabulary/        checks a request against the vocabulary version it names; method-dependent rules hook
 src/auth/user-id.ts    the caller's user id (`UserId`), from the token subject only
 src/repository/        the only module that talks to DynamoDB: key builders, typed reads and writes
@@ -68,16 +69,16 @@ When `contracts/openapi.yaml` changes, run `npm run generate` and commit the new
 
 ## The API Lambda
 
-`src/handlers/api.ts` is the one API function (docs/05, Components). `src/api/router.ts` holds a fixed route table and serves only the routes that have landed: list, create, get, replace and delete for `/shelf`, `/brews` and `/recipes` (task M1-T5), which share one implementation (`src/api/resources.ts`), and the bean catalogue: `GET /barcodes/{barcode}`, `POST /beans` and `GET /beans/{bean_id}` (task M1-T4a, `src/api/catalogue.ts`).
+`src/handlers/api.ts` is the one API function (docs/05, Components). `src/api/router.ts` holds a fixed route table and serves only the routes that have landed: list, create, get, replace and delete for `/shelf`, `/brews` and `/recipes` (task M1-T5), which share one implementation (`src/api/resources.ts`), the bean catalogue: `GET /barcodes/{barcode}`, `POST /beans` and `GET /beans/{bean_id}` (task M1-T4a, `src/api/catalogue.ts`), and the Open Food Facts lookup `GET /barcodes/{barcode}/open_food_facts` (task M1-T4b, `src/api/open-food-facts.ts`).
 
 For every request, in this order:
 
-1. **Route.** Method and `rawPath` against the table. No match is 404 with no body. That includes contract routes whose tasks have not landed yet (the Open Food Facts lookup, catalogue images, profile, export, account): the contract declares no 501, so they are 404 until their task adds them to the table. `/health` is its own Lambda (ADR 0007). A method a path does not declare is 404 too (the contract has no 405). Matching uses `rawPath`, so the HTTP API must use the `$default` stage.
+1. **Route.** Method and `rawPath` against the table. No match is 404 with no body. That includes contract routes whose tasks have not landed yet (catalogue images, profile, export, account): the contract declares no 501, so they are 404 until their task adds them to the table. `/health` is its own Lambda (ADR 0007). A method a path does not declare is 404 too (the contract has no 405). Matching uses `rawPath`, so the HTTP API must use the `$default` stage.
 2. **Caller.** `userIdFromEvent`; none is 401.
 3. **Input**, 400 on any failure: path ids against the contract's `Id` pattern, a `{barcode}` against `Barcode` and its GS1 check digit; the query (only `cursor` and `limit`, each at most once, and only on lists; `limit` is checked against `LimitQuery` by hand because parameters are not generated, and a test compares the two); the body (below).
-4. **Operation.** Repository errors map to 404 (not in the caller's partition; a missing shelf entry; a missing bean, or a rejected one named newly by a shelf entry write, M1-T11), 409 (`DELETE /shelf/{id}` while brews reference it, ADR 0012; `PUT /shelf/{id}` that would change `bean_id` while brews reference it, D14; `POST /beans` for a barcode that already points to a bean, `BarcodeTakenError`, or with `open_food_facts_confirmed`, `OpenFoodFactsHitMissingError`) and 500 (including `CorruptItemError`). A write that raced another write (a changed condition, or a transaction cancelled with `TransactionConflict` by a concurrent one on the same shelf entry) is tried up to three times in all, with 10 to 100 ms of random wait.
+4. **Operation.** Repository errors map to 404 (not in the caller's partition; a missing shelf entry; a missing bean, or a rejected one named newly by a shelf entry write, M1-T11), 409 (`DELETE /shelf/{id}` while brews reference it, ADR 0012; `PUT /shelf/{id}` that would change `bean_id` while brews reference it, D14; `POST /beans` for a barcode that already points to a bean, `BarcodeTakenError`, or with `open_food_facts_confirmed` but no cached hit, `OpenFoodFactsHitMissingError`) and 500 (including `CorruptItemError`). A write that raced another write (a changed condition, or a transaction cancelled with `TransactionConflict` by a concurrent one on the same shelf entry) is tried up to three times in all, with 10 to 100 ms of random wait.
 
-Every error has no body, so no error echoes input. One log line per request: `operation`, `status`, `request_id` and, on failure, the error class name. Never a body, header, query, path parameter (barcode or id), token or user id.
+Every error has no body, so no error echoes input. One log line per request: `operation`, `status`, `request_id` and, on failure, the error class name (the Open Food Facts lookup adds a fixed `reason` code to its 503). Never a body, header, query, path parameter (barcode or id), token, user id or Open Food Facts text.
 
 ### Bean catalogue (M1-T4a)
 
@@ -86,15 +87,39 @@ The catalogue is shared: the caller only has to be signed in, and the user id is
 | Route | Answers |
 | --- | --- |
 | `GET /barcodes/{barcode}` | 200 with the `Bean` the canonical EAN-13 points to (UPC-A `036000291452` and EAN-13 `0036000291452` are one product). 404, no body, for an unknown barcode or one whose bean was rejected: the app then asks `GET /barcodes/{barcode}/open_food_facts` (M1-T4b). 400 for anything but 12 or 13 digits with a correct check digit, before the table is read. 400 for a query or a body. |
-| `POST /beans` | 201 with the new unverified `Bean`: `verified: false`, every value of `attributes` in `picked_attributes` (source "user"), `operator_attributes` `{}`, `open_food_facts_match: false`, no `open_food_facts` group, `barcode` in its 13-digit form. The body is `BeanCreate` (unknown properties rejected) checked against the `vocabulary_version` it sends, so `origin`, `species` and `variety` need version 2; a barcode in the body must have a correct check digit. Bad body or a query: 400. Barcode already taken (either form): 409 (`BarcodeTakenError`), not retried. A raced write (`WriteConflictError`) is retried like the other writes. |
+| `GET /barcodes/{barcode}/open_food_facts` | See Open Food Facts lookup (M1-T4b) below. |
+| `POST /beans` | 201 with the new unverified `Bean`: `verified: false`, every value of `attributes` in `picked_attributes` (source "user"), `operator_attributes` `{}`, `barcode` in its 13-digit form; `open_food_facts_match: false` and no `open_food_facts` group, unless `open_food_facts_confirmed: true` copied a cached hit (below). The body is `BeanCreate` (unknown properties rejected) checked against the `vocabulary_version` it sends, so `origin`, `species` and `variety` need version 2; a barcode in the body must have a correct check digit. Bad body or a query: 400. Barcode already taken (either form): 409 (`BarcodeTakenError`), not retried. A raced write (`WriteConflictError`) is retried like the other writes. |
 | `GET /beans/{bean_id}` | 200 with the `Bean`, verified or unverified. 404 for an unknown or a **rejected** bean. 400 for a bad id, a query or a body. |
 
 Decisions (task M1-T4a):
 
 - **A rejected bean is 404**, by id and by barcode, as if it did not exist. Rejecting deletes its barcode pointer (The repository), so a barcode lookup finds nothing and a scan can submit a fresh entry; a read that races the reject still sees the rejected status and answers 404. The `META` item stays for the operator.
 - **An unverified bean is returned to every signed-in user**: the catalogue is shared, and F1 and ADR 0005 show entries right away while they wait for the operator.
-- **`open_food_facts_confirmed: true` is 409** for now, before the table is touched: the server has no Open Food Facts cache until M1-T4b, so there is never a cached hit to copy, which is the contract's 409 case. `false` is the same as leaving it out. M1-T4b replaces this with a cache read.
+- **`open_food_facts_confirmed: true`** reads the server's Open Food Facts cache (M1-T4b, below). `false` is the same as leaving it out.
 - **A pointer to a missing bean is 500** (`CorruptItemError`), not 404: a 404 would send the app to the Open Food Facts lookup and then into a 409 it cannot get out of.
+
+### Open Food Facts lookup (M1-T4b)
+
+`GET /barcodes/{barcode}/open_food_facts` (`src/api/open-food-facts.ts`, docs/05 Barcode lookup, ADR 0005). In this order:
+
+| Step | Answer | Counts against the cap |
+| --- | --- | --- |
+| Malformed barcode, bad check digit, a query or a body | 400, nothing read | no |
+| The barcode points to a bean that is not rejected | 409 | no |
+| Cached hit (`BARCODE#<ean>` / `OFF`) | 200 with the stored `OpenFoodFactsProduct` | no |
+| Cached miss whose `expires_at` is still ahead | 404 | no |
+| No valid `OFF_CONTACT`, or an invalid `OFF_LOOKUP_CAP` | 503, no outbound call | no |
+| Caller's cap for the UTC day used up | 429, no outbound call | no (nothing is written) |
+| Fetch: a product with a name or brand | cached as a hit, 200 | yes |
+| Fetch: no product, or one without name and brand | cached as a miss for 30 days, 404 | yes |
+| Fetch: timeout, network error, redirect, other status, bad body | 503, nothing cached | yes |
+
+- **The client** (`src/openfoodfacts/client.ts`) uses Node's built-in fetch (no dependency) and one URL shape, `https://world.openfoodfacts.org/api/v2/product/<EAN-13>.json?fields=product_name,brands`, built from a constant origin and the canonical barcode. User-Agent `Cupmark/<version> (<contact>)`, with the version from `package.json` (a test keeps them equal). `redirect: 'manual'`: a 3xx, a response marked redirected or naming another URL is 503, so no other host is reached. A 3 s deadline covers the whole exchange, also a fetch or body that ignores the abort signal; the body is read up to 64 KiB and must be `application/json` and UTF-8. Only `status`, `product_name` and `brands` are read.
+- **Text** (`src/openfoodfacts/text.ts`): NFC; white-space controls (tab, CR, LF, NEL, U+2028, U+2029) become a space; other control characters (Cc), lone surrogates, U+FEFF and the bidi embedding, override and isolate controls are removed; runs of white space become one space; trimmed; cut to 150 (name) and 100 (brand) code points at a grapheme boundary where possible; empty is absent. The brand is the first non-empty entry of `brands`. The text is never logged and never in an error.
+- **The cache** (repository `getOpenFoodFactsCache`, `cacheOpenFoodFactsResult`): a hit holds `product` (name, brand) and `fetchedAt`, and never expires; a miss holds `fetchedAt` and `expires_at` (epoch seconds, now plus 30 days). Reads treat a miss at or past `expires_at` as absent, because the TTL delete comes later. The put is conditional on no item or a miss, so a hit is never overwritten; if it already exists, the stored hit is the answer (two racing fetches answer the same).
+- **The cap** (repository `countLookup`): `USER#<sub>` / `LOOKUPS#<YYYY-MM-DD UTC>`, `ADD lookups 1` with the condition `attribute_not_exists(lookups) OR lookups < :cap`, and `expires_at` the start of the day plus 2 days. One write per counted fetch, atomic under parallel calls (tested with 40 at once on DynamoDB Local). Why cache reads and the 400 and 409 are not counted: docs/05, Barcode lookup.
+- **`POST /beans` with `open_food_facts_confirmed: true`** reads the cache for the canonical barcode. A hit is copied into the bean's `open_food_facts` group (the group's name is the source of each field in it, D5) with `open_food_facts_match: true`, next to the user's `picked_attributes`. No entry, or a miss (expired or not), is 409 `OpenFoodFactsHitMissingError` and nothing is written. Hits never expire and are never overwritten, so the read and the bean write need no transaction. The repository refuses Open Food Facts data on a bean without a barcode or without the match flag.
+- `image_id` is never set yet: the image copy is M1-T4c.
 
 ### Body validation
 
@@ -113,7 +138,11 @@ The contract's `Cursor` is HMAC-signed (`src/api/cursor.ts`): `base64url(HMAC-SH
 | Variable | Value |
 | --- | --- |
 | `TABLE_NAME` | `cupmark-<stage>-main`. Missing: every request is 500. |
+| `OFF_CONTACT` | The operator mailbox named in the Open Food Facts User-Agent, an e-mail address (for example a project ops mailbox). Plain configuration, not a secret, never in the repo and not in Secrets Manager. Missing or not an e-mail address: the lookup answers from the cache only, and is 503 with no outbound call otherwise. |
+| `OFF_LOOKUP_CAP` | Open Food Facts fetches per user and UTC day. Optional, default 50; a plain integer from 0 (no fetches) to 10000. Anything else: the lookup is 503 before it counts or fetches. |
 | `CURSOR_KEY_PARAMETER` | Name of a Parameter Store **SecureString** under `/cupmark/` (for example `/cupmark/<stage>/cursor-key`), holding standard base64 of at least 32 random bytes (for example `openssl rand -base64 32`). Missing, unreadable, not a SecureString or too short: list routes are 500 and no cursor is accepted or issued (fail closed); other routes work. A failed read is retried after 60 s at the earliest. |
+
+**Follow-up for infra (M1-T2, `infra/src/api.ts`):** `OFF_CONTACT` and `OFF_LOOKUP_CAP` are not set by the stack yet, so a deployed lookup answers 503 for every uncached barcode until they are. The API function needs outbound HTTPS to `world.openfoodfacts.org` (it is not in a VPC, so it has it; no NAT gateway). Its 10 s timeout covers the 3 s fetch.
 
 The API role needs `ssm:GetParameter` on exactly that parameter's ARN; the AWS-managed key `alias/aws/ssm` needs no extra grant. The key is read once per cold start and kept in memory only (ADR 0013). Its value is created by a human and never passes through the repo or CI. Tests generate their own key.
 

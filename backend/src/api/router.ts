@@ -8,8 +8,8 @@
 // Order of checks for every request:
 // 1. Route: method and `rawPath` against the table. No match is 404 with no
 //    body. That includes the contract routes whose tasks have not landed yet
-//    (catalogue images, profile, export, account; the
-//    contract declares no 501 for them), /health (its own Lambda, ADR 0007), a
+//    (catalogue images, profile, export, account; the contract declares no
+//    501 for them), /health (its own Lambda, ADR 0007), a
 //    trailing slash and any method a path does not declare (the contract
 //    declares no 405).
 // 2. Caller: `userIdFromEvent`, the token subject only. None is 401.
@@ -24,11 +24,15 @@
 //    Food Facts hit the server has not cached), 400 (a cursor the repository
 //    refuses) and 500 for anything else. A write that raced another write is
 //    tried up to three times in all, with a short random wait in between.
+//    The Open Food Facts lookup answers 404, 409, 429 and 503 itself
+//    (open-food-facts.ts) and logs a fixed error name and, for 503, a reason
+//    code.
 //
 // Matching uses `rawPath`, so the API must use the `$default` stage (no stage
 // prefix in the path). Every response except a 2xx with content has no body.
 // One log line per request: operation, status, request id and, on failure,
-// the error class name. Never a body, token, header, query, barcode or user id.
+// the error class name (and a fixed reason code where there is one). Never a
+// body, token, header, query, barcode, user id or Open Food Facts text.
 import type { z } from 'zod';
 import type { UserId } from '../auth/user-id.ts';
 import { userIdFromEvent } from '../auth/user-id.ts';

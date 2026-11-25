@@ -243,6 +243,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
 - acceptance:
   - A workflow deploys to dev through OIDC on merge to `main`, and to prod only through a manually approved environment.
   - A smoke test calls the health route after deploy.
+  - From M1-T4b: the API function gets `OFF_CONTACT` (the operator's mailbox, as a plain environment variable) and optionally `OFF_LOOKUP_CAP`. Without them, uncached Open Food Facts lookups answer 503.
 
 ### M1-T8 Contract update for D7 to D9
 - status: done

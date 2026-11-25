@@ -18,7 +18,7 @@ import { InvalidKeyError } from '../../src/repository/index.ts';
 const CONTACT = 'operator@example.org';
 const EAN13 = '4006381333931';
 const UPC_A = '036000291452';
-const EXPECTED_URL = `https://world.openfoodfacts.org/api/v2/product/${EAN13}.json?fields=product_name%2Cbrands`;
+const EXPECTED_URL = `https://world.openfoodfacts.org/api/v2/product/${EAN13}.json?fields=product_name,brands`;
 
 interface Recorded {
   readonly url: string;
@@ -55,7 +55,7 @@ describe('request', () => {
     expect(calls[0]?.url).toBe(EXPECTED_URL);
     expect(new URL(calls[0]?.url ?? '').origin).toBe(OPEN_FOOD_FACTS_ORIGIN);
     expect(calls[0]?.init.method).toBe('GET');
-    expect(productUrl(UPC_A)).toBe(`https://world.openfoodfacts.org/api/v2/product/0${UPC_A}.json?fields=product_name%2Cbrands`);
+    expect(productUrl(UPC_A)).toBe(`https://world.openfoodfacts.org/api/v2/product/0${UPC_A}.json?fields=product_name,brands`);
   });
 
   it('sends User-Agent Cupmark/<version> (<contact>) and no other identifying header', async () => {
