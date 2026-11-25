@@ -353,13 +353,30 @@ final class LabelPhotoEncoderTests: XCTestCase {
         }
     }
 
-    /// A JPEG of `image` with an XMP packet (`xmp:CreatorTool`).
+    /// The XMP packet the fixture carries; its namespace and value are what the tests look for.
+    static let xmpPacket = """
+    <x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">\
+    <rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:CreatorTool="Cupmark probe"/>\
+    </rdf:RDF></x:xmpmeta>
+    """
+
+    /// A JPEG of `image` with an XMP packet (`xmp:CreatorTool`). The APP1 XMP segment is written
+    /// into the bytes right after SOI, so the fixture does not depend on whether ImageIO chooses
+    /// to write XMP it is given.
     static func jpegWithXMP(_ image: CGImage) throws -> Data {
-        let metadata = CGImageMetadataCreateMutable()
-        XCTAssertTrue(CGImageMetadataSetValueWithPath(metadata, nil, "xmp:CreatorTool" as CFString, "Cupmark probe" as CFString))
-        return try writeJPEG { destination in
-            CGImageDestinationAddImageAndMetadata(destination, image, metadata, nil)
+        let plain = try writeJPEG { destination in
+            CGImageDestinationAddImage(destination, image, nil)
         }
+        var payload = Data("http://ns.adobe.com/xap/1.0/".utf8)
+        payload.append(0)
+        payload.append(Data(xmpPacket.utf8))
+        let length = payload.count + 2
+        var segment = Data([0xFF, 0xE1, UInt8((length >> 8) & 0xFF), UInt8(length & 0xFF)])
+        segment.append(payload)
+        var jpeg = Data(plain.prefix(2))
+        jpeg.append(segment)
+        jpeg.append(plain.dropFirst(2))
+        return jpeg
     }
 
     private static func writeJPEG(add: (CGImageDestination) -> Void) throws -> Data {
@@ -380,14 +397,10 @@ final class LabelPhotoEncoderTests: XCTestCase {
         return try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any])
     }
 
+    /// Whether the bytes still carry the fixture's XMP: its namespace or its value.
     static func hasXMPCreatorTool(_ jpeg: Data) -> Bool {
-        guard
-            let source = CGImageSourceCreateWithData(jpeg as CFData, nil),
-            let metadata = CGImageSourceCopyMetadataAtIndex(source, 0, nil)
-        else {
-            return false
-        }
-        return CGImageMetadataCopyTagWithPath(metadata, nil, "xmp:CreatorTool" as CFString) != nil
+        jpeg.range(of: Data("http://ns.adobe.com/xap/1.0/".utf8)) != nil
+            || jpeg.range(of: Data("Cupmark probe".utf8)) != nil
     }
 
     static func decode(_ jpeg: Data) throws -> CGImage {
