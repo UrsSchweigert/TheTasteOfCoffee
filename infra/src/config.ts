@@ -42,3 +42,45 @@ export function isStageName(value: unknown): value is StageName {
 export function stackName(stage: StageName, part: string): string {
   return `${NAME_PREFIX}${stage}-${part}`;
 }
+
+/**
+ * Context key of the operator mailbox for the Open Food Facts User-Agent (docs/05,
+ * Barcode lookup): `-c cupmark:offContact=<address>`. It becomes the API function's
+ * `OFF_CONTACT`. Not a secret, but kept out of the repository: the deploy workflow
+ * passes it from the GitHub environment secret `OFF_CONTACT`, which GitHub masks in the
+ * public log (ADR 0019).
+ */
+export const OFF_CONTACT_CONTEXT_KEY = 'cupmark:offContact';
+
+/** Optional: `-c cupmark:offLookupCap=<0..10000>`, the API function's `OFF_LOOKUP_CAP`. */
+export const OFF_LOOKUP_CAP_CONTEXT_KEY = 'cupmark:offLookupCap';
+
+/**
+ * Deploy mode (ADR 0019): `-c cupmark:deploy=<stage>`, set only by
+ * scripts/deploy/deploy-stage.sh. With it, the synth fails unless `-c stage=` names the
+ * same stage, `cupmark:<stage>:account` is given, and `cupmark:offContact` is valid.
+ * Without it, a synth is "not for deploy": the contact may be missing, and then the API
+ * function has no `OFF_CONTACT` (uncached lookups answer 503).
+ */
+export const DEPLOY_CONTEXT_KEY = 'cupmark:deploy';
+
+/**
+ * The backend's own rule for OFF_CONTACT (backend/src/openfoodfacts/client.ts,
+ * isValidContact): an e-mail address of at most 254 characters, so no white space,
+ * parentheses, quotes or control characters can reach the User-Agent header.
+ */
+const OFF_CONTACT = /^[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63})+$/;
+
+export function isValidOffContact(value: unknown): value is string {
+  return typeof value === 'string' && value.length <= 254 && OFF_CONTACT.test(value);
+}
+
+/** The backend's MAX_LOOKUP_CAP (backend/src/api/config.ts, lookupCapFromEnv). */
+export const MAX_OFF_LOOKUP_CAP = 10_000;
+
+/** The cap as the backend accepts it, a plain integer 0..10000 as a string, or undefined. */
+export function offLookupCap(value: unknown): string | undefined {
+  const text = typeof value === 'number' ? String(value) : value;
+  if (typeof text !== 'string' || !/^(?:0|[1-9][0-9]{0,4})$/.test(text)) return undefined;
+  return Number(text) <= MAX_OFF_LOOKUP_CAP ? text : undefined;
+}

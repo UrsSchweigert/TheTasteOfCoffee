@@ -238,7 +238,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - The boundary policy lacks `s3:DeleteObject`, `s3:DeleteObjectVersion` and `s3:ListBucketVersions` on the photo bucket. The policy change goes into `scripts/aws/`, and the owner re-applies it before deploy.
 
 ### M1-T7 Deploy pipeline to dev
-- status: todo
+- status: blocked (pipeline merged; waiting for the owner's setup issue, the first approved dev deploy and the post-deploy checks)
 - owner: infra-engineer
 - depends: M1-T2, M0-T5, M1-T9
 - needs: human (approve the first deployment)

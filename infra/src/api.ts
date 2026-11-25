@@ -6,7 +6,7 @@
 // The functions run outside any VPC, so they reach Open Food Facts over HTTPS through
 // Lambda's own internet access: no VPC, no NAT gateway, no fixed fee.
 
-import { CfnOutput, Duration, Stack } from 'aws-cdk-lib';
+import { Annotations, CfnOutput, Duration, Stack } from 'aws-cdk-lib';
 import * as apigwv2 from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpUserPoolAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
@@ -75,11 +75,31 @@ export const STAGE_LIMITS: Readonly<Record<StageName, StageLimits>> = {
   prod: { throttleRate: 25, throttleBurst: 50, apiConcurrency: 10, healthConcurrency: 2 },
 };
 
+/**
+ * The stack output with the API's base URL. Its logical id is pinned, because the deploy
+ * workflow's smoke test and scripts/smoke/ read it by this key (M1-T7).
+ */
+export const API_URL_OUTPUT = 'ApiUrl';
+
+/**
+ * Open Food Facts settings of the API function (ADR 0019), from context. Both are
+ * validated in app.ts with the backend's own rules; a missing one is left out of the
+ * environment, and the backend then answers uncached lookups with 503 (contact) or uses
+ * its default cap of 50.
+ */
+export interface OpenFoodFactsSettings {
+  /** `OFF_CONTACT`: the operator mailbox for the User-Agent. */
+  readonly contact?: string | undefined;
+  /** `OFF_LOOKUP_CAP`: fetches per user and UTC day, as a decimal string. */
+  readonly lookupCap?: string | undefined;
+}
+
 export interface CupmarkApiProps {
   readonly stage: StageName;
   readonly data: CupmarkData;
   readonly userPool: cognito.IUserPool;
   readonly appClient: cognito.IUserPoolClient;
+  readonly openFoodFacts: OpenFoodFactsSettings;
 }
 
 
@@ -121,6 +141,9 @@ export class CupmarkApi extends Construct {
         // Cognito user is deleted from this pool.
         DELETION_LOG_BUCKET: data.deletionLogBucket.bucketName,
         USER_POOL_ID: props.userPool.userPoolId,
+        // ADR 0019: from context, kept out of the repository; only when given.
+        ...(props.openFoodFacts.contact === undefined ? {} : { OFF_CONTACT: props.openFoodFacts.contact }),
+        ...(props.openFoodFacts.lookupCap === undefined ? {} : { OFF_LOOKUP_CAP: props.openFoodFacts.lookupCap }),
       },
       statements: [
         new iam.PolicyStatement({
@@ -234,6 +257,14 @@ export class CupmarkApi extends Construct {
       });
     }
 
-    new CfnOutput(this, 'ApiUrl', { value: this.httpApi.apiEndpoint, description: 'HTTP API base URL ($default stage)' });
+    const apiUrl = new CfnOutput(this, 'ApiUrl', { value: this.httpApi.apiEndpoint, description: 'HTTP API base URL ($default stage)' });
+    apiUrl.overrideLogicalId(API_URL_OUTPUT);
+
+    if (props.openFoodFacts.contact === undefined) {
+      Annotations.of(this).addWarningV2(
+        'cupmark:offContactMissing',
+        'Not for deploy: no -c cupmark:offContact, so the API function has no OFF_CONTACT and uncached Open Food Facts lookups answer 503. Deploys run through the deploy workflow (ADR 0019).',
+      );
+    }
   }
 }

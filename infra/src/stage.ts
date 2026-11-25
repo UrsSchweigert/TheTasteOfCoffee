@@ -11,6 +11,7 @@ import {
 } from './config.ts';
 import type { StageName } from './config.ts';
 import { CupmarkApi } from './api.ts';
+import type { OpenFoodFactsSettings } from './api.ts';
 import { CupmarkData } from './data.ts';
 import { CupmarkIdentity } from './identity.ts';
 
@@ -18,6 +19,8 @@ export interface CupmarkStageProps {
   readonly stage: StageName;
   /** Target account id, or undefined for an account-agnostic synth. */
   readonly account?: string | undefined;
+  /** OFF_CONTACT and OFF_LOOKUP_CAP of the API function (ADR 0019); none by default. */
+  readonly openFoodFacts?: OpenFoodFactsSettings;
 }
 
 /**
@@ -75,6 +78,7 @@ export class CupmarkStage extends Stage {
       data: this.data,
       userPool: this.identity.userPool,
       appClient: this.identity.appClient,
+      openFoodFacts: props.openFoodFacts ?? {},
     });
 
     // Resource tags (in the template), on top of the stack tags above.

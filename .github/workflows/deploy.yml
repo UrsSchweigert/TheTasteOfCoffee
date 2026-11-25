@@ -1,0 +1,286 @@
+# Deploys the stage stacks (backlog M1-T7, ADR 0019). infra/README.md, "Deploy
+# pipeline", has the owner's setup, the first deploy and rollback.
+#
+# - dev: after CI succeeded for a push to main (workflow_run), the commit CI tested.
+# - prod: only by hand (workflow_dispatch, stage prod) from main, in the environment
+#   `prod`, whose required reviewer is the owner.
+# - Either stage, by hand: an earlier commit of main, for a rollback.
+#
+# Why workflow_run and not a reusable CI with `needs` (ADR 0019): CI runs once per push,
+# not twice (its macOS job included); ci.yml stays read-only with no secrets and no
+# id-token; and the deploy job never runs in the same workflow as untrusted pull request
+# code. workflow_run runs the deploy.yml of main, so the `gate` job checks, before any
+# AWS step, that the CI run was a `push` to `main` of this repository, from ci.yml, that
+# succeeded; a CI run of a fork's pull request (whose branch may also be called main) has
+# the event pull_request and never deploys. The deploy then checks out exactly that CI
+# run's head_sha, and skips it if main has moved on meanwhile (the newer commit deploys
+# after its own CI), so an older commit never overwrites a newer one.
+#
+# Strict file in scripts/check-workflows.mjs: actions pinned to a commit SHA with a
+# version comment, no token scopes at the top level, checkout without persisted
+# credentials. Only the two deploy jobs grant a write scope, id-token: write, which
+# configure-aws-credentials needs to fetch the GitHub OIDC token; they declare the literal
+# environments dev and prod, the only `sub` values CupmarkGitHubDeploy trusts (ADR 0018).
+# No npm cache: a deploy installs from the lockfiles without a shared cache.
+#
+# Off switch: nothing deploys unless the repository variable CUPMARK_DEPLOY_ENABLED is
+# exactly `true` (Settings -> Secrets and variables -> Actions -> Variables). Without it
+# the gate ends successfully with a notice and no deploy job runs. The owner sets it once
+# the prerequisites in infra/README.md ("Deploy pipeline") are done.
+name: Deploy
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: Stage to deploy (prod waits for the owner's approval)
+        type: choice
+        options: [dev, prod]
+        default: dev
+        required: true
+      commit:
+        description: Full commit SHA on main to deploy, for a rollback. Empty is the tip of main.
+        type: string
+        default: ''
+        required: false
+permissions: {}
+defaults:
+  run:
+    shell: bash
+jobs:
+  # Decides whether to deploy, which stage and which commit. No AWS, no checkout.
+  # The GitHub API calls read only: the tip of main, whether a commit is on main, and
+  # whether CI succeeded for it.
+  gate:
+    name: gate
+    if: >-
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+      || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      deploy: ${{ steps.decide.outputs.deploy }}
+      stage: ${{ steps.decide.outputs.stage }}
+      sha: ${{ steps.decide.outputs.sha }}
+    steps:
+      - name: Decide what to deploy
+        id: decide
+        env:
+          # The off switch, from a repository variable only, never from an input.
+          DEPLOY_ENABLED: ${{ vars.CUPMARK_DEPLOY_ENABLED }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RUN_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+          RUN_PATH: ${{ github.event.workflow_run.path }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_STAGE: ${{ inputs.stage }}
+          INPUT_COMMIT: ${{ inputs.commit }}
+          DISPATCH_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          sha_ok() { [[ "$1" =~ ^[0-9a-f]{40}$ ]]; }
+          refuse() { echo "Not deploying: $1" >&2; exit 1; }
+          decide() { # deploy stage sha reason
+            echo "deploy=$1 stage=$2 sha=$3 ($4)"
+            { echo "deploy=$1"; echo "stage=$2"; echo "sha=$3"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          if [ "${DEPLOY_ENABLED:-}" != "true" ]; then
+            echo "::notice title=Deploys are off::The repository variable CUPMARK_DEPLOY_ENABLED is not 'true', so nothing is deployed. To turn deploys on, set it to true under Settings > Secrets and variables > Actions > Variables, once the prerequisites in infra/README.md (Deploy pipeline) are done."
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          case "$EVENT_NAME" in
+            workflow_run)
+              [ "$RUN_CONCLUSION" = "success" ] || refuse "CI concluded $RUN_CONCLUSION"
+              # A pull request's CI run (a fork's branch may also be called main) is not a
+              # deploy: skip it quietly, without a red run.
+              if [ "$RUN_EVENT" != "push" ]; then
+                echo "deploy=false (the CI run's event is $RUN_EVENT, not push: nothing to deploy)"
+                echo "deploy=false" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              [ "$RUN_BRANCH" = "main" ] || refuse "the CI run's branch is $RUN_BRANCH, not main"
+              [ "$RUN_REPO" = "$REPO" ] || refuse "the CI run is from $RUN_REPO, not $REPO"
+              [ "$RUN_PATH" = ".github/workflows/ci.yml" ] || refuse "the run is from $RUN_PATH, not ci.yml"
+              sha_ok "$RUN_SHA" || refuse "bad head_sha"
+              tip="$(gh api "repos/$REPO/git/ref/heads/main" --jq .object.sha)"
+              sha_ok "$tip" || refuse "could not read the tip of main"
+              if [ "$tip" != "$RUN_SHA" ]; then
+                decide false dev "$RUN_SHA" "superseded: main is at $tip, which deploys after its own CI"
+              fi
+              decide true dev "$RUN_SHA" "CI passed for the push to main"
+              ;;
+            workflow_dispatch)
+              [ "$REF" = "refs/heads/main" ] || refuse "dispatched from $REF; only main deploys"
+              case "$INPUT_STAGE" in dev|prod) ;; *) refuse "unknown stage $INPUT_STAGE" ;; esac
+              sha="${INPUT_COMMIT:-$DISPATCH_SHA}"
+              sha_ok "$sha" || refuse "the commit must be a full 40-character lower-case SHA"
+              # base...head: identical or ahead means the commit is main or an ancestor of it.
+              status="$(gh api "repos/$REPO/compare/$sha...main" --jq .status)"
+              case "$status" in identical|ahead) ;; *) refuse "$sha is not on main ($status)" ;; esac
+              passed="$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$sha&event=push&status=success&per_page=1" --jq .total_count)"
+              [ "${passed:-0}" -ge 1 ] || refuse "CI has not succeeded for a push of $sha to main"
+              decide true "$INPUT_STAGE" "$sha" "dispatched; on main and CI passed"
+              ;;
+            *)
+              refuse "event $EVENT_NAME"
+              ;;
+          esac
+
+  deploy-dev:
+    name: deploy dev
+    needs: gate
+    if: needs.gate.outputs.deploy == 'true' && needs.gate.outputs.stage == 'dev'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: dev
+    # One dev deploy at a time. A running deploy is never cancelled (a half-finished
+    # CloudFormation update would roll back); a newer waiting run replaces an older one.
+    concurrency:
+      group: deploy-dev
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      # "Re-run failed jobs" reuses the gate's old outputs. So check the switch again,
+      # and for workflow_run that the commit is still the tip of main, before anything
+      # else and before credentials. Use "Re-run all jobs" to run the gate again.
+      - name: Re-check the gate
+        env:
+          DEPLOY_ENABLED: ${{ vars.CUPMARK_DEPLOY_ENABLED }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          SHA: ${{ needs.gate.outputs.sha }}
+        run: |
+          set -euo pipefail
+          if [ "${DEPLOY_ENABLED:-}" != "true" ]; then
+            echo "::error title=Deploys are off::CUPMARK_DEPLOY_ENABLED is not 'true'; refusing to deploy."
+            exit 1
+          fi
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::The gate gave no commit."; exit 1; }
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            tip="$(gh api "repos/$REPO/git/ref/heads/main" --jq .object.sha)"
+            if [ "$tip" != "$SHA" ]; then
+              echo "::error title=Superseded::main is at $tip, not $SHA; the newer commit deploys after its own CI. Use Re-run all jobs, never Re-run failed jobs."
+              exit 1
+            fi
+          fi
+          echo "Still deploying $SHA."
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      # Installs run before any AWS credentials exist in the job.
+      - name: Install backend
+        working-directory: backend
+        run: npm ci
+      - name: Build backend bundles
+        working-directory: backend
+        run: npm run build
+      - name: Install infra
+        working-directory: infra
+        run: npm ci
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: eu-central-1
+          role-session-name: cupmark-deploy-dev
+      - name: Diff and deploy cupmark-dev-core
+        env:
+          # An environment secret: GitHub masks it in the log. A variable would be
+          # printed in clear in the step's env header.
+          OFF_CONTACT: ${{ secrets.OFF_CONTACT }}
+          OFF_LOOKUP_CAP: ${{ vars.OFF_LOOKUP_CAP }}
+        run: scripts/deploy/deploy-stage.sh dev
+      - name: Smoke test GET /health
+        run: scripts/smoke/health.sh dev
+
+  deploy-prod:
+    name: deploy prod
+    needs: gate
+    if: github.event_name == 'workflow_dispatch' && needs.gate.outputs.deploy == 'true' && needs.gate.outputs.stage == 'prod'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: prod
+    # One prod deploy at a time. A running deploy is never cancelled (a half-finished
+    # CloudFormation update would roll back); a newer waiting run replaces an older one.
+    concurrency:
+      group: deploy-prod
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      # "Re-run failed jobs" reuses the gate's old outputs. So check the switch again,
+      # and for workflow_run that the commit is still the tip of main, before anything
+      # else and before credentials. Use "Re-run all jobs" to run the gate again.
+      - name: Re-check the gate
+        env:
+          DEPLOY_ENABLED: ${{ vars.CUPMARK_DEPLOY_ENABLED }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          SHA: ${{ needs.gate.outputs.sha }}
+        run: |
+          set -euo pipefail
+          if [ "${DEPLOY_ENABLED:-}" != "true" ]; then
+            echo "::error title=Deploys are off::CUPMARK_DEPLOY_ENABLED is not 'true'; refusing to deploy."
+            exit 1
+          fi
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::The gate gave no commit."; exit 1; }
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            tip="$(gh api "repos/$REPO/git/ref/heads/main" --jq .object.sha)"
+            if [ "$tip" != "$SHA" ]; then
+              echo "::error title=Superseded::main is at $tip, not $SHA; the newer commit deploys after its own CI. Use Re-run all jobs, never Re-run failed jobs."
+              exit 1
+            fi
+          fi
+          echo "Still deploying $SHA."
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      # Installs run before any AWS credentials exist in the job.
+      - name: Install backend
+        working-directory: backend
+        run: npm ci
+      - name: Build backend bundles
+        working-directory: backend
+        run: npm run build
+      - name: Install infra
+        working-directory: infra
+        run: npm ci
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: eu-central-1
+          role-session-name: cupmark-deploy-prod
+      - name: Diff and deploy cupmark-prod-core
+        env:
+          # An environment secret: GitHub masks it in the log. A variable would be
+          # printed in clear in the step's env header.
+          OFF_CONTACT: ${{ secrets.OFF_CONTACT }}
+          OFF_LOOKUP_CAP: ${{ vars.OFF_LOOKUP_CAP }}
+        run: scripts/deploy/deploy-stage.sh prod
+      - name: Smoke test GET /health
+        run: scripts/smoke/health.sh prod
