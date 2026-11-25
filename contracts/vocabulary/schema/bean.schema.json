@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bean.schema.json",
+  "title": "Bean vocabulary: processes and roast levels",
+  "type": "object",
+  "required": ["version", "status", "processes", "roast_levels"],
+  "properties": {
+    "version": { "$ref": "common.schema.json#/$defs/version" },
+    "status": { "$ref": "common.schema.json#/$defs/status" },
+    "processes": { "$ref": "common.schema.json#/$defs/id_list" },
+    "roast_levels": { "$ref": "common.schema.json#/$defs/id_list" }
+  },
+  "additionalProperties": false
+}

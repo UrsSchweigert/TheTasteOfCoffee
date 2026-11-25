@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "common.schema.json",
+  "title": "Shared definitions for Cupmark vocabulary files",
+  "$defs": {
+    "version": { "type": "integer", "minimum": 1 },
+    "status": { "enum": ["draft", "published"] },
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9]*(_[a-z0-9]+)*$", "maxLength": 40 },
+    "id_item": {
+      "type": "object",
+      "required": ["id"],
+      "properties": { "id": { "$ref": "#/$defs/id" } },
+      "additionalProperties": false
+    },
+    "id_list": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/id_item" }
+    },
+    "range": {
+      "type": "object",
+      "required": ["minimum", "maximum", "multipleOf"],
+      "properties": {
+        "minimum": { "type": "number" },
+        "maximum": { "type": "number" },
+        "multipleOf": { "type": "number", "exclusiveMinimum": 0 }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -15,7 +15,7 @@ Milestones M0 and M1 are broken into tasks. M2 to M6 are planned with `/plan-mil
 Goal: the repo builds, tests and checks itself; the shared contract exists.
 
 ### M0-T1 Vocabulary v1
-- status: in-progress
+- status: done
 - owner: contract-keeper
 - depends: none
 - implements: docs/04-specification.md, sections Input model, F2, F3

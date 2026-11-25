@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "brew.schema.json",
+  "title": "Brew log vocabulary: methods, water, milk and numeric ranges",
+  "type": "object",
+  "required": ["version", "status", "methods", "water_types", "milk_types", "water_temp_special", "ranges"],
+  "properties": {
+    "version": { "$ref": "common.schema.json#/$defs/version" },
+    "status": { "$ref": "common.schema.json#/$defs/status" },
+    "methods": { "$ref": "common.schema.json#/$defs/id_list" },
+    "water_types": { "$ref": "common.schema.json#/$defs/id_list" },
+    "milk_types": { "$ref": "common.schema.json#/$defs/id_list" },
+    "water_temp_special": { "$ref": "common.schema.json#/$defs/id_list" },
+    "ranges": {
+      "type": "object",
+      "required": ["dose_g", "water_g", "water_temp_c", "brew_time_s", "grind_normalised"],
+      "properties": {
+        "dose_g": { "$ref": "common.schema.json#/$defs/range" },
+        "water_g": { "$ref": "common.schema.json#/$defs/range" },
+        "water_temp_c": { "$ref": "common.schema.json#/$defs/range" },
+        "brew_time_s": { "$ref": "common.schema.json#/$defs/range" },
+        "grind_normalised": { "$ref": "common.schema.json#/$defs/range" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
