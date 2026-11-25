@@ -58,22 +58,42 @@ When `contracts/openapi.yaml` changes, run `npm run generate` and commit the new
 - References are kept in the same transaction as the write (ADR 0012): a shelf entry needs its bean (`BeanNotFoundError`), a brew needs a shelf entry in the caller's partition (`ShelfEntryNotFoundError`), and each shelf entry counts its brews in `brewCount`, so deleting one that brews reference fails with `ShelfEntryInUseError`, and a replace that would change its `bean_id` fails with `ShelfEntryBeanLockedError` (D14). The replace is one condition on the entry, `beanId` unchanged or `brewCount` 0 (or absent); a brew create is conditional on the bean it read, so a racing brew and bean change never leave a brew under the wrong bean: one of them fails, and a failed brew is retried against the new bean. Brew items also carry `shelfEntryId` and `beanId` for the aggregator.
 - Values are parsed with the generated contract schemas on write and on read.
 - An unverified bean carries `gsi1pk=REVIEW#UNVERIFIED` and `gsi1sk=<createdAt UTC>#<beanId>`; verifying or rejecting it removes both in the same write.
+- Bean review (operator only, no API route yet): `verifyBean` and `rejectBean` read the bean first (missing is `ItemNotFoundError`, already reviewed `BeanNotUnverifiedError`) and update it on the condition that it is still unverified. **A reject frees the barcode:** the `BARCODE#` pointer is deleted in the same transaction, on the condition that it still names this bean, so the next scan can submit a fresh entry. The bean's `META` item stays, with status `rejected`, as the operator's record. A pointer that already names another bean is left alone. A pointer that changed between the read and the write, and any write that met a concurrent transaction (`rethrowConflict`, `TransactionConflict`), is `WriteConflictError`. Verifying keeps the pointer.
+- `getBeanByBarcode` canonicalises the barcode, reads the pointer, then the bean, whatever its status. A pointer whose bean is missing or has another barcode is `CorruptItemError` (beans are never deleted, and a pointer is only written with its bean).
+- **No creator on a bean.** Bean items do not store the sub of the user who created them, so no catalogue response can carry another user's id. If moderation ever needs a creator reference, store it in an internal attribute that `beanOf` never maps into a response, and document it here.
 - `table.ts` holds the table's keys, index and stream with no imports. The integration tests create their table from it, and `infra/test/table-schema.test.ts` checks the synthesised CDK table against it.
 
 `npm test` stays unit-only so it runs anywhere in seconds; the DynamoDB Local suite is a separate command because it needs Docker. CI runs both, with DynamoDB Local as a service container.
 
 ## The API Lambda
 
-`src/handlers/api.ts` is the one API function (docs/05, Components). `src/api/router.ts` holds a fixed route table and serves only the routes that have landed: list, create, get, replace and delete for `/shelf`, `/brews` and `/recipes` (task M1-T5). The three resources share one implementation (`src/api/resources.ts`).
+`src/handlers/api.ts` is the one API function (docs/05, Components). `src/api/router.ts` holds a fixed route table and serves only the routes that have landed: list, create, get, replace and delete for `/shelf`, `/brews` and `/recipes` (task M1-T5), which share one implementation (`src/api/resources.ts`), and the bean catalogue: `GET /barcodes/{barcode}`, `POST /beans` and `GET /beans/{bean_id}` (task M1-T4a, `src/api/catalogue.ts`).
 
 For every request, in this order:
 
-1. **Route.** Method and `rawPath` against the table. No match is 404 with no body. That includes contract routes whose tasks have not landed yet (barcodes, beans, profile, export, account): the contract declares no 501, so they are 404 until their task adds them to the table. `/health` is its own Lambda (ADR 0007). A method a path does not declare is 404 too (the contract has no 405). Matching uses `rawPath`, so the HTTP API must use the `$default` stage.
+1. **Route.** Method and `rawPath` against the table. No match is 404 with no body. That includes contract routes whose tasks have not landed yet (the Open Food Facts lookup, catalogue images, profile, export, account): the contract declares no 501, so they are 404 until their task adds them to the table. `/health` is its own Lambda (ADR 0007). A method a path does not declare is 404 too (the contract has no 405). Matching uses `rawPath`, so the HTTP API must use the `$default` stage.
 2. **Caller.** `userIdFromEvent`; none is 401.
-3. **Input**, 400 on any failure: path ids against the contract's `Id` pattern; the query (only `cursor` and `limit`, each at most once, and only on lists; `limit` is checked against `LimitQuery` by hand because parameters are not generated, and a test compares the two); the body (below).
-4. **Operation.** Repository errors map to 404 (not in the caller's partition; a missing bean or shelf entry), 409 (`DELETE /shelf/{id}` while brews reference it, ADR 0012; `PUT /shelf/{id}` that would change `bean_id` while brews reference it, D14) and 500. A write that raced another write (a changed condition, or a transaction cancelled with `TransactionConflict` by a concurrent one on the same shelf entry) is tried up to three times in all, with 10 to 100 ms of random wait.
+3. **Input**, 400 on any failure: path ids against the contract's `Id` pattern, a `{barcode}` against `Barcode` and its GS1 check digit; the query (only `cursor` and `limit`, each at most once, and only on lists; `limit` is checked against `LimitQuery` by hand because parameters are not generated, and a test compares the two); the body (below).
+4. **Operation.** Repository errors map to 404 (not in the caller's partition; a missing bean or shelf entry), 409 (`DELETE /shelf/{id}` while brews reference it, ADR 0012; `PUT /shelf/{id}` that would change `bean_id` while brews reference it, D14; `POST /beans` for a barcode that already points to a bean, `BarcodeTakenError`, or with `open_food_facts_confirmed`, `OpenFoodFactsHitMissingError`) and 500 (including `CorruptItemError`). A write that raced another write (a changed condition, or a transaction cancelled with `TransactionConflict` by a concurrent one on the same shelf entry) is tried up to three times in all, with 10 to 100 ms of random wait.
 
-Every error has no body. One log line per request: `operation`, `status`, `request_id` and, on failure, the error class name. Never a body, header, query, token or user id.
+Every error has no body, so no error echoes input. One log line per request: `operation`, `status`, `request_id` and, on failure, the error class name. Never a body, header, query, path parameter (barcode or id), token or user id.
+
+### Bean catalogue (M1-T4a)
+
+The catalogue is shared: the caller only has to be signed in, and the user id is not used by these routes (nor stored on a bean, see The repository).
+
+| Route | Answers |
+| --- | --- |
+| `GET /barcodes/{barcode}` | 200 with the `Bean` the canonical EAN-13 points to (UPC-A `036000291452` and EAN-13 `0036000291452` are one product). 404, no body, for an unknown barcode or one whose bean was rejected: the app then asks `GET /barcodes/{barcode}/open_food_facts` (M1-T4b). 400 for anything but 12 or 13 digits with a correct check digit, before the table is read. 400 for a query or a body. |
+| `POST /beans` | 201 with the new unverified `Bean`: `verified: false`, every value of `attributes` in `picked_attributes` (source "user"), `operator_attributes` `{}`, `open_food_facts_match: false`, no `open_food_facts` group, `barcode` in its 13-digit form. The body is `BeanCreate` (unknown properties rejected) checked against the `vocabulary_version` it sends, so `origin`, `species` and `variety` need version 2; a barcode in the body must have a correct check digit. Bad body or a query: 400. Barcode already taken (either form): 409 (`BarcodeTakenError`), not retried. A raced write (`WriteConflictError`) is retried like the other writes. |
+| `GET /beans/{bean_id}` | 200 with the `Bean`, verified or unverified. 404 for an unknown or a **rejected** bean. 400 for a bad id, a query or a body. |
+
+Decisions (task M1-T4a):
+
+- **A rejected bean is 404**, by id and by barcode, as if it did not exist. Rejecting deletes its barcode pointer (The repository), so a barcode lookup finds nothing and a scan can submit a fresh entry; a read that races the reject still sees the rejected status and answers 404. The `META` item stays for the operator.
+- **An unverified bean is returned to every signed-in user**: the catalogue is shared, and F1 and ADR 0005 show entries right away while they wait for the operator.
+- **`open_food_facts_confirmed: true` is 409** for now, before the table is touched: the server has no Open Food Facts cache until M1-T4b, so there is never a cached hit to copy, which is the contract's 409 case. `false` is the same as leaving it out. M1-T4b replaces this with a cache read.
+- **A pointer to a missing bean is 500** (`CorruptItemError`), not 404: a 404 would send the app to the Open Food Facts lookup and then into a 409 it cannot get out of.
 
 ### Body validation
 

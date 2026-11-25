@@ -9,6 +9,7 @@ import { BrewInputSchema } from '../../src/generated/contract.ts';
 import type { BrewInput } from '../../src/generated/contract.ts';
 import {
   BeanNotFoundError,
+  BeanNotUnverifiedError,
   CorruptItemError,
   InvalidCursorError,
   InvalidKeyError,
@@ -295,5 +296,161 @@ describe('concurrent transactions on a hot shelf entry (ADR 0012)', () => {
       throw new TransactionConflictException({ message: 'conflict', $metadata: {} });
     });
     await expect(repo.deleteShelfEntry(ALICE, ID)).rejects.toThrow(WriteConflictError);
+  });
+});
+
+describe('bean review: verify, reject, and the barcode pointer (M1-T4a)', () => {
+  const EAN = '4006381333931';
+  const OTHER = '01JDQ8Z6V3W4X5Y6Z7A8B9C0DF';
+  const beanItem = (status: string, barcode: string | null = EAN): Record<string, unknown> => ({
+    pk: `BEAN#${ID}`,
+    sk: 'META',
+    beanId: ID,
+    status,
+    createdAt: '2026-11-25T07:00:00.000Z',
+    vocabularyVersion: 1,
+    openFoodFactsMatch: false,
+    pickedAttributes: { process: 'washed' },
+    operatorAttributes: {},
+    ...(barcode === null ? {} : { barcode }),
+  });
+  const pointer = (beanId: string): Record<string, unknown> => ({ pk: `BARCODE#${EAN}`, sk: 'BEAN', beanId, barcode: EAN });
+
+  /**
+   * GetItem answers from `items` by sort key (META: the bean, BEAN: the pointer).
+   * Updates return the bean with the new status; `write` may throw instead.
+   */
+  function catalogue(
+    items: { meta?: Record<string, unknown> | (() => Record<string, unknown>); pointer?: Record<string, unknown> },
+    write: (input: Record<string, unknown>) => unknown = (input) =>
+      'TransactItems' in input ? {} : { Attributes: { ...beanItem('x'), status: (input.ExpressionAttributeValues as Record<string, unknown>)[':status'] } },
+  ): { repo: Repository; sent: Record<string, unknown>[] } {
+    return stub((input) => {
+      if ('Key' in input && !('UpdateExpression' in input)) {
+        const sk = (input.Key as { sk: string }).sk;
+        const meta = typeof items.meta === 'function' ? items.meta() : items.meta;
+        return { Item: sk === 'META' ? meta : items.pointer };
+      }
+      return write(input);
+    });
+  }
+  const writes = (sent: Record<string, unknown>[]): Record<string, unknown>[] =>
+    sent.filter((input) => 'TransactItems' in input || 'UpdateExpression' in input);
+
+  it('reject deletes the pointer in the same transaction, only while it names this bean', async () => {
+    const { repo, sent } = catalogue({ meta: beanItem('unverified'), pointer: pointer(ID) });
+    const rejected = await repo.rejectBean(ID);
+    expect(rejected.status).toBe('rejected');
+    expect(rejected.bean.barcode).toBe(EAN);
+    const [transaction] = writes(sent);
+    expect(writes(sent)).toHaveLength(1);
+    const items = (transaction as { TransactItems: Record<string, Record<string, unknown>>[] }).TransactItems;
+    expect(items).toHaveLength(2);
+    expect(items[0]?.Update).toMatchObject({
+      Key: { pk: `BEAN#${ID}`, sk: 'META' },
+      ConditionExpression: 'attribute_exists(pk) AND #status = :unverified',
+      ExpressionAttributeValues: expect.objectContaining({ ':status': 'rejected' }) as unknown,
+    });
+    expect(String(items[0]?.Update?.UpdateExpression)).toContain('REMOVE #gpk, #gsk');
+    expect(items[1]?.Delete).toEqual({
+      TableName: 'cupmark-test-main',
+      Key: { pk: `BARCODE#${EAN}`, sk: 'BEAN' },
+      ConditionExpression: 'beanId = :bean',
+      ExpressionAttributeValues: { ':bean': ID },
+    });
+  });
+
+  it.each([
+    ['a bean without a barcode', beanItem('unverified', null), undefined],
+    ['a pointer that names another bean', beanItem('unverified'), pointer(OTHER)],
+    ['no pointer at all', beanItem('unverified'), undefined],
+  ])('reject of %s is the single update and leaves any pointer alone', async (_name, meta, ptr) => {
+    const { repo, sent } = catalogue({ meta, ...(ptr === undefined ? {} : { pointer: ptr }) });
+    expect((await repo.rejectBean(ID)).status).toBe('rejected');
+    expect(writes(sent)).toHaveLength(1);
+    expect(writes(sent)[0]).not.toHaveProperty('TransactItems');
+  });
+
+  it('verify keeps the pointer: a single update, never a delete', async () => {
+    const { repo, sent } = catalogue({ meta: beanItem('unverified'), pointer: pointer(ID) });
+    expect((await repo.verifyBean(ID)).status).toBe('verified');
+    expect(writes(sent)).toHaveLength(1);
+    expect(writes(sent)[0]).not.toHaveProperty('TransactItems');
+    expect(sent.some((input) => (input.Key as { sk?: string } | undefined)?.sk === 'BEAN')).toBe(false);
+  });
+
+  it('a missing bean is ItemNotFoundError and an already reviewed one BeanNotUnverifiedError, with nothing written', async () => {
+    const missing = catalogue({});
+    await expect(missing.repo.rejectBean(ID)).rejects.toThrow(ItemNotFoundError);
+    await expect(missing.repo.verifyBean(ID)).rejects.toThrow(ItemNotFoundError);
+    for (const status of ['verified', 'rejected']) {
+      const reviewed = catalogue({ meta: beanItem(status), pointer: pointer(ID) });
+      await expect(reviewed.repo.rejectBean(ID)).rejects.toThrow(BeanNotUnverifiedError);
+      await expect(reviewed.repo.verifyBean(ID)).rejects.toThrow(BeanNotUnverifiedError);
+      expect(writes(reviewed.sent)).toEqual([]);
+    }
+  });
+
+  it('verify and reject that meet a concurrent transaction are WriteConflictError (rethrowConflict)', async () => {
+    const conflict = (): never => {
+      throw new TransactionConflictException({ message: 'conflict', $metadata: {} });
+    };
+    await expect(catalogue({ meta: beanItem('unverified') }, conflict).repo.verifyBean(ID)).rejects.toThrow(WriteConflictError);
+    await expect(catalogue({ meta: beanItem('unverified', null) }, conflict).repo.rejectBean(ID)).rejects.toThrow(WriteConflictError);
+    await expect(catalogue({ meta: beanItem('unverified'), pointer: pointer(ID) }, conflict).repo.rejectBean(ID)).rejects.toThrow(
+      WriteConflictError,
+    );
+    const cancelled = (): never => {
+      throw new TransactionCanceledException({
+        message: 'cancelled',
+        $metadata: {},
+        CancellationReasons: [{ Code: 'None' }, { Code: 'TransactionConflict' }],
+      });
+    };
+    await expect(catalogue({ meta: beanItem('unverified'), pointer: pointer(ID) }, cancelled).repo.rejectBean(ID)).rejects.toThrow(
+      WriteConflictError,
+    );
+  });
+
+  it('a reject whose pointer changed during the write is WriteConflictError; one whose bean was reviewed meanwhile is not', async () => {
+    const failing = (index: number) => (): never => {
+      throw new TransactionCanceledException({
+        message: 'cancelled',
+        $metadata: {},
+        CancellationReasons: [0, 1].map((i) => ({ Code: i === index ? 'ConditionalCheckFailed' : 'None' })),
+      });
+    };
+    await expect(catalogue({ meta: beanItem('unverified'), pointer: pointer(ID) }, failing(1)).repo.rejectBean(ID)).rejects.toThrow(
+      WriteConflictError,
+    );
+    // The bean was verified between the read and the write: the second read says so.
+    let reads = 0;
+    const meta = (): Record<string, unknown> => beanItem(reads++ === 0 ? 'unverified' : 'verified');
+    await expect(catalogue({ meta, pointer: pointer(ID) }, failing(0)).repo.rejectBean(ID)).rejects.toThrow(BeanNotUnverifiedError);
+  });
+
+  it('a single-update review whose condition failed tells gone from reviewed', async () => {
+    const conditionFailed = (): never => {
+      throw new ConditionalCheckFailedException({ message: 'failed', $metadata: {} });
+    };
+    let reads = 0;
+    const meta = (): Record<string, unknown> => beanItem(reads++ === 0 ? 'unverified' : 'rejected');
+    await expect(catalogue({ meta }, conditionFailed).repo.verifyBean(ID)).rejects.toThrow(BeanNotUnverifiedError);
+  });
+
+  it('getBeanByBarcode: a pointer to a missing bean or to a bean with another barcode is CorruptItemError', async () => {
+    await expect(catalogue({ pointer: pointer(ID) }).repo.getBeanByBarcode(EAN)).rejects.toThrow(CorruptItemError);
+    await expect(catalogue({ meta: beanItem('unverified', '0036000291452'), pointer: pointer(ID) }).repo.getBeanByBarcode(EAN)).rejects.toThrow(
+      CorruptItemError,
+    );
+    expect(await catalogue({}).repo.getBeanByBarcode(EAN)).toBeUndefined();
+    expect((await catalogue({ meta: beanItem('unverified'), pointer: pointer(ID) }).repo.getBeanByBarcode(EAN))?.bean.bean_id).toBe(ID);
+  });
+
+  it('getBeanByBarcode refuses a malformed barcode or a bad check digit before any request', async () => {
+    const { repo, sent } = catalogue({});
+    await expect(repo.getBeanByBarcode('4006381333932')).rejects.toThrow(InvalidKeyError);
+    await expect(repo.getBeanByBarcode('BEAN#x')).rejects.toThrow(InvalidKeyError);
+    expect(sent).toEqual([]);
   });
 });
