@@ -86,7 +86,7 @@ enum Vocabulary {
     }
 
     /// `processes` in bean.json.
-    enum Process: String, VocabularyItem {
+    enum Process: String, CaseIterable, Codable, Sendable, VocabularyItem {
         static let namespace: Vocabulary.Namespace = .processes
 
         case washed = "washed"
@@ -100,7 +100,7 @@ enum Vocabulary {
     }
 
     /// `roast_levels` in bean.json.
-    enum RoastLevel: String, VocabularyItem {
+    enum RoastLevel: String, CaseIterable, Codable, Sendable, VocabularyItem {
         static let namespace: Vocabulary.Namespace = .roastLevels
 
         case light = "light"
@@ -111,7 +111,7 @@ enum Vocabulary {
     }
 
     /// `methods` in brew.json.
-    enum Method: String, VocabularyItem {
+    enum Method: String, CaseIterable, Codable, Sendable, VocabularyItem {
         static let namespace: Vocabulary.Namespace = .methods
 
         case espresso = "espresso"
@@ -129,7 +129,7 @@ enum Vocabulary {
     }
 
     /// `water_types` in brew.json.
-    enum WaterType: String, VocabularyItem {
+    enum WaterType: String, CaseIterable, Codable, Sendable, VocabularyItem {
         static let namespace: Vocabulary.Namespace = .waterTypes
 
         case tap = "tap"
@@ -139,7 +139,7 @@ enum Vocabulary {
     }
 
     /// `milk_types` in brew.json.
-    enum MilkType: String, VocabularyItem {
+    enum MilkType: String, CaseIterable, Codable, Sendable, VocabularyItem {
         static let namespace: Vocabulary.Namespace = .milkTypes
 
         case none = "none"
@@ -157,14 +157,14 @@ enum Vocabulary {
     }
 
     /// `water_temp_special` in brew.json.
-    enum WaterTempSpecial: String, VocabularyItem {
+    enum WaterTempSpecial: String, CaseIterable, Codable, Sendable, VocabularyItem {
         static let namespace: Vocabulary.Namespace = .waterTempSpecial
 
         case cold = "cold"
     }
 
     /// `criteria` in criteria.json.
-    enum Criterion: String, VocabularyItem {
+    enum Criterion: String, CaseIterable, Codable, Sendable, VocabularyItem {
         static let namespace: Vocabulary.Namespace = .criteria
 
         case aroma = "aroma"
@@ -178,7 +178,7 @@ enum Vocabulary {
     }
 
     /// `intensity_dimensions` in criteria.json.
-    enum IntensityDimension: String, VocabularyItem {
+    enum IntensityDimension: String, CaseIterable, Codable, Sendable, VocabularyItem {
         static let namespace: Vocabulary.Namespace = .intensityDimensions
 
         case acidity = "acidity"
@@ -187,7 +187,7 @@ enum Vocabulary {
     }
 
     /// `intensity_levels` in criteria.json.
-    enum IntensityLevel: String, VocabularyItem {
+    enum IntensityLevel: String, CaseIterable, Codable, Sendable, VocabularyItem {
         static let namespace: Vocabulary.Namespace = .intensityLevels
 
         case low = "low"
@@ -196,7 +196,7 @@ enum Vocabulary {
     }
 
     /// `flavour_categories` in flavour_notes.json.
-    enum FlavourCategory: String, VocabularyItem {
+    enum FlavourCategory: String, CaseIterable, Codable, Sendable, VocabularyItem {
         static let namespace: Vocabulary.Namespace = .flavourCategories
 
         case fruity = "fruity"
@@ -234,7 +234,7 @@ enum Vocabulary {
     }
 
     /// `flavour_notes` in flavour_notes.json.
-    enum FlavourNote: String, VocabularyItem {
+    enum FlavourNote: String, CaseIterable, Codable, Sendable, VocabularyItem {
         static let namespace: Vocabulary.Namespace = .flavourNotes
 
         case berry = "berry"
@@ -408,7 +408,7 @@ enum Vocabulary {
     }
 
     /// `bag_sizes` in shelf.json.
-    enum BagSize: String, VocabularyItem {
+    enum BagSize: String, CaseIterable, Codable, Sendable, VocabularyItem {
         static let namespace: Vocabulary.Namespace = .bagSizes
 
         case g250 = "g_250"
@@ -426,7 +426,7 @@ enum Vocabulary {
     }
 
     /// `price_bands` in shelf.json.
-    enum PriceBand: String, VocabularyItem {
+    enum PriceBand: String, CaseIterable, Codable, Sendable, VocabularyItem {
         static let namespace: Vocabulary.Namespace = .priceBands
 
         case under15 = "under_15"

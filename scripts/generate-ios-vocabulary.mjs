@@ -39,7 +39,7 @@ const SWIFT_KEYWORDS = new Set([
 // Names an enum case or property must not take, because the generated enums
 // already have a member of that name (RawRepresentable, CaseIterable,
 // Identifiable, VocabularyItem).
-const RESERVED_MEMBERS = new Set(['rawValue', 'allCases', 'id', 'namespace', 'hashValue', 'type', 'self']);
+const RESERVED_MEMBERS = new Set(['rawValue', 'allCases', 'id', 'namespace', 'hashValue', 'self']);
 // Type names the generator itself uses inside `enum Vocabulary`.
 const RESERVED_TYPES = new Set(['Namespace', 'Ranges', 'Constants', 'Language']);
 const RANGE_KEYS = ['maximum', 'minimum', 'multipleOf'];
@@ -313,7 +313,7 @@ export function generateSwift({ version, files, languages }) {
 
     line('');
     line(`    /// \`${list.namespace}\` in ${list.file}.json.`);
-    line(`    enum ${type}: String, VocabularyItem {`);
+    line(`    enum ${type}: String, CaseIterable, Codable, Sendable, VocabularyItem {`);
     line(`        static let namespace: Vocabulary.Namespace = .${swiftMember(list.namespace)}`);
     line('');
     for (const item of list.items) line(`        case ${cases.get(item.id)} = ${swiftString(item.id)}`);
