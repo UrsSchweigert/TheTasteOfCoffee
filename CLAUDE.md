@@ -53,7 +53,7 @@ scripts/       repo checks and operator tools
 
 Do not proceed on your own when a task needs any of these. Leave the task `blocked`, say exactly what is needed, and move on to the next unblocked task.
 
-- A decision listed in `docs/07-open-questions.md` that the default does not cover.
+- A product or design decision that is likely to add cloud costs. Every other open decision, including those in `docs/07-open-questions.md`, is taken by the lead on its own recommendation and recorded as an ADR (ADR 0014).
 - Anything that spends money or touches a real account: `cdk deploy`, `cdk destroy`, App Store Connect, AWS console changes.
 - Credentials, keys, certificates, provisioning profiles.
 - Deleting data, tables or buckets; force-pushing; rewriting history.

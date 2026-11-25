@@ -42,6 +42,11 @@ You are the lead. You coordinate; the specialist agents do the work. Argument: a
   - nothing is left that a human must do first.
   Otherwise leave it open and say what is missing. Never merge a pull request that needs a human decision, spends money or touches a real account (for example a deploy). Never push to `main` directly.
 
+## Decisions and pushing
+
+- **Decisions (ADR 0014):** when a task raises an open product or design question, decide it on your own recommendation and record it as an ADR, or as an answered row in `docs/07` that references one, marked "decided by: lead (ADR 0014)". Ask the owner first only when the decision is likely to add cloud costs, and say the expected cost. Actions in real accounts, credentials, deletes, history rewrites, licences and invariants still go to the owner, as CLAUDE.md lists them.
+- **Pushing while CI runs (owner, 2026-11-25):** do not push to a branch whose pull request has CI in progress unless the push is needed now, for example to fix a failing check. A new push cancels the running jobs: the macOS `ios` job takes several minutes and is lost. Commit follow-ups locally and push them together once the run has finished.
+
 ## 6. Report
 
 Reply with three lines: what was built, the pull request link, and the next task in the queue (or what is blocking it).
