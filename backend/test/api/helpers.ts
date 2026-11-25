@@ -115,6 +115,11 @@ export function brewBody(shelfEntryId: string): Record<string, unknown> {
   };
 }
 
+/** A POST /beans body; `attributes` replaces the picked attributes. */
+export function beanBody(overrides: Record<string, unknown> = {}, attributes: Record<string, unknown> = { process: 'washed', roast_level: 'light' }): Record<string, unknown> {
+  return { vocabulary_version: 1, attributes, ...overrides };
+}
+
 export function recipeBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return { vocabulary_version: 1, parameters: { method: 'aeropress', dose_dg: 150, water_g: 200, ...overrides } };
 }

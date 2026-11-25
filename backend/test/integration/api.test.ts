@@ -2,14 +2,14 @@
 // router, validation, signed cursors and the real repository on a fresh table.
 // The cursor key is generated here; nothing calls AWS.
 // Run with `npm run test:integration`; see test/integration/dynamodb-local.ts.
-import { QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApi } from '../../src/api/router.ts';
 import type { LogEntry } from '../../src/api/router.ts';
-import { BrewPageSchema, BrewSchema, RecipeSchema, ShelfEntryPageSchema, ShelfEntrySchema } from '../../src/generated/contract.ts';
-import { Repository, userPk } from '../../src/repository/index.ts';
+import { BeanSchema, BrewPageSchema, BrewSchema, RecipeSchema, ShelfEntryPageSchema, ShelfEntrySchema } from '../../src/generated/contract.ts';
+import { Repository, barcodeKey, beanMetaKey, userPk } from '../../src/repository/index.ts';
 import { verifiedUserId } from '../events.ts';
-import { ALICE_SUB, BOB_SUB, apiEvent, brewBody, recipeBody, shelfBody, testSigner } from '../api/helpers.ts';
+import { ALICE_SUB, BOB_SUB, apiEvent, beanBody, brewBody, recipeBody, shelfBody, testSigner } from '../api/helpers.ts';
 import type { RequestOptions } from '../api/helpers.ts';
 import { connectDynamoDbLocal, createTestTable, deleteTestTable } from './dynamodb-local.ts';
 
@@ -152,5 +152,56 @@ describe.skipIf(!local.reachable)('API routes on DynamoDB Local', () => {
     const moved = await call('PUT', path, { sub, json: shelfBody({ bean_id: other }) });
     expect(moved.status).toBe(200);
     expect(ShelfEntrySchema.parse(moved.body).values.bean_id).toBe(other);
+  });
+
+  it('bean catalogue: create, look up by barcode, reject, then the barcode is free for a new entry', async () => {
+    const repository = new Repository({ client: documentClient, tableName });
+    const raw = async (key: { pk: string; sk: string }): Promise<Record<string, unknown> | undefined> =>
+      (await documentClient.send(new GetCommand({ TableName: tableName, Key: key, ConsistentRead: true }))).Item as
+        | Record<string, unknown>
+        | undefined;
+    const upcA = '012345678905';
+    const ean13 = '0012345678905';
+    expect((await call('GET', `/barcodes/${upcA}`)).status).toBe(404);
+    expect((await call('GET', '/barcodes/0012345678901')).status).toBe(400);
+
+    // Origin needs vocabulary v2.
+    const v1 = await call('POST', '/beans', { json: beanBody({ barcode: upcA }, { origin: 'colombia' }) });
+    expect(v1.status).toBe(400);
+    expect((await call('POST', '/beans', { json: beanBody({ barcode: upcA, open_food_facts_confirmed: true }) })).status).toBe(409);
+    expect(await raw(barcodeKey(ean13))).toBeUndefined();
+
+    const attributes = { origin: 'colombia', species: 'arabica', variety: 'castillo', process: 'washed' };
+    const created = await call('POST', '/beans', { json: beanBody({ vocabulary_version: 2, barcode: upcA }, attributes) });
+    expect(created.status).toBe(201);
+    const bean = BeanSchema.parse(created.body);
+    expect(bean).toMatchObject({ verified: false, barcode: ean13, picked_attributes: attributes, operator_attributes: {} });
+
+    // Shared: Bob finds Alice's unverified bean by either barcode form and by id; nothing names Alice.
+    for (const barcode of [upcA, ean13]) expect((await call('GET', `/barcodes/${barcode}`, { sub: BOB_SUB })).body).toEqual(bean);
+    expect((await call('GET', `/beans/${bean.bean_id}`, { sub: BOB_SUB })).body).toEqual(bean);
+    expect(JSON.stringify(await raw(beanMetaKey(bean.bean_id)))).not.toContain(ALICE_SUB);
+    expect(await partition(BOB_SUB)).toEqual([]);
+
+    // Taken: 409, nothing written.
+    expect((await call('POST', '/beans', { sub: BOB_SUB, json: beanBody({ barcode: ean13 }) })).status).toBe(409);
+
+    // The operator rejects it: 404 by id and by barcode, the META item stays, the pointer is gone.
+    await repository.rejectBean(bean.bean_id);
+    expect((await call('GET', `/beans/${bean.bean_id}`)).status).toBe(404);
+    expect((await call('GET', `/barcodes/${upcA}`)).status).toBe(404);
+    expect(await raw(beanMetaKey(bean.bean_id))).toMatchObject({ status: 'rejected', barcode: ean13 });
+    expect(await raw(barcodeKey(ean13))).toBeUndefined();
+
+    // The next scan submits a fresh entry.
+    const fresh = await call('POST', '/beans', { sub: BOB_SUB, json: beanBody({ barcode: ean13 }) });
+    expect(fresh.status).toBe(201);
+    const freshBean = BeanSchema.parse(fresh.body);
+    expect(freshBean.bean_id).not.toBe(bean.bean_id);
+    expect((await call('GET', `/barcodes/${upcA}`)).body).toEqual(freshBean);
+    expect((await call('GET', `/beans/${freshBean.bean_id}`)).body).toEqual(freshBean);
+
+    const text = JSON.stringify(logs);
+    for (const leaked of [ALICE_SUB, BOB_SUB, ean13, upcA, bean.bean_id, 'colombia']) expect(text).not.toContain(leaked);
   });
 });

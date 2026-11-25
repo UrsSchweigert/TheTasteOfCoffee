@@ -146,7 +146,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - From the M1-T5 review (ADR 0013):
     - the HTTP API uses the `$default` stage, because the router matches on `rawPath`;
     - the API Lambda gets `TABLE_NAME` and `CURSOR_KEY_PARAMETER=/cupmark/<stage>/cursor-key`, plus `ssm:GetParameter` on exactly that parameter ARN;
-    - the owner creates the SecureString by hand (at least 32 random bytes, base64), because CloudFormation cannot create a SecureString, and the README gives the exact command.
+    - the owner creates the SecureString by hand (at least 32 random bytes, base64), because CloudFormation cannot create a SecureString, and the README gives the exact command. Done for dev and prod on 2026-11-25, together with the Apple key parameters.
   - From the M1-T8 review: the table gets `TimeToLiveSpecification` on a named attribute (`expires_at`), docs/05 names it, and the "no TTL" assertion in `infra/test/data.test.ts` changes accordingly. The API Lambda gets outbound HTTPS to Open Food Facts, with no VPC and no NAT.
   - From the M1-T1 review: a test snapshots the logical ids of the table, the buckets and the pool, so a construct rename that would replace them fails at test time.
 
@@ -160,27 +160,58 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - Tests against DynamoDB Local cover each item type and prove one user cannot address another user's partition.
   - Unverified bean `META` items set the sparse index keys documented in `infra/README.md`: `gsi1pk=REVIEW#UNVERIFIED`, and `gsi1sk=<createdAt>#<beanId>` with `createdAt` always fixed-width UTC (`toISOString()`). Verifying or rejecting a bean removes both.
 
-### M1-T4 Bean catalogue and barcode routes
-- status: todo
+### M1-T4a Bean catalogue and barcode lookup
+- status: done
 - owner: backend-engineer
-- depends: M1-T3, M0-T2, M1-T8
+- depends: M1-T3, M1-T8
 - implements: docs/04-specification.md, F1
 - acceptance:
-  - Look up a barcode; create an unverified bean from pick-list attributes or a confirmed Open Food Facts hit, with the source tagged per field.
-  - Issue a presigned upload URL for a label photo (size and content-type limited).
-  - Tests cover known, unknown and malformed barcodes.
-  - Server-side Open Food Facts lookup (ADR 0005), from the M1-T8 review:
-    - `GET /barcodes/{barcode}/open_food_facts` fetches with User-Agent `Cupmark/<version> (<contact>)`, with the contact taken from a Lambda environment variable, never Secrets Manager;
-    - results are cached in `BARCODE#<ean>`/`OFF`, and a miss expires by TTL;
-    - a per-user daily cap in `USER#<id>`/`LOOKUPS#<date>` returns 429, and the route returns 409 or 503 as the contract says; whether a 409 or 400 counts against the cap is decided and docs/05 matches it;
-    - name and brand are trimmed and cut in code points, and never logged;
-    - the server follows only an Open Food Facts image-host URL for the same canonical EAN-13. It copies the image once to `catalogue/<image_id>.jpg` in the photo bucket: JPEG only, size-limited, all metadata stripped (ADR 0011, D12). If the copy fails, the hit is cached without an image. `GET /catalogue_images/{image_id}` serves the bytes;
-    - the bean routes take origin, species and variety (vocabulary v2);
-    - `POST /beans` with `open_food_facts_confirmed` copies from the cache and returns 409 when there is no cached hit;
-    - repository keys exist for both new items.
-  - From the M1-T5 review: `createBean` can now throw `WriteConflictError`, so the route retries it like the other writes. Operator verify and reject also use `rethrowConflict`.
+  - `GET /barcodes/{barcode}` looks up the canonical EAN-13. `POST /beans` creates an unverified bean from pick-list attributes (including origin, species and variety from vocabulary v2), with the source tagged per field. `GET /beans/{bean_id}` returns it. All three follow the contract.
+  - Tests cover known, unknown and malformed barcodes, and a bad check digit.
+  - `createBean` can throw `WriteConflictError`, so the route retries it like the other writes. Operator verify and reject also use `rethrowConflict` (from the M1-T5 review).
   - Rejecting a bean frees its barcode: the `BARCODE#` pointer is removed in the same write, so the next scan can submit a fresh entry. The rejected bean stays recorded for the operator (owner decision, 2026-11-25).
-  - The uploader of each label photo is recorded, so account deletion (M1-T6) can find that user's photos. Photo handling follows D10 to D12 in `docs/07-open-questions.md`.
+  - `POST /beans` with `open_food_facts_confirmed` returns 409 until M1-T4b provides the cache.
+
+### M1-T11 Rejected beans on shelves; catalogue contract wording
+- status: todo
+- owner: contract-keeper, then backend-engineer
+- depends: M1-T4a
+- implements: follow-ups from the M1-T4a review; decided by the lead under ADR 0014
+- acceptance:
+  - Creating or replacing a shelf entry with a rejected bean answers 404 (`BeanNotFoundError`). The condition is `status <> rejected`, in the same transaction. Shelf entries that already reference a bean rejected later keep working. Unit and DynamoDB Local tests cover both cases.
+  - `contracts/openapi.yaml`: `NotFound` no longer says "in the caller's partition" for the shared catalogue routes (it also covers a rejected bean), and `BadRequest` mentions a bad barcode check digit. No schema change.
+
+### M1-T4b Server-side Open Food Facts lookup
+- status: todo
+- owner: backend-engineer
+- depends: M1-T4a
+- implements: docs/decisions/0005, docs/05 Barcode lookup
+- acceptance:
+  - `GET /barcodes/{barcode}/open_food_facts` fetches with User-Agent `Cupmark/<version> (<contact>)`, with the contact taken from a Lambda environment variable, never Secrets Manager.
+  - Results are cached in `BARCODE#<ean>`/`OFF`, and a miss expires by TTL (`expires_at`). A per-user daily cap in `USER#<id>`/`LOOKUPS#<date>` returns 429, and the route returns 409 or 503 as the contract says. Whether a 409 or 400 counts against the cap is decided, and docs/05 matches it. Repository keys exist for both items.
+  - Name and brand are trimmed and cut in code points, and never logged.
+  - `POST /beans` with `open_food_facts_confirmed` copies from the cache, and returns 409 when there is no cached hit.
+  - Tests use a stubbed HTTP client; no test calls Open Food Facts.
+
+### M1-T4c Open Food Facts image copy
+- status: todo
+- owner: backend-engineer
+- depends: M1-T4b
+- implements: docs/decisions/0011, D12
+- acceptance:
+  - The server follows only an Open Food Facts image-host URL for the same canonical EAN-13. It copies the image once to `catalogue/<image_id>.jpg` in the photo bucket: JPEG only, size-limited, all metadata stripped. If the copy fails, the hit is cached without an image.
+  - `GET /catalogue_images/{image_id}` serves the bytes with `X-Content-Type-Options: nosniff` and long-lived caching, under the Lambda response limit.
+  - Any metadata-stripping dependency has a permissive licence and passes the licence check.
+
+### M1-T4d Label photo upload
+- status: todo
+- owner: backend-engineer
+- depends: M1-T4a
+- implements: docs/04-specification.md, F1; D10 to D12
+- acceptance:
+  - A presigned upload URL for a label photo, limited in size and content type.
+  - The uploader of each photo is recorded, so account deletion (M1-T6) can find that user's photos. Metadata is stripped before the photo is stored for review or shown (D12).
+  - A contract change, if one is needed, goes to contract-keeper first.
 
 ### M1-T5 Shelf, brew and recipe routes
 - status: done

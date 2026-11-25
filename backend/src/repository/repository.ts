@@ -747,14 +747,36 @@ export class Repository {
     return item === undefined ? undefined : storedItem(BarcodeItem, item, key.pk, 'barcode').beanId;
   }
 
-  /** The operator verifies an unverified bean: it leaves the review queue. */
+  /**
+   * The bean a barcode (EAN-13 or UPC-A, canonicalised) points to, whatever its
+   * status, or undefined for an unknown barcode. Two consistent reads: the
+   * `BARCODE#` pointer, then the bean. A pointer whose bean is missing or names
+   * another barcode is CorruptItemError: beans are never deleted, and a pointer
+   * is only written together with its bean.
+   */
+  public async getBeanByBarcode(barcode: string): Promise<BeanRecord | undefined> {
+    const ean = canonicalBarcode(barcode);
+    const beanId = await this.findBeanIdByBarcode(ean);
+    if (beanId === undefined) return undefined;
+    const record = await this.getBean(beanId);
+    if (record?.bean.barcode !== ean) throw new CorruptItemError('barcode pointer names no bean with this barcode');
+    return record;
+  }
+
+  /** The operator verifies an unverified bean: it leaves the review queue. Its barcode keeps pointing to it. */
   public async verifyBean(beanId: string, operatorAttributes?: BeanAttributes): Promise<BeanRecord> {
     const attributes =
       operatorAttributes === undefined ? undefined : validValues(BeanAttributesSchema, operatorAttributes, 'bean attributes');
     return this.#review(beanId, 'verified', attributes);
   }
 
-  /** The operator rejects an unverified bean: it leaves the review queue and stays unverified to users. */
+  /**
+   * The operator rejects an unverified bean: it leaves the review queue, and its
+   * `BARCODE#` pointer is deleted in the same transaction (only while it still
+   * names this bean), so the next scan of the barcode can submit a fresh entry.
+   * The bean's `META` item stays, with status `rejected`, as the operator's
+   * record; the API answers 404 for it.
+   */
   public async rejectBean(beanId: string): Promise<BeanRecord> {
     return this.#review(beanId, 'rejected', undefined);
   }
@@ -972,8 +994,25 @@ export class Repository {
     return last.success ? { items, nextCursor: encodeCursor(last.data.sk) } : { items };
   }
 
+  /**
+   * Verifies or rejects an unverified bean. Reads it first: missing is
+   * ItemNotFoundError, already reviewed BeanNotUnverifiedError. The update is
+   * conditional on the bean still being unverified and removes both review
+   * queue attributes in the same write.
+   *
+   * A reject also deletes the bean's `BARCODE#` pointer in the same
+   * transaction, on the condition that it still names this bean. A pointer that
+   * already names another bean (or none) is left alone, and the reject is the
+   * single update. A pointer that changed between the read and the write
+   * cancels the transaction with WriteConflictError, which is safe to repeat.
+   * A write that met a concurrent transaction is WriteConflictError too.
+   */
   async #review(beanId: string, status: 'verified' | 'rejected', operatorAttributes: BeanAttributes | undefined): Promise<BeanRecord> {
     const key = beanMetaKey(beanId);
+    const current = await this.getBean(beanId);
+    if (current === undefined) throw new ItemNotFoundError('no such bean');
+    if (current.status !== 'unverified') throw new BeanNotUnverifiedError('bean is not unverified');
+
     const sets = ['#status = :status', 'updatedAt = :now'];
     const values: Record<string, unknown> = {
       ':status': status,
@@ -984,28 +1023,64 @@ export class Repository {
       sets.push('operatorAttributes = :attributes');
       values[':attributes'] = operatorAttributes;
     }
+    const update = {
+      TableName: this.#table,
+      Key: key,
+      // Both index attributes go in the same write: the bean leaves the queue atomically.
+      UpdateExpression: `SET ${sets.join(', ')} REMOVE #gpk, #gsk`,
+      ConditionExpression: 'attribute_exists(pk) AND #status = :unverified',
+      ExpressionAttributeNames: {
+        '#status': 'status',
+        '#gpk': REVIEW_QUEUE_INDEX.partitionKey,
+        '#gsk': REVIEW_QUEUE_INDEX.sortKey,
+      },
+      ExpressionAttributeValues: values,
+    };
+
+    const barcode = current.bean.barcode;
+    const freesBarcode = status === 'rejected' && barcode !== undefined && (await this.findBeanIdByBarcode(barcode)) === beanId;
+    if (!freesBarcode) {
+      try {
+        const result = await this.#client.send(new UpdateCommand({ ...update, ReturnValues: 'ALL_NEW' }));
+        return beanOf(storedItem(BeanItem, result.Attributes, key.pk, 'bean'));
+      } catch (error) {
+        rethrowConflict(error);
+        if (!isConditionFailure(error)) throw error;
+        throw await this.#reviewFailure(beanId);
+      }
+    }
+
     try {
-      const result = await this.#client.send(
-        new UpdateCommand({
-          TableName: this.#table,
-          Key: key,
-          // Both index attributes go in the same write: the bean leaves the queue atomically.
-          UpdateExpression: `SET ${sets.join(', ')} REMOVE #gpk, #gsk`,
-          ConditionExpression: 'attribute_exists(pk) AND #status = :unverified',
-          ExpressionAttributeNames: {
-            '#status': 'status',
-            '#gpk': REVIEW_QUEUE_INDEX.partitionKey,
-            '#gsk': REVIEW_QUEUE_INDEX.sortKey,
-          },
-          ExpressionAttributeValues: values,
-          ReturnValues: 'ALL_NEW',
+      await this.#client.send(
+        new TransactWriteCommand({
+          TransactItems: [
+            { Update: update },
+            {
+              Delete: {
+                TableName: this.#table,
+                Key: barcodeKey(barcode),
+                ConditionExpression: 'beanId = :bean',
+                ExpressionAttributeValues: { ':bean': beanId },
+              },
+            },
+          ],
         }),
       );
-      return beanOf(storedItem(BeanItem, result.Attributes, key.pk, 'bean'));
     } catch (error) {
-      if (!isConditionFailure(error)) throw error;
-      if ((await this.getBean(beanId)) === undefined) throw new ItemNotFoundError('no such bean');
-      throw new BeanNotUnverifiedError('bean is not unverified');
+      rethrowConflict(error);
+      const failed = failedConditions(error);
+      if (!failed?.length) throw error;
+      if (failed.includes(0)) throw await this.#reviewFailure(beanId);
+      throw new WriteConflictError('the barcode pointer changed during the write', { cause: error });
     }
+    // A transaction returns no item. Only status, updatedAt and the queue attributes changed.
+    return { ...current, status: 'rejected' };
+  }
+
+  /** Why a review's condition failed: the bean is gone, or no longer unverified. */
+  async #reviewFailure(beanId: string): Promise<Error> {
+    return (await this.getBean(beanId)) === undefined
+      ? new ItemNotFoundError('no such bean')
+      : new BeanNotUnverifiedError('bean is not unverified');
   }
 }

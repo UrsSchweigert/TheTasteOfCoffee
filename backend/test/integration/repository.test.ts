@@ -597,6 +597,48 @@ describe.skipIf(!local.reachable)('repository on DynamoDB Local', () => {
       expect(await reviewQueue()).not.toContain(bean.bean_id);
     });
 
+    it('rejecting frees the barcode in the same write; the rejected bean stays recorded and a new create succeeds', async () => {
+      const barcode = '5449000000996';
+      const created = await repo.createBean({ vocabularyVersion: 2, barcode, openFoodFactsMatch: false, pickedAttributes: { origin: 'kenya' } });
+      const id = created.bean.bean_id;
+      expect((await repo.getBeanByBarcode(barcode))?.bean).toEqual(created.bean);
+
+      const rejected = await repo.rejectBean(id);
+      expect(rejected).toEqual({ ...created, status: 'rejected' });
+      expect(await raw(barcodeKey(barcode))).toBeUndefined();
+      expect(await repo.getBeanByBarcode(barcode)).toBeUndefined();
+      const meta = await raw(beanMetaKey(id));
+      expect(meta).toMatchObject({ status: 'rejected', barcode, beanId: id, pickedAttributes: { origin: 'kenya' } });
+      expect(meta).not.toHaveProperty('gsi1pk');
+      expect(await repo.getBean(id)).toEqual(rejected);
+
+      const fresh = await repo.createBean({ vocabularyVersion: 1, barcode, openFoodFactsMatch: false, pickedAttributes: { process: 'honey' } });
+      expect(fresh.bean.bean_id).not.toBe(id);
+      expect((await repo.getBeanByBarcode(barcode))?.bean).toEqual(fresh.bean);
+      expect(await raw(barcodeKey(barcode))).toMatchObject({ beanId: fresh.bean.bean_id });
+      // Rejecting the old bean again changes nothing, and never touches the new pointer.
+      await expect(repo.rejectBean(id)).rejects.toThrow(BeanNotUnverifiedError);
+      expect(await raw(barcodeKey(barcode))).toMatchObject({ beanId: fresh.bean.bean_id });
+    });
+
+    it('verifying keeps the barcode pointer', async () => {
+      const barcode = '0012000161155';
+      const { bean } = await repo.createBean({ vocabularyVersion: 1, barcode, openFoodFactsMatch: false, pickedAttributes: {} });
+      await repo.verifyBean(bean.bean_id);
+      expect(await raw(barcodeKey(barcode))).toMatchObject({ beanId: bean.bean_id });
+      expect((await repo.getBeanByBarcode(barcode))?.bean.verified).toBe(true);
+    });
+
+    it('a reject leaves a pointer that names another bean alone', async () => {
+      const barcode = '0012000161162';
+      const { bean } = await repo.createBean({ vocabularyVersion: 1, barcode, openFoodFactsMatch: false, pickedAttributes: {} });
+      const other = newUlid();
+      // Planted directly: a pointer can only name another bean through corruption or a future merge.
+      await documentClient.send(new PutCommand({ TableName: tableName, Item: { ...barcodeKey(barcode), type: 'BARCODE', beanId: other, barcode } }));
+      expect((await repo.rejectBean(bean.bean_id)).status).toBe('rejected');
+      expect(await raw(barcodeKey(barcode))).toMatchObject({ beanId: other });
+    });
+
     it('verifying an unknown bean is not found', async () => {
       await expect(repo.verifyBean(newUlid())).rejects.toThrow(ItemNotFoundError);
       await expect(repo.rejectBean(newUlid())).rejects.toThrow(ItemNotFoundError);
