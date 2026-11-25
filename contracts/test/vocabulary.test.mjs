@@ -461,7 +461,7 @@ test('v3 is v2 plus grinders and field_rules in brew.json, and nothing else chan
 test('v3 grinders: hand and electric models, then pre_ground and other, each with its own scale or none', () => {
   const { grinders } = loadVocabulary(3).brew;
   const ids = grinders.map((entry) => entry.id);
-  assert.ok(ids.length >= 17 && ids.length <= 27, `expected about 15 to 25 grinders, found ${ids.length}`);
+  assert.ok(ids.length >= 17 && ids.length <= 27, `expected 17 to 27 grinders, found ${ids.length}`);
   assert.deepEqual(ids.slice(-2), ['pre_ground', 'other']);
   for (const id of ['comandante_c40', 'onezpresso_jx_pro', 'baratza_encore', 'niche_zero']) assert.ok(ids.includes(id), id);
   // Most models have a scale; a dial that is not in steps of 1 or 0.5 has none.
