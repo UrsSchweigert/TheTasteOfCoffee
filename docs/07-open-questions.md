@@ -40,7 +40,7 @@ Open items are also tracked as GitHub issues with the label `human` (since 2026-
 - [x] Require the `ci-ok` status check on `main` (GitHub Actions app only, branches up to date), plus the existing PR rules (owner, 2026-11-25).
 - [x] Create the SecureStrings `/cupmark/{dev,prod}/apple-sign-in-key` and `/cupmark/{dev,prod}/cursor-key` in eu-central-1 (owner, 2026-11-25, via CloudShell; all four confirmed present).
 - [x] Re-apply the guardrails after M1-T2 (`apply-guardrails.sh --apply`): boundary and execution policies updated, bootstrap unchanged, deploy role policy rewritten (owner, 2026-11-25, from CloudShell).
-- [ ] Raise the Lambda concurrency quota in eu-central-1 to at least 120. The owner requested 1000 on 2026-11-25; AWS approval is pending, and the first deploy waits for it.
+- [x] Raise the Lambda concurrency quota in eu-central-1 to at least 120. The owner requested 1000 on 2026-11-25; on 2026-11-25 the owner reported it is 1000.
 - [ ] Once M1-T9 is built, deploy `cupmark-github-oidc` once by hand, importing the existing `CupmarkGitHubDeploy` (the owner prefers this, because it keeps the role ARN).
 - [ ] Add repository secrets: `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`, and the AWS role ARN.
 - [ ] Approve every production deployment.
