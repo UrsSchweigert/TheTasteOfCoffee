@@ -13,7 +13,9 @@ enum BarcodeSourceEvent: Sendable, Equatable {
 protocol BarcodeSource: AnyObject {
     /// The reports, in order. Iterated once.
     var events: AsyncStream<BarcodeSourceEvent> { get }
-    /// Stops scanning. Called once, after the first valid code.
+    /// Stops scanning: after the first valid code, when the camera becomes unavailable, and
+    /// when the screen's run is cancelled or the screen disappears. May be called more than
+    /// once; calls after the first do nothing.
     func stop()
 }
 
@@ -80,8 +82,20 @@ final class ScannerViewModel {
     /// Reads `source` until the first valid barcode, then stops the source and reports the
     /// barcode. Returns when that happens, when the source becomes unavailable, when its
     /// stream ends, or when the calling task is cancelled.
+    ///
+    /// A cancelled run stops the source too (M2-T22): the screen's `.task` is cancelled when
+    /// another screen, such as the pick-list entry, is pushed over the scanner, and the camera
+    /// must not keep running off screen. A stream that simply ends is not stopped again.
     func consume(_ source: any BarcodeSource) async {
         guard state == .scanning else { return }
+        defer {
+            // Cancelling the task ends the `for await` below with no event, so this is the
+            // only place that sees the cancellation. `stop()` is idempotent on the device
+            // source, and the screen's `.onDisappear` may call it as well.
+            if Task.isCancelled, state == .scanning {
+                source.stop()
+            }
+        }
         for await event in source.events {
             switch event {
             case .payload(let payload):

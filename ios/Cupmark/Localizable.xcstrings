@@ -307,6 +307,204 @@
         }
       }
     },
+    "bean_entry.barcode" : {
+      "comment" : "Label of the scanned barcode on the pick-list entry.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Strichcode"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Barcode"
+          }
+        }
+      }
+    },
+    "bean_entry.clear" : {
+      "comment" : "Button that clears the roast level pick.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zurücksetzen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear"
+          }
+        }
+      }
+    },
+    "bean_entry.failed.message" : {
+      "comment" : "Message when saving the described bean failed for a reason that may pass later.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Bohne konnte gerade nicht gespeichert werden. Deine Angaben bleiben erhalten. Versuche es gleich noch einmal."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The bean could not be saved right now. Your picks are kept. Try again in a moment."
+          }
+        }
+      }
+    },
+    "bean_entry.failed.title" : {
+      "comment" : "Title when saving the described bean failed for a reason that may pass later.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht gespeichert"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not Saved"
+          }
+        }
+      }
+    },
+    "bean_entry.picks.footer" : {
+      "comment" : "Footer of the pick lists: every pick is optional and the roaster is added later.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wähle aus, was du weißt, und lass den Rest offen. Die Rösterei wird bei der Prüfung der Bohne ergänzt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick what you know and leave the rest. The roaster is added when the bean is checked."
+          }
+        }
+      }
+    },
+    "bean_entry.picks.header" : {
+      "comment" : "Header of the pick lists on the pick-list entry.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Angaben auf der Packung (optional)"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What the Bag Says (Optional)"
+          }
+        }
+      }
+    },
+    "bean_entry.rejected.message" : {
+      "comment" : "Message when the server did not accept the described bean (400); saving again needs a changed pick.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Server hat diese Angaben nicht angenommen. Aktualisiere die App oder ändere eine Angabe, um erneut zu speichern."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server did not accept these picks. Update the app, or change a pick to save again."
+          }
+        }
+      }
+    },
+    "bean_entry.rejected.title" : {
+      "comment" : "Title when the server did not accept the described bean (400).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht angenommen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not Accepted"
+          }
+        }
+      }
+    },
+    "bean_entry.roast_level.clear" : {
+      "comment" : "Accessibility label of the button that clears the roast level pick.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Röstgrad zurücksetzen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear roast level"
+          }
+        }
+      }
+    },
+    "bean_entry.save" : {
+      "comment" : "Button that saves the described bean.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bohne speichern"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save Bean"
+          }
+        }
+      }
+    },
+    "bean_entry.title" : {
+      "comment" : "Title of the pick-list entry, where the user describes a bean without an Open Food Facts hit.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bohne beschreiben"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Describe the Bean"
+          }
+        }
+      }
+    },
     "lookup.confirm" : {
       "comment" : "Button that confirms the Open Food Facts product is the user's coffee.",
       "extractionState" : "manual",

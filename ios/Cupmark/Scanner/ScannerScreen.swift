@@ -6,7 +6,8 @@ import UIKit
 /// offers a way to type a barcode (invariant 1).
 ///
 /// `onScanned` gets the first valid barcode, once (M2-T14 connects the lookup).
-/// `onPickListEntry` opens the pick-list entry (M2-T22 connects it).
+/// `onPickListEntry` opens the pick-list entry (`BeanEntryScreen`, M2-T22). The camera stops
+/// while that screen covers the scanner.
 struct ScannerScreen: View {
     @State private var model: ScannerViewModel
     @State private var source: DataScannerBarcodeSource?
@@ -27,6 +28,13 @@ struct ScannerScreen: View {
             .navigationTitle(Text(L10n.scannerTitle))
             .navigationBarTitleDisplayMode(.inline)
             .task { await run() }
+            .onDisappear {
+                // Another screen pushed over the scanner (the pick-list entry, M2-T22) only
+                // hides it, so VisionKit would keep the camera running. The cancelled `.task`
+                // stops the source as well; `stop()` is idempotent. Coming back starts a new run
+                // with a new source.
+                source?.stop()
+            }
     }
 
     /// Checks availability, then reads a fresh source until the first valid code. A new source

@@ -78,6 +78,25 @@ final class FakeSyncBackend: @unchecked Sendable {
         lock.withLock { recipes[id] = values }
     }
 
+    func seed(profile values: API.Profile?) {
+        lock.withLock { profile = values }
+    }
+
+    /// Removes an item as another device would (M2-T17).
+    func remove(shelfEntry id: String) {
+        lock.withLock { shelf[id] = nil }
+    }
+
+    func remove(brew id: String) {
+        lock.withLock { brews[id] = nil }
+    }
+
+    func remove(recipe id: String) {
+        lock.withLock { recipes[id] = nil }
+    }
+
+    var storedProfile: API.Profile? { lock.withLock { profile } }
+
     var shelfEntries: [String: API.ShelfEntryInput] { lock.withLock { shelf } }
     var storedBrews: [String: API.BrewInput] { lock.withLock { brews } }
     var storedRecipes: [String: API.RecipeInput] { lock.withLock { recipes } }
@@ -120,7 +139,8 @@ final class FakeSyncBackend: @unchecked Sendable {
                 shelf[id] = values
                 return try reply(201, API.ShelfEntry(shelfEntryId: id, values: values))
             case ("GET", "shelf", 1):
-                return try reply(200, API.ShelfEntryPage(items: shelf.sorted { $0.key < $1.key }.map { API.ShelfEntry(shelfEntryId: $0.key, values: $0.value) }))
+                let page = try FakeSyncBackend.page(shelf.sorted { $0.key < $1.key }, request)
+                return try reply(200, API.ShelfEntryPage(items: page.items.map { API.ShelfEntry(shelfEntryId: $0.key, values: $0.value) }, nextCursor: page.next))
             case ("GET", "shelf", 2):
                 return try shelf[parts[1]].map { values in try reply(200, API.ShelfEntry(shelfEntryId: parts[1], values: values)) } ?? StubResponse(status: 404)
             case ("PUT", "shelf", 2):
@@ -153,7 +173,8 @@ final class FakeSyncBackend: @unchecked Sendable {
                 brews[id] = values
                 return try reply(201, API.Brew(brewId: id, values: values))
             case ("GET", "brews", 1):
-                return try reply(200, API.BrewPage(items: brews.sorted { $0.key < $1.key }.map { API.Brew(brewId: $0.key, values: $0.value) }))
+                let page = try FakeSyncBackend.page(brews.sorted { $0.key < $1.key }, request)
+                return try reply(200, API.BrewPage(items: page.items.map { API.Brew(brewId: $0.key, values: $0.value) }, nextCursor: page.next))
             case ("GET", "brews", 2):
                 return try brews[parts[1]].map { values in try reply(200, API.Brew(brewId: parts[1], values: values)) } ?? StubResponse(status: 404)
             case ("PUT", "brews", 2):
@@ -175,7 +196,8 @@ final class FakeSyncBackend: @unchecked Sendable {
                 recipes[id] = values
                 return try reply(201, API.Recipe(recipeId: id, values: values))
             case ("GET", "recipes", 1):
-                return try reply(200, API.RecipePage(items: recipes.sorted { $0.key < $1.key }.map { API.Recipe(recipeId: $0.key, values: $0.value) }))
+                let page = try FakeSyncBackend.page(recipes.sorted { $0.key < $1.key }, request)
+                return try reply(200, API.RecipePage(items: page.items.map { API.Recipe(recipeId: $0.key, values: $0.value) }, nextCursor: page.next))
             case ("GET", "recipes", 2):
                 return try recipes[parts[1]].map { values in try reply(200, API.Recipe(recipeId: parts[1], values: values)) } ?? StubResponse(status: 404)
             case ("PUT", "recipes", 2):
@@ -191,6 +213,8 @@ final class FakeSyncBackend: @unchecked Sendable {
                 }
                 return StubResponse(status: 204)
 
+            case ("GET", "profile", 1):
+                return try profile.map { values in try reply(200, values) } ?? StubResponse(status: 404)
             case ("PUT", "profile", 1):
                 let values = try decode(API.Profile.self, request)
                 profile = values
@@ -199,6 +223,23 @@ final class FakeSyncBackend: @unchecked Sendable {
                 return StubResponse(status: 500)
             }
         }
+    }
+
+    /// One page of a list route: `limit` items (the contract's default, 50, without one)
+    /// after the offset in `cursor` (`o<offset>`), and the cursor of the next page.
+    static func page<Item>(_ all: [Item], _ request: RecordedRequest) throws -> (items: [Item], next: String?) {
+        let query = request.queryItems
+        let limit = query.first { item in item.name == "limit" }?.value.flatMap { value in Int(value) } ?? 50
+        var offset = 0
+        if let cursor = query.first(where: { item in item.name == "cursor" })?.value {
+            guard cursor.hasPrefix("o"), let value = Int(cursor.dropFirst()) else {
+                throw URLError(.badServerResponse)
+            }
+            offset = value
+        }
+        let start = min(offset, all.count)
+        let end = min(start + max(1, limit), all.count)
+        return (Array(all[start..<end]), end < all.count ? "o\(end)" : nil)
     }
 
     /// Called with the lock held.

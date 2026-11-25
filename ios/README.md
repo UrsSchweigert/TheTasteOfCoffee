@@ -17,6 +17,7 @@ Cupmark/                  app target sources and resources
   Store/                  SwiftData local store, one per account (M2-T15), and its outbox (M2-T16)
   Sync/                   SyncEngine, SyncBackoff and SyncHost: the outbox sent to the API (M2-T16)
   Lookup/                 barcode lookup and Open Food Facts confirmation (M2-T14)
+  BeanEntry/              pick-list bean entry (M2-T22): BeanEntryModel, pick lists, A to Z sections
   L10n.swift              keys of the String Catalog
   Localizable.xcstrings   String Catalog, English (source) and German
 CupmarkTests/             XCTest unit tests (hosted in the app)
@@ -110,6 +111,27 @@ node scripts/generate-ios-api.mjs
 - Until M2-T18 the flow ends at the bean; from M2-T18 on it continues to the shelf entry. The bean is not cached in the local store yet.
 - Tests: `LookupModelTests` covers every answer above against `StubURLProtocol`, the POST body (exactly the four properties, no Open Food Facts text), operator-wins, the image route, and a test whose session puts `HostRecordingURLProtocol` in front of the stub: every host any path contacts is a stub API host. `scripts/ios-scripts.test.mjs` checks on Linux that no iOS file names the Open Food Facts domain and that name and brand are only shown with `Text(verbatim:)`.
 
+## Pick-list bean entry
+
+`BeanEntry/` (M2-T22) implements F1 step 4: with no Open Food Facts hit, or no barcode, the user describes the bean with pick lists and saves it as an unverified catalogue bean.
+
+- `ScanFlowView` pushes `BeanEntryScreen`: from the scanner's "Describe the bean instead" without a barcode, and from the lookup's fallback (`.pickList(reason)`) or its Reject with the scanned barcode.
+- `BeanEntryModel` (`@MainActor`, `@Observable`) holds the optional picks (`API.BeanAttributes`) and the optional barcode. `request` is the whole `POST /beans` body: `vocabulary_version` (`Vocabulary.version`), `attributes`, and `barcode` when one was scanned. It never sends `open_food_facts_confirmed`. `save()` sends it:
+  - 201: the bean, shown with `BeanDetailView`;
+  - 409: the barcode already has a bean, so `GET /barcodes/{barcode}` and that bean is used (a 409 without a barcode, or a 404 after it, can be retried);
+  - 400: shown as "not accepted"; that exact body is never sent again (`rejectedRequest`), and changing a pick allows a new save;
+  - anything else (no network, 429, 5xx): kept picks and "Try again".
+  The save goes straight to the API. M2-T25 moves it into the outbox by queueing `request` instead.
+- Lists, all optional with "Not set", each offering the `other` and `unknown` entries its vocabulary list has:
+  - origin: `IndexedPickList`, grouped by country through `Vocabulary.Origin.country` (`Vocabulary.Origin.groupedByCountry`, ADR 0011): countries sorted by label in A to Z sections, each followed by its regions, indented;
+  - variety: `IndexedPickList`, sorted by label in A to Z sections;
+  - species and process: short lists (`Picker` with the `navigationLink` style);
+  - roast level: a segmented control with a "Clear" button, a pushed list at accessibility text sizes.
+  The long lists have a tappable A to Z index on the trailing edge instead of a search field: `.searchable` is typed text (invariant 1). `PickListSections` sorts in the label language, ignoring case and diacritics, so "Äthiopien" is under A.
+- There is no roaster list (ADR 0006).
+- The camera stops while the entry covers the scanner: `ScannerViewModel.consume` stops its source when the run is cancelled (the screen's `.task` ends when another screen is pushed), and `ScannerScreen` stops it in `.onDisappear` too. Going back starts a new run with a new source.
+- Tests: `BeanEntryModelTests` (the body with no picks and with all picks, with and without a barcode; 409, 400, retries), `PickListSectionsTests` (grouping by country, sections and sort order) and `ScannerViewModelTests` (a cancelled run stops the source).
+
 ## Local store
 
 `Store/` (M2-T15) is the SwiftData copy of the user's own data (docs/04, Offline). `SyncHost` (M2-T16) opens the signed-in account's store; M2-T17 and M2-T18 add the pull and the screens.
@@ -133,6 +155,16 @@ node scripts/generate-ios-api.mjs
 - `sentWithoutAnswer` is saved before each request. If a create comes back without an answer that says the server did nothing (a transport failure after a connection was made, 5xx, the app ended), the next attempt first lists the resource (counted as an attempt, so it backs off) and adopts a server item with no local counterpart that matches the body last sent (`sentBody`), not the current values: a brew with the same `shelf_entry_id` and `brewed_at`, a shelf entry with the same values, a recipe with the same parameters.
 - `SyncHost` (`CupmarkApp`, `.syncHost(_:auth:)`) switches with the signed-in account: it stops the old engine, opens the new account's store and starts its engine with the app's one `APIClient`. Sign-out stops the engine; a sign-in-required stop from the current engine signs out, but only while that account's session is still saved. Screens edit drafts and write them through `AccountStore`, since the engine's saves save the shared context. A local save wakes the engine (`AccountStore.onSave`).
 - Tests: `SyncEngineTests` with `FakeSyncServer` (`CupmarkTests/Support/FakeSyncServer.swift`, an in-memory API over `StubURLProtocol`), a `TestClock` and a fixed jitter: each status rule, the order, the rewrite across bean, shelf entry and brew, the adoptions, an on-disk store reopened with its queue, stopping and the account check.
+
+## Pull and reconcile
+
+`Sync/Puller.swift` (M2-T17) brings the server's copy to the device, so a new device ends with a full copy and an edit or delete on another device shows here. docs/05, Pull, has the rules in short.
+
+- When: `SyncHost` asks for a pull on sign-in (`switchTo(_:)`), when the scene becomes active (`sceneBecameActive()`, which also kicks the engine), and after a drain that finished an operation (`SyncEngine.finishedOperations` changed). The pull runs in the engine's idle slot (`SyncEngine.onIdle`) once the outbox is empty, so the local writes go first and `drain()` answers `.busy` while a pull runs. A pull that only follows a drain waits until 30 s after the last completed pull (`drainPullInterval`) and stays due until then; sign-in and foreground always pull. A failed pull is asked for again and runs at the next trigger.
+- What: every page of `GET /shelf`, `/brews` and `/recipes`, then `GET /profile` (404: no profile yet, none is created), then `GET /beans/{bean_id}` for each shelf bean (of the server's or the device's entries) that is not cached or is not verified. Nothing is written until every request has answered; the merge then runs on the main actor without a suspension and saves once.
+- Merge: a server item with no local item is inserted as synced, with no outbox operation. A synced local item the server no longer lists is removed, except when that list had an undecodable item (it may be that one) and except a shelf entry that still has brews on the device. An item that is not synced or has any operation in the outbox, parked ones included, keeps its local values. Any other takes the server's values; beans are only added or refreshed, never removed.
+- `PullReport` counts what happened. `undecodableItems` (from `AllPages.undecodableItems`, plus a `GET /beans/{bean_id}` or `GET /profile` answer that does not decode, treated like a 404 for a bean and as skipped for the profile, never as "no profile") and `unresolvedItems` (a bean or shelf entry the device could not get) make `skippedItems`, which `SyncHost.lastPull` exposes for a later note on screen. A 401 after the refresh stops the engine and asks for sign-in, like a drain.
+- Tests: `PullerTests` with `FakeSyncServer`, which pages its lists (`limit`, cursor `o<offset>`) and serves `GET /profile`: 250 brews over three pages into an empty store, insert, update, remove and keep-pending, bean fetch and refresh, an undecodable item, a profile 404, a failed request that writes nothing, and the host's order (outbox, then pull), the busy drain, the foreground pull and sign-in required.
 
 ## Sign-in
 
