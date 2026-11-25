@@ -60,7 +60,7 @@ Everything here is `RemovalPolicy.RETAIN` (CloudFormation `DeletionPolicy` and `
 | --- | --- | --- | --- |
 | Bean (`BEAN#<beanId>` / `META`) with status unverified | `REVIEW#UNVERIFIED` | `<createdAt ISO 8601>#<beanId>` | Set when the bean is created unverified (F1, M1-T4). |
 
-Verifying (or rejecting) a bean removes both attributes in the same write, which drops it from the queue. No other item sets `gsi1pk` or `gsi1sk`. The repository module (M1-T3) owns these formats; this table is the contract.
+Verifying (or rejecting) a bean removes both attributes in the same write, which drops it from the queue. No other item sets `gsi1pk` or `gsi1sk`. The repository module (`backend/src/repository/`, M1-T3) owns these formats; this table is the contract. `test/table-schema.test.ts` fails if the synthesised keys, index or stream differ from `backend/src/repository/table.ts`, which the backend's DynamoDB Local tests create their table from.
 
 ### Buckets
 

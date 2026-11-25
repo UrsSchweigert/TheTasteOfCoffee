@@ -109,6 +109,22 @@ test('permissions other than exactly contents: read are rejected', () => {
   has(strict(good.replace('    timeout-minutes: 5', '    timeout-minutes: 5\n    permissions:\n      contents: read')), 'job-level permissions');
 });
 
+test('service and container images must be pinned to a sha256 digest', () => {
+  const DIGEST = `sha256:${'a'.repeat(64)}`;
+  const withServices = (image) =>
+    good.replace('    timeout-minutes: 5\n', `    timeout-minutes: 5\n    services:\n      db:\n        image: ${image}\n        ports:\n          - 8000:8000\n`);
+  const withContainer = (container) => good.replace('    timeout-minutes: 5\n', `    timeout-minutes: 5\n    container: ${container}\n`);
+  assert.deepEqual(strict(withServices(`amazon/dynamodb-local:3.3.2@${DIGEST}`)), []);
+  assert.deepEqual(strict(withServices(`amazon/dynamodb-local@${DIGEST}`)), []);
+  assert.deepEqual(strict(withContainer(`node:22@${DIGEST}`)), []);
+  has(strict(withServices('amazon/dynamodb-local:3.3.2')), 'service db: image "amazon/dynamodb-local:3.3.2" is not pinned');
+  has(strict(withServices('amazon/dynamodb-local:latest')), 'not pinned to a sha256 digest');
+  has(strict(withServices(`amazon/dynamodb-local@sha256:${'a'.repeat(63)}`)), 'not pinned to a sha256 digest');
+  has(strict(withContainer('node:22')), 'container: image "node:22" is not pinned');
+  has(strict(withContainer('{ options: --cpus 1 }')), 'container: image "undefined" is not pinned');
+  has(strict(good.replace('    timeout-minutes: 5\n', '    timeout-minutes: 5\n    services: db\n')), 'services is not a mapping');
+});
+
 test('secrets, missing timeouts and persisted checkout credentials are rejected', () => {
   has(strict(good.replace('echo hi', 'echo ${{ secrets.TOKEN }}')), 'references secrets');
   has(strict(good.replace('    timeout-minutes: 5\n', '')), 'no timeout-minutes');

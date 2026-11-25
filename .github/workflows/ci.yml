@@ -205,6 +205,14 @@ jobs:
     name: backend
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # DynamoDB Local for the repository integration tests (M1-T3). The image is
+    # pinned by digest (tag 3.3.2); its default command runs in memory. It never
+    # talks to AWS and needs no credentials beyond the dummy pair in the tests.
+    services:
+      dynamodb-local:
+        image: amazon/dynamodb-local:3.3.2@sha256:6ada631ec7aa5fc83446855eb17233e3dad184fec47477e8140c6c569cfe0c86
+        ports:
+          - 127.0.0.1:8000:8000
     defaults:
       run:
         working-directory: backend
@@ -227,6 +235,12 @@ jobs:
         run: npm run lint
       - name: Test
         run: npm test
+      # Fails instead of skipping if DynamoDB Local is not up (REQUIRE_DYNAMODB_LOCAL).
+      - name: Integration tests (DynamoDB Local)
+        env:
+          DYNAMODB_ENDPOINT: http://localhost:8000
+          REQUIRE_DYNAMODB_LOCAL: '1'
+        run: npm run test:integration
       - name: Build
         run: npm run build
       - name: Generated contract is up to date

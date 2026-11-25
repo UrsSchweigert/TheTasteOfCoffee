@@ -53,17 +53,20 @@ One DynamoDB table holds everything. The partition key decides who can reach an 
 | Item | Partition key | Sort key | Holds |
 | --- | --- | --- | --- |
 | User profile | `USER#<id>` | `PROFILE` | Entitlement and expiry, consent flags, locale |
-| Shelf entry | `USER#<id>` | `SHELF#<beanId>#<date>` | Purchase date, roast date, bag size, price band |
-| Brew with rating | `USER#<id>` | `BREW#<timestamp>` | Method, parameters, 8 scores, intensities, notes, buy again, schema version |
+| Shelf entry | `USER#<id>` | `SHELF#<shelfEntryId>` | Bean, purchase date, roast date, bag size, price band |
+| Brew with rating | `USER#<id>` | `BREW#<brewedAt UTC>#<brewId>` | Method, parameters, 8 scores, intensities, notes, buy again, schema version |
+| Brew pointer | `USER#<id>` | `BREWID#<brewId>` | The brew's current sort key, for reads by id |
 | Recipe | `USER#<id>` | `RECIPE#<id>` | Saved parameter set |
 | Bean | `BEAN#<beanId>` | `META` | Roaster, origin, process, variety, roast level, status, source |
 | Barcode | `BARCODE#<ean>` | `BEAN` | Pointer to the bean |
 | Aggregate, all methods | `BEAN#<beanId>` | `AGG#ALL` | Rater count; count, sum and sum of squares per criterion; note counts |
 | Aggregate per method | `BEAN#<beanId>` | `AGG#METHOD#<method>` | Same, plus recipe histogram buckets |
 | Rater marker | `BEAN#<beanId>` | `RATER#<id>` | Proves a distinct rater; drives give-to-get |
-| Ranking | `RANK#<facet>` | `<period>` | Precomputed top list |
+| Ranking | `RANK#<facet>` | `<period>` | Precomputed top list; facet and period formats in ADR 0010 |
 
-One sparse index lists unverified beans for the review queue. The user id always comes from the verified token, never from the request body, so a user can only ever address their own `USER#` partition.
+Ids in keys are server-generated ULIDs; `brewedAt` is fixed-width UTC (`toISOString()`), so brews list newest first. A brew and its pointer are always written in one transaction (ADR 0010). `backend/src/repository/` builds every key and is the only code that talks to the table.
+
+One sparse index (`gsi1`) lists unverified beans for the review queue: only an unverified bean's `META` item carries `gsi1pk=REVIEW#UNVERIFIED` and `gsi1sk=<createdAt UTC>#<beanId>`, and verifying or rejecting the bean removes both (infra/README.md). The user id always comes from the verified token, never from the request body, so a user can only ever address their own `USER#` partition.
 
 ## Aggregation pipeline
 
