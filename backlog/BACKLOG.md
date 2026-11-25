@@ -146,7 +146,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - From the M1-T5 review (ADR 0013):
     - the HTTP API uses the `$default` stage, because the router matches on `rawPath`;
     - the API Lambda gets `TABLE_NAME` and `CURSOR_KEY_PARAMETER=/cupmark/<stage>/cursor-key`, plus `ssm:GetParameter` on exactly that parameter ARN;
-    - the owner creates the SecureString by hand (at least 32 random bytes, base64), because CloudFormation cannot create a SecureString, and the README gives the exact command.
+    - the owner creates the SecureString by hand (at least 32 random bytes, base64), because CloudFormation cannot create a SecureString, and the README gives the exact command. Done for dev and prod on 2026-11-25, together with the Apple key parameters.
   - From the M1-T8 review: the table gets `TimeToLiveSpecification` on a named attribute (`expires_at`), docs/05 names it, and the "no TTL" assertion in `infra/test/data.test.ts` changes accordingly. The API Lambda gets outbound HTTPS to Open Food Facts, with no VPC and no NAT.
   - From the M1-T1 review: a test snapshots the logical ids of the table, the buckets and the pool, so a construct rename that would replace them fails at test time.
 
