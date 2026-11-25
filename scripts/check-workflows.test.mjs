@@ -734,6 +734,13 @@ ${run.split('\n').map((l) => `          ${l}`).join('\n')}
   has(check('dev', './node_modules/.bin/cdk deploy --all'), 'cdk deploy --all');
   has(check('dev', 'npx cdk \\\n  deploy \\\n  --all'), 'cdk deploy --all');
   has(check('dev', 'cd infra && npx cdk -v "deploy" "prod/core"'), 'must name exactly the stack');
+  has(check('dev', 'npx aws-cdk deploy --all'), 'cdk deploy --all');
+  has(check('dev', 'npx aws-cdk@2 destroy dev/core'), 'runs cdk destroy');
+  has(check('dev', 'npx cdk deploy dev/core; npx cdk destroy'), 'runs cdk destroy');
+  has(check('dev', 'npx cdk deploy dev/core && npx cdk deploy prod/core'), 'must name exactly the stack');
+  has(check('dev', 'npx cdk diff dev/core || npx cdk deploy --all'), 'cdk deploy --all');
+  has(check('dev', 'npx cdk deploy dev/core | tee log; npx aws-cdk bootstrap'), 'runs cdk bootstrap');
+  assert.deepEqual(check('dev', 'npx cdk diff dev/core; npx cdk deploy dev/core | tee deploy.log'), []);
   assert.deepEqual(check('dev', 'npx cdk -c stage=dev deploy dev/core --require-approval never'), []);
   assert.deepEqual(check('dev', 'npx cdk@2.1149.0 \\\n  deploy dev/core'), []);
   // Not cdk invocations: no finding.

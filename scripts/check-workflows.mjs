@@ -119,22 +119,29 @@ function environmentName(job) {
 const STAGE_SCRIPT = /\bscripts\/(?:deploy|smoke)\/[A-Za-z0-9_.-]+\.sh(?:[ \t]+([^\s;&|]+))?/g;
 // A guard against accidents (a stray --all, a stack of the other stage, a destroy), not
 // the security control: that is the role's trust plus the environments' branch limits and
-// reviewers (ADR 0018). It knows the usual forms: `cdk ...`, `npx cdk ...`,
+// reviewers (ADR 0018). It knows the usual forms: `cdk ...`, `npx cdk ...`, `npx aws-cdk ...`,
 // `npx cdk@<version> ...`, `npm run cdk -- ...` and a path ending in `/cdk`, with options
 // before the verb (`npx cdk -c stage=dev deploy`) and `\` line continuations.
-const CDK_INVOCATION = /(?:^|[^\w.-])cdk(?:@[^\s]*)?(?=\s|$)/;
+const CDK_INVOCATION = /(?:^|[^\w.-])(?:aws-)?cdk(?:@[^\s]*)?(?=\s|$)/g;
 const CDK_VERBS = ['deploy', 'destroy', 'bootstrap'];
 
-/** For each cdk invocation in a script: the verb (deploy, destroy, bootstrap) and the rest of its line. */
+/** For each cdk invocation in a script: the verb (deploy, destroy, bootstrap) and the rest of its command. */
 function cdkCommands(run) {
   const commands = [];
-  for (const line of run.replace(/\\\r?\n/g, ' ').split('\n')) {
-    const m = CDK_INVOCATION.exec(line);
-    if (m === null) continue;
-    const rest = line.slice(m.index + m[0].length);
-    const tokens = rest.split(/\s+/).map((t) => t.replace(/^['"]|['"]$/g, ''));
-    const verb = tokens.find((t) => CDK_VERBS.includes(t));
-    if (verb !== undefined) commands.push({ verb, line: rest });
+  const lines = run.replace(/\\\r?\n/g, ' ').split('\n');
+  // Each command of a line on its own: split at ;, &&, || and |.
+  for (const segment of lines.flatMap((l) => l.split(/;|&&|\|\||\|/))) {
+    const calls = [...segment.matchAll(CDK_INVOCATION)];
+    calls.forEach((m, i) => {
+      // The arguments of this call: up to the next cdk call in the same command.
+      const end = i + 1 < calls.length ? calls[i + 1].index : segment.length;
+      const rest = segment.slice(m.index + m[0].length, end);
+      const tokens = rest.split(/\s+/).map((t) => t.replace(/^['"]|['"]$/g, ''));
+      // On purpose: any cdk call followed later in its command by the word deploy (or
+      // destroy, bootstrap) counts, even if it is not the verb; the guard errs on the safe side.
+      const verb = tokens.find((t) => CDK_VERBS.includes(t));
+      if (verb !== undefined) commands.push({ verb, line: rest });
+    });
   }
   return commands;
 }
