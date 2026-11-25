@@ -143,7 +143,7 @@ describe('answers', () => {
     ['HTTP 404 with status 0', () => jsonResponse({ code: EAN13, status: 0, status_verbose: 'product not found' }, 404)],
     ['HTTP 200 with status 0', () => jsonResponse({ code: EAN13, status: 0, status_verbose: 'product not found' })],
     ['a product without name or brand', () => product({ product_name: '', brands: ' , ' })],
-    ['a product with non-string fields', () => product({ product_name: 42, brands: ['Acme'] })],
+    ['a product with null fields', () => product({ product_name: null, brands: null })],
     ['an empty product', () => product({})],
   ])('%s is a miss', async (_name, respond) => {
     expect((await lookup(respond)).outcome).toEqual({ kind: 'miss' });
@@ -163,6 +163,9 @@ describe('answers', () => {
     ['a JSON array', () => jsonResponse([1, 2]), 'malformed'],
     ['status 1 without a product', () => jsonResponse({ status: 1 }), 'malformed'],
     ['an unknown status', () => jsonResponse({ status: 2, product: { product_name: 'x' } }), 'malformed'],
+    ['a name that is not a string', () => product({ product_name: ['x'] }), 'malformed'],
+    ['a number as name', () => product({ product_name: 42, brands: 'Acme' }), 'malformed'],
+    ['brands as an array', () => product({ product_name: 'Guji', brands: ['Acme'] }), 'malformed'],
     ['a network error', () => Promise.reject(new TypeError('fetch failed')), 'network'],
   ])('%s is unavailable (%s)', async (_name, respond, reason) => {
     expect((await lookup(respond)).outcome).toEqual({ kind: 'unavailable', reason });

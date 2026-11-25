@@ -55,7 +55,8 @@ paths:
         each barcode is fetched from Open Food Facts at most once; on a miss
         it fetches the product with its own User-Agent and caches the result,
         a hit or a miss. Each fetch from Open Food Facts counts against the
-        caller's daily lookup cap; answers from the cache, 400 and 409 do not. The app shows the hit for confirmation; confirming it is POST
+        caller's daily lookup cap; answers from the cache, 400 and 409 do
+        not. The app shows the hit for confirmation; confirming it is POST
         /beans with open_food_facts_confirmed. Nothing is stored in the
         catalogue until then (docs/05-system-design.md, Barcode lookup).
       parameters:
@@ -78,7 +79,7 @@ paths:
         '429':
           description: Throttled, or the caller's daily lookup cap is used up.
         '503':
-          description: Open Food Facts could not be reached. Nothing was cached; try again later.
+          description: The lookup is unavailable (Open Food Facts could not be reached, or the server is not set up for it). Nothing was cached; try again later.
 
   /beans:
     post:

@@ -7,9 +7,12 @@
 // 2. Unicode NFC, so one visible text has one stored form.
 // 3. Line breaks, tabs and the other white-space controls (C0, NEL, U+2028,
 //    U+2029) become a space; every other control character (Unicode Cc), lone
-//    surrogates, the byte-order mark and the bidirectional embedding, override
-//    and isolate controls (U+202A to U+202E, U+2066 to U+2069, which can make
-//    text display in another order than it is stored) are removed.
+//    surrogates, the byte-order mark, the zero-width space (U+200B), the tag
+//    characters (U+E0000 to U+E007F), the bidirectional marks (U+200E, U+200F,
+//    U+061C) and the bidirectional embedding, override and isolate controls
+//    (U+202A to U+202E, U+2066 to U+2069, which can make text display in
+//    another order than it is stored) are removed. The zero-width joiner and
+//    non-joiner stay: emoji sequences and some scripts need them.
 // 4. Runs of white space become one space, and the ends are trimmed.
 // 5. Cut to `maxCodePoints` code points (the contract's maxLength, which JSON
 //    Schema counts in code points), at a grapheme boundary where one exists,
@@ -23,7 +26,7 @@ export const NAME_MAX_CODE_POINTS = 150;
 export const BRAND_MAX_CODE_POINTS = 100;
 
 const WHITESPACE_CONTROLS = /[\t\n\v\f\r\u0085\u2028\u2029]/gu;
-const REMOVED = /[\p{Cc}\uFEFF\u202A-\u202E\u2066-\u2069]|[\uD800-\uDFFF]/gu;
+const REMOVED = /[\p{Cc}\uFEFF\u200B\u200E\u200F\u061C\u202A-\u202E\u2066-\u2069\u{E0000}-\u{E007F}]|[\uD800-\uDFFF]/gu;
 const SPACES = /\s+/gu;
 
 const graphemes = new Intl.Segmenter('und', { granularity: 'grapheme' });

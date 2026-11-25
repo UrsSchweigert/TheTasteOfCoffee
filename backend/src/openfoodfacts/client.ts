@@ -129,6 +129,10 @@ async function readLimited(response: Response, limit: number): Promise<string> {
   }
 }
 
+function isTextOrAbsent(value: unknown): boolean {
+  return value === undefined || value === null || typeof value === 'string';
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -138,13 +142,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * miss; a 404 without that body is not trusted to be one (a moved API must not
  * cache misses for a month) and is 503. A product is a hit if it has a name or
  * a brand after cleaning, else a miss (the contract's 404: none with a name,
- * brand or front image).
+ * brand or front image). A name or brand that is neither a string nor absent
+ * is malformed, not a miss.
  */
 function outcomeOf(status: number, payload: unknown): FetchOutcome {
   if (!isRecord(payload)) return unavailable('malformed');
   if (payload.status === 0) return { kind: 'miss' };
   if (status === 404) return unavailable('status');
   if (payload.status !== 1 || !isRecord(payload.product)) return unavailable('malformed');
+  // A field of the wrong type means the shape is not the one assumed: 503, so no miss is cached for 30 days.
+  if (!isTextOrAbsent(payload.product.product_name) || !isTextOrAbsent(payload.product.brands)) return unavailable('malformed');
   const name = cleanText(payload.product.product_name, NAME_MAX_CODE_POINTS);
   const brand = firstBrand(payload.product.brands);
   if (name === undefined && brand === undefined) return { kind: 'miss' };

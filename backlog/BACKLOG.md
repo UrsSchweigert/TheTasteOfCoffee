@@ -182,7 +182,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - `contracts/openapi.yaml`: `NotFound` no longer says "in the caller's partition" for the shared catalogue routes (it also covers a rejected bean), and `BadRequest` mentions a bad barcode check digit. No schema change.
 
 ### M1-T4b Server-side Open Food Facts lookup
-- status: in-progress
+- status: done
 - owner: backend-engineer
 - depends: M1-T4a
 - implements: docs/decisions/0005, docs/05 Barcode lookup
@@ -230,6 +230,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
 - implements: docs/05-system-design.md, Security; docs/07-open-questions.md D1, D2
 - acceptance:
   - Profile holds consent and locale; export returns all of a user's items as CSV; delete removes the whole user partition and the label photos.
+  - From M1-T4b: the user partition also holds `LOOKUPS#<day>` counters (the daily Open Food Facts lookup cap). Deletion removes them with the partition. Export leaves them out: they are rate-limit state, not the user's data.
   - Tests prove nothing of the user remains after deletion.
   - From the M1-T2 review: deleting the account also deletes the Cognito user (`cognito-idp:AdminDeleteUser` on the stage pool). That needs a boundary change, and the owner re-applies the guardrails.
   - Deleting photos removes every object version, not just adding a delete marker, and a test asserts no version remains (see D10).
@@ -244,6 +245,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - A workflow deploys to dev through OIDC on merge to `main`, and to prod only through a manually approved environment.
   - A smoke test calls the health route after deploy.
   - From M1-T4b: the API function gets `OFF_CONTACT` (the operator's mailbox, as a plain environment variable) and optionally `OFF_LOOKUP_CAP`. Without them, uncached Open Food Facts lookups answer 503.
+  - From M1-T4b review: after the first deploy to dev, look up one known barcode and one unknown one, and check that the answers match the response shape the client expects (`status`, `product.product_name`, `product.brands`). A shape mismatch answers 503 and caches nothing.
 
 ### M1-T8 Contract update for D7 to D9
 - status: done
