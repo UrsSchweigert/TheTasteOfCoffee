@@ -41,6 +41,8 @@ test('names: snake_case to Swift', () => {
   assert.equal(singular('criteria'), 'criterion');
   assert.equal(singular('water_temp_special'), 'water_temp_special');
   assert.equal(singular('varieties'), 'variety');
+  assert.equal(singular('species'), 'species');
+  assert.equal(singular('origins'), 'origin');
   assert.equal(swiftMember('default'), '`default`');
   assert.throws(() => swiftMember('raw_value'), /reserved/);
   assert.equal(swiftString('a"b\\c\n'), '"a\\"b\\\\c\\n"');
@@ -84,6 +86,52 @@ test('no generated case of the real vocabulary is none or some', () => {
   assert.doesNotMatch(swift, /^\s*case `?(none|some)`?\b/m);
   assert.doesNotMatch(swift, /\.(none|some)\b/);
   assert.match(swift, /case noMilk = "none"/);
+});
+
+test('generateSwift emits a parent reference (country in origins) as a typed, optional entry of the same list', () => {
+  const files = {
+    bean: {
+      version: 9,
+      status: 'published',
+      origins: [{ id: 'indonesia' }, { id: 'bali', country: 'indonesia' }, { id: 'none' }],
+      species: [{ id: 'arabica' }],
+    },
+  };
+  const swift = generateSwift({ version: 9, files, languages: ['en'] });
+  assert.match(swift, /enum Origin: String/);
+  assert.match(swift, /enum Species: String/);
+  assert.match(swift, /var country: Vocabulary\.Origin\? \{/);
+  assert.match(swift, /case \.bali: return \.indonesia/);
+  assert.match(swift, /case \.indonesia: return nil/);
+  assert.match(swift, /case \.noOrigin: return nil/);
+  assert.doesNotMatch(swift, /var country: String/);
+  // A broken reference fails generation instead of emitting a dangling case.
+  const broken = structuredClone(files);
+  broken.bean.origins[1].country = 'atlantis';
+  assert.throws(() => generateSwift({ version: 9, files: broken, languages: ['en'] }), /country "atlantis" is not an entry of origins/);
+  const nested = structuredClone(files);
+  nested.bean.origins.push({ id: 'ubud', country: 'bali' });
+  assert.throws(() => generateSwift({ version: 9, files: nested, languages: ['en'] }), /has a country itself/);
+  // Other scalar attributes stay plain values.
+  const plain = generateSwift({ version: 9, files: fixture({ bag_sizes: [{ id: 'g_250', grams: 250 }] }), languages: ['en'] });
+  assert.match(plain, /var grams: Int \{/);
+});
+
+test('the real vocabulary: Origin.country, Species and Variety, and java in two enums without a clash', () => {
+  const version = latestPublishedVersion();
+  assert.equal(version, 2);
+  const swift = generateSwift({ version, files: loadVocabulary(version), languages: LANGUAGES });
+  assert.match(swift, /var country: Vocabulary\.Origin\? \{/);
+  for (const region of ['hawaii: return .usa', 'sumatra: return .indonesia', 'java: return .indonesia', 'bali: return .indonesia', 'flores: return .indonesia']) {
+    assert.ok(swift.includes(`case .${region}`), region);
+  }
+  assert.match(swift, /enum Species: String, CaseIterable, Codable, Sendable, VocabularyItem \{/);
+  assert.match(swift, /case arabicaRobustaBlend = "arabica_robusta_blend"/);
+  assert.match(swift, /enum Variety: String, CaseIterable, Codable, Sendable, VocabularyItem \{/);
+  assert.match(swift, /case ethiopia74110 = "ethiopia_74110"/);
+  const javaCases = swift.match(/^\s*case java = "java"$/gm) ?? [];
+  assert.equal(javaCases.length, 2, 'Origin.java and Variety.java');
+  assert.doesNotMatch(swift, /case robusta = "robusta"[\s\S]*enum Variety[\s\S]*case robusta/, 'robusta is a species only');
 });
 
 test('describeVocabulary finds lists, nested lists, ranges and constants', () => {

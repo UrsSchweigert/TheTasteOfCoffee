@@ -15,7 +15,9 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   LANGUAGES,
+  PARENT_REFERENCES,
   QUESTION_NAMESPACES,
+  checkParentReferences,
   collectIds,
   listVersions,
   loadI18n,
@@ -44,6 +46,8 @@ const RESERVED_MEMBERS = new Set(['rawValue', 'allCases', 'id', 'namespace', 'ha
 const RESERVED_TYPES = new Set(['Namespace', 'Ranges', 'Constants', 'Language']);
 const RANGE_KEYS = ['maximum', 'minimum', 'multipleOf'];
 const TOP_LEVEL_META = new Set(['version', 'status']);
+// Words that are the same in singular and plural.
+const INVARIANT_PLURALS = new Set(['species', 'series']);
 
 /** `moka_pot` -> `mokaPot`, `from_15_to_30` -> `from15To30`. */
 export function lowerCamel(snake) {
@@ -62,14 +66,16 @@ export function upperCamel(snake) {
 /**
  * Singular of a namespace's last word, for the Swift type name:
  * `methods` -> `method`, `flavour_categories` -> `flavour_category`,
- * `processes` -> `process`, `criteria` -> `criterion`. A name that does not
- * end in a known plural stays as it is (`water_temp_special`).
+ * `processes` -> `process`, `criteria` -> `criterion`, `species` -> `species`.
+ * A name that does not end in a known plural stays as it is
+ * (`water_temp_special`).
  */
 export function singular(snake) {
   const parts = snake.split('_');
   const last = parts.pop();
   let one = last;
-  if (last === 'criteria') one = 'criterion';
+  if (INVARIANT_PLURALS.has(last)) one = last;
+  else if (last === 'criteria') one = 'criterion';
   else if (last.endsWith('ies')) one = `${last.slice(0, -3)}y`;
   else if (last.endsWith('sses') || last.endsWith('shes') || last.endsWith('ches') || last.endsWith('xes')) one = last.slice(0, -2);
   else if (last.endsWith('s') && !last.endsWith('ss')) one = last.slice(0, -1);
@@ -243,8 +249,16 @@ function typeName(namespace) {
   return name;
 }
 
+/**
+ * Swift properties for the scalar attributes of a list's entries. The
+ * attribute PARENT_REFERENCES names for the list (`country` in `origins`) is
+ * a reference to another entry of the same list, so it becomes
+ * `Vocabulary.<Type>?` instead of a string; checkParentReferences in
+ * contracts/lib/vocabulary.mjs guarantees every value is an id of the list.
+ */
 function attributeProperties(list) {
   const props = {};
+  const parentKey = PARENT_REFERENCES[list.namespace];
   for (const item of list.items) {
     for (const [key, value] of Object.entries(item.attributes)) {
       const merged = mergeType(props[key], scalarType(value));
@@ -252,11 +266,11 @@ function attributeProperties(list) {
       props[key] = merged;
     }
   }
-  return Object.entries(props).map(([key, type]) => ({
-    key,
-    type,
-    optional: list.items.some((item) => !(key in item.attributes)),
-  }));
+  return Object.entries(props).map(([key, type]) => {
+    const reference = key === parentKey;
+    if (reference && type !== 'String') throw new Error(`${list.namespace}: ${key} must be an id`);
+    return { key, type, reference, optional: reference || list.items.some((item) => !(key in item.attributes)) };
+  });
 }
 
 function swiftScalar(value, type) {
@@ -273,6 +287,8 @@ function jsonValueLiteral(value) {
 
 /** The Swift source for one vocabulary version and its label languages. */
 export function generateSwift({ version, files, languages }) {
+  const referenceProblems = checkParentReferences(files);
+  if (referenceProblems.length > 0) throw new Error(`vocabulary problems:\n${referenceProblems.join('\n')}`);
   const { lists, ranges, constants } = describeVocabulary(files);
   const types = new Map(lists.map((l) => [l.namespace, typeName(l.namespace)]));
   if (new Set(types.values()).size !== types.size) throw new Error('two namespaces map to the same Swift type name');
@@ -344,13 +360,21 @@ export function generateSwift({ version, files, languages }) {
     line('');
     for (const item of list.items) line(`        case ${cases.get(item.id)} = ${swiftString(item.id)}`);
 
-    for (const { key, type: propType, optional } of props) {
+    for (const { key, type: propType, optional, reference } of props) {
       line('');
-      line(`        /// \`${key}\` of each entry.`);
-      line(`        var ${swiftMember(key)}: ${propType}${optional ? '?' : ''} {`);
+      if (reference) {
+        line(`        /// \`${key}\` of each entry: the entry of this list it belongs to, or nil for a top-level entry.`);
+      } else {
+        line(`        /// \`${key}\` of each entry.`);
+      }
+      const swiftType = reference ? `Vocabulary.${type}` : propType;
+      line(`        var ${swiftMember(key)}: ${swiftType}${optional ? '?' : ''} {`);
       line('            switch self {');
       for (const item of list.items) {
-        const value = key in item.attributes ? swiftScalar(item.attributes[key], propType) : 'nil';
+        let value = 'nil';
+        if (key in item.attributes) {
+          value = reference ? `.${cases.get(item.attributes[key])}` : swiftScalar(item.attributes[key], propType);
+        }
         line(`            case .${cases.get(item.id)}: return ${value}`);
       }
       line('            }');

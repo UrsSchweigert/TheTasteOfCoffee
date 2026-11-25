@@ -5,9 +5,10 @@
 // Order of checks for every request:
 // 1. Route: method and `rawPath` against the table. No match is 404 with no
 //    body. That includes the contract routes whose tasks have not landed yet
-//    (barcodes, beans, profile, export, account; the contract declares no 501
-//    for them), /health (its own Lambda, ADR 0007), a trailing slash and any
-//    method a path does not declare (the contract declares no 405).
+//    (barcodes, beans, catalogue images, profile, export, account; the
+//    contract declares no 501 for them), /health (its own Lambda, ADR 0007), a
+//    trailing slash and any method a path does not declare (the contract
+//    declares no 405).
 // 2. Caller: `userIdFromEvent`, the token subject only. None is 401.
 // 3. Input: path ids against the contract pattern, the query (only `cursor`
 //    and `limit`, on lists only), the body (see http.ts, parseBody). Bad

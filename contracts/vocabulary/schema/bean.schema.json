@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "bean.schema.json",
-  "title": "Bean vocabulary: processes, roast levels, and from version 2 origins and varieties",
+  "title": "Bean vocabulary: processes, roast levels, and from version 2 origins, species and varieties",
   "type": "object",
   "required": ["version", "status", "processes", "roast_levels"],
   "properties": {
@@ -9,18 +9,38 @@
     "status": { "$ref": "common.schema.json#/$defs/status" },
     "processes": { "$ref": "common.schema.json#/$defs/id_list" },
     "roast_levels": { "$ref": "common.schema.json#/$defs/id_list" },
-    "origins": { "$ref": "common.schema.json#/$defs/id_list" },
+    "origins": { "$ref": "#/$defs/origin_list" },
+    "species": { "$ref": "common.schema.json#/$defs/id_list" },
     "varieties": { "$ref": "common.schema.json#/$defs/id_list" }
   },
   "additionalProperties": false,
   "if": { "required": ["version"], "properties": { "version": { "type": "integer", "minimum": 2 } } },
-  "then": { "required": ["origins", "varieties"], "properties": { "origins": true, "varieties": true } },
+  "then": { "required": ["origins", "species", "varieties"], "properties": { "origins": true, "species": true, "varieties": true } },
   "else": {
     "not": {
       "anyOf": [
         { "required": ["origins"], "properties": { "origins": true } },
+        { "required": ["species"], "properties": { "species": true } },
         { "required": ["varieties"], "properties": { "varieties": true } }
       ]
+    }
+  },
+  "$defs": {
+    "origin_item": {
+      "description": "A country, or a region with `country` naming its country: an id of the same list whose entry has no `country` itself (ADR 0011, checked by checkParentReferences in lib/vocabulary.mjs).",
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/id" },
+        "country": { "$ref": "common.schema.json#/$defs/id" }
+      },
+      "additionalProperties": false
+    },
+    "origin_list": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/origin_item" }
     }
   }
 }

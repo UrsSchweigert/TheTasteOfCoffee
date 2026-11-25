@@ -17,6 +17,16 @@ export const LANGUAGES = ['en', 'de'];
 export const ID_PATTERN = /^[a-z][a-z0-9]*(_[a-z0-9]+)*$/;
 // Lists whose ids carry a question in addition to a label (spec F3).
 export const QUESTION_NAMESPACES = ['criteria'];
+/**
+ * Lists whose entries may name a parent entry of the same list, by the
+ * attribute given here (ADR 0011): a region in `origins` names its country
+ * with `country`. The parent must be an entry of the same list that has no
+ * parent itself, so the hierarchy is exactly two levels deep. Generators read
+ * this to emit a typed reference instead of a plain string.
+ */
+export const PARENT_REFERENCES = { origins: 'country' };
+/** Catch-all ids that are never a real place, so never a parent (`blend`, `other`, `unknown`). */
+export const NON_PARENT_IDS = ['blend', 'mixed', 'other', 'unknown'];
 
 const SCHEMA_SUFFIX = '.schema.json';
 const SHARED_SCHEMA = 'common';
@@ -163,6 +173,58 @@ export function collectIds(files) {
     walk(content, fileName, '');
   }
   return { lists, problems };
+}
+
+/** `{ <namespace>: [entry objects in file order] }` for every id list, at any depth. */
+function collectEntries(files) {
+  const entries = {};
+  const isIdItem = (item) => item !== null && typeof item === 'object' && !Array.isArray(item) && 'id' in item;
+  const walk = (value) => {
+    if (Array.isArray(value)) {
+      value.forEach(walk);
+      return;
+    }
+    if (value === null || typeof value !== 'object') return;
+    for (const [key, child] of Object.entries(value)) {
+      if (Array.isArray(child) && child.length > 0 && child.every(isIdItem)) (entries[key] ??= []).push(...child);
+      walk(child);
+    }
+  };
+  Object.values(files).forEach(walk);
+  return entries;
+}
+
+/**
+ * Checks the parent references of PARENT_REFERENCES: every value names an
+ * entry of the same list, never the entry itself, never a catch-all id of
+ * NON_PARENT_IDS, and that entry has no parent of its own. The attribute may
+ * not appear on an entry of any other list. Returns a list of problems.
+ */
+export function checkParentReferences(files, references = PARENT_REFERENCES) {
+  const problems = [];
+  const attributes = new Set(Object.values(references));
+  for (const [namespace, entries] of Object.entries(collectEntries(files))) {
+    const attribute = references[namespace];
+    if (attribute === undefined) {
+      for (const entry of entries) {
+        for (const key of Object.keys(entry)) {
+          if (attributes.has(key)) problems.push(`${namespace}.${entry.id}: ${key} is only allowed in ${Object.keys(references).join(', ')}`);
+        }
+      }
+      continue;
+    }
+    const byId = new Map(entries.map((entry) => [entry.id, entry]));
+    for (const entry of entries) {
+      if (!(attribute in entry)) continue;
+      const parentId = entry[attribute];
+      const parent = typeof parentId === 'string' ? byId.get(parentId) : undefined;
+      if (parent === undefined) problems.push(`${namespace}.${entry.id}: ${attribute} ${JSON.stringify(parentId)} is not an entry of ${namespace}`);
+      else if (parent === entry) problems.push(`${namespace}.${entry.id}: ${attribute} names the entry itself`);
+      else if (NON_PARENT_IDS.includes(parentId)) problems.push(`${namespace}.${entry.id}: ${attribute} ${parentId} is a catch-all entry, not a parent`);
+      else if (attribute in parent) problems.push(`${namespace}.${entry.id}: ${attribute} ${parentId} has a ${attribute} itself; a parent must be top level`);
+    }
+  }
+  return problems;
 }
 
 /** Union of the id lists of several versions (ids are never reused). */

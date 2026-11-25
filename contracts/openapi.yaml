@@ -2,14 +2,16 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Cupmark API
-  version: 0.2.0
+  version: 0.3.0
   description: >-
     Free-tier API of Cupmark (tasks M0-T2 and M1-T8). No request carries free
     text: every string a client sends is an id from the closed vocabulary in
     contracts/vocabulary, a server-generated id, a digit-only barcode or an
     ISO date. The only text is response-only: the product name and brand the
     server fetched from Open Food Facts, length-limited and marked
-    x-free-text-from (ADR 0005). The user is always the subject of the bearer
+    x-free-text-from (ADR 0005). Open Food Facts images are served from the
+    server's own stored copy (ADR 0011); the app never contacts Open Food
+    Facts. The user is always the subject of the bearer
     token; no path, query or body field names a user. Every route needs the
     token except GET /health (ADR 0007). Paid and aggregate routes are not
     part of this document yet. Rules for this file, including the x-vocabulary
@@ -127,6 +129,37 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /catalogue_images/{image_id}:
+    get:
+      operationId: getCatalogueImage
+      summary: The server's stored copy of a catalogue image (ADR 0011).
+      description: >-
+        When the server caches an Open Food Facts hit, it downloads the front
+        image once from Open Food Facts, strips all metadata (D12) and stores
+        it in the photo bucket under catalogue/<image_id>.jpg. The image_id
+        in OpenFoodFactsProduct names that copy. This route returns its
+        bytes, so the app never contacts Open Food Facts. Catalogue images are
+        shared catalogue data, readable by every signed-in user and tied to
+        no user, so account deletion does not remove them (D10).
+      parameters:
+        - $ref: '#/components/parameters/ImageIdPath'
+      responses:
+        '200':
+          description: The stored JPEG, metadata stripped.
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                contentMediaType: image/jpeg
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No stored catalogue image has this id.
         '429':
           $ref: '#/components/responses/TooManyRequests'
 
@@ -572,6 +605,12 @@ components:
       required: true
       schema:
         $ref: '#/components/schemas/Id'
+    ImageIdPath:
+      name: image_id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
     ShelfEntryIdPath:
       name: shelf_entry_id
       in: path
@@ -641,7 +680,7 @@ components:
       description: Published vocabulary version the values were picked from. Maximum is the latest published version.
       type: integer
       minimum: 1
-      maximum: 1
+      maximum: 2
       x-vocabulary-version: true
 
     HealthStatus:
@@ -660,7 +699,7 @@ components:
       enum: [de, en]
       x-i18n-languages: true
 
-    # ---- Vocabulary lists (contracts/vocabulary/v1) ----
+    # ---- Vocabulary lists (union of the published versions, contracts/vocabulary/v1 and v2) ----
 
     Method:
       type: string
@@ -691,6 +730,26 @@ components:
       type: string
       enum: [light, medium_light, medium, medium_dark, dark]
       x-vocabulary: roast_levels
+
+    Origin:
+      description: >-
+        Producing country or region, from vocabulary v2. A region names its
+        country in the vocabulary (ADR 0011), so filters can group by country.
+      type: string
+      enum: [ethiopia, kenya, rwanda, burundi, tanzania, uganda, democratic_republic_of_the_congo, malawi, zambia, zimbabwe, madagascar, cameroon, cote_d_ivoire, togo, yemen, brazil, colombia, peru, ecuador, bolivia, venezuela, guatemala, honduras, el_salvador, nicaragua, costa_rica, panama, mexico, jamaica, dominican_republic, cuba, haiti, puerto_rico, usa, hawaii, india, indonesia, sumatra, java, sulawesi, bali, flores, papua_new_guinea, vietnam, laos, thailand, myanmar, china, timor_leste, philippines, nepal, taiwan, australia, blend, other, unknown]
+      x-vocabulary: origins
+
+    Species:
+      description: Coffee species, from vocabulary v2 (ADR 0011).
+      type: string
+      enum: [arabica, robusta, liberica, excelsa, arabica_robusta_blend, unknown]
+      x-vocabulary: species
+
+    Variety:
+      description: Arabica cultivar, from vocabulary v2 (ADR 0006, ADR 0011).
+      type: string
+      enum: [typica, bourbon, red_bourbon, yellow_bourbon, pink_bourbon, caturra, catuai, catucai, mundo_novo, pacas, villa_sarchi, maragogipe, pacamara, geisha, java, sl14, sl28, sl34, ruiru_11, batian, castillo, catimor, sarchimor, parainema, obata, marsellesa, heirloom, ethiopia_74110, ethiopia_74112, s795, wush_wush, sidra, laurina, mixed, other, unknown]
+      x-vocabulary: varieties
 
     BagSize:
       type: string
@@ -843,10 +902,10 @@ components:
 
     BeanAttributes:
       description: >-
-        Catalogue attributes picked from the vocabulary. Origin and variety
-        join from vocabulary v2 (ADR 0006); they are added here when v2 is
-        published, and a request that uses them must then send
-        vocabulary_version 2 or later. Roaster is not a pick list: it comes
+        Catalogue attributes picked from the vocabulary. Origin, species and
+        variety are in vocabulary v2 (ADR 0006, ADR 0011), so a request that
+        sends any of them must say vocabulary_version 2 or later; the server
+        rejects them with version 1. Roaster is not a pick list: it comes
         from the Open Food Facts brand and the operator (ADR 0006).
       type: object
       additionalProperties: false
@@ -855,6 +914,12 @@ components:
           $ref: '#/components/schemas/Process'
         roast_level:
           $ref: '#/components/schemas/RoastLevel'
+        origin:
+          $ref: '#/components/schemas/Origin'
+        species:
+          $ref: '#/components/schemas/Species'
+        variety:
+          $ref: '#/components/schemas/Variety'
 
     BeanCreate:
       description: >-
@@ -862,7 +927,7 @@ components:
         source "user". open_food_facts_confirmed records that the user
         confirmed the Open Food Facts hit for the barcode; it needs the
         barcode. The client never sends Open Food Facts text: the server
-        copies name, brand and image reference from its own cached lookup
+        copies name, brand and image id from its own cached lookup
         (ADR 0005), so this body holds only ids, a barcode and a boolean.
       type: object
       additionalProperties: false
@@ -935,13 +1000,13 @@ components:
           maxLength: 100
           readOnly: true
           x-free-text-from: open_food_facts
-        image_ref:
+        image_id:
           description: >-
-            URL of the selected front image on the Open Food Facts image
-            server, for the 13-digit barcode, split 3/3/3/4 as Open Food Facts
-            stores it. Not free text: anything else is dropped by the server.
-          type: string
-          pattern: '^https://images\.openfoodfacts\.org/images/products/[0-9]{3}/[0-9]{3}/[0-9]{3}/[0-9]{4}/front_[a-z]{2}\.[0-9]{1,6}\.(100|200|400|full)\.jpg$'
+            The server's stored copy of the Open Food Facts front image (ADR
+            0011), a server-generated id: fetch the bytes with GET
+            /catalogue_images/{image_id}. Left out when there is no stored
+            copy. The app never loads images from Open Food Facts.
+          $ref: '#/components/schemas/Id'
 
     # ---- Shelf (F1 step 5) ----
 

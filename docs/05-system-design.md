@@ -14,15 +14,16 @@ flowchart LR
     api["Lambda: API<br/>validates lists and ranges<br/>checks the entitlement"]
     ddb[("DynamoDB, on-demand<br/>one table, encrypted<br/>point-in-time recovery")]
     agg["Lambda: aggregator<br/>running totals per bean<br/>and per method"]
-    s3[("S3<br/>weekly table export<br/>private label photos")]
+    s3[("S3<br/>weekly table export<br/>private label photos<br/>catalogue image copies")]
   end
 
   app -- sign in --> cognito
   app --> gw
-  app -- unknown barcode --> off
   apple -- notifications --> gw
   gw --> api
   api --> ddb
+  api -- unknown barcode, image copy --> off
+  api -- catalogue images --> s3
   ddb -- change stream --> agg
   agg --> ddb
   ddb -- weekly export --> s3
@@ -39,7 +40,7 @@ Every request passes the token check and server-side validation before it reache
 | API | API Gateway HTTP API with its built-in JWT authorizer | Cheaper than REST API; token check needs no extra Lambda |
 | Compute | Lambda on arm64, one API function plus three small workers | Billed per request; large permanent free allowance |
 | Data | DynamoDB, one table, on-demand capacity | No minimum fee; multi-AZ by default; encrypted at rest |
-| Files | S3, two private buckets: label photos, backups | Cents per GB; lifecycle rules delete or archive automatically |
+| Files | S3, two private buckets: label photos and catalogue image copies, backups | Cents per GB; lifecycle rules delete or archive automatically |
 | Jobs | EventBridge Scheduler | Nightly rankings and weekly export, effectively free |
 | Secrets | Systems Manager Parameter Store (SecureString) | Free standard tier, unlike Secrets Manager |
 | Deploy | AWS CDK from GitHub Actions via OIDC | No long-lived access keys anywhere |
@@ -57,9 +58,9 @@ One DynamoDB table holds everything. The partition key decides who can reach an 
 | Brew with rating | `USER#<id>` | `BREW#<brewedAt UTC>#<brewId>` | Method, parameters, 8 scores, intensities, notes, buy again, schema version; its shelf entry and that entry's bean (ADR 0012) |
 | Brew pointer | `USER#<id>` | `BREWID#<brewId>` | The brew's current sort key, for reads by id |
 | Recipe | `USER#<id>` | `RECIPE#<id>` | Saved parameter set |
-| Bean | `BEAN#<beanId>` | `META` | Picked attributes (process, roast level; origin and variety from vocabulary v2), operator attributes including the curated roaster, Open Food Facts name, brand and image reference, each group tagged with its source; status |
+| Bean | `BEAN#<beanId>` | `META` | Picked attributes (process, roast level; origin, species and variety from vocabulary v2), operator attributes including the curated roaster, Open Food Facts name, brand and the id of the stored image copy, each group tagged with its source; status |
 | Barcode | `BARCODE#<ean>` | `BEAN` | Pointer to the bean |
-| Open Food Facts cache | `BARCODE#<ean>` | `OFF` | The fetched product (name, brand, image reference) or a miss, fetch time; TTL on a miss |
+| Open Food Facts cache | `BARCODE#<ean>` | `OFF` | The fetched product (name, brand, the id of the stored image copy) or a miss, fetch time; TTL on a miss |
 | Lookup counter | `USER#<id>` | `LOOKUPS#<YYYY-MM-DD>` | The caller's Open Food Facts lookups that UTC day; TTL |
 | Aggregate, all methods | `BEAN#<beanId>` | `AGG#ALL` | Rater count; count, sum and sum of squares per criterion; note counts |
 | Aggregate per method | `BEAN#<beanId>` | `AGG#METHOD#<method>` | Same, plus recipe histogram buckets |
@@ -86,11 +87,12 @@ The phone sends only the barcode and, later, the user's confirmation. The backen
 
 - Known barcodes are answered from the `BARCODE#` items (`GET /barcodes/{barcode}`).
 - Unknown barcodes: the app calls `GET /barcodes/{barcode}/open_food_facts`, and the backend looks the barcode up in [Open Food Facts](https://openfoodfacts.github.io/openfoodfacts-server/api).
-  - **User-Agent.** Every request names the app and a contact address, in the form Open Food Facts asks for (`Cupmark/<version> (<contact>)`). The contact is an operator mailbox set in configuration, not in the repository. Requests go over HTTPS to the read API only; the Lambda needs outbound HTTPS to Open Food Facts and nothing else outside AWS.
+  - **User-Agent.** Every request names the app and a contact address, in the form Open Food Facts asks for (`Cupmark/<version> (<contact>)`). The contact is an operator mailbox set in configuration, not in the repository. Requests go over HTTPS to the read API and, for the image copy, the image host only; the Lambda needs outbound HTTPS to those two Open Food Facts hosts and nothing else outside AWS.
   - **Catalogue cache.** The result, a hit or a miss, is stored in the catalogue under the barcode (`BARCODE#<ean>` / `OFF`), so each barcode is fetched from Open Food Facts once across all users. A miss is retried after a while (for example 30 days, via TTL), because products get added. A failed or timed-out fetch caches nothing and answers 503. Open Food Facts rate limits then apply to our one server, so the cache is what keeps us inside them.
   - **Per-user daily cap.** Each call to the route counts against the caller's lookups for the UTC day (a counter in the user's partition with a TTL, so it costs one write). Over the cap the route answers 429 until the next day. The cap protects Open Food Facts and stops anyone using us to scrape it; known barcodes are not counted. The number is configuration (default 50 a day).
-  - A hit returns name, brand and the front image reference. Text is untrusted: trimmed, cut to the contract's maximum length in code points, stored and returned as plain data, never interpreted as markup and never logged. The image reference is kept only if it is a URL on the Open Food Facts image host in the contract's pattern.
-- The app shows the hit for confirmation. Confirming is `POST /beans` with the barcode and `open_food_facts_confirmed`; the backend copies name, brand and image reference from its cache into the new unverified bean's `open_food_facts` group. Nothing enters the catalogue as a bean before that.
+  - A hit returns name, brand and the front image. Text is untrusted: trimmed, cut to the contract's maximum length in code points, stored and returned as plain data, never interpreted as markup and never logged.
+  - **Image copy (ADR 0011).** When a hit is cached, the backend downloads its front image once from the Open Food Facts image host (only a URL on that host for the same 13-digit barcode is followed), strips all metadata (EXIF, XMP, GPS; D12), checks that the result is a JPEG within a size limit, and stores it in the photo bucket as `catalogue/<imageId>.jpg`, where `imageId` is a new ULID. The cache item and, after confirmation, the bean hold only that `imageId`; the API returns it as `image_id`, and `GET /catalogue_images/{image_id}` returns the stored bytes behind the token. The app never contacts Open Food Facts, so no user's IP address reaches it. If the image cannot be fetched or is not a valid JPEG, the hit is cached without an image. Catalogue images are shared catalogue data, not tied to a user: they follow the photo bucket's lifecycle rules (nothing under `catalogue/` expires) and account deletion does not remove them (D10).
+- The app shows the hit for confirmation. Confirming is `POST /beans` with the barcode and `open_food_facts_confirmed`; the backend copies name, brand and image id from its cache into the new unverified bean's `open_food_facts` group. Nothing enters the catalogue as a bean before that.
 - Open Food Facts data is under the Open Database License, which requires attribution and share-alike. Catalogue fields taken from it are tagged with their source (the `open_food_facts` group of a bean, D5) and kept apart from the ratings. Have this reviewed before launch.
 
 ## Subscriptions

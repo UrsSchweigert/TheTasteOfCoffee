@@ -47,6 +47,7 @@ describe('routes', () => {
     ['GET', `/beans/${ID}`],
     ['GET', '/barcodes/4006381333931'],
     ['GET', '/barcodes/4006381333931/open_food_facts'],
+    ['GET', `/catalogue_images/${ID}`],
     ['GET', '/export'],
     ['DELETE', '/account'],
     ['GET', '/health'],

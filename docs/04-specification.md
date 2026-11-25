@@ -7,7 +7,7 @@ The app has four flows (scan, brew, rate, explore) and one rule: no control acce
 | Allowed control | Used for |
 | --- | --- |
 | Camera scan | Barcode (EAN-13, UPC-A), optional label photo |
-| Single or multi pick list | Method, milk, origin, process, variety, flavour notes, equipment |
+| Single or multi pick list | Method, milk, origin, species, process, variety, flavour notes, equipment |
 | Slider or segmented scale | Rating criteria, roast level |
 | Stepper or wheel | Dose, water, temperature, grind setting |
 | Timer | Brew time |
@@ -16,14 +16,14 @@ The app has four flows (scan, brew, rate, explore) and one rule: no control acce
 
 Consequences: there is no username, no display name, no bean nickname, no comment and no support form in the app. Identity comes from Sign in with Apple. Support runs through a mailto link outside the app.
 
-The machine-readable lists live in `contracts/vocabulary/v1/`. They are the single source of truth for the app, the API and the tests.
+The machine-readable lists live in `contracts/vocabulary/v<N>/` (latest published: v2). They are the single source of truth for the app, the API and the tests.
 
 ## F1 Scan and catalogue
 
 1. The user scans the barcode on the bag. Scanning runs on the device (Apple VisionKit), so it costs nothing.
 2. The app asks the backend for the barcode. A known bean returns from the shared bean catalogue.
-3. Unknown barcode: the app asks the backend, which looks the barcode up in Open Food Facts for name, brand and image (the phone sends only the barcode; docs/05, Barcode lookup). Each barcode is fetched once and cached for all users, and each user has a daily lookup limit. A hit is shown for confirmation; once the user confirms, the backend stores it as an unverified catalogue entry. The name and brand are shown as Open Food Facts text, with its attribution.
-4. No hit, or no barcode: the user describes the bean by pick lists (origin, process, variety, roast level) and photographs the label. There is no roaster pick list: the roaster comes from the Open Food Facts brand or is set by the operator (ADR 0006). The photo goes to a private review queue. The operator turns it into a verified catalogue entry.
+3. Unknown barcode: the app asks the backend, which looks the barcode up in Open Food Facts for name, brand and image (the phone sends only the barcode; docs/05, Barcode lookup). Each barcode is fetched once and cached for all users, and each user has a daily lookup limit. The image is copied once into the photo bucket with all metadata stripped, and the app loads it from our API, never from Open Food Facts (ADR 0011). A hit is shown for confirmation; once the user confirms, the backend stores it as an unverified catalogue entry. The name and brand are shown as Open Food Facts text, with its attribution.
+4. No hit, or no barcode: the user describes the bean by pick lists (origin, species, process, variety, roast level) and photographs the label. There is no roaster pick list: the roaster comes from the Open Food Facts brand or is set by the operator (ADR 0006). The photo goes to a private review queue. The operator turns it into a verified catalogue entry.
 5. The purchase is saved to the user's shelf: bean, purchase date, roast date, bag size (pick list: 250 g, 500 g, 1 kg), price band (pick list).
 
 Label photos are never shown to other users, so they need no public moderation.

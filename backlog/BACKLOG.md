@@ -73,7 +73,7 @@ Goal: the repo builds, tests and checks itself; the shared contract exists.
 - needs: human
 - depends: none
 - acceptance:
-  - Apple Developer Program membership active (done, 2026-11-25). App ID `app.cupmark.Cupmark` with Sign in with Apple and the App Store Connect app record created (done, 2026-11-25). Services ID `app.cupmark.signin` and the Sign in with Apple key created, with the key stored only in Parameter Store as a SecureString and never in the repo (open).
+  - Apple Developer Program membership active (done, 2026-11-25). App ID `app.cupmark.Cupmark` with Sign in with Apple and the App Store Connect app record created (done, 2026-11-25). Services ID `app.cupmark.signin` and the Sign in with Apple key created (done, 2026-11-25). The owner holds the `.p8`, and stores it in Parameter Store as a SecureString when M1-T2 is deployed.
   - In the shared AWS account (ADR 0009), checked read-only by the owner on 2026-11-25:
     - root MFA is on (done);
     - `CupmarkBoundary` and `CupmarkCfnExecution` match `scripts/aws/*.json` (done);
@@ -135,13 +135,14 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
 ### M1-T2 Identity and API shell
 - status: todo
 - owner: infra-engineer
-- depends: M1-T1, M0-T7
+- depends: M1-T1, and the Apple items of M0-T7 (done 2026-11-25). The repository secrets in M0-T7 are needed only for M1-T7.
 - implements: docs/05-system-design.md, Components, Security
 - acceptance:
   - Cognito user pool (Lite plan, Sign in with Apple only) and an HTTP API with JWT authorizer and throttling are in the stack.
   - A test asserts every route except the App Store notifications route has the authorizer.
-  - The Cognito domain prefixes are exactly `cupmark-dev` and `cupmark-prod`, and the Apple identity provider uses the Services ID `app.cupmark.signin`. The Sign in with Apple key id is `3WKKAZFM6M`. This is configuration, not a secret; the `.p8` private key goes only into a Parameter Store SecureString created by the owner. The owner registered both in Apple's portal with the return URL `https://cupmark-<stage>.auth.eu-central-1.amazoncognito.com/oauth2/idpresponse`. A test pins the prefixes.
+  - The Cognito domain prefixes are exactly `cupmark-dev` and `cupmark-prod`, and the Apple identity provider uses the Services ID `app.cupmark.signin`. The Sign in with Apple key id is `3WKKAZFM6M`. The Apple Team ID is `2F695PTZC6`. This is configuration, not a secret; the `.p8` private key goes only into a Parameter Store SecureString created by the owner. The owner registered both in Apple's portal with the return URL `https://cupmark-<stage>.auth.eu-central-1.amazoncognito.com/oauth2/idpresponse`. A test pins the prefixes.
   - From the M1-T1 review: the user pool is RETAIN with `DeletionProtection: ACTIVE`, and `AWS::Cognito::UserPool` joins the stateful guard. Losing the pool would orphan every `USER#<sub>` partition.
+  - From M1-T8: the API Lambda gets outbound HTTPS to the Open Food Facts image host as well as its API, and `s3:GetObject` and `s3:PutObject` on `catalogue/*` in the photo bucket. infra/README.md notes that the photo bucket also holds catalogue images that never expire.
   - From the M1-T5 review (ADR 0013):
     - the HTTP API uses the `$default` stage, because the router matches on `rawPath`;
     - the API Lambda gets `TABLE_NAME` and `CURSOR_KEY_PARAMETER=/cupmark/<stage>/cursor-key`, plus `ssm:GetParameter` on exactly that parameter ARN;
@@ -173,7 +174,8 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
     - results are cached in `BARCODE#<ean>`/`OFF`, and a miss expires by TTL;
     - a per-user daily cap in `USER#<id>`/`LOOKUPS#<date>` returns 429, and the route returns 409 or 503 as the contract says; whether a 409 or 400 counts against the cap is decided and docs/05 matches it;
     - name and brand are trimmed and cut in code points, and never logged;
-    - the server checks that the `image_ref` digits equal the canonical EAN-13;
+    - the server follows only an Open Food Facts image-host URL for the same canonical EAN-13. It copies the image once to `catalogue/<image_id>.jpg` in the photo bucket: JPEG only, size-limited, all metadata stripped (ADR 0011, D12). If the copy fails, the hit is cached without an image. `GET /catalogue_images/{image_id}` serves the bytes;
+    - the bean routes take origin, species and variety (vocabulary v2);
     - `POST /beans` with `open_food_facts_confirmed` copies from the cache and returns 409 when there is no cached hit;
     - repository keys exist for both new items.
   - From the M1-T5 review: `createBean` can now throw `WriteConflictError`, so the route retries it like the other writes. Operator verify and reject also use `rethrowConflict`.
@@ -211,7 +213,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - A smoke test calls the health route after deploy.
 
 ### M1-T8 Contract update for D7 to D9
-- status: in-progress
+- status: done
 - owner: contract-keeper
 - depends: M0-T3
 - implements: docs/decisions/0005, 0006, 0007
@@ -224,12 +226,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - The OpenAPI lint allows response-only Open Food Facts text and the one health route as explicit, documented exceptions. Any other text field or route without the bearer token still fails, and tests prove both.
   - docs/05 Barcode lookup describes the server-side lookup (User-Agent, catalogue cache, per-user cap), and docs/04 F1 step 3 matches it.
   - The backend regenerates its schemas, and the no-drift check passes.
-  - Status: the contract part (D7, D9, draft v2) was merged on 2026-11-25. Still open:
-    - apply the owner's amendments from ADR 0011: region entries carry their parent country (with Bali, Flores and `usa` added), a new `species` list, `robusta` removed from varieties, and the added origins and varieties;
-    - then publish and lock v2 (owner-approved with those amendments on 2026-11-25), and bind origin, variety and species in openapi (the `addV2Fields` steps in contracts/README.md, extended for species);
-    - replace the Open Food Facts `image_ref` pattern with a reference to our stored copy (ADR 0011);
-    - start after M1-T5 merges, because publishing regenerates the backend code M1-T5 builds on;
-    - from the review, the lint pins HealthStatus to exactly `{status}` (required, no additional properties) and `/health` to `get` only.
+  - Status: done on 2026-11-25 in two parts. Part 1: D7 and D9, plus draft v2. Part 2: v2 published and locked with the owner's ADR 0011 amendments; origin, species and variety bound in the contract; Open Food Facts images referenced by `image_id`; health route and raw-body lint hardened; backend and iOS on v2.
 
 ### M1-T9 GitHub OIDC deploy stack and IAM policy guards
 - status: todo
