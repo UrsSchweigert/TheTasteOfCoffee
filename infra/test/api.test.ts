@@ -9,7 +9,6 @@ import {
   ACCOUNT_DELETION_PHOTO_PREFIXES,
   API_COGNITO_ACTIONS,
   API_INDEX_ACTIONS,
-  API_TABLE_ACTIONS,
   CATALOGUE_IMAGE_PREFIX,
   STAGE_LIMITS,
   cursorKeyParameter,
@@ -267,7 +266,20 @@ describe.each(STAGES)('stage %s', (stage) => {
           ? [logs]
           : [
               logs,
-              { Sid: 'Table', Effect: 'Allow', Action: [...API_TABLE_ACTIONS], Resource: tableArn },
+              {
+                Sid: 'Table',
+                Effect: 'Allow',
+                Action: [
+                  'dynamodb:BatchWriteItem',
+                  'dynamodb:ConditionCheckItem',
+                  'dynamodb:DeleteItem',
+                  'dynamodb:GetItem',
+                  'dynamodb:PutItem',
+                  'dynamodb:Query',
+                  'dynamodb:UpdateItem',
+                ],
+                Resource: tableArn,
+              },
               {
                 Sid: 'ReviewQueueIndex',
                 Effect: 'Allow',

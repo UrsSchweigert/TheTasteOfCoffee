@@ -33,9 +33,11 @@ export function cursorKeyParameter(stage: StageName): string {
 /**
  * Exactly the DynamoDB actions the repository (backend/src/repository/) uses.
  * Transactions need no action of their own: TransactWriteItems is authorised per
- * contained Put, Update, Delete and ConditionCheck.
+ * contained Put, Update, Delete and ConditionCheck. BatchWriteItem is account
+ * deletion's (ADR 0017): it deletes the `USER#<sub>` partition in pages of 25.
  */
 export const API_TABLE_ACTIONS = [
+  'dynamodb:BatchWriteItem',
   'dynamodb:ConditionCheckItem',
   'dynamodb:DeleteItem',
   'dynamodb:GetItem',

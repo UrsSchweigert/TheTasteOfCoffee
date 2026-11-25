@@ -129,7 +129,7 @@ CloudFormation cannot put a SecureString into `ProviderDetails.private_key` (`{{
 | Role | Actions | Resource |
 | --- | --- | --- |
 | both | `logs:CreateLogStream`, `logs:PutLogEvents` | its own log group |
-| api | `dynamodb:GetItem`, `PutItem`, `UpdateItem`, `DeleteItem`, `Query`, `ConditionCheckItem` (the repository's transactions are authorised per contained action) | the table |
+| api | `dynamodb:GetItem`, `PutItem`, `UpdateItem`, `DeleteItem`, `Query`, `ConditionCheckItem` (the repository's transactions are authorised per contained action), `BatchWriteItem` (account deletion deletes the user partition in pages of 25, ADR 0017) | the table |
 | api | `dynamodb:Query` | the index `gsi1` |
 | api | `ssm:GetParameter` | exactly `/cupmark/<stage>/cursor-key` (the AWS-managed `aws/ssm` key needs no grant) |
 | api | `s3:GetObject`, `s3:PutObject` | `cupmark-<stage>-photos-<account>/catalogue/*` |
