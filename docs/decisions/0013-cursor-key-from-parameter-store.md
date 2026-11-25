@@ -1,6 +1,6 @@
 # 0013 The cursor signing key is read from Parameter Store at cold start
 
-- Status: proposed
+- Status: accepted (owner, 2026-11-25); the owner creates the SecureString per stage by hand
 - Date: 2026-11-25
 - Decided by: agent (backend-engineer), task M1-T5
 

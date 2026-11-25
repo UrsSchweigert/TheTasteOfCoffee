@@ -176,11 +176,12 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
     - the server checks that the `image_ref` digits equal the canonical EAN-13;
     - `POST /beans` with `open_food_facts_confirmed` copies from the cache and returns 409 when there is no cached hit;
     - repository keys exist for both new items.
+  - From the M1-T5 review: `createBean` can now throw `WriteConflictError`, so the route retries it like the other writes. Operator verify and reject also use `rethrowConflict`.
   - Rejecting a bean frees its barcode: the `BARCODE#` pointer is removed in the same write, so the next scan can submit a fresh entry. The rejected bean stays recorded for the operator (owner decision, 2026-11-25).
   - The uploader of each label photo is recorded, so account deletion (M1-T6) can find that user's photos. Photo handling follows D10 to D12 in `docs/07-open-questions.md`.
 
 ### M1-T5 Shelf, brew and recipe routes
-- status: in-progress
+- status: done
 - owner: backend-engineer
 - depends: M1-T3, M0-T2
 - implements: docs/04-specification.md, F2, F3

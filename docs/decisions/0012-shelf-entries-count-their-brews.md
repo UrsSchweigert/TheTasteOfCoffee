@@ -1,6 +1,6 @@
 # 0012 Shelf entries count the brews that reference them
 
-- Status: proposed
+- Status: accepted (2026-11-25, after review)
 - Date: 2026-11-25
 - Decided by: agent (backend-engineer), task M1-T5
 
