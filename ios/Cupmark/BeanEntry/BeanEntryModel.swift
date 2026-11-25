@@ -43,6 +43,9 @@ final class BeanEntryModel {
     private(set) var state: State = .editing
     /// The body a 400 answered. It is never sent again.
     private(set) var rejectedRequest: API.BeanCreate?
+    /// The label photo (M2-T23), held in memory as an encoded JPEG. It is not part of
+    /// `request`: M2-T24 uploads it to the saved bean's id.
+    let labelPhoto = LabelPhotoDraft()
 
     private let client: APIClient
 

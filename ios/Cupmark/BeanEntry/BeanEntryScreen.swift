@@ -8,17 +8,46 @@ import SwiftUI
 ///   Roast level is a segmented control.
 /// - Every list offers "Not set" and the vocabulary's own `other` and `unknown` entries where
 ///   the list has them. No roaster list (ADR 0006) and no search field (invariant 1).
+/// - The label photo (M2-T23) follows the picks when the device has a camera
+///   (`LabelPhotoSection`); it is kept in memory on the model until M2-T24 uploads it.
 /// - The save runs in an unstructured task, so leaving the screen does not cancel a request the
 ///   server may already act on.
 struct BeanEntryScreen: View {
     @Bindable var model: BeanEntryModel
     let vocabulary: VocabularyStore
     let language: VocabularyLanguage
+    /// Whether the label photo step is offered (M2-T23). Read on appear and on return to the
+    /// foreground, since camera access may have been changed in Settings.
+    let camera: any LabelPhotoCameraEnvironment
+
+    @State private var cameraAvailability: LabelPhotoCameraAvailability = .unavailable
+    @Environment(\.scenePhase) private var scenePhase
+
+    /// Written out because the private state above would otherwise limit the memberwise one.
+    init(
+        model: BeanEntryModel,
+        vocabulary: VocabularyStore,
+        language: VocabularyLanguage,
+        camera: any LabelPhotoCameraEnvironment = LiveLabelPhotoCameraEnvironment()
+    ) {
+        self.model = model
+        self.vocabulary = vocabulary
+        self.language = language
+        self.camera = camera
+    }
 
     var body: some View {
         content
             .navigationTitle(Text(L10n.beanEntryTitle))
             .navigationBarTitleDisplayMode(.inline)
+            .onAppear {
+                cameraAvailability = camera.availability()
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active {
+                    cameraAvailability = camera.availability()
+                }
+            }
     }
 
     @ViewBuilder
@@ -92,6 +121,9 @@ struct BeanEntryScreen: View {
                 Text(L10n.beanEntryPicksFooter)
             }
             .disabled(!model.isEditable)
+
+            LabelPhotoSection(draft: model.labelPhoto, availability: cameraAvailability)
+                .disabled(!model.isEditable)
 
             if case .failed(let failure) = model.state {
                 Section {
