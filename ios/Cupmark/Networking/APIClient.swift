@@ -41,6 +41,9 @@ final class APIClient: Sendable {
     static let pageLimit = 100
     /// The contract's `limit` range.
     static let limitRange = 1...100
+    /// `allPages` gives up with `invalidResponse` after this many pages, 100,000 items at
+    /// `pageLimit`, so a faulty server cannot keep it paging.
+    static let maxPages = 1_000
 
     let baseURL: URL
     private let tokenProvider: any TokenProvider
@@ -266,8 +269,8 @@ final class APIClient: Sendable {
     // MARK: - Paging
 
     /// Fetches pages with `fetch`, following `next_cursor` until a page has none. A cursor
-    /// that repeats or breaks the contract's pattern throws `invalidResponse`, so a faulty
-    /// server cannot keep the loop going.
+    /// that repeats or breaks the contract's pattern, or more than `maxPages` pages, throws
+    /// `invalidResponse`, so a faulty server cannot keep the loop going.
     func allPages<Page: APIPage>(_ fetch: (API.Cursor?) async throws -> Page) async throws -> AllPages<Page.Item> {
         var result = AllPages<Page.Item>(items: [], undecodableItems: [], pageCount: 0)
         var cursor: API.Cursor?
@@ -279,7 +282,9 @@ final class APIClient: Sendable {
             result.pageCount += 1
             cursor = page.nextCursor
             if let next = cursor {
-                guard APIClient.isValidCursor(next), seen.insert(next).inserted else {
+                guard result.pageCount < APIClient.maxPages,
+                      APIClient.isValidCursor(next),
+                      seen.insert(next).inserted else {
                     throw APIError.invalidResponse
                 }
             }
@@ -366,11 +371,13 @@ final class APIClient: Sendable {
         if response.status == 401 {
             do {
                 try await tokenProvider.refresh()
-            } catch is CancellationError {
-                throw CancellationError()
             } catch {
+                if Task.isCancelled || error is CancellationError {
+                    throw CancellationError()
+                }
                 throw APIError.unauthorized
             }
+            try Task.checkCancellation()
             response = try await perform(endpoint, url: url, body: body, token: accessToken())
         }
         guard response.status == endpoint.successStatus else {
@@ -383,9 +390,10 @@ final class APIClient: Sendable {
     private func accessToken() async throws -> String {
         do {
             return try await tokenProvider.currentAccessToken()
-        } catch is CancellationError {
-            throw CancellationError()
         } catch {
+            if Task.isCancelled || error is CancellationError {
+                throw CancellationError()
+            }
             throw APIError.unauthorized
         }
     }
@@ -394,6 +402,7 @@ final class APIClient: Sendable {
         var request = URLRequest(url: url)
         request.httpMethod = endpoint.method.rawValue
         request.cachePolicy = .reloadIgnoringLocalCacheData
+        // Bearer header set per request on purpose: the session has no auth-challenge delegate.
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         if let accept = endpoint.responseContentType {
             request.setValue(accept, forHTTPHeaderField: "Accept")
@@ -405,12 +414,13 @@ final class APIClient: Sendable {
         let result: (Data, URLResponse)
         do {
             result = try await session.data(for: request)
-        } catch let error as URLError {
-            throw APIError.transport(error.code)
-        } catch is CancellationError {
-            throw CancellationError()
         } catch {
-            throw APIError.transport(.unknown)
+            // A cancelled task makes URLSession throw URLError(.cancelled): that is cancellation,
+            // never a transport failure to retry.
+            if Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled {
+                throw CancellationError()
+            }
+            throw APIError.transport((error as? URLError)?.code ?? .unknown)
         }
         guard let http = result.1 as? HTTPURLResponse else {
             throw APIError.invalidResponse

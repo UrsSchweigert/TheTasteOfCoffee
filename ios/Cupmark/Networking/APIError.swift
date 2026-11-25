@@ -46,10 +46,13 @@ enum APIError: Error, Equatable, Sendable {
     }
 
     /// True when the same request may succeed later without a change: 429, 503, other 5xx and
-    /// transport failures. The outbox (M2-T16) backs off and retries these.
+    /// transport failures. The outbox (M2-T16) backs off and retries these. Never true for a
+    /// cancelled request (the client throws `CancellationError` for those).
     var isRetryable: Bool {
         switch self {
-        case .tooManyRequests, .serviceUnavailable, .server, .transport:
+        case .transport(let code):
+            return code != .cancelled
+        case .tooManyRequests, .serviceUnavailable, .server:
             return true
         case .badRequest, .unauthorized, .notFound, .conflict, .unexpectedStatus, .undecodable, .invalidResponse, .invalidRequest:
             return false

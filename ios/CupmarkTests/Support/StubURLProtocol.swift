@@ -27,11 +27,14 @@ struct StubResponse: Sendable {
     let status: Int
     let body: Data
     let headers: [String: String]
+    /// Seconds before the stub answers, for cancellation tests.
+    let delay: TimeInterval
 
-    init(status: Int, body: Data = Data(), headers: [String: String] = [:]) {
+    init(status: Int, body: Data = Data(), headers: [String: String] = [:], delay: TimeInterval = 0) {
         self.status = status
         self.body = body
         self.headers = headers
+        self.delay = delay
     }
 }
 
@@ -137,19 +140,38 @@ final class StubURLProtocol: URLProtocol {
         )
         do {
             let reply = try server.respond(to: recorded)
-            guard let response = HTTPURLResponse(url: url, statusCode: reply.status, httpVersion: "HTTP/1.1", headerFields: reply.headers) else {
-                client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            guard reply.delay > 0 else {
+                deliver(reply, for: url)
                 return
             }
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: reply.body)
-            client?.urlProtocolDidFinishLoading(self)
+            DispatchQueue.global().asyncAfter(deadline: .now() + reply.delay) { [weak self] in
+                self?.deliver(reply, for: url)
+            }
         } catch {
             client?.urlProtocol(self, didFailWithError: error)
         }
     }
 
-    override func stopLoading() {}
+    override func stopLoading() {
+        stopLock.withLock { stopped = true }
+    }
+
+    private let stopLock = NSLock()
+    private var stopped = false
+
+    /// Sends `reply` unless the task was stopped (cancelled) meanwhile.
+    private func deliver(_ reply: StubResponse, for url: URL) {
+        guard !stopLock.withLock({ stopped }) else {
+            return
+        }
+        guard let response = HTTPURLResponse(url: url, statusCode: reply.status, httpVersion: "HTTP/1.1", headerFields: reply.headers) else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
+        }
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: reply.body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
 
     /// The body: URLSession hands it to a protocol as a stream, not as `httpBody`.
     private static func body(of request: URLRequest) -> Data? {

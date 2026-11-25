@@ -440,7 +440,72 @@ final class APIClientTests: XCTestCase {
         XCTAssertTrue(server.requests.isEmpty)
     }
 
+    // MARK: - Cancellation
+
+    func testCancellingDuringARequestThrowsCancellationErrorWithoutRefreshOrRetry() async throws {
+        // A slow 401: if cancellation were taken for a transport error or the 401, the client
+        // would refresh and retry.
+        let server = try StubServer { _ in StubResponse(status: 401, delay: 5) }
+        let tokens = FakeTokenProvider()
+        let client = makeClient(server, tokens: tokens)
+        let task = Task { try await client.getProfile() }
+        for _ in 0..<500 where server.requests.isEmpty {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(server.requests.count, 1)
+        task.cancel()
+        do {
+            _ = try await task.value
+            XCTFail("expected CancellationError")
+        } catch is CancellationError {
+            // expected
+        } catch {
+            XCTFail("unexpected \(error)")
+        }
+        XCTAssertEqual(server.requests.count, 1)
+        let refreshes = await tokens.refreshCount
+        XCTAssertEqual(refreshes, 0)
+    }
+
+    func testCancellingDuringTheRefreshStopsBeforeTheRetry() async throws {
+        let server = try StubServer { _ in StubResponse(status: 401) }
+        let tokens = CancellingTokenProvider()
+        let client = APIClient(baseURL: server.baseURL, tokenProvider: tokens, session: server.makeSession(), imageCache: nil)
+        let task = Task { try await client.getProfile() }
+        do {
+            _ = try await task.value
+            XCTFail("expected CancellationError")
+        } catch is CancellationError {
+            // expected
+        } catch {
+            XCTFail("unexpected \(error)")
+        }
+        XCTAssertEqual(server.requests.count, 1)
+        let refreshes = await tokens.refreshCount
+        XCTAssertEqual(refreshes, 1)
+    }
+
+    func testACancelledTransportErrorIsNeverRetryable() {
+        XCTAssertFalse(APIError.transport(.cancelled).isRetryable)
+        XCTAssertTrue(APIError.transport(.notConnectedToInternet).isRetryable)
+    }
+
     // MARK: - Paging
+
+    func testPagingStopsAfterMaxPages() async throws {
+        let server = try StubServer { _ in StubResponse(status: 200) }
+        let client = makeClient(server)
+        let counter = PageCounter()
+        await assertThrows(.invalidResponse) {
+            _ = try await client.allPages { (_: API.Cursor?) async throws -> API.RecipePage in
+                let n = await counter.next()
+                return API.RecipePage(items: [], nextCursor: "page\(n)")
+            }
+        }
+        let fetched = await counter.count
+        XCTAssertEqual(fetched, APIClient.maxPages)
+        XCTAssertTrue(server.requests.isEmpty)
+    }
 
     /// A brew page, with the item at `undecodableIndex` given a method no vocabulary has.
     private func brewPage(ids: [Int], next: String?, undecodableIndex: Int? = nil) throws -> Data {
@@ -637,5 +702,32 @@ final class APIClientTests: XCTestCase {
         await cache.removeAll()
         let afterRemoval = await cache.data(for: newer)
         XCTAssertNil(afterRemoval)
+    }
+}
+
+/// Counts the pages a paging test has served.
+private actor PageCounter {
+    private(set) var count = 0
+
+    func next() -> Int {
+        count += 1
+        return count
+    }
+}
+
+/// Cancels the calling task inside `refresh()`, which then succeeds: the client must notice
+/// the cancellation before it retries.
+private actor CancellingTokenProvider: TokenProvider {
+    private(set) var refreshCount = 0
+
+    func currentAccessToken() async throws -> String {
+        "access-token-1"
+    }
+
+    func refresh() async throws {
+        refreshCount += 1
+        withUnsafeCurrentTask { task in
+            task?.cancel()
+        }
     }
 }
