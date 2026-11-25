@@ -8,6 +8,9 @@ import SwiftData
 /// The outbox (M2-T16, `Store/Outbox.swift`) adds its operation in the same save. Use one
 /// `AccountStore` from one actor at a time, the main actor in the app; `ModelContext` is not
 /// `Sendable`. `SyncEngine` uses the same store, so screens and sync see one context.
+/// Screens must therefore edit drafts (plain values) and write them through these methods,
+/// never change a model in place and leave it unsaved: the engine's `save()` saves the
+/// shared context, and would send a half-made change with it.
 final class AccountStore {
     let container: ModelContainer
     let context: ModelContext

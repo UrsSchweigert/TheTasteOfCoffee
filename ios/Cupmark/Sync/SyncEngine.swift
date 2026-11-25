@@ -25,8 +25,10 @@ extension StoredRecipe: ServerIdentified {}
 ///   2xx stores the server id and values; 400 parks and flags the item; a network failure,
 ///   429, 503 and other 5xx back off (`SyncBackoff`, jitter) and retry; `unauthorized`
 ///   stops the engine and asks for sign-in, keeping every operation; 404 on a delete is
-///   done; 404 on a replace removes the local item; 409 on a shelf delete restores the entry;
-///   409 on a shelf replace reverts the bean (D14) and sends the rest again.
+///   done; 409 on a shelf delete restores the entry;
+///   409 on a shelf replace reverts the bean (D14) and sends the rest again. A 404 on a
+///   replace is followed by a read of the item: 404 removes the local item, 200 means a
+///   reference was refused and parks the operation.
 /// - A create that was sent without a clear answer (`sentWithoutAnswer`, also after the
 ///   app was ended mid-request) is checked first: the engine lists the resource and adopts a
 ///   server item that matches and has no local counterpart, instead of creating a duplicate.
@@ -264,6 +266,7 @@ final class SyncEngine {
                 find: store.shelfEntry(localID:),
                 body: { (entry: StoredShelfEntry) in try entry.apiInput() },
                 put: { id, body in try await self.client.replaceShelfEntry(id, with: body) },
+                get: { id in _ = try await self.client.getShelfEntry(id) },
                 accept: { (entry: StoredShelfEntry, server: API.ShelfEntry) in entry.apply(server.values) }
             )
         case (.shelfEntry, .delete):
@@ -291,6 +294,7 @@ final class SyncEngine {
                 find: store.brew(localID:),
                 body: { (brew: StoredBrew) in try brew.apiInput() },
                 put: { id, body in try await self.client.replaceBrew(id, with: body) },
+                get: { id in _ = try await self.client.getBrew(id) },
                 accept: { (brew: StoredBrew, server: API.Brew) in _ = try? brew.apply(server.values) }
             )
         case (.brew, .delete):
@@ -316,6 +320,7 @@ final class SyncEngine {
                 find: store.recipe(localID:),
                 body: { (recipe: StoredRecipe) in try recipe.apiInput() },
                 put: { id, body in try await self.client.replaceRecipe(id, with: body) },
+                get: { id in _ = try await self.client.getRecipe(id) },
                 accept: { (recipe: StoredRecipe, server: API.Recipe) in recipe.apply(server.values) }
             )
         case (.recipe, .delete):
@@ -332,7 +337,7 @@ final class SyncEngine {
     // MARK: - Create
 
     /// `POST` of a shelf entry, brew or recipe, with the check for an ambiguous earlier send.
-    private func create<Model: PersistentModel & ServerIdentified, Body: Sendable, Response: Sendable>(
+    private func create<Model: PersistentModel & ServerIdentified, Body: Sendable & Codable, Response: Sendable>(
         _ sequence: Int,
         _ localID: UUID,
         resource: OutboxResource,
@@ -364,10 +369,18 @@ final class SyncEngine {
             return try park(sequence, .notSendable, resource: resource, localID: localID)
         }
 
-        if try store.outboxOperation(sequence: sequence)?.sentWithoutAnswer == true {
+        var checked = false
+        if let operation = try store.outboxOperation(sequence: sequence), operation.sentWithoutAnswer {
+            // The check counts as an attempt, so a failing list backs off like a send.
+            operation.attemptCount += 1
+            try store.save()
+            checked = true
+            // Matched against what was sent, not against the item as it is now: the user may
+            // have edited it since (that edit is queued as an update behind this create).
+            let sent = operation.sentBody.flatMap { data in try? JSONDecoder().decode(Body.self, from: data) } ?? body
             switch await call({ try await list() }) {
             case .value(let items):
-                for candidate in items where matches(candidate, body) {
+                for candidate in items where matches(candidate, sent) {
                     // Only a server item no local item stands for yet.
                     if try findServer(serverID(candidate)) == nil {
                         return try created(sequence, localID, serverID: serverID(candidate), response: candidate, find: find, accept: accept)
@@ -386,7 +399,7 @@ final class SyncEngine {
             }
         }
 
-        try markSending(sequence)
+        try markSending(sequence, sentBody: try? JSONEncoder().encode(body), countsAttempt: !checked)
         switch await call({ try await post(body) }) {
         case .value(let server):
             return try created(sequence, localID, serverID: serverID(server), response: server, find: find, accept: accept)
@@ -501,6 +514,7 @@ final class SyncEngine {
         find: (UUID) throws -> Model?,
         body makeBody: (Model) throws -> Body,
         put: (ResourceID, Body) async throws -> Response,
+        get: (ResourceID) async throws -> Void,
         accept: (Model, Response) -> Void
     ) async throws -> Outcome {
         guard let item = try find(localID) else {
@@ -541,8 +555,19 @@ final class SyncEngine {
         case .cancelled:
             return .cancelled
         case .failed(.notFound):
-            // Gone on the server (deleted on another device): gone here too.
-            return try removeLocally(sequence, localID, find: find)
+            // The item may be gone, or a reference in the body may be (an unknown or
+            // rejected bean, a deleted shelf entry): only a read of the item tells.
+            switch await call({ try await get(id) }) {
+            case .value:
+                return try park(sequence, .rejected, resource: resource, localID: localID)
+            case .failed(.notFound):
+                // Gone on the server (deleted on another device): gone here too.
+                return try removeLocally(sequence, localID, find: find)
+            case .cancelled:
+                return .cancelled
+            case .failed(let error):
+                return try failure(error, sequence, resource: resource, localID: localID, answersTheWrite: false)
+            }
         case .failed(.conflict) where resource == .shelfEntry:
             return try await revertBean(sequence, localID, id: id)
         case .failed(let error):
@@ -700,11 +725,19 @@ final class SyncEngine {
 
     /// Counts the attempt and marks the operation as possibly on the server, on disk, before
     /// the request leaves. If the app is ended before the answer, the next launch knows.
-    private func markSending(_ sequence: Int) throws {
+    /// `sentBody`, when given, is saved on the operation: the encoded body of a create, the
+    /// key of the check before it is sent again. `countsAttempt` is false right after a
+    /// check, which was counted already.
+    private func markSending(_ sequence: Int, sentBody: Data? = nil, countsAttempt: Bool = true) throws {
         guard let operation = try store.outboxOperation(sequence: sequence) else {
             return
         }
-        operation.attemptCount += 1
+        if countsAttempt {
+            operation.attemptCount += 1
+        }
+        if let sentBody {
+            operation.sentBody = sentBody
+        }
         operation.sentWithoutAnswer = true
         try store.save()
     }
@@ -741,10 +774,18 @@ final class SyncEngine {
 
     /// Whether the server may have done the write although this error came back: the
     /// request was lost on the way back (transport), or the server failed while working
-    /// (5xx), or the answer could not be read. 400, 401, 404, 409 and 429 say it did nothing.
+    /// (5xx), or the answer could not be read. 400, 401, 404, 409 and 429 say it did nothing,
+    /// and so do the transport failures in `neverSentCodes` (no connection was made).
+    nonisolated static let neverSentCodes: Set<URLError.Code> = [
+        .notConnectedToInternet, .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed,
+    ]
+
     nonisolated static func mayHaveActed(_ error: APIError) -> Bool {
         switch error {
-        case .transport, .server, .serviceUnavailable, .undecodable, .invalidResponse, .unexpectedStatus:
+        case .transport(let code):
+            // These fail before a byte reaches the server.
+            return !SyncEngine.neverSentCodes.contains(code)
+        case .server, .serviceUnavailable, .undecodable, .invalidResponse, .unexpectedStatus:
             return true
         case .badRequest, .unauthorized, .notFound, .conflict, .tooManyRequests, .invalidRequest:
             return false

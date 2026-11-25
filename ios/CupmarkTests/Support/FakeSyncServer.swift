@@ -154,6 +154,8 @@ final class FakeSyncBackend: @unchecked Sendable {
                 return try reply(201, API.Brew(brewId: id, values: values))
             case ("GET", "brews", 1):
                 return try reply(200, API.BrewPage(items: brews.sorted { $0.key < $1.key }.map { API.Brew(brewId: $0.key, values: $0.value) }))
+            case ("GET", "brews", 2):
+                return try brews[parts[1]].map { values in try reply(200, API.Brew(brewId: parts[1], values: values)) } ?? StubResponse(status: 404)
             case ("PUT", "brews", 2):
                 let values = try decode(API.BrewInput.self, request)
                 guard brews[parts[1]] != nil else {
@@ -174,6 +176,8 @@ final class FakeSyncBackend: @unchecked Sendable {
                 return try reply(201, API.Recipe(recipeId: id, values: values))
             case ("GET", "recipes", 1):
                 return try reply(200, API.RecipePage(items: recipes.sorted { $0.key < $1.key }.map { API.Recipe(recipeId: $0.key, values: $0.value) }))
+            case ("GET", "recipes", 2):
+                return try recipes[parts[1]].map { values in try reply(200, API.Recipe(recipeId: parts[1], values: values)) } ?? StubResponse(status: 404)
             case ("PUT", "recipes", 2):
                 let values = try decode(API.RecipeInput.self, request)
                 guard recipes[parts[1]] != nil else {

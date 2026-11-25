@@ -317,6 +317,9 @@ enum CupmarkSchemaV1: VersionedSchema {
         /// what happened. A create with this flag is checked against the server's list before
         /// it is sent again (ADR 0025).
         var sentWithoutAnswer: Bool = false
+        /// The JSON body of the last send of a create, nil before. The check before a retry
+        /// matches the server's items against it, not against the item's current values.
+        var sentBody: Data?
         /// A parked operation failed for good and is never sent again; the item is flagged.
         var parked: Bool = false
         /// An `OutboxParkReason` raw value, nil unless parked.
@@ -331,6 +334,7 @@ enum CupmarkSchemaV1: VersionedSchema {
             self.attemptCount = 0
             self.nextAttemptAt = Date.distantPast
             self.sentWithoutAnswer = false
+            self.sentBody = nil
             self.parked = false
             self.parkReasonRaw = nil
         }

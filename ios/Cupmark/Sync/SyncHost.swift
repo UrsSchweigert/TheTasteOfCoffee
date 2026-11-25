@@ -67,8 +67,12 @@ final class SyncHost {
             return
         }
         let started = makeEngine(next, opened)
-        started.onSignInRequired = { [weak self] in
-            self?.signInRequired = true
+        started.onSignInRequired = { [weak self, weak started] in
+            // Only the current engine speaks for the host; a stopped one may still finish.
+            guard let self, let started, self.engine === started else {
+                return
+            }
+            self.signInRequired = true
         }
         opened.onSave = { [weak started] in
             Task { @MainActor in
@@ -99,10 +103,17 @@ struct SyncHostModifier: ViewModifier {
                 host?.switchTo(account)
             }
             .onChange(of: host?.signInRequired ?? false) { _, required in
-                if required, let auth {
-                    Task {
-                        await auth.signOut()
+                // Only for the account the host syncs, and only while its session is still
+                // saved: a session that ended itself already shows "session expired", and a
+                // sign-out now would replace that note.
+                guard required, let auth, let host, let account = host.account, auth.accountID == account else {
+                    return
+                }
+                Task {
+                    guard auth.accountID == account, await auth.session.isSignedIn(as: account) else {
+                        return
                     }
+                    await auth.signOut()
                 }
             }
     }

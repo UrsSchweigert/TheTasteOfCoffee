@@ -278,7 +278,7 @@ final class SyncEngineTests: XCTestCase {
             switch posts.next() {
             case 0: return StubResponse(status: 429)
             case 1: return StubResponse(status: 429)
-            case 2: throw URLError(.notConnectedToInternet)
+            case 2: throw URLError(.networkConnectionLost)
             default: return nil
             }
         }
@@ -436,9 +436,65 @@ final class SyncEngineTests: XCTestCase {
         let result = await harness.engine.drain()
 
         XCTAssertEqual(result, .idle)
-        XCTAssertEqual(harness.server.log, ["PUT /brews/\(id(703))"])
+        XCTAssertEqual(harness.server.log, ["PUT /brews/\(id(703))", "GET /brews/\(id(703))"])
         XCTAssertTrue(try harness.store.context.fetch(FetchDescriptor<StoredBrew>()).isEmpty)
         XCTAssertTrue(try harness.store.outboxOperations().isEmpty)
+    }
+
+    func testA404OnAPutForAnItemTheServerStillHasParksAndKeepsIt() async throws {
+        let harness = try makeHarness()
+        let entry = try syncedShelfEntry(harness)
+        let values = try brewValues(shelfEntryID: id(902))
+        harness.server.backend.seed(brew: id(703), values)
+        // The server refuses a reference in the body (a gone shelf entry or bean) with 404.
+        harness.server.backend.setOverride { request in
+            request.method == "PUT" ? StubResponse(status: 404) : nil
+        }
+        let brew = try StoredBrew(values, serverID: id(703))
+        try harness.store.addBrew(brew, shelfEntry: entry, syncState: .synced)
+        brew.waterG = 320
+        try harness.store.markUpdated(brew)
+
+        let result = await harness.engine.drain()
+
+        XCTAssertEqual(result, .idle)
+        XCTAssertEqual(harness.server.log, ["PUT /brews/\(id(703))", "GET /brews/\(id(703))"])
+        XCTAssertEqual(try harness.store.brewsNewestFirst().map(\.localID), [brew.localID])
+        XCTAssertEqual(brew.waterG, 320)
+        XCTAssertEqual(brew.syncIssue, .rejected)
+        let operations = try harness.store.outboxOperations()
+        XCTAssertEqual(operations.map(\.parked), [true])
+        XCTAssertEqual(operations.first?.parkReason, .rejected)
+    }
+
+    func testA404OnAPutWhoseReadFailsIsRetriedWithBackoff() async throws {
+        let harness = try makeHarness()
+        harness.server.backend.seed(recipe: id(700), try recipeValues())
+        let reads = Counter()
+        harness.server.backend.setOverride { request in
+            if request.method == "PUT" {
+                return StubResponse(status: 404)
+            }
+            if request.method == "GET", reads.next() == 0 {
+                throw URLError(.networkConnectionLost)
+            }
+            return nil
+        }
+        let recipe = StoredRecipe(try recipeValues(), serverID: id(700))
+        try harness.store.addRecipe(recipe, syncState: .synced)
+        recipe.doseDg = 200
+        try harness.store.markUpdated(recipe)
+
+        let first = await harness.engine.drain()
+        XCTAssertEqual(first, .waiting(until: harness.clock.now.addingTimeInterval(2)))
+        XCTAssertEqual(try harness.store.recipes().count, 1, "a failed read removes nothing")
+        harness.clock.advance(2)
+        let second = await harness.engine.drain()
+
+        XCTAssertEqual(second, .idle)
+        XCTAssertEqual(harness.server.log, ["PUT /recipes/\(id(700))", "GET /recipes/\(id(700))", "PUT /recipes/\(id(700))", "GET /recipes/\(id(700))"])
+        XCTAssertEqual(try harness.store.recipes().map(\.localID), [recipe.localID])
+        XCTAssertEqual(try harness.store.outboxOperations().first?.parkReason, .rejected)
     }
 
     func testA409OnAShelfDeleteRestoresTheEntry() async throws {
@@ -534,6 +590,90 @@ final class SyncEngineTests: XCTestCase {
         XCTAssertEqual(backend.storedBrews.count, 2)
         XCTAssertEqual(brew.serverID, id(1))
         XCTAssertEqual(brew.syncState, .synced)
+    }
+
+    func testAFailingCheckBacksOffLikeASend() async throws {
+        let harness = try makeHarness(jitter: 1)
+        let posts = Counter()
+        let lists = Counter()
+        harness.server.backend.setOverride { request in
+            if request.method == "POST", posts.next() == 0 {
+                throw URLError(.timedOut)
+            }
+            if request.method == "GET", lists.next() < 2 {
+                return StubResponse(status: 503)
+            }
+            return nil
+        }
+        try harness.store.addRecipe(StoredRecipe(try recipeValues()))
+        let start = harness.clock.now
+
+        var result = await harness.engine.drain()
+        XCTAssertEqual(result, .waiting(until: start.addingTimeInterval(2)))
+        harness.clock.advance(2)
+        result = await harness.engine.drain()
+        XCTAssertEqual(result, .waiting(until: start.addingTimeInterval(6)), "the failed check is attempt 2: 4 s")
+        harness.clock.advance(4)
+        result = await harness.engine.drain()
+        XCTAssertEqual(result, .waiting(until: start.addingTimeInterval(14)), "attempt 3: 8 s")
+        harness.clock.advance(8)
+        result = await harness.engine.drain()
+
+        XCTAssertEqual(result, .idle)
+        XCTAssertEqual(harness.server.log, ["POST /recipes", "GET /recipes", "GET /recipes", "GET /recipes", "POST /recipes"])
+        XCTAssertEqual(harness.server.backend.storedRecipes.count, 1)
+    }
+
+    func testAnEditAfterALostAnswerDoesNotMakeADuplicate() async throws {
+        let harness = try makeHarness()
+        let backend = harness.server.backend
+        let posts = Counter()
+        backend.setOverride { request in
+            guard request.method == "POST", posts.next() == 0 else {
+                return nil
+            }
+            _ = try backend.respond(request)
+            throw URLError(.networkConnectionLost)
+        }
+        let recipe = StoredRecipe(try recipeValues(dose: 150))
+        try harness.store.addRecipe(recipe)
+        let first = await harness.engine.drain()
+        XCTAssertEqual(first, .waiting(until: harness.clock.now.addingTimeInterval(2)))
+
+        // Edited while the create's answer is unknown: matched against what was sent.
+        recipe.doseDg = 160
+        try harness.store.markUpdated(recipe)
+        XCTAssertEqual(try queue(harness.store), ["create recipe", "update recipe"])
+        harness.clock.advance(2)
+        let second = await harness.engine.drain()
+
+        XCTAssertEqual(second, .idle)
+        XCTAssertEqual(harness.server.log, ["POST /recipes", "GET /recipes", "PUT /recipes/\(id(1))"])
+        XCTAssertEqual(backend.storedRecipes.count, 1)
+        XCTAssertEqual(backend.storedRecipes[id(1)]?.parameters.doseDg, 160)
+        XCTAssertEqual(recipe.serverID, id(1))
+        XCTAssertEqual(recipe.doseDg, 160)
+        XCTAssertEqual(recipe.syncState, .synced)
+    }
+
+    func testAConnectionThatWasNeverMadeNeedsNoCheck() async throws {
+        let harness = try makeHarness()
+        let posts = Counter()
+        harness.server.backend.setOverride { request in
+            if request.method == "POST", posts.next() == 0 {
+                throw URLError(.notConnectedToInternet)
+            }
+            return nil
+        }
+        try harness.store.addRecipe(StoredRecipe(try recipeValues()))
+
+        _ = await harness.engine.drain()
+        XCTAssertEqual(try harness.store.nextOutboxOperation()?.sentWithoutAnswer, false)
+        harness.clock.advance(2)
+        let result = await harness.engine.drain()
+
+        XCTAssertEqual(result, .idle)
+        XCTAssertEqual(harness.server.log, ["POST /recipes", "POST /recipes"])
     }
 
     func testAServerItemWithALocalCounterpartIsNotAdopted() async throws {
@@ -660,6 +800,23 @@ final class SyncEngineTests: XCTestCase {
         XCTAssertFalse(afterSignOut)
     }
 
+    func testTheHostIgnoresSignInRequiredFromAnEngineItReplaced() throws {
+        let server = try FakeSyncServer()
+        let host = SyncHost(
+            makeStore: { _ in try AccountStore.inMemory() },
+            makeEngine: { _, store in SyncEngine(store: store, client: server.client(), sleep: { _ in }) }
+        )
+        host.switchTo(AccountID(subject: AuthFixtures.subject))
+        let old = try XCTUnwrap(host.engine)
+        host.switchTo(AccountID(subject: AuthFixtures.otherSubject))
+        let current = try XCTUnwrap(host.engine)
+
+        old.onSignInRequired?()
+        XCTAssertFalse(host.signInRequired)
+        current.onSignInRequired?()
+        XCTAssertTrue(host.signInRequired)
+    }
+
     func testTheHostStopsTheEngineWhenTheAccountChanges() throws {
         let server = try FakeSyncServer()
         let host = SyncHost(
@@ -694,6 +851,10 @@ final class SyncEngineTests: XCTestCase {
 
     func testOnlyAnswersThatSayNothingWasWrittenSkipTheCheck() {
         XCTAssertTrue(SyncEngine.mayHaveActed(.transport(.timedOut)))
+        XCTAssertTrue(SyncEngine.mayHaveActed(.transport(.networkConnectionLost)))
+        for code in [URLError.Code.notConnectedToInternet, .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed] {
+            XCTAssertFalse(SyncEngine.mayHaveActed(.transport(code)), "\(code)")
+        }
         XCTAssertTrue(SyncEngine.mayHaveActed(.server(status: 500)))
         XCTAssertTrue(SyncEngine.mayHaveActed(.serviceUnavailable))
         XCTAssertFalse(SyncEngine.mayHaveActed(.tooManyRequests))
