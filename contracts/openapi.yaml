@@ -1,0 +1,1049 @@
+openapi: 3.1.0
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+info:
+  title: Cupmark API
+  version: 0.1.0
+  description: >-
+    Free-tier API of Cupmark (task M0-T2). There is no free text: every string
+    is an id from the closed vocabulary in contracts/vocabulary, a
+    server-generated id, a digit-only barcode or an ISO date. The user is
+    always the subject of the bearer token; no path, query or body field names
+    a user. Paid and aggregate routes are not part of this document yet.
+    Rules for this file, including the x-vocabulary extensions, are in
+    contracts/README.md.
+
+security:
+  - bearerAuth: []
+
+paths:
+  /barcodes/{barcode}:
+    get:
+      operationId: lookupBarcode
+      summary: Look up a barcode in the shared bean catalogue.
+      parameters:
+        - $ref: '#/components/parameters/BarcodePath'
+      responses:
+        '200':
+          description: The barcode is known; the bean it points to.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bean'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Unknown barcode. The app then queries Open Food Facts from the device (docs/05-system-design.md, Barcode lookup).
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /beans:
+    post:
+      operationId: createBean
+      summary: Create an unverified catalogue entry from pick lists or a confirmed Open Food Facts hit.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BeanCreate'
+      responses:
+        '201':
+          description: The new unverified bean.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bean'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: The barcode already points to a bean. Look it up instead.
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /beans/{bean_id}:
+    get:
+      operationId: getBean
+      summary: Read one catalogue entry.
+      parameters:
+        - $ref: '#/components/parameters/BeanIdPath'
+      responses:
+        '200':
+          description: The bean.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bean'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /shelf:
+    get:
+      operationId: listShelfEntries
+      summary: List the caller's shelf entries.
+      parameters:
+        - $ref: '#/components/parameters/CursorQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          description: One page of shelf entries.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShelfEntryPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    post:
+      operationId: createShelfEntry
+      summary: Put a purchase on the caller's shelf.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShelfEntryInput'
+      responses:
+        '201':
+          description: The new shelf entry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShelfEntry'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: The bean does not exist.
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /shelf/{shelf_entry_id}:
+    get:
+      operationId: getShelfEntry
+      parameters:
+        - $ref: '#/components/parameters/ShelfEntryIdPath'
+      responses:
+        '200':
+          description: The shelf entry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShelfEntry'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    put:
+      operationId: replaceShelfEntry
+      parameters:
+        - $ref: '#/components/parameters/ShelfEntryIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShelfEntryInput'
+      responses:
+        '200':
+          description: The updated shelf entry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShelfEntry'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    delete:
+      operationId: deleteShelfEntry
+      parameters:
+        - $ref: '#/components/parameters/ShelfEntryIdPath'
+      responses:
+        '204':
+          description: Deleted.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Brews still reference this shelf entry.
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /brews:
+    get:
+      operationId: listBrews
+      summary: List the caller's brews, newest first.
+      parameters:
+        - $ref: '#/components/parameters/CursorQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          description: One page of brews.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BrewPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    post:
+      operationId: createBrew
+      summary: Log a brew, optionally with its rating.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BrewInput'
+      responses:
+        '201':
+          description: The new brew.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Brew'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: The shelf entry does not exist.
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /brews/{brew_id}:
+    get:
+      operationId: getBrew
+      parameters:
+        - $ref: '#/components/parameters/BrewIdPath'
+      responses:
+        '200':
+          description: The brew.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Brew'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    put:
+      operationId: replaceBrew
+      parameters:
+        - $ref: '#/components/parameters/BrewIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BrewInput'
+      responses:
+        '200':
+          description: The updated brew.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Brew'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    delete:
+      operationId: deleteBrew
+      parameters:
+        - $ref: '#/components/parameters/BrewIdPath'
+      responses:
+        '204':
+          description: Deleted.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /recipes:
+    get:
+      operationId: listRecipes
+      summary: List the caller's saved recipes.
+      parameters:
+        - $ref: '#/components/parameters/CursorQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          description: One page of recipes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecipePage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    post:
+      operationId: createRecipe
+      summary: Save a parameter set as a recipe.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecipeInput'
+      responses:
+        '201':
+          description: The new recipe.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Recipe'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /recipes/{recipe_id}:
+    get:
+      operationId: getRecipe
+      parameters:
+        - $ref: '#/components/parameters/RecipeIdPath'
+      responses:
+        '200':
+          description: The recipe.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Recipe'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    put:
+      operationId: replaceRecipe
+      parameters:
+        - $ref: '#/components/parameters/RecipeIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecipeInput'
+      responses:
+        '200':
+          description: The updated recipe.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Recipe'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    delete:
+      operationId: deleteRecipe
+      parameters:
+        - $ref: '#/components/parameters/RecipeIdPath'
+      responses:
+        '204':
+          description: Deleted.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /profile:
+    get:
+      operationId: getProfile
+      summary: Read the caller's profile.
+      responses:
+        '200':
+          description: The profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No profile yet. The app runs onboarding, asks for consent, then sends PUT.
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    put:
+      operationId: putProfile
+      summary: Create or replace the caller's consent and locale.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Profile'
+      responses:
+        '200':
+          description: The stored profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /export:
+    get:
+      operationId: exportData
+      summary: Export every item of the caller as CSV.
+      responses:
+        '200':
+          description: All of the caller's items. Columns are defined in task M1-T6.
+          content:
+            text/csv:
+              schema:
+                type: string
+                contentMediaType: text/csv
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /account:
+    delete:
+      operationId: deleteAccount
+      summary: Delete the caller's whole partition and label photos.
+      description: >-
+        Removes the profile, shelf, brews, recipes and label photos of the
+        caller. What happens to the caller's contribution to aggregates is
+        open decision D2 (default: subtract it, then delete).
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Cognito access token. The user id is its subject and is never sent any other way.
+
+  responses:
+    BadRequest:
+      description: A field is outside its list or range, an unknown property was sent, or the vocabulary version is not published.
+    Unauthorized:
+      description: Missing, invalid or expired token.
+    NotFound:
+      description: No such item in the caller's partition.
+    TooManyRequests:
+      description: Throttled.
+
+  parameters:
+    BarcodePath:
+      name: barcode
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Barcode'
+    BeanIdPath:
+      name: bean_id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    ShelfEntryIdPath:
+      name: shelf_entry_id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    BrewIdPath:
+      name: brew_id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    RecipeIdPath:
+      name: recipe_id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    CursorQuery:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/Cursor'
+    LimitQuery:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+
+  schemas:
+    # ---- Identifiers and plain values ----
+
+    Id:
+      description: Server-generated ULID (Crockford base32, upper case).
+      type: string
+      pattern: '^[0-9A-HJKMNP-TV-Z]{26}$'
+
+    Barcode:
+      description: >-
+        EAN-13 (13 digits) or UPC-A (12 digits). The server checks the check
+        digit and stores the 13-digit form (UPC-A with a leading 0).
+      type: string
+      pattern: '^[0-9]{12,13}$'
+
+    Cursor:
+      description: Opaque pagination cursor issued by the server.
+      type: string
+      pattern: '^[A-Za-z0-9_-]{1,512}$'
+
+    CalendarDate:
+      type: string
+      format: date
+
+    Timestamp:
+      description: RFC 3339 date and time, recorded on the device (brews are logged offline).
+      type: string
+      format: date-time
+
+    VocabularyVersion:
+      description: Published vocabulary version the values were picked from. Maximum is the latest published version.
+      type: integer
+      minimum: 1
+      maximum: 1
+      x-vocabulary-version: true
+
+    Locale:
+      type: string
+      enum: [de, en]
+      x-i18n-languages: true
+
+    # ---- Vocabulary lists (contracts/vocabulary/v1) ----
+
+    Method:
+      type: string
+      enum: [espresso, moka_pot, v60, chemex, kalita, batch_filter, aeropress, french_press, cold_brew, cezve, siphon, fully_automatic]
+      x-vocabulary: methods
+
+    WaterType:
+      type: string
+      enum: [tap, filtered, bottled, remineralised]
+      x-vocabulary: water_types
+
+    MilkType:
+      type: string
+      enum: [none, dairy, oat, soy, almond, cashew, hazelnut, macadamia, coconut, rice, pea, other_plant]
+      x-vocabulary: milk_types
+
+    WaterTempSpecial:
+      type: string
+      enum: [cold]
+      x-vocabulary: water_temp_special
+
+    Process:
+      type: string
+      enum: [washed, natural, honey, pulped_natural, wet_hulled, anaerobic, carbonic_maceration, other]
+      x-vocabulary: processes
+
+    RoastLevel:
+      type: string
+      enum: [light, medium_light, medium, medium_dark, dark]
+      x-vocabulary: roast_levels
+
+    BagSize:
+      type: string
+      enum: [g_250, g_500, g_1000]
+      x-vocabulary: bag_sizes
+
+    PriceBand:
+      type: string
+      enum: [under_15, from_15_to_30, from_30_to_45, from_45_to_60, from_60_to_80, from_80]
+      x-vocabulary: price_bands
+
+    IntensityLevel:
+      type: string
+      enum: [low, medium, high]
+      x-vocabulary: intensity_levels
+
+    FlavourNote:
+      type: string
+      enum:
+        - berry
+        - cherry
+        - plum
+        - peach
+        - apricot
+        - apple
+        - pear
+        - grape
+        - lemon
+        - lime
+        - orange
+        - grapefruit
+        - mandarin
+        - bergamot
+        - pineapple
+        - mango
+        - passion_fruit
+        - banana
+        - coconut
+        - lychee
+        - raisin
+        - prune
+        - date
+        - fig
+        - jasmine
+        - rose
+        - lavender
+        - orange_blossom
+        - elderflower
+        - chamomile
+        - hibiscus
+        - black_tea
+        - green_tea
+        - mint
+        - fresh_herbs
+        - grass
+        - honey
+        - caramel
+        - toffee
+        - brown_sugar
+        - maple_syrup
+        - molasses
+        - vanilla
+        - milk_chocolate
+        - dark_chocolate
+        - cocoa
+        - nougat
+        - hazelnut
+        - almond
+        - walnut
+        - peanut
+        - pecan
+        - marzipan
+        - cinnamon
+        - clove
+        - nutmeg
+        - cardamom
+        - black_pepper
+        - anise
+        - ginger
+        - liquorice
+        - toasted_bread
+        - biscuit
+        - malt
+        - cereal
+        - smoke
+        - tobacco
+        - burnt
+        - red_wine
+        - white_wine
+        - rum
+        - whisky
+        - overripe_fruit
+        - forest_floor
+        - wood
+        - cedar
+        - leather
+        - mushroom
+        - musty
+        - cardboard
+        - rubber
+      x-vocabulary: flavour_notes
+
+    # ---- Vocabulary ranges ----
+
+    DoseDg:
+      description: >-
+        Dose in tenths of a gram (decigrams): 50 is 5.0 g, 1000 is 100.0 g.
+        Sent as an integer because 0.1 is not exact in binary floating point.
+      type: integer
+      minimum: 50
+      maximum: 1000
+      x-vocabulary-range: brew.ranges.dose_g
+      x-vocabulary-scale: 10
+
+    WaterG:
+      description: Water, or yield for espresso, in grams.
+      type: integer
+      minimum: 10
+      maximum: 1500
+      x-vocabulary-range: brew.ranges.water_g
+
+    WaterTempC:
+      type: integer
+      minimum: 80
+      maximum: 100
+      x-vocabulary-range: brew.ranges.water_temp_c
+
+    BrewTimeS:
+      type: integer
+      minimum: 1
+      maximum: 172800
+      x-vocabulary-range: brew.ranges.brew_time_s
+
+    GrindNormalised:
+      description: Normalised coarseness, 1 (finest) to 10, in half steps.
+      type: number
+      minimum: 1
+      maximum: 10
+      multipleOf: 0.5
+      x-vocabulary-range: brew.ranges.grind_normalised
+
+    Score:
+      type: number
+      minimum: 1
+      maximum: 10
+      multipleOf: 0.5
+      x-vocabulary-range: criteria.scale
+
+    # ---- Bean catalogue (F1) ----
+
+    BeanAttributes:
+      description: >-
+        Catalogue attributes picked from the vocabulary. Roaster, origin and
+        variety are not in vocabulary v1 yet and so cannot be sent.
+      type: object
+      additionalProperties: false
+      properties:
+        process:
+          $ref: '#/components/schemas/Process'
+        roast_level:
+          $ref: '#/components/schemas/RoastLevel'
+
+    BeanCreate:
+      description: >-
+        Creates an unverified bean. Every value in attributes is stored with
+        source "user". open_food_facts_confirmed records that the user
+        confirmed an Open Food Facts hit for the barcode; it needs the
+        barcode. No Open Food Facts text crosses this API.
+      type: object
+      additionalProperties: false
+      required: [vocabulary_version, attributes]
+      properties:
+        vocabulary_version:
+          $ref: '#/components/schemas/VocabularyVersion'
+        barcode:
+          $ref: '#/components/schemas/Barcode'
+        open_food_facts_confirmed:
+          type: boolean
+        attributes:
+          $ref: '#/components/schemas/BeanAttributes'
+      dependentRequired:
+        open_food_facts_confirmed: [barcode]
+
+    Bean:
+      description: >-
+        A catalogue entry. The source of every attribute is the group it is
+        in: picked by a user, or set by the operator when verifying. The
+        operator's value wins where both exist.
+      type: object
+      additionalProperties: false
+      required: [bean_id, vocabulary_version, verified, open_food_facts_match, user_attributes, operator_attributes]
+      properties:
+        bean_id:
+          $ref: '#/components/schemas/Id'
+        vocabulary_version:
+          $ref: '#/components/schemas/VocabularyVersion'
+        verified:
+          type: boolean
+        barcode:
+          $ref: '#/components/schemas/Barcode'
+        open_food_facts_match:
+          description: True if the catalogue holds Open Food Facts data for this barcode (attribution required, ODbL).
+          type: boolean
+        user_attributes:
+          $ref: '#/components/schemas/BeanAttributes'
+        operator_attributes:
+          $ref: '#/components/schemas/BeanAttributes'
+
+    # ---- Shelf (F1 step 5) ----
+
+    ShelfEntryInput:
+      type: object
+      additionalProperties: false
+      required: [vocabulary_version, bean_id, purchase_date]
+      properties:
+        vocabulary_version:
+          $ref: '#/components/schemas/VocabularyVersion'
+        bean_id:
+          $ref: '#/components/schemas/Id'
+        purchase_date:
+          $ref: '#/components/schemas/CalendarDate'
+        roast_date:
+          $ref: '#/components/schemas/CalendarDate'
+        bag_size:
+          $ref: '#/components/schemas/BagSize'
+        price_band:
+          $ref: '#/components/schemas/PriceBand'
+
+    ShelfEntry:
+      type: object
+      additionalProperties: false
+      required: [shelf_entry_id, values]
+      properties:
+        shelf_entry_id:
+          $ref: '#/components/schemas/Id'
+        values:
+          $ref: '#/components/schemas/ShelfEntryInput'
+
+    ShelfEntryPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/ShelfEntry'
+        next_cursor:
+          $ref: '#/components/schemas/Cursor'
+
+    # ---- Brew and rating (F2, F3) ----
+
+    BrewParameters:
+      description: >-
+        Everything but the method is optional (F2). water_temp_c and
+        water_temp_special exclude each other. Which fields apply to which
+        method is not defined in vocabulary v1 yet.
+      type: object
+      additionalProperties: false
+      required: [method]
+      properties:
+        method:
+          $ref: '#/components/schemas/Method'
+        dose_dg:
+          $ref: '#/components/schemas/DoseDg'
+        water_g:
+          $ref: '#/components/schemas/WaterG'
+        water_temp_c:
+          $ref: '#/components/schemas/WaterTempC'
+        water_temp_special:
+          $ref: '#/components/schemas/WaterTempSpecial'
+        brew_time_s:
+          $ref: '#/components/schemas/BrewTimeS'
+        grind_normalised:
+          $ref: '#/components/schemas/GrindNormalised'
+        water_type:
+          $ref: '#/components/schemas/WaterType'
+        milk:
+          $ref: '#/components/schemas/MilkType'
+      not:
+        required: [water_temp_c, water_temp_special]
+
+    Scores:
+      description: One score per criterion; a rating scores all eight (F3).
+      type: object
+      additionalProperties: false
+      x-vocabulary-keys: criteria
+      required: [aroma, flavour, aftertaste, acidity, body, sweetness, balance, overall]
+      properties:
+        aroma:
+          $ref: '#/components/schemas/Score'
+        flavour:
+          $ref: '#/components/schemas/Score'
+        aftertaste:
+          $ref: '#/components/schemas/Score'
+        acidity:
+          $ref: '#/components/schemas/Score'
+        body:
+          $ref: '#/components/schemas/Score'
+        sweetness:
+          $ref: '#/components/schemas/Score'
+        balance:
+          $ref: '#/components/schemas/Score'
+        overall:
+          $ref: '#/components/schemas/Score'
+
+    Intensities:
+      type: object
+      additionalProperties: false
+      x-vocabulary-keys: intensity_dimensions
+      properties:
+        acidity:
+          $ref: '#/components/schemas/IntensityLevel'
+        body:
+          $ref: '#/components/schemas/IntensityLevel'
+        bitterness:
+          $ref: '#/components/schemas/IntensityLevel'
+
+    Rating:
+      type: object
+      additionalProperties: false
+      required: [scores]
+      properties:
+        scores:
+          $ref: '#/components/schemas/Scores'
+        intensities:
+          $ref: '#/components/schemas/Intensities'
+        flavour_notes:
+          type: array
+          uniqueItems: true
+          maxItems: 5
+          x-vocabulary-max-items: flavour_notes.max_picks
+          items:
+            $ref: '#/components/schemas/FlavourNote'
+        buy_again:
+          type: boolean
+
+    BrewInput:
+      type: object
+      additionalProperties: false
+      required: [vocabulary_version, shelf_entry_id, brewed_at, parameters]
+      properties:
+        vocabulary_version:
+          $ref: '#/components/schemas/VocabularyVersion'
+        shelf_entry_id:
+          $ref: '#/components/schemas/Id'
+        brewed_at:
+          $ref: '#/components/schemas/Timestamp'
+        parameters:
+          $ref: '#/components/schemas/BrewParameters'
+        rating:
+          $ref: '#/components/schemas/Rating'
+
+    Brew:
+      type: object
+      additionalProperties: false
+      required: [brew_id, values]
+      properties:
+        brew_id:
+          $ref: '#/components/schemas/Id'
+        values:
+          $ref: '#/components/schemas/BrewInput'
+
+    BrewPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/Brew'
+        next_cursor:
+          $ref: '#/components/schemas/Cursor'
+
+    # ---- Recipe ----
+
+    RecipeInput:
+      type: object
+      additionalProperties: false
+      required: [vocabulary_version, parameters]
+      properties:
+        vocabulary_version:
+          $ref: '#/components/schemas/VocabularyVersion'
+        parameters:
+          $ref: '#/components/schemas/BrewParameters'
+
+    Recipe:
+      type: object
+      additionalProperties: false
+      required: [recipe_id, values]
+      properties:
+        recipe_id:
+          $ref: '#/components/schemas/Id'
+        values:
+          $ref: '#/components/schemas/RecipeInput'
+
+    RecipePage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/Recipe'
+        next_cursor:
+          $ref: '#/components/schemas/Cursor'
+
+    # ---- Profile ----
+
+    Consent:
+      type: object
+      additionalProperties: false
+      required: [contribute_to_aggregates]
+      properties:
+        contribute_to_aggregates:
+          description: Open decision D1; default is opt-in, asked once at onboarding, so the app sends false unless the user agrees.
+          type: boolean
+
+    Profile:
+      description: Consent and locale. Entitlement is added with the paid tier (M4).
+      type: object
+      additionalProperties: false
+      required: [locale, consent]
+      properties:
+        locale:
+          $ref: '#/components/schemas/Locale'
+        consent:
+          $ref: '#/components/schemas/Consent'
