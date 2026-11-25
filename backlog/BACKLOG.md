@@ -176,7 +176,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - The uploader of each label photo is recorded, so account deletion (M1-T6) can find that user's photos. Photo handling follows D10 to D12 in `docs/07-open-questions.md`.
 
 ### M1-T5 Shelf, brew and recipe routes
-- status: todo
+- status: in-progress
 - owner: backend-engineer
 - depends: M1-T3, M0-T2
 - implements: docs/04-specification.md, F2, F3
