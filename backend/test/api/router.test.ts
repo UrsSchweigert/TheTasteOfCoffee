@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { LIMIT_QUERY } from '../../src/api/http.ts';
 import { ROUTES } from '../../src/api/router.ts';
-import { BrewPageSchema, BrewSchema, RecipePageSchema, RecipeSchema, ShelfEntryPageSchema, ShelfEntrySchema } from '../../src/generated/contract.ts';
+import { BeanSchema, BrewPageSchema, BrewSchema, RecipePageSchema, RecipeSchema, ShelfEntryPageSchema, ShelfEntrySchema } from '../../src/generated/contract.ts';
 import { WriteConflictError, encodeCursor } from '../../src/repository/index.ts';
 import { OPENAPI_FILE, parseOpenApi } from '../../scripts/codegen/paths.ts';
 import { verifiedUserId } from '../events.ts';
@@ -243,6 +243,57 @@ describe('changing the bean of a shelf entry (D14)', () => {
     const calls = h.store.calls.length;
     expect((await h.call('PUT', `/shelf/${shelf}`, { json: shelfBody({ bean_id: OTHER_BEAN }) })).status).toBe(409);
     expect(h.store.calls.slice(calls)).toEqual(['replaceShelfEntry']);
+  });
+});
+
+describe('rejected beans on shelves (M1-T11)', () => {
+  async function newBean(h: Harness): Promise<string> {
+    const response = await h.call('POST', '/beans', { json: beanBody() });
+    expect(response.status).toBe(201);
+    return BeanSchema.parse(response.body).bean_id;
+  }
+
+  it('a rejected bean is 404 for a new shelf entry, with no body and nothing stored', async () => {
+    const h = harness();
+    const bean = await newBean(h);
+    h.store.rejectBean(bean);
+    const before = h.store.snapshot(verifiedUserId(ALICE_SUB));
+    const response = await h.call('POST', '/shelf', { json: shelfBody({ bean_id: bean }) });
+    expect(response.status).toBe(404);
+    expect(response.result.body).toBeUndefined();
+    expect(h.store.snapshot(verifiedUserId(ALICE_SUB))).toEqual(before);
+    expect(h.logs.at(-1)).toMatchObject({ operation: 'createShelfEntry', status: 404, error: 'BeanNotFoundError' });
+  });
+
+  it('an entry whose bean was rejected later can still be listed, read, brewed on and replaced with the same bean', async () => {
+    const h = harness();
+    const bean = await newBean(h);
+    const created = await h.call('POST', '/shelf', { json: shelfBody({ bean_id: bean }) });
+    expect(created.status).toBe(201);
+    const shelf = ShelfEntrySchema.parse(created.body).shelf_entry_id;
+    h.store.rejectBean(bean);
+
+    const list = ShelfEntryPageSchema.parse((await h.call('GET', '/shelf')).body);
+    expect(list.items.map((entry) => entry.shelf_entry_id)).toEqual([shelf]);
+    const read = await h.call('GET', `/shelf/${shelf}`);
+    expect(read.status).toBe(200);
+    expect(ShelfEntrySchema.parse(read.body).values.bean_id).toBe(bean);
+    expect((await h.call('POST', '/brews', { json: brewBody(shelf) })).status).toBe(201);
+    const replaced = await h.call('PUT', `/shelf/${shelf}`, { json: shelfBody({ bean_id: bean, price_band: 'from_80' }) });
+    expect(replaced.status).toBe(200);
+    expect(ShelfEntrySchema.parse(replaced.body).values).toMatchObject({ bean_id: bean, price_band: 'from_80' });
+  });
+
+  it('a replace that switches to a rejected bean is 404 and changes nothing', async () => {
+    const h = harness();
+    const rejected = await newBean(h);
+    h.store.rejectBean(rejected);
+    const shelf = await newShelf(h);
+    const before = h.store.snapshot(verifiedUserId(ALICE_SUB));
+    const response = await h.call('PUT', `/shelf/${shelf}`, { json: shelfBody({ bean_id: rejected }) });
+    expect(response.status).toBe(404);
+    expect(response.result.body).toBeUndefined();
+    expect(h.store.snapshot(verifiedUserId(ALICE_SUB))).toEqual(before);
   });
 });
 
