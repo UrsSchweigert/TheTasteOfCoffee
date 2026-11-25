@@ -27,6 +27,14 @@ export interface TestAppOptions {
   readonly env?: Record<string, string | undefined>;
 }
 
+export interface ViolationsAfterOptions extends TestAppOptions {
+  /**
+   * Keep CloudFormation's own template validation on (as in cdk.json), so a finding
+   * fails the synth. Only for complete, deployable resources such as the positive control.
+   */
+  readonly validateTemplates?: boolean;
+}
+
 /** The real app, with the feature flags from cdk.json, as the CDK CLI would build it. */
 export function testApp(options: TestAppOptions = {}): CupmarkApp {
   return buildApp({
@@ -41,13 +49,15 @@ export function testApp(options: TestAppOptions = {}): CupmarkApp {
  */
 export function violationsAfter(
   mutate: (stack: CupmarkStack, cupmark: CupmarkApp) => void,
-  options: TestAppOptions = {},
+  options: ViolationsAfterOptions = {},
 ): Violation[] {
-  // CloudFormation's own template validation is off here: throwaway resources are
-  // deliberately incomplete, and the point is to see what the Cupmark guards report.
+  // CloudFormation's own template validation is off by default here: throwaway
+  // resources are deliberately incomplete, and the point is to see what the Cupmark
+  // guards report.
+  const validation = options.validateTemplates === true ? {} : { '@aws-cdk/core:validateAgainstDefaultRules': false };
   const cupmark = testApp({
     ...options,
-    context: { stage: 'dev', '@aws-cdk/core:validateAgainstDefaultRules': false, ...options.context },
+    context: { stage: 'dev', ...validation, ...options.context },
   });
   const dev = cupmark.stages[0];
   if (dev === undefined) throw new Error('dev stage missing');

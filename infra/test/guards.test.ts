@@ -4,7 +4,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Aws, CfnOutput, CfnResource, Duration, Fn, RemovalPolicy, Stack, Stage, Tags } from 'aws-cdk-lib';
+import { Aws, CfnDeletionPolicy, CfnOutput, CfnResource, Duration, Fn, RemovalPolicy, Stack, Stage, Tags } from 'aws-cdk-lib';
 import { Template } from 'aws-cdk-lib/assertions';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
@@ -42,16 +42,20 @@ function inlineFunction(stack: Stack, id: string, props: Partial<lambda.Function
 }
 
 describe('positive control', () => {
-  it('passes a stack of representative, correctly named M1 resources', () => {
+  // Template validation stays on, as in cdk.json: the representative resources must
+  // also pass CloudFormation's own rules, not only the Cupmark guards.
+  it('passes a stack of representative, correctly named M1 resources, with template validation on', () => {
     const violations = violationsAfter((stack) => {
       new dynamodb.Table(stack, 'Table', {
-        tableName: 'cupmark-dev-main',
+        tableName: 'cupmark-dev-other',
         partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
         billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+        pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
+        deletionProtection: true,
         removalPolicy: RemovalPolicy.RETAIN,
       });
       new s3.Bucket(stack, 'Photos', {
-        bucketName: Fn.join('', ['cupmark-dev-photos-', Aws.ACCOUNT_ID]),
+        bucketName: Fn.join('', ['cupmark-dev-other-', Aws.ACCOUNT_ID]),
         blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
         enforceSSL: true,
         versioned: true,
@@ -72,8 +76,17 @@ describe('positive control', () => {
       inlineFunction(stack, 'Unnamed');
       new sns.Topic(stack, 'Alerts');
       new scheduler.CfnScheduleGroup(stack, 'Group', { name: 'cupmark-dev-jobs' });
-    });
+    }, { validateTemplates: true });
     expect(formatViolations(violations)).toBe('');
+  });
+
+  it('fails the synth when template validation is on and a resource is invalid', () => {
+    // Proves the positive control above really runs CloudFormation's validation.
+    expect(() =>
+      violationsAfter((stack) => {
+        new CfnResource(stack, 'Broken', { type: 'AWS::SNS::Topic', properties: { NoSuchProperty: true } });
+      }, { validateTemplates: true }),
+    ).toThrow(/NoSuchProperty.*\(CloudFormation Validate\)/);
   });
 
   it('gives every IAM role the CupmarkBoundary permissions boundary', () => {
@@ -336,6 +349,117 @@ describe('(e) imports and lookups', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('(f) stateful resources', () => {
+  /** A table that passes the stateful guard, with one property overridden. */
+  function safeTable(stack: Stack, props: Partial<dynamodb.TableProps> = {}): dynamodb.Table {
+    return new dynamodb.Table(stack, 'Table', {
+      tableName: 'cupmark-dev-other',
+      partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
+      deletionProtection: true,
+      removalPolicy: RemovalPolicy.RETAIN,
+      ...props,
+    });
+  }
+
+  /** A bucket that passes the stateful guard, with one property overridden. */
+  function safeBucket(stack: Stack, props: Partial<s3.BucketProps> = {}): s3.Bucket {
+    return new s3.Bucket(stack, 'Bucket', {
+      bucketName: Fn.join('', ['cupmark-dev-other-', Aws.ACCOUNT_ID]),
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      enforceSSL: true,
+      versioned: true,
+      removalPolicy: RemovalPolicy.RETAIN,
+      ...props,
+    });
+  }
+
+  function statefulOnly(violations: readonly Violation[]): Violation[] {
+    return violations.filter((v) => v.guard === 'stateful');
+  }
+
+  it('passes a safe table and a safe bucket', () => {
+    const violations = violationsAfter((stack) => {
+      safeTable(stack);
+      safeBucket(stack);
+    });
+    expect(formatViolations(violations)).toBe('');
+  });
+
+  it('fails on a table with RemovalPolicy.DESTROY', () => {
+    const violations = violationsAfter((stack) => {
+      safeTable(stack, { removalPolicy: RemovalPolicy.DESTROY });
+    });
+    expectViolation(violations, 'stateful', /AWS::DynamoDB::Table: DeletionPolicy is Delete, must be Retain/);
+    expectViolation(violations, 'stateful', /AWS::DynamoDB::Table: UpdateReplacePolicy is Delete, must be Retain/);
+  });
+
+  it('fails on a table that is retained on delete but deleted on replacement', () => {
+    const violations = violationsAfter((stack) => {
+      const table = safeTable(stack);
+      (table.node.defaultChild as dynamodb.CfnTable).cfnOptions.updateReplacePolicy = CfnDeletionPolicy.DELETE;
+    });
+    expect(statefulOnly(violations).map((v) => v.message)).toEqual([
+      'AWS::DynamoDB::Table: UpdateReplacePolicy is Delete, must be Retain (RemovalPolicy.RETAIN)',
+    ]);
+  });
+
+  it('fails on a table without deletion protection', () => {
+    const violations = violationsAfter((stack) => {
+      safeTable(stack, { deletionProtection: false });
+    });
+    expectViolation(violations, 'stateful', /DeletionProtectionEnabled must be true/);
+  });
+
+  it('fails on a table without point-in-time recovery', () => {
+    const violations = violationsAfter((stack) => {
+      safeTable(stack, { pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: false } });
+    });
+    expectViolation(violations, 'stateful', /PointInTimeRecoveryEnabled must be true/);
+  });
+
+  it('fails on a raw L1 table with none of the safety properties', () => {
+    const violations = violationsAfter((stack) => {
+      new dynamodb.CfnTable(stack, 'Raw', {
+        tableName: 'cupmark-dev-raw',
+        billingMode: 'PAY_PER_REQUEST',
+        keySchema: [{ attributeName: 'pk', keyType: 'HASH' }],
+        attributeDefinitions: [{ attributeName: 'pk', attributeType: 'S' }],
+      });
+    });
+    expect(statefulOnly(violations)).toHaveLength(4);
+  });
+
+  it('fails on an unversioned bucket', () => {
+    const violations = violationsAfter((stack) => {
+      safeBucket(stack, { versioned: false });
+    });
+    expectViolation(violations, 'stateful', /AWS::S3::Bucket: VersioningConfiguration.Status must be Enabled/);
+  });
+
+  it('fails on a bucket with RemovalPolicy.DESTROY', () => {
+    const violations = violationsAfter((stack) => {
+      safeBucket(stack, { removalPolicy: RemovalPolicy.DESTROY });
+    });
+    expectViolation(violations, 'stateful', /AWS::S3::Bucket: DeletionPolicy is Delete, must be Retain/);
+  });
+
+  it('fails on a bucket whose public access block is partial', () => {
+    const violations = violationsAfter((stack) => {
+      safeBucket(stack, {
+        blockPublicAccess: new s3.BlockPublicAccess({
+          blockPublicAcls: true,
+          ignorePublicAcls: true,
+          blockPublicPolicy: false,
+          restrictPublicBuckets: false,
+        }),
+      });
+    });
+    expectViolation(violations, 'stateful', /must set BlockPublicPolicy, RestrictPublicBuckets to true/);
   });
 });
 

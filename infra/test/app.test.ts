@@ -1,5 +1,5 @@
 // The real app: both stages synthesise offline, in eu-central-1, on the Cupmark
-// bootstrap, with no resources yet and no guard violations.
+// bootstrap, with no guard violations. The table and buckets are pinned in data.test.ts.
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { Template } from 'aws-cdk-lib/assertions';
@@ -64,11 +64,18 @@ describe('the Cupmark app', () => {
     expect(formatViolations(violations)).toBe('');
   });
 
-  it('has no resources yet (M0 skeleton), and no CDK metadata resource', () => {
+  it('contains exactly the table, the two buckets and their policies, and no CDK metadata resource', () => {
     for (const stack of stacksOf().stacks) {
-      const template = Template.fromStack(stack).toJSON() as Record<string, unknown>;
-      expect(template.Resources).toBeUndefined();
-      expect(Object.keys(template).sort()).toEqual(['Description', 'Parameters', 'Rules']);
+      const template = Template.fromStack(stack).toJSON() as { Resources: Record<string, { Type: string }> };
+      const types = Object.values(template.Resources).map((r) => r.Type).sort();
+      expect(types).toEqual([
+        'AWS::DynamoDB::Table',
+        'AWS::S3::Bucket',
+        'AWS::S3::Bucket',
+        'AWS::S3::BucketPolicy',
+        'AWS::S3::BucketPolicy',
+      ]);
+      expect(Object.keys(template).sort()).toEqual(['Description', 'Outputs', 'Parameters', 'Resources', 'Rules']);
     }
   });
 

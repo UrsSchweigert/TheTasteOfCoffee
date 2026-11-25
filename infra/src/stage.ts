@@ -1,4 +1,4 @@
-import { DefaultStackSynthesizer, PermissionsBoundary, Stack, Stage, Tags, Validations } from 'aws-cdk-lib';
+import { DefaultStackSynthesizer, PermissionsBoundary, Stack, Stage, Tags } from 'aws-cdk-lib';
 import type { Environment, StackProps, StageProps } from 'aws-cdk-lib';
 import type { Construct } from 'constructs';
 import {
@@ -10,6 +10,7 @@ import {
   stackName,
 } from './config.ts';
 import type { StageName } from './config.ts';
+import { CupmarkData } from './data.ts';
 
 export interface CupmarkStageProps {
   readonly stage: StageName;
@@ -46,8 +47,9 @@ export class CupmarkStack extends Stack {
  */
 export class CupmarkStage extends Stage {
   public readonly cupmarkStage: StageName;
-  /** Placeholder stack; M1 adds the table, buckets, identity and API here. */
+  /** The stage's stack: table and buckets (M1-T1); identity and API follow in M1. */
   public readonly core: CupmarkStack;
+  public readonly data: CupmarkData;
 
   public constructor(scope: Construct, props: CupmarkStageProps) {
     const env: Environment =
@@ -62,12 +64,7 @@ export class CupmarkStage extends Stage {
     this.core = new CupmarkStack(this, 'core', props.stage, 'core', {
       description: `Cupmark ${props.stage}: core resources`,
     });
-    // M0 skeleton: the stack has no resources yet (the CDK CLI skips deploying an
-    // empty stack). Remove this when M1-T1 adds the table.
-    Validations.of(this.core).acknowledge({
-      id: 'CloudFormation-Validate::F0001',
-      reason: 'M0 skeleton has no resources yet; M1-T1 adds them',
-    });
+    this.data = new CupmarkData(this.core, 'Data', { stage: props.stage });
 
     // Resource tags (in the template), on top of the stack tags above.
     Tags.of(this).add(PROJECT_TAG_KEY, PROJECT_TAG_VALUE);

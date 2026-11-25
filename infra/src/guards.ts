@@ -38,7 +38,8 @@ export type GuardName =
   | 'import'
   | 'bootstrap'
   | 'boundary'
-  | 'isolation';
+  | 'isolation'
+  | 'stateful';
 
 export interface Violation {
   readonly guard: GuardName;
@@ -195,6 +196,47 @@ function fixedFeeProperties(type: string, props: Record<string, unknown>): strin
     if (props.KinesisStreamSpecification !== undefined) {
       found.push('KinesisStreamSpecification: a Kinesis stream is billed per hour; use DynamoDB Streams');
     }
+  }
+  return found;
+}
+
+// ---------------------------------------------------------------------------
+// Stateful resources
+// ---------------------------------------------------------------------------
+
+/**
+ * Types that hold data. Each must survive stack deletion and resource replacement
+ * (DeletionPolicy and UpdateReplacePolicy Retain) and carry its own safety net:
+ * deletion protection and point-in-time recovery for tables, versioning and a full
+ * public access block for buckets (docs/05-system-design.md, Persistence and recovery).
+ */
+export const STATEFUL_RESOURCE_TYPES: readonly string[] = [
+  'AWS::DynamoDB::Table',
+  'AWS::DynamoDB::GlobalTable',
+  'AWS::S3::Bucket',
+];
+
+const PUBLIC_ACCESS_BLOCK = ['BlockPublicAcls', 'BlockPublicPolicy', 'IgnorePublicAcls', 'RestrictPublicBuckets'];
+
+function statefulProblems(type: string, resource: unknown, props: Record<string, unknown>): string[] {
+  if (!STATEFUL_RESOURCE_TYPES.includes(type)) return [];
+  const found: string[] = [];
+  for (const policy of ['DeletionPolicy', 'UpdateReplacePolicy']) {
+    const value = get(resource, [policy]);
+    if (value === 'Retain') continue;
+    const shown = value === undefined ? 'unset (Delete)' : typeof value === 'string' ? value : JSON.stringify(value);
+    found.push(`${policy} is ${shown}, must be Retain (RemovalPolicy.RETAIN)`);
+  }
+  if (type === 'AWS::DynamoDB::Table') {
+    if (props.DeletionProtectionEnabled !== true) found.push('DeletionProtectionEnabled must be true');
+    if (get(props, ['PointInTimeRecoverySpecification', 'PointInTimeRecoveryEnabled']) !== true) {
+      found.push('PointInTimeRecoverySpecification.PointInTimeRecoveryEnabled must be true');
+    }
+  }
+  if (type === 'AWS::S3::Bucket') {
+    if (get(props, ['VersioningConfiguration', 'Status']) !== 'Enabled') found.push('VersioningConfiguration.Status must be Enabled');
+    const missing = PUBLIC_ACCESS_BLOCK.filter((k) => get(props, ['PublicAccessBlockConfiguration', k]) !== true);
+    if (missing.length > 0) found.push(`PublicAccessBlockConfiguration must set ${missing.join(', ')} to true`);
   }
   return found;
 }
@@ -441,6 +483,7 @@ function checkStack(stack: Stack): Violation[] {
       continue;
     }
     for (const f of fixedFeeProperties(type, props)) add('fixed-fee-property', id, `${type}: ${f}`);
+    for (const p of statefulProblems(type, res, props)) add('stateful', id, `${type}: ${p}`);
     const denied = deniedReason(type);
     const rule = ALLOWED_RESOURCE_TYPES[type];
     if (denied !== undefined) {
