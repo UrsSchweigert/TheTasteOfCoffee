@@ -36,6 +36,13 @@ export type ApiStore = Pick<
   | 'getOpenFoodFactsCache'
   | 'cacheOpenFoodFactsResult'
   | 'countLookup'
+  | 'labelPhotoCount'
+  | 'countLabelPhotoUpload'
+  | 'createPendingLabelPhoto'
+  | 'getPendingLabelPhoto'
+  | 'discardPendingLabelPhoto'
+  | 'hasLabelPhoto'
+  | 'completeLabelPhoto'
 >;
 
 export interface Resource<I extends { vocabulary_version: number }, O> {

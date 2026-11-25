@@ -62,14 +62,19 @@ One DynamoDB table holds everything. The partition key decides who can reach an 
 | Barcode | `BARCODE#<ean>` | `BEAN` | Pointer to the bean |
 | Open Food Facts cache | `BARCODE#<ean>` | `OFF` | The fetched product (name, brand, the id of the stored image copy) or a miss, fetch time; TTL on a miss |
 | Lookup counter | `USER#<id>` | `LOOKUPS#<YYYY-MM-DD>` | The caller's Open Food Facts lookups that UTC day; TTL |
+| Pending label photo | `USER#<id>` | `PHOTO_PENDING#<photoId>` | An upload the caller started and has not completed: the bean id; TTL 1 day (ADR 0016) |
+| Label photo, user side | `USER#<id>` | `PHOTO#<photoId>` | The caller's completed label photo: bean id, creation time. The only link from a photo to its uploader (D10) |
+| Label photo count | `USER#<id>` | `BEANPHOTOS#<beanId>` | How many label photos the caller completed for the bean; at most 3 |
+| Label photo upload counter | `USER#<id>` | `PHOTO_UPLOADS#<YYYY-MM-DD>` | The caller's new label photo uploads that UTC day; TTL |
 | Aggregate, all methods | `BEAN#<beanId>` | `AGG#ALL` | Rater count; count, sum and sum of squares per criterion; note counts |
 | Aggregate per method | `BEAN#<beanId>` | `AGG#METHOD#<method>` | Same, plus recipe histogram buckets |
 | Rater marker | `BEAN#<beanId>` | `RATER#<id>` | Proves a distinct rater; drives give-to-get |
+| Label photo, bean side | `BEAN#<beanId>` | `PHOTO#<photoId>` | A stripped label photo of the bean for the operator's review: creation time, no user id (ADR 0016) |
 | Ranking | `RANK#<facet>` | `<period>` | Precomputed top list; facet and period formats in ADR 0010 |
 
 Ids in keys are server-generated ULIDs; `brewedAt` is fixed-width UTC (`toISOString()`), so brews list newest first. A brew, its pointer and the brew count of its shelf entry are always written in one transaction (ADR 0010, ADR 0012), so a shelf entry with brews cannot be deleted. `backend/src/repository/` builds every key and is the only code that talks to the table.
 
-The table's TTL attribute is `expires_at` (a number, epoch seconds). Only the two items marked "TTL" above carry it: an Open Food Facts miss and the daily lookup counter. DynamoDB deletes such an item some time after that moment (usually within a few days), at no charge, so reads must still compare `expires_at` with the current time. TTL deletes appear in the stream like any other delete; the aggregator must ignore them (they are not brews).
+The table's TTL attribute is `expires_at` (a number, epoch seconds). Only the items marked "TTL" above carry it: an Open Food Facts miss, the daily lookup and label photo upload counters, and a pending label photo. DynamoDB deletes such an item some time after that moment (usually within a few days), at no charge, so reads must still compare `expires_at` with the current time. TTL deletes appear in the stream like any other delete; the aggregator must ignore them (they are not brews).
 
 One sparse index (`gsi1`) lists unverified beans for the review queue: only an unverified bean's `META` item carries `gsi1pk=REVIEW#UNVERIFIED` and `gsi1sk=<createdAt UTC>#<beanId>`, and verifying or rejecting the bean removes both (infra/README.md). Rejecting a bean also deletes its `BARCODE#` pointer in the same transaction, so the barcode can be submitted again; the rejected `META` item stays for the operator and is never returned by the API (owner decision, 2026-11-25; M1-T4a). A rejected bean cannot be newly put on a shelf (404); shelf entries that already name it keep working, including a replace that keeps the same bean (M1-T11). The user id always comes from the verified token, never from the request body, so a user can only ever address their own `USER#` partition.
 
@@ -77,7 +82,7 @@ One sparse index (`gsi1`) lists unverified beans for the review queue: only an u
 
 1. A brew is written to the user's partition.
 2. DynamoDB Streams hands the change to the aggregator Lambda in batches.
-3. The aggregator adds the scores to the running totals of the bean and of the bean-and-method item, using atomic counters. Edits and deletes apply the difference.
+3. The aggregator adds the scores to the running totals of the bean and of the bean-and-method item, using atomic counters. Edits and deletes apply the difference. It acts on brew items only and ignores every other item type in the stream (shelf entries, pointers, label photo items, counters and TTL deletes).
 4. Reading a bean page is then one or two item reads, with mean and spread computed from count, sum and sum of squares.
 5. A nightly job reads the aggregate items (one per bean) and writes the ranking lists.
 
@@ -134,6 +139,7 @@ The phone sends only the barcode and, later, the user's confirmation. The backen
 - DynamoDB stores every write in three availability zones.
 - Point-in-time recovery is on: restore to any second in the last 35 days.
 - Deletion protection is on for the table; both buckets block public access and keep versions.
+- **Label photos (ADR 0016).** The photo bucket holds them next to the catalogue image copies. `POST /beans/{bean_id}/label_photos` returns a presigned S3 POST for `uploads/<photoId>.jpg` (exact key, `image/jpeg`, 1 byte to 8 MiB, 10 minutes); the app uploads straight to S3. `POST /label_photos/{photo_id}/complete` reads the upload, strips all metadata with the same JPEG rewriter as the catalogue images (D12), writes `labels/<photoId>.jpg`, and only then records the photo in one transaction: the uploader's `PHOTO#` item, the bean's `PHOTO#` item without a user id, and the per-user, per-bean count (at most 3 photos per bean, only for an unverified bean). Keys carry only the photo id. The raw uploads expire after 1 day by a lifecycle rule; the API deletes nothing in S3. Each user may start 20 uploads a UTC day. Label photos are never served by the API. `backend/README.md` has the detail and the notes for account deletion (M1-T6).
 - A weekly full export goes to the backup bucket, moves to archive storage after 30 days and is kept for a year. Optional: replicate that bucket to Ireland.
 - Each phone keeps a full copy of its owner's data, which doubles as a last-resort restore source for that user.
 - Target: lose at most seconds of data; restore within a few hours.

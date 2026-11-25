@@ -6,7 +6,10 @@
 // changing its bean (D14); the shared bean catalogue with its barcode
 // pointers (canonical EAN-13, one bean per barcode, a reject frees the barcode);
 // the Open Food Facts cache (a hit is never overwritten, a miss expires) and
-// the per-user daily lookup counter with its cap.
+// the per-user daily lookup counter with its cap; the label photo items
+// (pending uploads with their expiry, completed photos in the user and bean
+// partitions, the per-bean count with its cap of 3, the daily upload counter)
+// and the completion's all-or-nothing conditions.
 // The real repository is tested against DynamoDB Local.
 import type { UserId } from '../../src/auth/user-id.ts';
 import type { Brew, BrewInput, Recipe, RecipeInput, ShelfEntry, ShelfEntryInput } from '../../src/generated/contract.ts';
@@ -34,11 +37,27 @@ import {
 } from '../../src/repository/index.ts';
 import type { BeanRecord, ListOptions, NewBean, OpenFoodFactsCacheEntry, Page } from '../../src/repository/index.ts';
 import { InvalidValuesError, OPEN_FOOD_FACTS_MISS_TTL_SECONDS, lookupCounterKey, openFoodFactsCacheKey } from '../../src/repository/index.ts';
+import {
+  LABEL_PHOTOS_PER_BEAN,
+  LabelPhotoCapReachedError,
+  LabelPhotoCompletedError,
+  PENDING_LABEL_PHOTO_TTL_SECONDS,
+  beanLabelPhotoKey,
+  labelPhotoCountKey,
+  labelPhotoKey,
+  labelPhotoUploadCounterKey,
+  pendingLabelPhotoKey,
+} from '../../src/repository/index.ts';
+import type { PendingLabelPhoto } from '../../src/repository/index.ts';
 
 interface Partition {
   readonly shelf: Map<string, ShelfEntry>;
   readonly brews: Map<string, Brew>;
   readonly recipes: Map<string, Recipe>;
+}
+
+function keyId(key: { pk: string; sk: string }): string {
+  return `${key.pk}|${key.sk}`;
 }
 
 function page<T>(sorted: { sk: string; item: T }[], options: ListOptions, isSortKey: (sk: string) => boolean): Page<T> {
@@ -64,6 +83,16 @@ export class FakeStore implements ApiStore {
   public readonly openFoodFactsCache = new Map<string, { entry: OpenFoodFactsCacheEntry; expiresAt?: number }>();
   /** Lookup counters by `pk|sk` of the counter key. */
   public readonly lookupCounters = new Map<string, number>();
+  /** Label photo items by `pk|sk`. */
+  public readonly pendingPhotos = new Map<string, { beanId: string; expiresAt: number }>();
+  public readonly userPhotos = new Map<string, { beanId: string; createdAt: string }>();
+  public readonly beanPhotos = new Map<string, { createdAt: string }>();
+  public readonly photoCounts = new Map<string, number>();
+  public readonly uploadCounters = new Map<string, number>();
+  /** Photo ids to hand out first, for tests; then fresh ULIDs. */
+  public readonly photoIds: string[] = [];
+  /** If set, completeLabelPhoto fails with it (a transaction failure after the S3 write). */
+  public failComplete: Error | undefined;
   /** The clock for cache expiry and counter days; tests move it. */
   public now = new Date('2026-11-25T12:00:00.000Z');
   /** Every call, by method name, for assertions. */
@@ -276,6 +305,74 @@ export class FakeStore implements ApiStore {
     if (count >= cap) return Promise.resolve(false);
     this.lookupCounters.set(id, count + 1);
     return Promise.resolve(true);
+  }
+
+  // ---- label photos (M1-T4d) ----
+
+  public countLabelPhotoUpload(user: UserId, cap: number): Promise<boolean> {
+    this.calls.push('countLabelPhotoUpload');
+    if (!Number.isSafeInteger(cap) || cap < 0) return Promise.reject(new InvalidValuesError('invalid upload cap'));
+    const id = keyId(labelPhotoUploadCounterKey(user, this.now.toISOString().slice(0, 10)));
+    const count = this.uploadCounters.get(id) ?? 0;
+    if (count >= cap) return Promise.resolve(false);
+    this.uploadCounters.set(id, count + 1);
+    return Promise.resolve(true);
+  }
+
+  public labelPhotoCount(user: UserId, beanId: string): Promise<number> {
+    this.calls.push('labelPhotoCount');
+    return Promise.resolve(this.photoCounts.get(keyId(labelPhotoCountKey(user, beanId))) ?? 0);
+  }
+
+  public createPendingLabelPhoto(user: UserId, beanId: string): Promise<string> {
+    this.calls.push('createPendingLabelPhoto');
+    const photoId = this.photoIds.shift() ?? this.#newId();
+    this.pendingPhotos.set(keyId(pendingLabelPhotoKey(user, photoId)), {
+      beanId,
+      expiresAt: Math.floor(this.now.getTime() / 1000) + PENDING_LABEL_PHOTO_TTL_SECONDS,
+    });
+    return Promise.resolve(photoId);
+  }
+
+  public getPendingLabelPhoto(user: UserId, photoId: string): Promise<PendingLabelPhoto | undefined> {
+    this.calls.push('getPendingLabelPhoto');
+    const pending = this.pendingPhotos.get(keyId(pendingLabelPhotoKey(user, photoId)));
+    if (pending === undefined || pending.expiresAt <= Math.floor(this.now.getTime() / 1000)) return Promise.resolve(undefined);
+    return Promise.resolve({ photoId, beanId: pending.beanId });
+  }
+
+  public discardPendingLabelPhoto(user: UserId, photoId: string): Promise<void> {
+    this.calls.push('discardPendingLabelPhoto');
+    this.pendingPhotos.delete(keyId(pendingLabelPhotoKey(user, photoId)));
+    return Promise.resolve();
+  }
+
+  public hasLabelPhoto(user: UserId, photoId: string): Promise<boolean> {
+    this.calls.push('hasLabelPhoto');
+    return Promise.resolve(this.userPhotos.has(keyId(labelPhotoKey(user, photoId))));
+  }
+
+  public completeLabelPhoto(user: UserId, photoId: string, beanId: string): Promise<void> {
+    this.calls.push('completeLabelPhoto');
+    if (this.failComplete !== undefined) return Promise.reject(this.failComplete);
+    const pendingId = keyId(pendingLabelPhotoKey(user, photoId));
+    const userId = keyId(labelPhotoKey(user, photoId));
+    const beanPhotoId = keyId(beanLabelPhotoKey(beanId, photoId));
+    const countId = keyId(labelPhotoCountKey(user, beanId));
+    const pending = this.pendingPhotos.get(pendingId);
+    if (pending?.beanId !== beanId || pending.expiresAt <= Math.floor(this.now.getTime() / 1000)) {
+      return Promise.reject(this.userPhotos.has(userId) ? new LabelPhotoCompletedError('completed') : new ItemNotFoundError('no such pending'));
+    }
+    if (this.userPhotos.has(userId) || this.beanPhotos.has(beanPhotoId)) return Promise.reject(new LabelPhotoCompletedError('completed'));
+    if (this.catalogue.get(beanId)?.status !== 'unverified') return Promise.reject(new BeanNotUnverifiedError('not unverified'));
+    const count = this.photoCounts.get(countId) ?? 0;
+    if (count >= LABEL_PHOTOS_PER_BEAN) return Promise.reject(new LabelPhotoCapReachedError('cap'));
+    const createdAt = this.now.toISOString();
+    this.pendingPhotos.delete(pendingId);
+    this.userPhotos.set(userId, { beanId, createdAt });
+    this.beanPhotos.set(beanPhotoId, { createdAt });
+    this.photoCounts.set(countId, count + 1);
+    return Promise.resolve();
   }
 
   /** A shelf entry may newly name the bean: known, and not rejected (M1-T11). */

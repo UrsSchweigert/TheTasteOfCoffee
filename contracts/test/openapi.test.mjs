@@ -61,11 +61,12 @@ test('openapi.yaml: all checks together, as the CLI runs them', () => {
   assert.deepEqual(checkOpenApi(doc, context), []);
 });
 
-test('openapi.yaml defines the routes of tasks M0-T2 and M1-T8, all behind the bearer token but GET /health', () => {
+test('openapi.yaml defines the routes of tasks M0-T2, M1-T8 and M1-T4d, all behind the bearer token but GET /health', () => {
   const expected = [
     'GET /barcodes/{barcode}', 'GET /barcodes/{barcode}/open_food_facts',
     'GET /health',
     'POST /beans', 'GET /beans/{bean_id}',
+    'POST /beans/{bean_id}/label_photos', 'POST /label_photos/{photo_id}/complete',
     'GET /catalogue_images/{image_id}',
     'GET /shelf', 'POST /shelf', 'GET /shelf/{shelf_entry_id}', 'PUT /shelf/{shelf_entry_id}', 'DELETE /shelf/{shelf_entry_id}',
     'GET /brews', 'POST /brews', 'GET /brews/{brew_id}', 'PUT /brews/{brew_id}', 'DELETE /brews/{brew_id}',
@@ -128,6 +129,124 @@ test('openapi.yaml: a catalogue image is fetched by its id behind the token, as 
   assert.deepEqual(doc.components.parameters.ImageIdPath.schema, { $ref: '#/components/schemas/Id' });
   assert.deepEqual(Object.keys(op.responses).sort(), ['200', '400', '401', '404', '429']);
   assert.deepEqual(op.responses['200'].content, { 'image/jpeg': { schema: { type: 'string', contentMediaType: 'image/jpeg' } } });
+});
+
+test('openapi.yaml: label photo upload and completion take no body and answer with no error body (ADR 0016)', () => {
+  const create = doc.paths['/beans/{bean_id}/label_photos'].post;
+  assert.deepEqual(Object.keys(doc.paths['/beans/{bean_id}/label_photos']), ['post']);
+  assert.equal(create.operationId, 'createLabelPhotoUpload');
+  assert.equal(create.security, undefined, 'inherits the bearer token');
+  assert.equal(create.requestBody, undefined);
+  assert.deepEqual(create.parameters, [{ $ref: '#/components/parameters/BeanIdPath' }]);
+  assert.deepEqual(Object.keys(create.responses).sort(), ['201', '400', '401', '404', '409', '429']);
+  assert.deepEqual(create.responses['201'].content, { 'application/json': { schema: { $ref: '#/components/schemas/LabelPhotoUpload' } } });
+
+  const complete = doc.paths['/label_photos/{photo_id}/complete'].post;
+  assert.deepEqual(Object.keys(doc.paths['/label_photos/{photo_id}/complete']), ['post']);
+  assert.equal(complete.operationId, 'completeLabelPhoto');
+  assert.equal(complete.security, undefined, 'inherits the bearer token');
+  assert.equal(complete.requestBody, undefined);
+  assert.deepEqual(complete.parameters, [{ $ref: '#/components/parameters/PhotoIdPath' }]);
+  assert.deepEqual(doc.components.parameters.PhotoIdPath.schema, { $ref: '#/components/schemas/Id' });
+  assert.deepEqual(Object.keys(complete.responses).sort(), ['204', '400', '401', '404', '409', '429']);
+
+  for (const op of [create, complete]) {
+    for (const [code, response] of Object.entries(op.responses)) {
+      if (!/^2/.test(code)) assert.equal(response.content, undefined, `${op.operationId} ${code} has no body`);
+    }
+  }
+  for (const fact of ['8 MiB', 'image/jpeg', '10 minutes', 'never shown to other users']) {
+    assert.match(create.description, new RegExp(fact), `create description states ${fact}`);
+  }
+  for (const fact of ['8 MiB', 'D12', 'never shown', 'strips all metadata']) {
+    assert.match(complete.description, new RegExp(fact), `complete description states ${fact}`);
+  }
+});
+
+// The S3 form field each snake_case property of LabelPhotoUploadFields is sent
+// as. The generators need snake_case names; the description of each property
+// names the form field, so backend and app map them from one place.
+const LABEL_PHOTO_FORM_FIELDS = {
+  key: 'key',
+  bucket: 'bucket',
+  content_type: 'Content-Type',
+  policy: 'Policy',
+  x_amz_algorithm: 'X-Amz-Algorithm',
+  x_amz_credential: 'X-Amz-Credential',
+  x_amz_date: 'X-Amz-Date',
+  x_amz_security_token: 'X-Amz-Security-Token',
+  x_amz_signature: 'X-Amz-Signature',
+};
+
+test('openapi.yaml: the presigned POST fields are a closed set, each named after its S3 form field', () => {
+  const fields = schemas(doc).LabelPhotoUploadFields;
+  assert.deepEqual(Object.keys(fields.properties).sort(), Object.keys(LABEL_PHOTO_FORM_FIELDS).sort());
+  assert.equal(fields.additionalProperties, false);
+  assert.deepEqual([...fields.required].sort(), Object.keys(LABEL_PHOTO_FORM_FIELDS).filter((n) => n !== 'x_amz_security_token').sort());
+  for (const [name, formField] of Object.entries(LABEL_PHOTO_FORM_FIELDS)) {
+    const property = fields.properties[name];
+    assert.ok(property.description.startsWith(`Form field ${formField}.`), `${name} names form field ${formField}`);
+    assert.equal(property.type, 'string', name);
+    assert.ok(Number.isInteger(property.maxLength), `${name} has a maxLength`);
+    assert.equal(typeof property.pattern, 'string', `${name} has a pattern`);
+  }
+});
+
+const validUpload = () => ({
+  photo_id: ID,
+  upload: {
+    url: 'https://cupmark-prod-photos-123456789012.s3.eu-central-1.amazonaws.com/',
+    fields: {
+      key: `uploads/${ID}.jpg`,
+      bucket: 'cupmark-prod-photos-123456789012',
+      content_type: 'image/jpeg',
+      policy: Buffer.from(JSON.stringify({ expiration: '2026-11-25T08:40:00Z', conditions: [] })).toString('base64'),
+      x_amz_algorithm: 'AWS4-HMAC-SHA256',
+      x_amz_credential: 'ASIAEXAMPLEEXAMPLE12/20261125/eu-central-1/s3/aws4_request',
+      x_amz_date: '20261125T083000Z',
+      x_amz_security_token: 'IQoJb3JpZ2luX2VjEXAMPLE+/=',
+      x_amz_signature: 'a'.repeat(64),
+    },
+  },
+  expires_at: '2026-11-25T08:40:00Z',
+  max_bytes: 8388608,
+});
+
+test('LabelPhotoUpload accepts a presigned POST for our bucket and rejects anything else', () => {
+  assert.deepEqual(validate('LabelPhotoUpload', validUpload()), []);
+  const withoutToken = validUpload();
+  delete withoutToken.upload.fields.x_amz_security_token;
+  assert.deepEqual(validate('LabelPhotoUpload', withoutToken), [], 'the session token is optional');
+
+  const rejects = (mutate, why) => {
+    const value = validUpload();
+    mutate(value);
+    assert.notDeepEqual(validate('LabelPhotoUpload', value), [], why);
+  };
+  rejects((v) => { v.upload.url = 'https://evil.s3.eu-central-1.amazonaws.com/'; }, 'not a cupmark bucket');
+  rejects((v) => { v.upload.url = 'https://cupmark-prod-photos-1.s3.us-east-1.amazonaws.com/'; }, 'not eu-central-1');
+  rejects((v) => { v.upload.url = 'http://cupmark-prod-photos-1.s3.eu-central-1.amazonaws.com/'; }, 'not https');
+  rejects((v) => { v.upload.url = 'https://cupmark-x.s3.eu-central-1.amazonaws.com.evil.example/'; }, 'not the S3 host');
+  rejects((v) => { v.upload.url = 'https://cupmark-x.s3.eu-central-1.amazonaws.com/uploads'; }, 'no path');
+  rejects((v) => { v.upload.fields.key = `labels/${ID}.jpg`; }, 'uploads go to uploads/ only');
+  rejects((v) => { v.upload.fields.key = 'uploads/../labels/x.jpg'; }, 'no traversal');
+  rejects((v) => { v.upload.fields.key = `uploads/user-1/${ID}.jpg`; }, 'key holds the photo id only');
+  rejects((v) => { v.upload.fields.content_type = 'image/heic'; }, 'JPEG only');
+  rejects((v) => { v.upload.fields.x_amz_algorithm = 'AWS4-HMAC-SHA1'; }, 'SigV4 only');
+  rejects((v) => { v.upload.fields.x_amz_credential = 'AKIA/20261125/us-east-1/s3/aws4_request'; }, 'credential in eu-central-1');
+  rejects((v) => { v.upload.fields.x_amz_date = '2026-11-25T08:30:00Z'; }, 'basic ISO 8601');
+  rejects((v) => { v.upload.fields.x_amz_signature = 'A'.repeat(64); }, 'lower-case hex');
+  rejects((v) => { v.upload.fields.policy = 'not base64!'; }, 'base64 policy');
+  rejects((v) => { v.upload.fields.policy = 'A'.repeat(8193); }, 'policy too long');
+  rejects((v) => { v.upload.fields.x_amz_security_token = 'A'.repeat(4097); }, 'token too long');
+  rejects((v) => { v.upload.fields['X-Amz-Algorithm'] = 'AWS4-HMAC-SHA256'; }, 'form names are not properties');
+  rejects((v) => { v.upload.fields.success_action_redirect = 'https://example.com/'; }, 'no other field');
+  rejects((v) => { delete v.upload.fields.policy; }, 'policy required');
+  rejects((v) => { delete v.upload.fields.content_type; }, 'Content-Type required');
+  rejects((v) => { v.max_bytes = 10485760; }, 'the limit is 8 MiB');
+  rejects((v) => { v.expires_at = 'in ten minutes'; }, 'expiry is a timestamp');
+  rejects((v) => { v.photo_id = 'photo-1'; }, 'photo ids are ULIDs');
+  rejects((v) => { v.user_id = ID; }, 'no user id');
 });
 
 test('openapi.yaml: the export returns CSV only', () => {

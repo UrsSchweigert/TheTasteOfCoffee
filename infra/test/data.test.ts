@@ -4,7 +4,7 @@ import { Match, Template } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
 import { STAGES } from '../src/config.ts';
 import type { StageName } from '../src/config.ts';
-import { TTL_ATTRIBUTE } from '../src/data.ts';
+import { LABEL_PHOTO_PREFIX, TTL_ATTRIBUTE, UPLOAD_PHOTO_PREFIX } from '../src/data.ts';
 import { testApp } from './helpers.ts';
 
 type Resource = { Type: string; Properties: Record<string, unknown> } & Record<string, unknown>;
@@ -251,11 +251,45 @@ describe.each(STAGES)('stage %s', (stage) => {
           AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 },
         },
         { Id: 'remove-expired-delete-markers', Status: 'Enabled', ExpiredObjectDeleteMarker: true },
+        {
+          Id: 'expire-raw-uploads',
+          Status: 'Enabled',
+          Prefix: 'uploads/',
+          ExpirationInDays: 1,
+          NoncurrentVersionExpiration: { NoncurrentDays: 1 },
+        },
       ],
     });
     // Unverified photos (the review queue) never expire by lifecycle.
     const rules = (b.Properties.LifecycleConfiguration as { Rules: Record<string, unknown>[] }).Rules;
     expect(rules.filter((r) => r.ExpirationInDays !== undefined && r.Prefix === undefined)).toEqual([]);
+  });
+
+  it('expires raw label photo uploads after 1 day, and their noncurrent versions 1 day later (ADR 0016)', () => {
+    const [, b] = bucket(template, stage, 'photos');
+    const rules = (b.Properties.LifecycleConfiguration as { Rules: Record<string, unknown>[] }).Rules;
+    expect(UPLOAD_PHOTO_PREFIX).toBe('uploads/');
+    expect(rules.filter((r) => r.Prefix === UPLOAD_PHOTO_PREFIX)).toEqual([
+      {
+        Id: 'expire-raw-uploads',
+        Status: 'Enabled',
+        Prefix: 'uploads/',
+        ExpirationInDays: 1,
+        NoncurrentVersionExpiration: { NoncurrentDays: 1 },
+      },
+    ]);
+    // Only uploads/ and verified/ expire; stripped photos under labels/ and catalogue
+    // images never do (the whole-bucket rule only removes noncurrent versions).
+    expect(LABEL_PHOTO_PREFIX).toBe('labels/');
+    expect(rules.filter((r) => r.ExpirationInDays !== undefined).map((r) => r.Prefix).sort()).toEqual(['uploads/', 'verified/']);
+    // The whole-bucket noncurrent rule (30 days) also matches uploads/; S3 applies the
+    // shorter of two matching expirations, so the upload rule's 1 day wins there.
+    expect(rules.filter((r) => r.Prefix === undefined && r.NoncurrentVersionExpiration !== undefined)).toHaveLength(1);
+  });
+
+  it('has no CORS configuration on the photo bucket (the iOS app is not a browser, ADR 0016)', () => {
+    const [, b] = bucket(template, stage, 'photos');
+    expect(b.Properties.CorsConfiguration).toBeUndefined();
   });
 
   it('uses no Fn::ImportValue and no exports', () => {

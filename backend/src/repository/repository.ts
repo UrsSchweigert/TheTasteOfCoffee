@@ -67,6 +67,8 @@ import {
   InvalidValuesError,
   ItemExistsError,
   ItemNotFoundError,
+  LabelPhotoCapReachedError,
+  LabelPhotoCompletedError,
   ShelfEntryBeanLockedError,
   ShelfEntryInUseError,
   ShelfEntryNotFoundError,
@@ -79,8 +81,13 @@ import {
   beanMetaKey,
   canonicalBarcode,
   brewKey,
+  beanLabelPhotoKey,
+  labelPhotoCountKey,
+  labelPhotoKey,
+  labelPhotoUploadCounterKey,
   lookupCounterKey,
   openFoodFactsCacheKey,
+  pendingLabelPhotoKey,
   brewRefKey,
   brewSortKey,
   parseBrewSortKey,
@@ -159,7 +166,23 @@ export const ITEM_TYPE = {
   barcode: 'BARCODE',
   openFoodFactsCache: 'OFF_CACHE',
   lookupCounter: 'LOOKUPS',
+  labelPhotoPending: 'PHOTO_PENDING',
+  labelPhoto: 'LABEL_PHOTO',
+  beanLabelPhoto: 'BEAN_LABEL_PHOTO',
+  labelPhotoCount: 'BEAN_PHOTOS',
+  labelPhotoUploads: 'PHOTO_UPLOADS',
 } as const;
+
+/** Completed label photos per user and bean (docs/04 F1 step 4; ADR 0016). */
+export const LABEL_PHOTOS_PER_BEAN = 3;
+/** A pending label photo upload expires this long after it was started; the presigned POST itself lasts 10 minutes. */
+export const PENDING_LABEL_PHOTO_TTL_SECONDS = 24 * 60 * 60;
+
+/** A label photo upload the caller started and has not completed. */
+export interface PendingLabelPhoto {
+  readonly photoId: string;
+  readonly beanId: string;
+}
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
@@ -205,6 +228,9 @@ const OpenFoodFactsCacheItem = z.discriminatedUnion('result', [
   KeyAttributes.extend({ result: z.literal('hit'), product: OpenFoodFactsProductSchema, fetchedAt: z.string() }),
   KeyAttributes.extend({ result: z.literal('miss'), fetchedAt: z.string(), expires_at: EpochSeconds }),
 ]);
+const PendingLabelPhotoItem = KeyAttributes.extend({ photoId: IdSchema, beanId: IdSchema, createdAt: z.string(), expires_at: EpochSeconds });
+const LabelPhotoItem = KeyAttributes.extend({ photoId: IdSchema, beanId: IdSchema, createdAt: z.string() });
+const LabelPhotoCountItem = KeyAttributes.extend({ beanId: IdSchema, photos: z.number().int().nonnegative() });
 const LastKey = z.object({ pk: z.string(), sk: z.string(), gsi1sk: z.string().optional() });
 
 type BeanItemShape = z.infer<typeof BeanItem>;
@@ -933,9 +959,17 @@ export class Repository {
    */
   public async countLookup(user: UserId, cap: number): Promise<boolean> {
     if (!Number.isSafeInteger(cap) || cap < 0) throw new InvalidValuesError('invalid lookup cap');
-    const now = this.#now();
-    const day = utcOf(now).slice(0, 10);
-    const key = lookupCounterKey(user, day);
+    const day = utcOf(this.#now()).slice(0, 10);
+    return this.#countDaily(lookupCounterKey(user, day), day, 'lookups', ITEM_TYPE.lookupCounter, cap);
+  }
+
+  /**
+   * One atomic `ADD <attribute> 1` on a per-user, per-UTC-day counter, on the
+   * condition that it is below `cap`. True if counted, false if the cap is used
+   * up (nothing is written then). `expires_at` is the start of the day plus
+   * LOOKUP_COUNTER_TTL_SECONDS.
+   */
+  async #countDaily(key: Key, day: string, attribute: string, type: string, cap: number): Promise<boolean> {
     if (cap === 0) return false;
     const expiresAt = epochSeconds(new Date(`${day}T00:00:00.000Z`)) + LOOKUP_COUNTER_TTL_SECONDS;
     try {
@@ -943,10 +977,10 @@ export class Repository {
         new UpdateCommand({
           TableName: this.#table,
           Key: key,
-          UpdateExpression: 'SET #type = :type, expires_at = if_not_exists(expires_at, :expires) ADD lookups :one',
-          ConditionExpression: 'attribute_not_exists(lookups) OR lookups < :cap',
-          ExpressionAttributeNames: { '#type': 'type' },
-          ExpressionAttributeValues: { ':type': ITEM_TYPE.lookupCounter, ':expires': expiresAt, ':one': 1, ':cap': cap },
+          UpdateExpression: 'SET #type = :type, expires_at = if_not_exists(expires_at, :expires) ADD #count :one',
+          ConditionExpression: 'attribute_not_exists(#count) OR #count < :cap',
+          ExpressionAttributeNames: { '#type': 'type', '#count': attribute },
+          ExpressionAttributeValues: { ':type': type, ':expires': expiresAt, ':one': 1, ':cap': cap },
         }),
       );
       return true;
@@ -954,6 +988,162 @@ export class Repository {
       rethrowConflict(error);
       if (isConditionFailure(error)) return false;
       throw error;
+    }
+  }
+
+  // ---- label photos (M1-T4d; ADR 0016) ----
+
+  /**
+   * Counts one new label photo upload against the caller's cap for the current
+   * UTC day (`USER#<sub>` / `PHOTO_UPLOADS#<day>`, attribute `uploads`), like
+   * countLookup. True if counted, false if the cap is used up.
+   */
+  public async countLabelPhotoUpload(user: UserId, cap: number): Promise<boolean> {
+    if (!Number.isSafeInteger(cap) || cap < 0) throw new InvalidValuesError('invalid upload cap');
+    const day = utcOf(this.#now()).slice(0, 10);
+    return this.#countDaily(labelPhotoUploadCounterKey(user, day), day, 'uploads', ITEM_TYPE.labelPhotoUploads, cap);
+  }
+
+  /** How many label photos the caller has completed for the bean (`BEANPHOTOS#<beanId>`), 0 if none. */
+  public async labelPhotoCount(user: UserId, beanId: string): Promise<number> {
+    const key = labelPhotoCountKey(user, beanId);
+    const item = await this.#get(key);
+    if (item === undefined) return 0;
+    const stored = storedItem(LabelPhotoCountItem, item, key.pk, 'label photo count');
+    if (stored.sk !== key.sk || stored.beanId !== beanId) throw new CorruptItemError('stored label photo count does not match its key');
+    return stored.photos;
+  }
+
+  /**
+   * Starts a label photo upload: a new photo id and the caller's pending item
+   * `USER#<sub>` / `PHOTO_PENDING#<photoId>` holding the bean id, with
+   * `expires_at` PENDING_LABEL_PHOTO_TTL_SECONDS ahead. Returns the photo id.
+   * Checks nothing about the bean; the API does that first.
+   */
+  public async createPendingLabelPhoto(user: UserId, beanId: string): Promise<string> {
+    const bean = validValues(IdSchema, beanId, 'bean id');
+    const now = this.#now();
+    const photoId = this.#newId(now);
+    const key = pendingLabelPhotoKey(user, photoId);
+    await this.#create(key, {
+      type: ITEM_TYPE.labelPhotoPending,
+      photoId,
+      beanId: bean,
+      createdAt: utcOf(now),
+      expires_at: epochSeconds(now) + PENDING_LABEL_PHOTO_TTL_SECONDS,
+    });
+    return photoId;
+  }
+
+  /**
+   * The caller's pending upload with this id, or undefined: none in the
+   * caller's partition (so another user's photo id looks unknown), or past its
+   * `expires_at` (TTL deletes it later).
+   */
+  public async getPendingLabelPhoto(user: UserId, photoId: string): Promise<PendingLabelPhoto | undefined> {
+    const key = pendingLabelPhotoKey(user, photoId);
+    const item = await this.#get(key);
+    if (item === undefined) return undefined;
+    const stored = storedItem(PendingLabelPhotoItem, item, key.pk, 'pending label photo');
+    if (stored.sk !== key.sk || stored.photoId !== photoId) throw new CorruptItemError('stored pending label photo does not match its key');
+    if (stored.expires_at <= epochSeconds(this.#now())) return undefined;
+    return { photoId: stored.photoId, beanId: stored.beanId };
+  }
+
+  /** Deletes the caller's pending upload, if there is one (a rejected photo). */
+  public async discardPendingLabelPhoto(user: UserId, photoId: string): Promise<void> {
+    await this.#client.send(new DeleteCommand({ TableName: this.#table, Key: pendingLabelPhotoKey(user, photoId) }));
+  }
+
+  /** True if the caller has a completed label photo with this id. */
+  public async hasLabelPhoto(user: UserId, photoId: string): Promise<boolean> {
+    const key = labelPhotoKey(user, photoId);
+    const item = await this.#get(key);
+    if (item === undefined) return false;
+    storedItem(LabelPhotoItem, item, key.pk, 'label photo');
+    return true;
+  }
+
+  /**
+   * Records a stripped label photo, in one transaction:
+   * 0. delete the caller's pending item, on the condition that it exists,
+   *    names this bean and has not expired;
+   * 1. put `USER#<sub>` / `PHOTO#<photoId>` {photoId, beanId, createdAt};
+   * 2. put `BEAN#<beanId>` / `PHOTO#<photoId>` {photoId, createdAt}, no user id;
+   * 3. `ADD photos 1` on `USER#<sub>` / `BEANPHOTOS#<beanId>`, on the condition
+   *    that it is below LABEL_PHOTOS_PER_BEAN, so parallel completions cannot
+   *    pass the cap;
+   * 4. a ConditionCheck that the bean is still unverified.
+   * Failures: pending gone and the photo recorded, or 1 or 2 already there, is
+   * LabelPhotoCompletedError; pending gone otherwise ItemNotFoundError; the
+   * bean not unverified BeanNotUnverifiedError; the cap
+   * LabelPhotoCapReachedError; a concurrent transaction WriteConflictError.
+   */
+  public async completeLabelPhoto(user: UserId, photoId: string, beanId: string): Promise<void> {
+    const pending = pendingLabelPhotoKey(user, photoId);
+    const userPhoto = labelPhotoKey(user, photoId);
+    const beanPhoto = beanLabelPhotoKey(beanId, photoId);
+    const count = labelPhotoCountKey(user, beanId);
+    const now = this.#now();
+    const createdAt = utcOf(now);
+    try {
+      await this.#client.send(
+        new TransactWriteCommand({
+          TransactItems: [
+            {
+              Delete: {
+                TableName: this.#table,
+                Key: pending,
+                ConditionExpression: 'attribute_exists(pk) AND beanId = :bean AND expires_at > :now',
+                ExpressionAttributeValues: { ':bean': beanId, ':now': epochSeconds(now) },
+              },
+            },
+            {
+              Put: {
+                TableName: this.#table,
+                Item: { ...userPhoto, type: ITEM_TYPE.labelPhoto, photoId, beanId, createdAt },
+                ConditionExpression: 'attribute_not_exists(pk)',
+              },
+            },
+            {
+              Put: {
+                TableName: this.#table,
+                Item: { ...beanPhoto, type: ITEM_TYPE.beanLabelPhoto, photoId, createdAt },
+                ConditionExpression: 'attribute_not_exists(pk)',
+              },
+            },
+            {
+              Update: {
+                TableName: this.#table,
+                Key: count,
+                UpdateExpression: 'SET #type = :type, beanId = :bean ADD photos :one',
+                ConditionExpression: 'attribute_not_exists(photos) OR photos < :cap',
+                ExpressionAttributeNames: { '#type': 'type' },
+                ExpressionAttributeValues: { ':type': ITEM_TYPE.labelPhotoCount, ':bean': beanId, ':one': 1, ':cap': LABEL_PHOTOS_PER_BEAN },
+              },
+            },
+            {
+              ConditionCheck: {
+                TableName: this.#table,
+                Key: beanMetaKey(beanId),
+                ConditionExpression: 'attribute_exists(pk) AND #status = :unverified',
+                ExpressionAttributeNames: { '#status': 'status' },
+                ExpressionAttributeValues: { ':unverified': 'unverified' },
+              },
+            },
+          ],
+        }),
+      );
+    } catch (error) {
+      const failed = failedConditions(error);
+      if (!failed?.length) throw error;
+      if (failed.includes(0)) {
+        if (await this.hasLabelPhoto(user, photoId)) throw new LabelPhotoCompletedError('label photo already completed');
+        throw new ItemNotFoundError('no such pending label photo');
+      }
+      if (failed.includes(1) || failed.includes(2)) throw new LabelPhotoCompletedError('label photo already completed');
+      if (failed.includes(4)) throw new BeanNotUnverifiedError('bean is not unverified');
+      throw new LabelPhotoCapReachedError('label photo cap reached');
     }
   }
 

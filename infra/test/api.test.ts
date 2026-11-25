@@ -5,7 +5,8 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { Template } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
-import { API_INDEX_ACTIONS, API_TABLE_ACTIONS, STAGE_LIMITS, cursorKeyParameter } from '../src/api.ts';
+import { API_INDEX_ACTIONS, API_TABLE_ACTIONS, CATALOGUE_IMAGE_PREFIX, STAGE_LIMITS, cursorKeyParameter } from '../src/api.ts';
+import { LABEL_PHOTO_PREFIX, UPLOAD_PHOTO_PREFIX } from '../src/data.ts';
 import { backendBundle } from '../src/functions.ts';
 import { STAGES } from '../src/config.ts';
 import type { StageName } from '../src/config.ts';
@@ -256,6 +257,18 @@ describe.each(STAGES)('stage %s', (stage) => {
                 Action: ['s3:GetObject', 's3:PutObject'],
                 Resource: { 'Fn::Join': ['', [{ 'Fn::GetAtt': [photoBucketId, 'Arn'] }, '/catalogue/*']] },
               },
+              {
+                Sid: 'LabelPhotoUploads',
+                Effect: 'Allow',
+                Action: ['s3:GetObject', 's3:PutObject'],
+                Resource: { 'Fn::Join': ['', [{ 'Fn::GetAtt': [photoBucketId, 'Arn'] }, '/uploads/*']] },
+              },
+              {
+                Sid: 'LabelPhotos',
+                Effect: 'Allow',
+                Action: 's3:PutObject',
+                Resource: { 'Fn::Join': ['', [{ 'Fn::GetAtt': [photoBucketId, 'Arn'] }, '/labels/*']] },
+              },
             ];
       expect(role.Properties.Policies).toEqual([
         { PolicyName: name, PolicyDocument: { Version: '2012-10-17', Statement: expected } },
@@ -263,6 +276,36 @@ describe.each(STAGES)('stage %s', (stage) => {
       // No separate policy resource adds anything.
       expect(resources(template, 'AWS::IAM::Policy')).toEqual([]);
     });
+  });
+
+  it('lets the API role touch the photo bucket only under catalogue/, uploads/ and labels/, without List or Delete (ADR 0016)', () => {
+    const [, apiRole] = byName(template, 'AWS::IAM::Role', 'RoleName', `cupmark-${stage}-api`);
+    const statements = (apiRole.Properties.Policies as { PolicyDocument: { Statement: { Action: string | string[]; Resource: unknown }[] } }[])
+      .flatMap((p) => p.PolicyDocument.Statement);
+    const actions = statements.flatMap((st) => (Array.isArray(st.Action) ? st.Action : [st.Action]));
+    // No delete of any kind (s3:DeleteObject, s3:DeleteObjectVersion, ...) and no S3 listing.
+    expect(actions.filter((a) => /^s3:.*delete/i.test(a))).toEqual([]);
+    expect(actions.filter((a) => /^s3:List/i.test(a))).toEqual([]);
+    const s3 = statements
+      .filter((st) => (Array.isArray(st.Action) ? st.Action : [st.Action]).some((a) => a.startsWith('s3:')))
+      .map((st) => ({ actions: st.Action, resource: st.Resource }));
+    const objects = (prefix: string) => ({ 'Fn::Join': ['', [{ 'Fn::GetAtt': [photoBucketId, 'Arn'] }, `/${prefix}*`]] });
+    expect(s3).toEqual([
+      { actions: ['s3:GetObject', 's3:PutObject'], resource: objects(CATALOGUE_IMAGE_PREFIX) },
+      { actions: ['s3:GetObject', 's3:PutObject'], resource: objects(UPLOAD_PHOTO_PREFIX) },
+      { actions: 's3:PutObject', resource: objects(LABEL_PHOTO_PREFIX) },
+    ]);
+    expect([CATALOGUE_IMAGE_PREFIX, UPLOAD_PHOTO_PREFIX, LABEL_PHOTO_PREFIX]).toEqual(['catalogue/', 'uploads/', 'labels/']);
+  });
+
+  it('gives no role any delete action except the Apple identity-provider sync', () => {
+    for (const [, r] of resources(template, 'AWS::IAM::Role')) {
+      const actions = (r.Properties.Policies as { PolicyDocument: { Statement: { Action: string | string[] }[] } }[])
+        .flatMap((p) => p.PolicyDocument.Statement)
+        .flatMap((st) => (Array.isArray(st.Action) ? st.Action : [st.Action]));
+      const deletes = actions.filter((a) => /delete/i.test(a) && a !== 'dynamodb:DeleteItem' && a !== 'cognito-idp:DeleteIdentityProvider');
+      expect(deletes, String(r.Properties.RoleName)).toEqual([]);
+    }
   });
 
   it('gives the API function the table name, the cursor key parameter and the photo bucket, and nothing secret', () => {

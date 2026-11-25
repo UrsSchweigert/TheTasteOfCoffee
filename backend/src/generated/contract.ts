@@ -338,6 +338,33 @@ export const BeanSchema = z.strictObject({
 });
 export type Bean = z.infer<typeof BeanSchema>;
 
+export const LabelPhotoUploadFieldsSchema = z.strictObject({
+  key: z.string().regex(new RegExp('^uploads/[0-9A-HJKMNP-TV-Z]{26}\\.jpg$', 'u')).refine((value) => codePointLength(value) <= 38, { error: 'Too long' }),
+  bucket: z.string().regex(new RegExp('^cupmark-[a-z0-9-]{1,55}$', 'u')).refine((value) => codePointLength(value) <= 63, { error: 'Too long' }),
+  content_type: z.string().regex(new RegExp('^image/jpeg$', 'u')).refine((value) => codePointLength(value) <= 10, { error: 'Too long' }),
+  policy: z.string().regex(new RegExp('^[A-Za-z0-9+/=]{1,8192}$', 'u')).refine((value) => codePointLength(value) <= 8192, { error: 'Too long' }),
+  x_amz_algorithm: z.string().regex(new RegExp('^AWS4-HMAC-SHA256$', 'u')).refine((value) => codePointLength(value) <= 16, { error: 'Too long' }),
+  x_amz_credential: z.string().regex(new RegExp('^[A-Z0-9]{16,128}/[0-9]{8}/eu-central-1/s3/aws4_request$', 'u')).refine((value) => codePointLength(value) <= 170, { error: 'Too long' }),
+  x_amz_date: z.string().regex(new RegExp('^[0-9]{8}T[0-9]{6}Z$', 'u')).refine((value) => codePointLength(value) <= 16, { error: 'Too long' }),
+  x_amz_security_token: z.string().regex(new RegExp('^[A-Za-z0-9+/=]{1,4096}$', 'u')).refine((value) => codePointLength(value) <= 4096, { error: 'Too long' }).optional(),
+  x_amz_signature: z.string().regex(new RegExp('^[0-9a-f]{64}$', 'u')).refine((value) => codePointLength(value) <= 64, { error: 'Too long' }),
+});
+export type LabelPhotoUploadFields = z.infer<typeof LabelPhotoUploadFieldsSchema>;
+
+export const LabelPhotoUploadFormSchema = z.strictObject({
+  url: z.string().regex(new RegExp('^https://cupmark-[a-z0-9-]{1,55}\\.s3\\.eu-central-1\\.amazonaws\\.com/$', 'u')).refine((value) => codePointLength(value) <= 120, { error: 'Too long' }),
+  fields: LabelPhotoUploadFieldsSchema,
+});
+export type LabelPhotoUploadForm = z.infer<typeof LabelPhotoUploadFormSchema>;
+
+export const LabelPhotoUploadSchema = z.strictObject({
+  photo_id: IdSchema,
+  upload: LabelPhotoUploadFormSchema,
+  expires_at: TimestampSchema,
+  max_bytes: z.int().min(8388608).max(8388608),
+});
+export type LabelPhotoUpload = z.infer<typeof LabelPhotoUploadSchema>;
+
 export const ShelfEntryInputSchema = z.strictObject({
   vocabulary_version: VocabularyVersionSchema,
   bean_id: IdSchema,
@@ -487,6 +514,9 @@ export const componentSchemas = {
   BeanCreate: BeanCreateSchema,
   Bean: BeanSchema,
   OpenFoodFactsProduct: OpenFoodFactsProductSchema,
+  LabelPhotoUpload: LabelPhotoUploadSchema,
+  LabelPhotoUploadForm: LabelPhotoUploadFormSchema,
+  LabelPhotoUploadFields: LabelPhotoUploadFieldsSchema,
   ShelfEntryInput: ShelfEntryInputSchema,
   ShelfEntry: ShelfEntrySchema,
   ShelfEntryPage: ShelfEntryPageSchema,
