@@ -173,7 +173,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - `POST /beans` with `open_food_facts_confirmed` returns 409 until M1-T4b provides the cache.
 
 ### M1-T11 Rejected beans on shelves; catalogue contract wording
-- status: in-progress
+- status: done
 - owner: contract-keeper, then backend-engineer
 - depends: M1-T4a
 - implements: follow-ups from the M1-T4a review; decided by the lead under ADR 0014
