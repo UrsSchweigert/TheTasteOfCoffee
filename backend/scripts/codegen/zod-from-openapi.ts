@@ -13,8 +13,9 @@
 //   type string         enum (strings only) | pattern (compiled with the `u` flag, as
 //                       ajv does) | format date, date-time (real calendar checks in
 //                       src/contract/formats.ts) | minLength, maxLength (code points)
-//   type integer        z.int(); minimum, maximum (inclusive), multipleOf (exact `%`)
-//   type number         z.number(); minimum, maximum (inclusive), multipleOf (exact `%`)
+//   type integer        z.int(); minimum, maximum (inclusive), multipleOf (exact `%`,
+//                       dyadic steps only, as the contract lint requires)
+//   type number         z.number(); minimum, maximum (inclusive), multipleOf (as above)
 //   type boolean        z.boolean()
 //   type object         z.strictObject (additionalProperties must be false);
 //                       properties, required, dependentRequired, not: { required }
@@ -209,8 +210,14 @@ class Emitter {
     if ('multipleOf' in schema) {
       const step = numberLiteral(path, 'multipleOf', schema.multipleOf);
       if (Number(step) <= 0) fail(path, 'multipleOf must be greater than 0');
-      // Exact remainder (IEEE 754 fmod is exact), as ajv checks it. zod's own
-      // multipleOf allows a tolerance, which the contract does not.
+      // Same rule as the contract lint (isDyadic in contracts/lib/openapi.mjs):
+      // a step must be a multiple of 2^-20, so it is exact in binary.
+      if (!Number.isInteger(Number(step) * 2 ** 20)) {
+        fail(path, `multipleOf ${step} is not exact in binary floating point; use a scaled integer`);
+      }
+      // `%` on doubles is exact (IEEE 754 remainder), so with a dyadic step a
+      // value passes only if it is an exact multiple. zod's own multipleOf
+      // allows a relative tolerance and would accept near misses.
       code += `.refine((value) => value % ${step} === 0, { error: 'Not a multiple of ${step}' })`;
     }
     return code;

@@ -4,7 +4,7 @@ The Lambda code of Cupmark: TypeScript (strict, ESM), Node 22, bundled with esbu
 
 ## Commands
 
-Run in `backend/` with Node 22.18 or later (the scripts in `scripts/` are TypeScript run directly by Node's type stripping).
+Run in `backend/` with Node `^22.18.0` or 24 and later; `.npmrc` sets `engine-strict` so `npm ci` refuses older versions (the scripts in `scripts/` are TypeScript run directly by Node's type stripping).
 
 | Command | What it does |
 | --- | --- |
@@ -34,8 +34,8 @@ test/                  Vitest tests
 The generator (`scripts/codegen/zod-from-openapi.ts`) is hand-written for the subset of JSON Schema the contract lint allows. It translates each keyword exactly and throws on anything it does not know, so a constraint can never be dropped silently. Notes:
 
 - Objects are `z.strictObject`: unknown properties are rejected.
-- `multipleOf` is checked with an exact remainder, as ajv does. zod's own `multipleOf` allows a small tolerance, which the contract does not.
-- `format: date` and `format: date-time` are checked against RFC 3339 with real calendar days (leap years, leap seconds at 23:59 UTC). This is slightly stricter than ajv-formats, which also accepts a space instead of `T` and offsets like `+0100` or `+01`.
-- `test/differential.test.ts` runs every generated schema and ajv (the reference used in `contracts/`) on the fixtures and thousands of one-step mutations of them, and fails on any disagreement.
+- `multipleOf` must be a multiple of 2^-20 (exact in binary, the same rule as the contract lint), and values are checked with `%`, which is exact on doubles. zod's own `multipleOf` allows a small relative tolerance, which the contract does not.
+- `format: date` and `format: date-time` are never more lenient than the contract's own checker (`compileComponentSchemas` in `contracts/lib/openapi.mjs`): upper-case `T` and `Z` only, 1 to 9 fraction digits, offset as `+hh:mm`, and no leap second (second 60). The backend is stricter in one way: the day must exist (no 2026-02-29 or 2026-04-31), which the contract's regular expressions do not check.
+- `test/differential.test.ts` runs every generated schema next to ajv, set up as `contracts/` sets it up, on the fixtures and thousands of one-step mutations of them, and fails on any disagreement. A test there fails if the contract's date expressions change without the copy in the test.
 
 When `contracts/openapi.yaml` changes, run `npm run generate` and commit the new file in the same pull request. `npm test` and `npm run check:generated` fail until you do.

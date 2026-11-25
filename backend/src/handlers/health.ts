@@ -1,6 +1,7 @@
-// Health check. The body is a fixed literal: no free text, no build or
-// environment values. Whether a route reaches it without a token is open
-// question D9 (docs/07-open-questions.md); no route or infra exists yet.
+// Health check for the post-deploy smoke test. ADR 0007 (D9) settled it:
+// `GET /health` needs no token and returns only the fixed literal
+// {"status":"ok"}, with no version, environment or other data. The route
+// itself is declared in contracts/ and wired in infra/, not here.
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from 'aws-lambda';
 
 const BODY = JSON.stringify({ status: 'ok' } as const);

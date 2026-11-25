@@ -84,3 +84,11 @@ export function validProfile(): Record<string, unknown> {
 export function validBrewPage(): Record<string, unknown> {
   return { items: [{ brew_id: OTHER_ULID, values: validBrewInput() }], next_cursor: 'abc_DEF-123' };
 }
+
+export function validShelfEntryPage(): Record<string, unknown> {
+  return { items: [{ shelf_entry_id: OTHER_ULID, values: validShelfEntryInput() }], next_cursor: 'abc_DEF-123' };
+}
+
+export function validRecipePage(): Record<string, unknown> {
+  return { items: [{ recipe_id: OTHER_ULID, values: validRecipeInput() }] };
+}

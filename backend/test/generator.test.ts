@@ -33,6 +33,12 @@ describe('generator', () => {
     expect(source.indexOf('export const InnerSchema')).toBeLessThan(source.indexOf('export const OuterSchema'));
   });
 
+  it('accepts dyadic steps down to 2^-20', () => {
+    for (const multipleOf of [1, 0.5, 0.25, 0.75, 2 ** -20]) {
+      expect(() => generate({ A: { type: 'number', minimum: 0, maximum: 1, multipleOf } })).not.toThrow();
+    }
+  });
+
   it('is deterministic', () => {
     expect(generateFromContract()).toBe(generateFromContract());
   });
@@ -59,6 +65,8 @@ describe('generator', () => {
     ['enum with pattern', { A: { type: 'string', enum: ['a'], pattern: '^a$' } }, /enum together with/],
     ['a non-numeric bound', { A: { type: 'integer', minimum: '1' } }, /minimum must be a finite number/],
     ['multipleOf 0', { A: { type: 'number', multipleOf: 0 } }, /greater than 0/],
+    ['a non-dyadic multipleOf (0.1)', { A: { type: 'number', minimum: 0, maximum: 1, multipleOf: 0.1 } }, /not exact in binary/],
+    ['a non-dyadic multipleOf (2^-21)', { A: { type: 'number', minimum: 0, maximum: 1, multipleOf: 2 ** -21 } }, /not exact in binary/],
     ['an open object', { A: { type: 'object', properties: {} } }, /additionalProperties: false/],
     ['additionalProperties as a schema', { A: { type: 'object', additionalProperties: plainString } }, /additionalProperties: false/],
     ['patternProperties', { A: { type: 'object', additionalProperties: false, patternProperties: {} } }, /patternProperties/],

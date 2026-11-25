@@ -1,17 +1,24 @@
 // Checks that each generated zod schema accepts exactly what the JSON Schema in
 // contracts/openapi.yaml accepts, by running both on the same values: the valid
 // fixtures and every single-step mutation of them (each field removed, replaced
-// by each value of a pool, or joined by an unknown property). ajv in strict
-// mode (strictRequired off for `not: { required }`, as in contracts/) with
-// ajv-formats is the reference.
+// by each value of a pool, joined by an unknown or a known property, or an
+// array grown past its limit).
+//
+// The reference is ajv set up as contracts/lib/openapi.mjs
+// (compileComponentSchemas) sets it up: strict mode, strictRequired off for
+// `not: { required }`, and the contract's own date and date-time regular
+// expressions. Those expressions do not check that a day exists (they pass
+// 2026-02-30); the backend does. So the reference here is the contract's
+// expression and an existing calendar day, and the one place where the backend
+// is stricter than the contract checker is pinned by its own test below.
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { Ajv2020 } from 'ajv/dist/2020.js';
-import addFormatsModule from 'ajv-formats';
 import { describe, expect, it } from 'vitest';
 import type { z } from 'zod';
-import { OPENAPI_FILE, parseOpenApi } from '../scripts/codegen/paths.ts';
+import { BACKEND_DIR, OPENAPI_FILE, parseOpenApi } from '../scripts/codegen/paths.ts';
 import { componentSchemas } from '../src/generated/contract.ts';
-import { isDateTime } from '../src/contract/formats.ts';
+import { isDateTime, isFullDate } from '../src/contract/formats.ts';
 import {
   EAN13,
   ULID,
@@ -21,10 +28,24 @@ import {
   validBrewPage,
   validProfile,
   validRecipeInput,
+  validRecipePage,
   validShelfEntryInput,
+  validShelfEntryPage,
 } from './fixtures.ts';
 
-const addFormats = addFormatsModule as unknown as (ajv: Ajv2020) => Ajv2020;
+/** Copied from contracts/lib/openapi.mjs; a test below fails if they differ. */
+const CONTRACT_DATE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+const CONTRACT_DATE_TIME =
+  /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T([01]\d|2[0-3]):[0-5]\d:[0-5]\d(\.\d{1,9})?(Z|[+-]([01]\d|2[0-3]):[0-5]\d)$/;
+
+/** True if the YYYY-MM-DD at the start names a day that exists, checked independently of src/. */
+function dayExists(value: string): boolean {
+  const [year, month, day] = value.slice(0, 10).split('-').map(Number);
+  if (year === undefined || month === undefined || day === undefined) return false;
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
 
 const VOCABULARY_KEYWORDS = [
   'x-vocabulary',
@@ -58,7 +79,8 @@ function collectPropertyNames(value: unknown): string[] {
   return [...own, ...Object.values(record).flatMap(collectPropertyNames)];
 }
 const ajv = new Ajv2020({ strict: true, strictRequired: false });
-addFormats(ajv);
+ajv.addFormat('date', (value: string) => CONTRACT_DATE.test(value) && dayExists(value));
+ajv.addFormat('date-time', (value: string) => CONTRACT_DATE_TIME.test(value) && dayExists(value));
 ajv.addVocabulary(VOCABULARY_KEYWORDS);
 ajv.addSchema({ $id: 'cupmark:contract', $defs: defs });
 
@@ -74,12 +96,13 @@ function zodAccepts(schema: z.ZodType, value: unknown): boolean {
   return schema.safeParse(value).success;
 }
 
-/**
- * ajv-formats accepts three date-time forms that RFC 3339 section 5.6 does
- * not: a space instead of T, an offset without colon (+0100) and an offset
- * without minutes (+01). The backend follows RFC 3339 and rejects them.
- */
-const AJV_LENIENT_DATE_TIMES = ['2026-11-25 07:30:00Z', '2026-11-25T07:30:00+0100', '2026-11-25T07:30:00+01'];
+/** Days the contract's regular expressions pass but that do not exist; the backend rejects them. */
+const CONTRACT_LENIENT = [
+  ['date', '2026-02-29'],
+  ['date', '2026-04-31'],
+  ['date-time', '2026-02-30T07:30:00Z'],
+  ['date-time', '2026-11-31T07:30:00+01:00'],
+] as const;
 
 const POOL: unknown[] = [
   null,
@@ -138,6 +161,15 @@ const POOL: unknown[] = [
   '2026-11-31',
   '2026-11-25T07:30:00Z',
   '2026-11-25t07:30:00.5z',
+  '2026-11-25T07:30:00z',
+  '2026-11-25t07:30:00Z',
+  '2026-11-25T07:30:00.123456789Z',
+  '2026-11-25T07:30:00.1234567890Z',
+  '2026-11-25 07:30:00Z',
+  '2026-11-25T07:30:00+0100',
+  '2026-11-25T07:30:00+01',
+  '2026-11-25T07:30:00+24:00',
+  '2026-02-30T07:30:00Z',
   '2026-11-25T07:30:00-05:30',
   '2026-11-25T07:30Z',
   '2026-11-25T24:00:00Z',
@@ -195,6 +227,16 @@ function* mutations(root: unknown): Generator {
       else Reflect.deleteProperty(parent, last);
       yield removed;
     }
+    if (Array.isArray(target) && target.length > 0) {
+      // Past every maxItems in the contract (5 flavour notes, 100 page items).
+      for (const length of [6, 101]) {
+        const grown = clone(root);
+        const list = at(grown, path) as unknown[];
+        const first: unknown = list[0];
+        while (list.length < length) list.push(clone(first));
+        yield grown;
+      }
+    }
     if (typeof target === 'object' && target !== null && !Array.isArray(target)) {
       const extended = clone(root);
       container(extended, path).unknown_property = 1;
@@ -221,6 +263,8 @@ const FIXTURES: [Name, unknown][] = [
   ['ShelfEntryInput', validShelfEntryInput()],
   ['Profile', validProfile()],
   ['BrewPage', validBrewPage()],
+  ['ShelfEntryPage', validShelfEntryPage()],
+  ['RecipePage', validRecipePage()],
 ];
 
 describe('generated zod schemas match the JSON Schema of the contract', () => {
@@ -255,9 +299,17 @@ describe('generated zod schemas match the JSON Schema of the contract', () => {
     }
   });
 
-  it.each(AJV_LENIENT_DATE_TIMES)('differs from ajv-formats only where RFC 3339 is stricter: %s', (value) => {
-    expect(ajvAccepts('Timestamp', value)).toBe(true);
-    expect(isDateTime(value)).toBe(false);
-    expect(zodAccepts(componentSchemas.Timestamp, value)).toBe(false);
+  it('uses the date expressions of contracts/lib/openapi.mjs', () => {
+    const contractLib = readFileSync(join(BACKEND_DIR, '..', 'contracts', 'lib', 'openapi.mjs'), 'utf8');
+    expect(contractLib).toContain(`ajv.addFormat('date', ${String(CONTRACT_DATE)});`);
+    expect(contractLib).toContain(`ajv.addFormat('date-time', ${String(CONTRACT_DATE_TIME)});`);
+  });
+
+  it.each(CONTRACT_LENIENT)('is stricter than the contract checker only on days that do not exist: %s %s', (format, value) => {
+    const contractRegex = format === 'date' ? CONTRACT_DATE : CONTRACT_DATE_TIME;
+    const schema = format === 'date' ? componentSchemas.CalendarDate : componentSchemas.Timestamp;
+    expect(contractRegex.test(value)).toBe(true);
+    expect((format === 'date' ? isFullDate : isDateTime)(value)).toBe(false);
+    expect(zodAccepts(schema, value)).toBe(false);
   });
 });
