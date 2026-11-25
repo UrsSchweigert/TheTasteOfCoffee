@@ -48,7 +48,7 @@ When `contracts/openapi.yaml` changes, run `npm run generate` and commit the new
 
 `src/repository/` owns every key format of the data model (`docs/05-system-design.md`, Data model; ADR 0010) and is the only code that reads or writes the table.
 
-- `keys.ts` builds each key and validates every part first: ids must be ULIDs, barcodes 12 or 13 digits, methods and facets vocabulary ids, dates real dates. A bad part throws `InvalidKeyError` and never reaches a key.
+- `keys.ts` builds each key and validates every part first: ids must be ULIDs, barcodes 12 or 13 digits with a correct GS1 check digit (stored and keyed as EAN-13, UPC-A with a leading 0), methods and facets vocabulary ids, dates real dates. A bad part throws `InvalidKeyError` and never reaches a key.
 - User-scoped functions take a `UserId`. Only `userIdFromEvent` makes one: it is a class with a private field and a module-private constructor token, so neither a string nor a look-alike object passes the type check or the run-time check (`UserId.is`). Reads also check that each returned item lies in the caller's partition.
 - Creates are conditional on `attribute_not_exists(pk)`; replaces and deletes on the item existing. Failures surface as `ItemExistsError`, `ItemNotFoundError`, `BarcodeTakenError` and the like (`errors.ts`); their messages never contain input values.
 - Values are parsed with the generated contract schemas on write and on read.

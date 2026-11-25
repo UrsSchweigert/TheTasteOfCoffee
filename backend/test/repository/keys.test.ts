@@ -10,6 +10,7 @@ import {
   aggregateAllKey,
   aggregateMethodKey,
   barcodeKey,
+  canonicalBarcode,
   beanMetaKey,
   brewKey,
   brewRefKey,
@@ -167,7 +168,7 @@ describe('bean catalogue keys', () => {
   it('builds the bean, barcode and review-queue keys', () => {
     expect(beanMetaKey(BEAN)).toEqual({ pk: `BEAN#${BEAN}`, sk: 'META' });
     expect(barcodeKey('4006381333931')).toEqual({ pk: 'BARCODE#4006381333931', sk: 'BEAN' });
-    expect(barcodeKey('012345678905')).toEqual({ pk: 'BARCODE#012345678905', sk: 'BEAN' });
+    expect(barcodeKey('0012345678905')).toEqual({ pk: 'BARCODE#0012345678905', sk: 'BEAN' });
     expect(reviewQueueKey(new Date('2026-11-25T10:15:30+01:00'), BEAN)).toEqual({
       gsi1pk: REVIEW_QUEUE_PK,
       gsi1sk: `2026-11-25T09:15:30.000Z#${BEAN}`,
@@ -194,6 +195,37 @@ describe('bean catalogue keys', () => {
     expect(() => aggregateAllKey(bad)).toThrow(InvalidKeyError);
     expect(() => aggregateMethodKey(bad, 'v60')).toThrow(InvalidKeyError);
     expect(() => raterMarkerKey(bad, USER)).toThrow(InvalidKeyError);
+  });
+
+  it('stores UPC-A as EAN-13 with a leading 0, so both forms of one product share one key', () => {
+    expect(canonicalBarcode('012345678905')).toBe('0012345678905');
+    expect(canonicalBarcode('0012345678905')).toBe('0012345678905');
+    expect(barcodeKey('012345678905')).toEqual(barcodeKey('0012345678905'));
+    expect(barcodeKey('036000291452')).toEqual({ pk: 'BARCODE#0036000291452', sk: 'BEAN' });
+    expect(canonicalBarcode('4006381333931')).toBe('4006381333931');
+  });
+
+  it.each([
+    ['an EAN-13 with a wrong check digit', '0012345678901'],
+    ['an EAN-13 off by one in the check digit', '4006381333932'],
+    ['a UPC-A with a wrong check digit', '012345678900'],
+    ['swapped digits', '4006381339331'],
+  ])('rejects %s', (_name, value) => {
+    expect(() => canonicalBarcode(value)).toThrow(InvalidKeyError);
+    expect(() => barcodeKey(value)).toThrow(InvalidKeyError);
+  });
+
+  it('never echoes a bad barcode in the error', () => {
+    for (const value of ['0012345678901', 'USER#x', '12#4']) {
+      try {
+        barcodeKey(value);
+        expect.unreachable();
+      } catch (error) {
+        expect(error).toBeInstanceOf(InvalidKeyError);
+        expect((error as Error).message).not.toContain(value);
+        expect((error as Error).message).toMatch(/^invalid barcode( check digit)?$/);
+      }
+    }
   });
 
   it.each([

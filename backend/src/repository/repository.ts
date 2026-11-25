@@ -62,6 +62,7 @@ import {
   REVIEW_QUEUE_PK,
   barcodeKey,
   beanMetaKey,
+  canonicalBarcode,
   brewKey,
   brewRefKey,
   brewSortKey,
@@ -165,6 +166,15 @@ function storedItem<T extends { pk: string }>(schema: z.ZodType<T>, item: unknow
   // Defence in depth: the key was built from expectedPk, but never return an item from elsewhere.
   if (parsed.data.pk !== expectedPk) throw new CorruptItemError(`stored ${what} is outside the expected partition`);
   return parsed.data;
+}
+
+function canonicalBarcodeValue(value: unknown): string {
+  try {
+    return canonicalBarcode(value);
+  } catch (error) {
+    if (error instanceof InvalidKeyError) throw new InvalidValuesError('invalid barcode', { cause: error });
+    throw error;
+  }
 }
 
 function isConditionFailure(error: unknown): boolean {
@@ -331,14 +341,25 @@ export class Repository {
     return { brew_id: brewId, values };
   }
 
+  /**
+   * Reads a brew by id: the pointer, then the brew it names. A replace that moves
+   * the brew can land between the two reads; then the pointer is read again and
+   * followed once more, so a concurrent move never shows as not found.
+   */
   public async getBrew(user: UserId, brewId: string): Promise<Brew | undefined> {
-    const ref = await this.#brewRef(user, brewId);
-    if (ref === undefined) return undefined;
-    const item = await this.#get({ pk: ref.pk, sk: ref.brewSk });
-    if (item === undefined) return undefined;
-    const stored = storedItem(BrewItem, item, ref.pk, 'brew');
-    if (stored.brewId !== ref.brewId) throw new CorruptItemError('stored brew does not match its pointer');
-    return { brew_id: stored.brewId, values: stored.values };
+    let followed: string | undefined;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const ref = await this.#brewRef(user, brewId);
+      // No pointer, or it still names the key just found empty: the brew is gone.
+      if (ref === undefined || ref.brewSk === followed) return undefined;
+      followed = ref.brewSk;
+      const item = await this.#get({ pk: ref.pk, sk: ref.brewSk });
+      if (item === undefined) continue;
+      const stored = storedItem(BrewItem, item, ref.pk, 'brew');
+      if (stored.brewId !== ref.brewId) throw new CorruptItemError('stored brew does not match its pointer');
+      return { brew_id: stored.brewId, values: stored.values };
+    }
+    throw new WriteConflictError('the brew kept moving during the read');
   }
 
   /**
@@ -497,7 +518,8 @@ export class Repository {
   public async createBean(input: NewBean): Promise<BeanRecord> {
     const vocabularyVersion = validValues(VocabularyVersionSchema, input.vocabularyVersion, 'vocabulary version');
     const pickedAttributes = validValues(BeanAttributesSchema, input.pickedAttributes, 'bean attributes');
-    const barcode = input.barcode === undefined ? undefined : validValues(BarcodeSchema, input.barcode, 'barcode');
+    // Stored and keyed in the canonical 13-digit form, so UPC-A and EAN-13 of one product collide.
+    const barcode = input.barcode === undefined ? undefined : canonicalBarcodeValue(input.barcode);
     const openFoodFactsMatch = validValues(z.boolean(), input.openFoodFactsMatch, 'Open Food Facts match');
     const now = this.#now();
     const beanId = this.#newId(now);

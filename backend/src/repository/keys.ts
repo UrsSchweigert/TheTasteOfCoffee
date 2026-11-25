@@ -72,10 +72,20 @@ function userPart(user: unknown): string {
   return user.value;
 }
 
-function barcode(value: unknown): string {
+/**
+ * The canonical form of a barcode (contracts/openapi.yaml, `Barcode`): EAN-13, or
+ * UPC-A with a leading 0, so both forms of one product give one key. The GS1
+ * check digit must be right. Throws InvalidKeyError, without echoing the input.
+ */
+export function canonicalBarcode(value: unknown): string {
   const parsed = BarcodeSchema.safeParse(value);
   if (!parsed.success) throw new InvalidKeyError('invalid barcode');
-  return parsed.data;
+  const ean13 = parsed.data.length === 12 ? `0${parsed.data}` : parsed.data;
+  const digits = Array.from(ean13, Number);
+  // GS1: weights 1 and 3 alternate from the left over the first 12 digits.
+  const sum = digits.slice(0, 12).reduce((total, digit, index) => total + digit * (index % 2 === 0 ? 1 : 3), 0);
+  if ((10 - (sum % 10)) % 10 !== digits[12]) throw new InvalidKeyError('invalid barcode check digit');
+  return ean13;
 }
 
 function method(value: unknown): Method {
@@ -157,8 +167,9 @@ export function reviewQueueKey(createdAt: Date, beanId: string): ReviewQueueKey 
   return { gsi1pk: REVIEW_QUEUE_PK, gsi1sk: `${utcOf(createdAt, 'bean creation time')}#${id(beanId, 'bean id')}` };
 }
 
+/** `BARCODE#<EAN-13>`: the 12- and 13-digit forms of one product give the same key. */
 export function barcodeKey(ean: string): Key {
-  return { pk: `${PREFIX.barcode}${barcode(ean)}`, sk: SORT_KEY.barcodeTarget };
+  return { pk: `${PREFIX.barcode}${canonicalBarcode(ean)}`, sk: SORT_KEY.barcodeTarget };
 }
 
 // ---- aggregates, rater markers, rankings (written by the aggregator, M3) ----

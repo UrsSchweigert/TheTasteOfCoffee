@@ -14,6 +14,7 @@ import {
   CorruptItemError,
   InvalidCursorError,
   InvalidKeyError,
+  InvalidValuesError,
   ItemExistsError,
   ItemNotFoundError,
   REVIEW_QUEUE_INDEX,
@@ -348,7 +349,7 @@ describe.skipIf(!local.reachable)('repository on DynamoDB Local', () => {
       expect(bean.barcode).toBe(barcode);
       expect(await repo.findBeanIdByBarcode(barcode)).toBe(bean.bean_id);
       expect(await raw(barcodeKey(barcode))).toMatchObject({ type: 'BARCODE', beanId: bean.bean_id });
-      expect(await repo.findBeanIdByBarcode('012345678905')).toBeUndefined();
+      expect(await repo.findBeanIdByBarcode('0012345678905')).toBeUndefined();
 
       const fixed = newUlid();
       await expect(
@@ -356,6 +357,33 @@ describe.skipIf(!local.reachable)('repository on DynamoDB Local', () => {
       ).rejects.toThrow(BarcodeTakenError);
       expect(await repo.getBean(fixed)).toBeUndefined();
       expect(await reviewQueue()).not.toContain(fixed);
+    });
+
+    it('one product by its UPC-A and its EAN-13 form is one barcode', async () => {
+      const upcA = '036000291452';
+      const ean13 = '0036000291452';
+      const { bean } = await repo.createBean({ vocabularyVersion: 1, barcode: upcA, openFoodFactsMatch: true, pickedAttributes: {} });
+      expect(bean.barcode).toBe(ean13);
+      expect((await raw(beanMetaKey(bean.bean_id)))?.barcode).toBe(ean13);
+      expect(await raw({ pk: `BARCODE#${ean13}`, sk: 'BEAN' })).toMatchObject({ beanId: bean.bean_id, barcode: ean13 });
+      expect(await raw({ pk: `BARCODE#${upcA}`, sk: 'BEAN' })).toBeUndefined();
+
+      const fixed = newUlid();
+      await expect(
+        repoWith({ newId: () => fixed }).createBean({ vocabularyVersion: 1, barcode: ean13, openFoodFactsMatch: true, pickedAttributes: {} }),
+      ).rejects.toThrow(BarcodeTakenError);
+      expect(await repo.getBean(fixed)).toBeUndefined();
+      expect(await repo.findBeanIdByBarcode(upcA)).toBe(bean.bean_id);
+      expect(await repo.findBeanIdByBarcode(ean13)).toBe(bean.bean_id);
+    });
+
+    it('a barcode with a wrong check digit is refused and writes nothing', async () => {
+      const fixed = newUlid();
+      await expect(
+        repoWith({ newId: () => fixed }).createBean({ vocabularyVersion: 1, barcode: '0012345678901', openFoodFactsMatch: true, pickedAttributes: {} }),
+      ).rejects.toThrow(InvalidValuesError);
+      expect(await repo.getBean(fixed)).toBeUndefined();
+      await expect(repo.findBeanIdByBarcode('0012345678901')).rejects.toThrow(InvalidKeyError);
     });
 
     it('bean create is conditional on the item not existing', async () => {

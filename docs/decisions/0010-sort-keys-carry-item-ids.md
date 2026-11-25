@@ -1,6 +1,6 @@
 # 0010 Shelf, brew and recipe sort keys carry the item id
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-25
 - Decided by: agent (backend-engineer), task M1-T3
 

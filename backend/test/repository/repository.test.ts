@@ -77,6 +77,38 @@ describe('Repository reads', () => {
   });
 });
 
+describe('getBrew under a concurrent move', () => {
+  const brew = BrewInputSchema.parse(validBrewInput());
+  const oldSk = brewSortKey('2026-11-25T07:00:00Z', ID);
+  const newSk = brewSortKey('2026-11-26T07:00:00Z', ID);
+  const ref = (sk: string) => ({ Item: { pk: userPk(ALICE), sk: `BREWID#${ID}`, brewId: ID, brewSk: sk, createdAt: 'x' } });
+
+  /** Answers each GetItem from a script, in order. */
+  function scripted(replies: unknown[]): { repo: Repository; sent: Record<string, unknown>[] } {
+    let i = 0;
+    return stub(() => replies[i++] ?? {});
+  }
+
+  it('follows the pointer again when the brew moved between the two reads', async () => {
+    const moved = { Item: { pk: userPk(ALICE), sk: newSk, brewId: ID, values: brew } };
+    const { repo, sent } = scripted([ref(oldSk), {}, ref(newSk), moved]);
+    expect(await repo.getBrew(ALICE, ID)).toEqual({ brew_id: ID, values: brew });
+    expect(sent.map((input) => (input.Key as { sk: string }).sk)).toEqual([`BREWID#${ID}`, oldSk, `BREWID#${ID}`, newSk]);
+  });
+
+  it('is not found when the brew was deleted between the two reads', async () => {
+    const { repo, sent } = scripted([ref(oldSk), {}, {}]);
+    expect(await repo.getBrew(ALICE, ID)).toBeUndefined();
+    expect(sent).toHaveLength(3);
+  });
+
+  it('is not found when the pointer still names the empty key', async () => {
+    const { repo, sent } = scripted([ref(oldSk), {}, ref(oldSk)]);
+    expect(await repo.getBrew(ALICE, ID)).toBeUndefined();
+    expect(sent).toHaveLength(3);
+  });
+});
+
 describe('Repository input checks happen before any request', () => {
   it.each([
     ['a raw string user', () => stub(() => ({})).repo.getProfile('3f1c2b4a-9d8e-4f70-a1b2-c3d4e5f60718' as unknown as UserId), InvalidKeyError],
@@ -95,6 +127,9 @@ describe('Repository input checks happen before any request', () => {
     await expect(repo.createBean({ vocabularyVersion: 1, barcode: '12#4', openFoodFactsMatch: false, pickedAttributes: {} })).rejects.toThrow(
       InvalidValuesError,
     );
+    await expect(
+      repo.createBean({ vocabularyVersion: 1, barcode: '0012345678901', openFoodFactsMatch: false, pickedAttributes: {} }),
+    ).rejects.toThrow(InvalidValuesError);
     expect(sent).toEqual([]);
   });
 
