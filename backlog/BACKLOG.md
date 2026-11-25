@@ -224,7 +224,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - Tests cover range limits, half-step scores and the five-note maximum. The method-dependent rule hook exists and is tested, but holds no rules until the spec defines them (D13). Acceptance reworded by the owner on 2026-11-25.
 
 ### M1-T6 Profile, consent, export and deletion
-- status: todo
+- status: in-progress
 - owner: backend-engineer
 - depends: M1-T5
 - implements: docs/05-system-design.md, Security; docs/07-open-questions.md D1, D2
