@@ -1,8 +1,8 @@
 # 0004 How the API represents vocabulary values
 
-- Status: proposed
+- Status: accepted (by the owner, 2026-11-25)
 - Date: 2026-11-25
-- Decided by: agent (contract-keeper), task M0-T2
+- Decided by: agent (contract-keeper), task M0-T2; accepted by the owner
 
 ## Context
 

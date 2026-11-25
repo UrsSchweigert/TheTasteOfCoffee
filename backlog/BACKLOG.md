@@ -113,7 +113,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
 ### M1-T4 Bean catalogue and barcode routes
 - status: todo
 - owner: backend-engineer
-- depends: M1-T3, M0-T2
+- depends: M1-T3, M0-T2, M1-T8
 - implements: docs/04-specification.md, F1
 - acceptance:
   - Look up a barcode; create an unverified bean from pick-list attributes or a confirmed Open Food Facts hit, with the source tagged per field.
@@ -147,6 +147,21 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
 - acceptance:
   - A workflow deploys to dev through OIDC on merge to `main`, and to prod only through a manually approved environment.
   - A smoke test calls the health route after deploy.
+
+### M1-T8 Contract update for D7 to D9
+- status: todo
+- owner: contract-keeper
+- depends: M0-T3
+- implements: docs/decisions/0005, 0006, 0007
+- acceptance:
+  - Vocabulary v2 adds `origins` and `varieties` (with `other` and `unknown`, labels in en and de), follows the publishing steps in `contracts/README.md`, and is locked. v1 is unchanged.
+  - `contracts/openapi.yaml`:
+    - bean requests take origin and variety from v2;
+    - bean responses carry the Open Food Facts name, brand and image reference as response-only, length-limited fields with their source;
+    - `GET /health` is declared with `security: []`.
+  - The OpenAPI lint allows response-only Open Food Facts text and the one health route as explicit, documented exceptions. Any other text field or route without the bearer token still fails, and tests prove both.
+  - docs/05 Barcode lookup describes the server-side lookup (User-Agent, catalogue cache, per-user cap), and docs/04 F1 step 3 matches it.
+  - The backend regenerates its schemas, and the no-drift check passes.
 
 ---
 
