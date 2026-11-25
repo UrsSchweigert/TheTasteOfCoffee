@@ -126,6 +126,13 @@ jobs:
       - name: Install
         working-directory: contracts
         run: npm ci
+      # Licence allowlist (M0-T10): every lockfile package against
+      # scripts/licence-policy.json. Each job checks the lockfile it installed,
+      # so no extra install is needed; the checker's tests run here.
+      - name: Licence check tests
+        run: node --test scripts/check-licences.test.mjs
+      - name: Licences
+        run: node scripts/check-licences.mjs contracts
       - name: Test
         working-directory: contracts
         run: npm test
@@ -212,6 +219,10 @@ jobs:
           cache-dependency-path: backend/package-lock.json
       - name: Install
         run: npm ci
+      # Licence allowlist (M0-T10), on the lockfile installed just above.
+      - name: Licences
+        working-directory: .
+        run: node scripts/check-licences.mjs backend
       - name: Lint
         run: npm run lint
       - name: Test
@@ -239,6 +250,10 @@ jobs:
           cache-dependency-path: infra/package-lock.json
       - name: Install
         run: npm ci
+      # Licence allowlist (M0-T10), on the lockfile installed just above.
+      - name: Licences
+        working-directory: .
+        run: node scripts/check-licences.mjs infra
       - name: Lint
         run: npm run lint
       - name: Test

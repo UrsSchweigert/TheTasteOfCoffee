@@ -1,0 +1,22 @@
+{
+  "$comment": "Licence policy for scripts/check-licences.mjs (backlog M0-T10). Changing this file needs review; a licence that is not permissive needs the owner (CLAUDE.md, 'Stop and ask the human'). Python-2.0 and CC-BY-4.0 are left out on purpose: no package uses them; add one only with a justification when a package needs it.",
+  "allowed": [
+    "MIT",
+    "ISC",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "0BSD",
+    "BlueOak-1.0.0",
+    "CC0-1.0",
+    "Unlicense"
+  ],
+  "devOnly": [
+    {
+      "licence": "MPL-2.0",
+      "adr": "docs/decisions/0008-mpl-licensed-dev-tooling.md",
+      "reason": "Weak, file-level copyleft. Accepted only for development dependencies that are not modified and never ship in the app or a Lambda bundle."
+    }
+  ],
+  "exceptions": []
+}
