@@ -158,6 +158,8 @@ export const ALLOWED_RESOURCE_TYPES: Readonly<Record<string, ResourceRule>> = {
   'AWS::Cognito::UserPool': { why: 'Sign in with Apple', names: [optionalName('UserPoolName')] },
   'AWS::Cognito::UserPoolClient': { why: 'iOS app client', names: [optionalName('ClientName')] },
   'AWS::Cognito::UserPoolIdentityProvider': { why: 'Apple identity provider', names: [] },
+  // ADR 0015: the deploy-time resource that creates the Sign in with Apple provider.
+  'Custom::CupmarkAppleIdentityProvider': { why: 'Sign in with Apple provider (ADR 0015)', names: [] },
   'AWS::Cognito::UserPoolDomain': {
     why: 'hosted domain for the Apple flow',
     // Exactly `cupmark-<stage>`: the owner registered that return URL with Apple (M0-T7).

@@ -12,6 +12,7 @@
         "dynamodb:UpdateItem",
         "dynamodb:DeleteItem",
         "dynamodb:BatchWriteItem",
+        "dynamodb:ConditionCheckItem",
         "dynamodb:DescribeStream",
         "dynamodb:GetRecords",
         "dynamodb:GetShardIterator",
@@ -34,6 +35,17 @@
         "arn:aws:logs:${REGION}:${ACCOUNT}:log-group:/cupmark/*:*",
         "arn:aws:ssm:${REGION}:${ACCOUNT}:parameter/cupmark/*"
       ]
+    },
+    {
+      "Sid": "AppleIdentityProviderOfCupmarkPools",
+      "Effect": "Allow",
+      "Action": [
+        "cognito-idp:CreateIdentityProvider",
+        "cognito-idp:UpdateIdentityProvider",
+        "cognito-idp:DeleteIdentityProvider",
+        "cognito-idp:DescribeIdentityProvider"
+      ],
+      "Resource": "arn:aws:cognito-idp:${REGION}:${ACCOUNT}:userpool/*"
     },
     {
       "Sid": "DenyIamAndForeignServices",

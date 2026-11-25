@@ -20,7 +20,8 @@ Run in `backend/` with Node `^22.18.0` or 24 and later; `.npmrc` sets `engine-st
 ## Layout
 
 ```
-src/handlers/          one file per Lambda entry point (each exports `handler`): api, health
+src/handlers/          one file per Lambda entry point (each exports `handler`): api, health, apple-idp
+src/apple-idp/         the deploy-time custom resource for the Sign in with Apple provider (ADR 0015)
 src/api/               the API Lambda: router, resources, body and query parsing, signed cursors, configuration
 src/vocabulary/        checks a request against the vocabulary version it names; method-dependent rules hook
 src/auth/user-id.ts    the caller's user id (`UserId`), from the token subject only
@@ -95,3 +96,6 @@ The contract's `Cursor` is HMAC-signed (`src/api/cursor.ts`): `base64url(HMAC-SH
 
 The API role needs `ssm:GetParameter` on exactly that parameter's ARN; the AWS-managed key `alias/aws/ssm` needs no extra grant. The key is read once per cold start and kept in memory only (ADR 0013). Its value is created by a human and never passes through the repo or CI. Tests generate their own key.
 
+## The Apple provider function
+
+`src/handlers/apple-idp.ts` is not part of the API: CloudFormation invokes it only when the stack creates, updates or deletes the custom resource `Custom::CupmarkAppleIdentityProvider` (ADR 0015, infra/README.md). `src/apple-idp/provider.ts` validates the properties (pool in eu-central-1, key parameter `/cupmark/<dev|prod>/apple-sign-in-key`, Apple scopes `name`/`email` only), reads the SecureString with decryption (it must be a SecureString holding a PEM key), and creates or updates the `SignInWithApple` provider; Delete removes it and treats an already missing provider or pool as success. The response is PUT to CloudFormation's presigned HTTPS URL with `NoEcho`. The key is never logged, never in the response, and failure reasons are error class names only. It uses `@aws-sdk/client-cognito-identity-provider` and `@aws-sdk/client-ssm` (Apache-2.0, provided by the Lambda runtime, kept out of the bundle). Tests: `test/apple-idp.test.ts`, with fake clients and a key generated per run.

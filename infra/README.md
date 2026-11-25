@@ -28,7 +28,8 @@ src/config.ts      region, tag, name prefix, bootstrap qualifier, stage names
 src/app.ts         builds the App with the selected stages
 src/stage.ts       CupmarkStage (one per environment) and CupmarkStack (base of every stack)
 src/data.ts        the DynamoDB table and the two S3 buckets (M1-T1)
-src/identity.ts    the Cognito user pool, its domain and the iOS app client (M1-T2)
+src/identity.ts    the Cognito user pool, its domain, the iOS app client and the Apple provider (M1-T2)
+src/functions.ts   one Lambda function: bundle, role, concurrency cap, 14-day log group
 src/api.ts         the HTTP API, its authorizer and stage, the api and health functions (M1-T2)
 src/routes.ts      the route list, checked against contracts/openapi.yaml
 src/guards.ts      synth-time guards for invariants 5, 6 and 9, and least privilege
@@ -89,21 +90,23 @@ Both buckets: all public access blocked, object ownership `BucketOwnerEnforced` 
 | --- | --- | --- |
 | User pool | `cupmark-<stage>-users` | Lite feature plan (free for the first 10,000 monthly active users). No self sign-up (`AllowAdminCreateUserOnly`), no verified attributes, no account recovery, no MFA, no email, phone or name attribute. `RETAIN` and `DeletionProtection: ACTIVE`: the token subjects key every `USER#<sub>` partition, so losing the pool would orphan all user data. |
 | Hosted domain | prefix exactly `cupmark-<stage>` | `https://cupmark-<stage>.auth.eu-central-1.amazoncognito.com`; classic hosted UI (managed login needs Essentials). Apple's return URL is `https://cupmark-<stage>.auth.eu-central-1.amazoncognito.com/oauth2/idpresponse`. |
-| App client | `cupmark-<stage>-ios` | Public (no secret); authorization code flow with PKCE; scope `openid`; no password, SRP or custom sign-in (`ExplicitAuthFlows` is only `ALLOW_REFRESH_TOKEN_AUTH`); never the `COGNITO` provider; access and id tokens 60 minutes, refresh token 30 days; token revocation on; user-existence errors hidden. |
+| Apple provider | `SignInWithApple` | Created by the custom resource `Custom::CupmarkAppleIdentityProvider` (ADR 0015), below. |
+| App client | `cupmark-<stage>-ios` | Public (no secret); authorization code flow with PKCE; scope `openid`; no password, SRP or custom sign-in (`ExplicitAuthFlows` is only `ALLOW_REFRESH_TOKEN_AUTH`); `SignInWithApple` is its only provider (never `COGNITO`), and it depends on the provider resource; access and id tokens 60 minutes, refresh token 30 days; token revocation on; user-existence errors hidden. |
 
 **App callback (for M2).** The client's callback URL is `cupmark://auth` and its sign-out URL `cupmark://signout`. The app registers the `cupmark` URL scheme and opens `https://cupmark-<stage>.auth.eu-central-1.amazoncognito.com/oauth2/authorize?identity_provider=SignInWithApple&response_type=code&client_id=<AppClientId>&redirect_uri=cupmark://auth&scope=openid&code_challenge=...&code_challenge_method=S256` in `ASWebAuthenticationSession`, then exchanges the code at `/oauth2/token`. The access token is the bearer token of the API.
 
 **Sign in with Apple** (`APPLE_SIGN_IN` in `src/identity.ts`, M0-T7): Services ID `app.cupmark.signin`, Team ID `2F695PTZC6`, key id `3WKKAZFM6M`, scopes none (no name, no email; only Apple's opaque user id is used). These are configuration, not secrets. The `.p8` private key lives only in the SecureString `/cupmark/<stage>/apple-sign-in-key`, created by the owner (below).
 
-### Apple private key: open
+### The Apple provider (ADR 0015)
 
-The identity provider is **not in the stack yet**, so until it is, the client accepts no provider and nobody can sign in. CloudFormation cannot put a SecureString into `ProviderDetails.private_key`:
+CloudFormation cannot put a SecureString into `ProviderDetails.private_key` (`{{resolve:ssm-secure}}` does not support that property, `{{resolve:ssm}}` reads only unencrypted parameters, Secrets Manager has a fee). So a deploy-time custom resource does it:
 
-- `{{resolve:ssm-secure:...}}` (CDK `SecretValue.ssmSecure`) is supported only by a fixed list of resource properties, and `AWS::Cognito::UserPoolIdentityProvider` is not on it; the deploy fails.
-- `{{resolve:ssm:...}}` works only for plain `String` parameters, which are not encrypted.
-- Secrets Manager is excluded by invariant 5, and the key may never be in the template or the repo (invariant 8).
-
-The options and the recommendation are in the M1-T2 pull request; the lead decides (ADR 0014). Whatever is chosen reads the same SecureString, so the owner can create it now.
+- **`Custom::CupmarkAppleIdentityProvider`**, a plain custom resource (no CDK Provider framework, so there is no extra framework Lambda or role). Its properties are the pool id, the Services ID, Team ID, key id, the key's parameter **name**, the scopes (empty) and the rotation value. Never the key.
+- **`cupmark-<stage>-apple-idp`**, its function (`backend/src/handlers/apple-idp.ts`, logic in `backend/src/apple-idp/`), built like every other function: Node 22, arm64, reserved concurrency 1, 30 s, 14-day log group, its own role with the boundary. The role may `ssm:GetParameter` on exactly `/cupmark/<stage>/apple-sign-in-key` and call `cognito-idp:Create`, `Update`, `Delete` and `DescribeIdentityProvider` on exactly the stage's pool ARN.
+- **Create and Update** read the SecureString (it must be a `SecureString` holding a PEM key), then create the provider, or update it if it exists. **Delete** removes it; a provider or pool that is already gone counts as success. Deleting the stack removes the provider and keeps the pool.
+- The handler never logs the key and never returns it: the response has `NoEcho` and only the provider name in `Data`; a failure reason is an error class name only. One log line per event: request type, status, reason.
+- **Scopes:** `authorize_scopes` is empty. Apple's only scopes are `name` and `email`, and requesting neither is allowed; `openid` is not an Apple scope. This could not be verified against Cognito offline: if Cognito rejected an empty value, the first dev deploy fails at this resource with the error class name, and the fix is one constant (`APPLE_SIGN_IN.scopes`).
+- **Rotating the key:** replace the SecureString (below), then bump `cupmark:<stage>:appleKeyRotation` in `cdk.json` in a pull request. The changed property makes CloudFormation run Update, which re-reads the key.
 
 ## API (`src/api.ts`, `src/routes.ts`)
 
@@ -113,7 +116,7 @@ The options and the recommendation are in the M1-T2 pull request; the lead decid
 | Stage | `$default` | Auto-deploy. The API function routes on `rawPath`, so there is no stage prefix in the path (ADR 0013). Throttling: dev 10 requests per second (burst 20), prod 25 (burst 50); at docs/06's 60 calls per user a month, 10,000 users average about 0.25 per second. |
 | JWT authorizer | `cupmark-<stage>-cognito` | Built in (no Lambda). Issuer `https://cognito-idp.eu-central-1.amazonaws.com/<pool id>`, audience the app client id (Cognito access tokens carry it as `client_id`), identity source the `Authorization` header. |
 | Routes | | One per operation of `contracts/openapi.yaml`, all with the JWT authorizer except `GET /health` (ADR 0007). The App Store notifications route joins `UNAUTHENTICATED_ROUTES` in M4. `test/api.test.ts` fails if the routes and the contract differ, or if any other route lacks the authorizer. |
-| Functions | `cupmark-<stage>-api`, `cupmark-<stage>-health` | Node 22 on arm64, code from `backend/dist/api` and `backend/dist/health`, payload format 2.0. Reserved concurrency: dev 5 and 1, prod 10 and 2 (free; caps the cost of a flood). 256 MB and 10 s for the API, 128 MB and 3 s for health. |
+| Functions | `cupmark-<stage>-api`, `cupmark-<stage>-health` | Node 22 on arm64, code from `backend/dist/api` and `backend/dist/health`, payload format 2.0. Reserved concurrency: dev 5 and 1, prod 10 and 2 (free; caps the cost of a flood); with `apple-idp` (1 each) the account reserves 20 in all. 256 MB and 10 s for the API, 128 MB and 3 s for health. |
 | Log groups | `/aws/lambda/cupmark-<stage>-api`, `-health` | 14 days. Deleted with the stack (operational logs only). |
 | Roles | `cupmark-<stage>-api`, `cupmark-<stage>-health` | One per function, with the `CupmarkBoundary` boundary and one inline policy; no managed policies. |
 
@@ -126,6 +129,8 @@ The options and the recommendation are in the M1-T2 pull request; the lead decid
 | api | `dynamodb:Query` | the index `gsi1` |
 | api | `ssm:GetParameter` | exactly `/cupmark/<stage>/cursor-key` (the AWS-managed `aws/ssm` key needs no grant) |
 | api | `s3:GetObject`, `s3:PutObject` | `cupmark-<stage>-photos-<account>/catalogue/*` |
+| apple-idp | `ssm:GetParameter` | exactly `/cupmark/<stage>/apple-sign-in-key` |
+| apple-idp | `cognito-idp:CreateIdentityProvider`, `UpdateIdentityProvider`, `DeleteIdentityProvider`, `DescribeIdentityProvider` | the stage's user pool |
 
 **API function environment:** `TABLE_NAME` (`cupmark-<stage>-main`), `CURSOR_KEY_PARAMETER` (`/cupmark/<stage>/cursor-key`), `NODE_OPTIONS=--enable-source-maps`. No secret is in the environment.
 
@@ -161,9 +166,23 @@ aws ssm put-parameter \
   --tags Key=project,Value=cupmark Key=stage,Value="$STAGE"
 ```
 
+The Apple provider is created at the first deploy from this parameter, so it must exist before that deploy.
+
 Check without decrypting: `aws ssm describe-parameters --region eu-central-1 --parameter-filters Key=Name,Option=BeginsWith,Values=/cupmark/`. To rotate, run the same command with `--overwrite` and without `--tags` (the two cannot be combined); rotating the cursor key invalidates outstanding cursors (ADR 0013).
 
-### Outputs
+## Before the first deploy (owner)
+
+1. **Re-apply the guardrails** with `scripts/aws/apply-guardrails.sh` (dry run first, then `--apply`). M1-T2 changed both policies:
+   - `CupmarkBoundary`: `dynamodb:ConditionCheckItem` on `table/cupmark-*` (the repository's transactions use condition checks), and the four Cognito identity-provider actions on `userpool/*` in eu-central-1 for the Apple provider function (pools cannot be name-scoped; each role's own policy names its pool).
+   - `CupmarkCfnExecution`: `s3:GetObject` on `cdk-cupmark-assets-<account>-eu-central-1/*`, so CloudFormation can create functions from the bootstrap's asset bucket.
+   - `test/policies.test.ts` checks that the boundary allows everything the stack's roles are granted, and that the execution policy can read the code.
+2. **Create both SecureStrings per stage** (above): `/cupmark/<stage>/cursor-key` and `/cupmark/<stage>/apple-sign-in-key`.
+3. **Check the Lambda concurrency quota.** Service Quotas → AWS Lambda → Concurrent executions, in eu-central-1. AWS keeps at least 100 unreserved, so the quota must be at least 100 plus the reserved total: 100 + 20 = 120, plus whatever other projects in the account reserve. New accounts often start at 10; ask for an increase (free) if needed.
+4. **Domain prefix risk.** Cognito prefix domains are unique per region across all AWS customers. If `cupmark-dev` or `cupmark-prod` is taken, the deploy fails at the domain, and a new prefix also means a new return URL in Apple's portal (and in this repo's tests).
+
+Still unverified until the first dev deploy: whether CloudFormation's `AWS::Logs::LogGroup` handler also needs `logs:DescribeLogGroups` beyond `log-group:/aws/lambda/cupmark-*` (not added, because it could not be confirmed offline; an AccessDenied on the log groups would say so), and whether Cognito accepts empty Apple scopes.
+
+## Outputs
 
 The stack outputs, as plain `CfnOutput`s without exports: the table name, the stream ARN, both bucket names, the user pool id, the app client id, the hosted domain URL and the API URL. Nothing imports them across stacks.
 

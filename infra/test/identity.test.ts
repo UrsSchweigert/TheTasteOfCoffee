@@ -4,14 +4,17 @@ import { describe, expect, it } from 'vitest';
 import { STAGES } from '../src/config.ts';
 import type { StageName } from '../src/config.ts';
 import {
+  APPLE_PROVIDER_COGNITO_ACTIONS,
+  APPLE_PROVIDER_RESOURCE_TYPE,
   APPLE_SIGN_IN,
   APP_CALLBACK_URL,
   APP_SIGN_OUT_URL,
+  appleKeyRotationContextKey,
   appleReturnUrl,
   applePrivateKeyParameter,
   cognitoDomainPrefix,
 } from '../src/identity.ts';
-import { testApp } from './helpers.ts';
+import { readCdkJson, testApp } from './helpers.ts';
 
 type Resource = { Type: string; Properties: Record<string, unknown> } & Record<string, unknown>;
 
@@ -37,8 +40,18 @@ describe('Sign in with Apple configuration (M0-T7)', () => {
     expect(APPLE_SIGN_IN.keyId).toBe('3WKKAZFM6M');
   });
 
-  it('requests no name and no email from Apple', () => {
+  it('requests no name and no email from Apple: authorize_scopes is empty, not openid', () => {
     expect(APPLE_SIGN_IN.scopes).toEqual([]);
+  });
+
+  it.each(STAGES)('keeps the %s key rotation value in cdk.json', (stage) => {
+    expect(readCdkJson().context[appleKeyRotationContextKey(stage)]).toMatch(/^[A-Za-z0-9._-]{1,64}$/);
+  });
+
+  it('rejects a malformed key rotation value', () => {
+    expect(() => testApp({ context: { stage: 'dev', 'cupmark:dev:appleKeyRotation': 'two words' } })).toThrow(
+      /appleKeyRotation must match/,
+    );
   });
 
   it.each(STAGES)('keeps the %s private key only in a Parameter Store SecureString name', (stage) => {
@@ -53,9 +66,6 @@ describe('Sign in with Apple configuration (M0-T7)', () => {
     ]);
   });
 
-  // Open: CloudFormation cannot read a SecureString into the provider's private key
-  // (infra/README.md, "Apple private key"). The lead decides the mechanism.
-  it.todo('creates the SignInWithApple provider with the pinned ids and no scopes, and the client accepts only it');
 });
 
 describe.each(STAGES)('stage %s', (stage) => {
@@ -122,10 +132,13 @@ describe.each(STAGES)('stage %s', (stage) => {
       expect(APP_CALLBACK_URL).toBe('cupmark://auth');
     });
 
-    it('never offers the Cognito username and password provider', () => {
-      const providers = (props.SupportedIdentityProviders as string[] | undefined) ?? [];
-      expect(providers).not.toContain('COGNITO');
-      expect(providers.every((p) => p === 'SignInWithApple')).toBe(true);
+    it('accepts only Sign in with Apple, never the Cognito username and password provider', () => {
+      expect(props.SupportedIdentityProviders).toEqual(['SignInWithApple']);
+    });
+
+    it('depends on the Apple provider, which must exist first', () => {
+      const [providerId] = only(template, APPLE_PROVIDER_RESOURCE_TYPE);
+      expect(client.DependsOn).toEqual([providerId]);
     });
 
     it('issues 60-minute access and id tokens and 30-day refresh tokens', () => {
@@ -141,13 +154,81 @@ describe.each(STAGES)('stage %s', (stage) => {
     });
   });
 
-  it('has no identity provider other than Sign in with Apple', () => {
-    const idps = Object.values(template.findResources('AWS::Cognito::UserPoolIdentityProvider')) as Resource[];
-    for (const idp of idps) expect(idp.Properties.ProviderType).toBe('SignInWithApple');
+  it('has no CloudFormation identity provider: the Apple one is the custom resource', () => {
+    template.resourceCountIs('AWS::Cognito::UserPoolIdentityProvider', 0);
+  });
+
+  describe('the Sign in with Apple provider (ADR 0015)', () => {
+    const [poolId] = only(template, 'AWS::Cognito::UserPool');
+    const [, provider] = only(template, APPLE_PROVIDER_RESOURCE_TYPE);
+    const fns = Object.entries(template.findResources('AWS::Lambda::Function')) as [string, Resource][];
+    const fnHit = fns.find(([, r]) => r.Properties.FunctionName === `cupmark-${stage}-apple-idp`);
+    if (fnHit === undefined) throw new Error('no apple-idp function');
+    const [fnId, fn] = fnHit;
+    const roles = Object.entries(template.findResources('AWS::IAM::Role')) as [string, Resource][];
+    const roleHit = roles.find(([, r]) => r.Properties.RoleName === `cupmark-${stage}-apple-idp`);
+    if (roleHit === undefined) throw new Error('no apple-idp role');
+    const [roleId, role] = roleHit;
+
+    it('passes the pinned ids, no scopes, the key parameter name and the rotation value, but no key', () => {
+      expect(provider.Properties).toEqual({
+        ServiceToken: { 'Fn::GetAtt': [fnId, 'Arn'] },
+        UserPoolId: { Ref: poolId },
+        ServicesId: 'app.cupmark.signin',
+        TeamId: '2F695PTZC6',
+        KeyId: '3WKKAZFM6M',
+        KeyParameter: `/cupmark/${stage}/apple-sign-in-key`,
+        Scopes: '',
+        KeyRotation: readCdkJson().context[appleKeyRotationContextKey(stage)],
+      });
+    });
+
+    it('is deleted with the stack (the pool stays)', () => {
+      expect(provider.DeletionPolicy).toBe('Delete');
+    });
+
+    it('runs on a guarded function: Node 22, arm64, its own role, a cap of 1, 14-day logs', () => {
+      expect(fn.Properties).toMatchObject({
+        Runtime: 'nodejs22.x',
+        Architectures: ['arm64'],
+        Handler: 'index.handler',
+        ReservedConcurrentExecutions: 1,
+        Timeout: 30,
+        Role: { 'Fn::GetAtt': [roleId, 'Arn'] },
+      });
+      expect(fn.Properties.VpcConfig).toBeUndefined();
+      expect(fn.Properties.Environment).toEqual({ Variables: { NODE_OPTIONS: '--enable-source-maps' } });
+      const logs = Object.values(template.findResources('AWS::Logs::LogGroup')) as Resource[];
+      const own = logs.filter((l) => l.Properties.LogGroupName === `/aws/lambda/cupmark-${stage}-apple-idp`);
+      expect(own.map((l) => l.Properties.RetentionInDays)).toEqual([14]);
+    });
+
+    it('may read only its key and manage only this pool\'s identity providers', () => {
+      const statements = (role.Properties.Policies as { PolicyDocument: { Statement: Record<string, unknown>[] } }[])[0]
+        ?.PolicyDocument.Statement;
+      expect(statements?.slice(1)).toEqual([
+        {
+          Sid: 'AppleKey',
+          Effect: 'Allow',
+          Action: 'ssm:GetParameter',
+          Resource: {
+            'Fn::Join': ['', ['arn:aws:ssm:eu-central-1:', { Ref: 'AWS::AccountId' }, `:parameter/cupmark/${stage}/apple-sign-in-key`]],
+          },
+        },
+        {
+          Sid: 'IdentityProvider',
+          Effect: 'Allow',
+          Action: [...APPLE_PROVIDER_COGNITO_ACTIONS],
+          Resource: { 'Fn::GetAtt': [poolId, 'Arn'] },
+        },
+      ]);
+      expect(statements?.[0]?.Sid).toBe('Logs');
+      expect(role.Properties.ManagedPolicyArns).toBeUndefined();
+    });
   });
 
   it('never puts an Apple private key in the template', () => {
     const text = JSON.stringify(template.toJSON());
-    expect(text).not.toMatch(/BEGIN PRIVATE KEY|private_key/);
+    expect(text).not.toMatch(/BEGIN PRIVATE KEY|private_key|PrivateKey/);
   });
 });

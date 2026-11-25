@@ -85,9 +85,11 @@ describe('the Cupmark app', () => {
         'AWS::ApiGatewayV2::Route': API_ROUTES.length,
         // One invoke permission per route, scoped to that route's path.
         'AWS::Lambda::Permission': API_ROUTES.length,
-        'AWS::Lambda::Function': 2,
-        'AWS::IAM::Role': 2,
-        'AWS::Logs::LogGroup': 2,
+        // api, health and the deploy-time apple-idp (ADR 0015).
+        'AWS::Lambda::Function': 3,
+        'AWS::IAM::Role': 3,
+        'AWS::Logs::LogGroup': 3,
+        'Custom::CupmarkAppleIdentityProvider': 1,
       });
       expect(Object.keys(template).sort()).toEqual(['Description', 'Outputs', 'Parameters', 'Resources', 'Rules']);
     }
