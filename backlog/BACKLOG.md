@@ -142,6 +142,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - A test asserts every route except the App Store notifications route has the authorizer.
   - The Cognito domain prefixes are exactly `cupmark-dev` and `cupmark-prod`, and the Apple identity provider uses the Services ID `app.cupmark.signin`. The Sign in with Apple key id is `3WKKAZFM6M`. The Apple Team ID is `2F695PTZC6`. This is configuration, not a secret; the `.p8` private key goes only into a Parameter Store SecureString created by the owner. The owner registered both in Apple's portal with the return URL `https://cupmark-<stage>.auth.eu-central-1.amazoncognito.com/oauth2/idpresponse`. A test pins the prefixes.
   - From the M1-T1 review: the user pool is RETAIN with `DeletionProtection: ACTIVE`, and `AWS::Cognito::UserPool` joins the stateful guard. Losing the pool would orphan every `USER#<sub>` partition.
+  - From M1-T8: the API Lambda gets outbound HTTPS to the Open Food Facts image host as well as its API, and `s3:GetObject` and `s3:PutObject` on `catalogue/*` in the photo bucket. infra/README.md notes that the photo bucket also holds catalogue images that never expire.
   - From the M1-T5 review (ADR 0013):
     - the HTTP API uses the `$default` stage, because the router matches on `rawPath`;
     - the API Lambda gets `TABLE_NAME` and `CURSOR_KEY_PARAMETER=/cupmark/<stage>/cursor-key`, plus `ssm:GetParameter` on exactly that parameter ARN;
@@ -173,7 +174,8 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
     - results are cached in `BARCODE#<ean>`/`OFF`, and a miss expires by TTL;
     - a per-user daily cap in `USER#<id>`/`LOOKUPS#<date>` returns 429, and the route returns 409 or 503 as the contract says; whether a 409 or 400 counts against the cap is decided and docs/05 matches it;
     - name and brand are trimmed and cut in code points, and never logged;
-    - the server checks that the `image_ref` digits equal the canonical EAN-13;
+    - the server follows only an Open Food Facts image-host URL for the same canonical EAN-13. It copies the image once to `catalogue/<image_id>.jpg` in the photo bucket: JPEG only, size-limited, all metadata stripped (ADR 0011, D12). If the copy fails, the hit is cached without an image. `GET /catalogue_images/{image_id}` serves the bytes;
+    - the bean routes take origin, species and variety (vocabulary v2);
     - `POST /beans` with `open_food_facts_confirmed` copies from the cache and returns 409 when there is no cached hit;
     - repository keys exist for both new items.
   - From the M1-T5 review: `createBean` can now throw `WriteConflictError`, so the route retries it like the other writes. Operator verify and reject also use `rethrowConflict`.
