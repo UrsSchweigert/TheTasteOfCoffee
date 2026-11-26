@@ -1753,3 +1753,40 @@ test('check-ios-accessibility: the UI tests launch the screens the app knows, wi
   // No typed text in the UI tests either (invariant 1).
   assert.doesNotMatch(uiTests, /typeText|typeKey/);
 });
+
+// ITMS-90022 and ITMS-90713 (TestFlight, build 1): an app without an icon is refused.
+test('the app has a 1024 point icon without transparency and names it in the build settings', () => {
+  const iosDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'ios');
+  const set = join(iosDir, 'Cupmark', 'Assets.xcassets', 'AppIcon.appiconset');
+  const contents = JSON.parse(readFileSync(join(set, 'Contents.json'), 'utf8'));
+  const image = contents.images.find((i) => i.size === '1024x1024' && i.idiom === 'universal');
+  assert.ok(image?.filename, 'Contents.json lists a universal 1024x1024 image');
+  const png = readFileSync(join(set, image.filename));
+  assert.equal(png.subarray(1, 4).toString('latin1'), 'PNG');
+  assert.equal(png.readUInt32BE(16), 1024, 'width');
+  assert.equal(png.readUInt32BE(20), 1024, 'height');
+  // IHDR colour type: 2 = RGB, 6 = RGBA. App Store icons must not have an alpha channel.
+  assert.equal(png[25], 2, 'colour type RGB, no alpha channel');
+  assert.equal(png.includes(Buffer.from('tRNS')), false, 'no transparency chunk');
+  const project = readFileSync(join(iosDir, 'Cupmark.xcodeproj', 'project.pbxproj'), 'utf8');
+  const named = project.match(/ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;/g) ?? [];
+  assert.equal(named.length, 2, 'Debug and Release of the app target');
+});
+
+// The upload also needs the export-compliance answer and a privacy manifest (App Store Connect).
+test('the app answers export compliance and ships a privacy manifest for the file timestamp APIs it reads', () => {
+  const iosDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'ios');
+  const project = readFileSync(join(iosDir, 'Cupmark.xcodeproj', 'project.pbxproj'), 'utf8');
+  const keys = project.match(/INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;/g) ?? [];
+  assert.equal(keys.length, 2, 'Debug and Release of the app target');
+  assert.doesNotMatch(project, /PBXFileSystemSynchronizedBuildFileExceptionSet/, 'nothing is excluded from the synchronized app folder');
+  const manifest = readFileSync(join(iosDir, 'Cupmark', 'PrivacyInfo.xcprivacy'), 'utf8');
+  assert.match(manifest, /<key>NSPrivacyTracking<\/key>\s*<false\/>/);
+  assert.match(manifest, /NSPrivacyAccessedAPICategoryFileTimestamp[\s\S]*C617\.1/);
+  // Declared only if the app reads them: UserDefaults needs its own entry the day it is used.
+  const sources = readdirSync(join(iosDir, 'Cupmark'), { recursive: true }).filter((f) => f.endsWith('.swift'));
+  for (const f of sources) {
+    const text = readFileSync(join(iosDir, 'Cupmark', f), 'utf8');
+    assert.doesNotMatch(text, /UserDefaults|@AppStorage/, `${f} uses UserDefaults: add NSPrivacyAccessedAPICategoryUserDefaults to the manifest`);
+  }
+});
