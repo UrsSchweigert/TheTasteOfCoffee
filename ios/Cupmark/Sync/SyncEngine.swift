@@ -325,7 +325,7 @@ final class SyncEngine {
             return try await createBean(sequence, localID)
         case (.bean, .lookUp):
             return try await lookUpBean(sequence, localID)
-        case (.bean, .awaitConfirmation):
+        case (.bean, .awaitConfirmation), (.bean, .awaitDescription):
             // Never picked (it waits for the user); if it were, it would go on waiting.
             return .deferred
         case (.shelfEntry, .create):
@@ -593,7 +593,10 @@ final class SyncEngine {
     /// - 200 from the catalogue: that bean is used (`adoptBean`), without asking.
     /// - An Open Food Facts hit: kept on the bean, and the operation waits for the user's
     ///   confirmation (`awaitConfirmation`); what depends on the bean waits with it.
-    /// - An Open Food Facts miss (404): the bean is created from its barcode, without asking.
+    /// - An Open Food Facts miss (404): the operation waits for the user to describe the bean or
+    ///   skip that (`awaitDescription`, docs/04 F1 step 4); what depends on it waits with it.
+    /// - A bean with no live shelf entry (its form was never saved, or its entries are gone) is
+    ///   dropped without a request.
     /// - 409 from Open Food Facts: the barcode got a bean meanwhile; the next attempt finds it.
     /// - No network, 5xx, 429 (throttling, or the daily lookup cap of the Open Food Facts route):
     ///   the look-up waits for its next attempt (backoff, or `lookUpLimitWait` for the cap)
@@ -605,6 +608,12 @@ final class SyncEngine {
         if bean.serverID != nil {
             let isLast = try complete(sequence, localID: localID)
             settle(bean, isLast: isLast)
+            try store.save()
+            return .next
+        }
+        if !bean.hasLiveShelfEntries {
+            // Nothing on the device needs it: no catalogue bean is made for it.
+            try store.dropPendingBean(bean)
             try store.save()
             return .next
         }
@@ -644,7 +653,8 @@ final class SyncEngine {
         case .cancelled:
             return .cancelled
         case .failed(.notFound):
-            return try await createAfterLookUp(sequence, localID)
+            // No product: the user describes the bean, or skips that, next time (F1 step 4).
+            return try askForDescription(sequence)
         case .failed(.conflict):
             // The barcode points to a bean now: the next attempt's catalogue lookup finds it.
             return try deferLookUp(sequence, by: backoffDelay(sequence))
@@ -664,6 +674,18 @@ final class SyncEngine {
         operation.nextAttemptAt = Date.distantPast
         try store.save()
         return try await createBean(sequence, localID)
+    }
+
+    /// The operation waits for the user's description (`awaitDescription`).
+    private func askForDescription(_ sequence: Int) throws -> Outcome {
+        guard let operation = try store.outboxOperation(sequence: sequence) else {
+            return .next
+        }
+        operation.actionRaw = OutboxAction.awaitDescription.rawValue
+        operation.attemptCount = 0
+        operation.nextAttemptAt = Date.distantPast
+        try store.save()
+        return .deferred
     }
 
     /// A failed catalogue or Open Food Facts lookup. Nothing was written on the server, so
