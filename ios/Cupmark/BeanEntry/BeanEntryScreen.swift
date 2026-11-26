@@ -71,6 +71,24 @@ struct BeanEntryScreen: View {
                     AddToShelfBar(bean: bean, context: shelf, vocabulary: vocabulary, language: language)
                 }
             }
+        } else if case .savedOffline(let beanID) = model.state {
+            // Saved on the device while offline (M2-T25): the outbox creates it later.
+            ContentUnavailableView {
+                Label {
+                    Text(L10n.beanEntrySavedOfflineTitle)
+                } icon: {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .accessibilityHidden(true)
+                }
+            } description: {
+                Text(L10n.beanEntrySavedOfflineMessage)
+            }
+            .accessibilityIdentifier("bean-entry-saved-offline")
+            .safeAreaInset(edge: .bottom) {
+                if let shelf {
+                    AddToShelfBar(storedBean: beanID, context: shelf, vocabulary: vocabulary, language: language)
+                }
+            }
         } else if model.state == .failed(.signInRequired) {
             SignInAgainView()
         } else {
@@ -193,7 +211,7 @@ struct BeanEntryScreen: View {
         switch model.state {
         case .saving: L10n.lookupSaving
         case .failed(.retryable): L10n.lookupRetry
-        case .editing, .saved, .failed(.rejected), .failed(.signInRequired): L10n.beanEntrySave
+        case .editing, .saved, .savedOffline, .failed(.rejected), .failed(.signInRequired): L10n.beanEntrySave
         }
     }
 

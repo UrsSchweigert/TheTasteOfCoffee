@@ -8,6 +8,14 @@ import XCTest
 /// the outbox and never during a drain.
 @MainActor
 final class PullerTests: XCTestCase {
+    /// The label photo folders of the hosts here: a temporary root, never the app's own.
+    private let labelPhotoRoot = LabelPhotoFixtures.temporaryDirectory()
+
+    override func tearDown() {
+        try? FileManager.default.removeItem(at: labelPhotoRoot)
+        super.tearDown()
+    }
+
     // MARK: - Fixtures
 
     private func id(_ n: Int) -> String {
@@ -522,7 +530,8 @@ final class PullerTests: XCTestCase {
             makeStore: { _ in try AccountStore.inMemory() },
             makeEngine: { _, store in SyncEngine(store: store, client: client) },
             makePuller: { _, store in Puller(store: store, client: client) },
-            now: { clock.now }
+            now: { clock.now },
+            labelPhotos: LabelPhotoFolders(root: labelPhotoRoot)
         )
     }
 

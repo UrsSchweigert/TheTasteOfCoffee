@@ -55,6 +55,12 @@ struct ShelfScreen: View {
     @State private var isScanning = false
     /// The shelf entry whose brew form is open (M2-T19).
     @State private var brewing: BrewRoute?
+    /// The Open Food Facts hits of pending beans waiting for the user (M2-T25).
+    @State private var pendingBeans: PendingBeansModel
+    @State private var isConfirmingBeans = false
+    /// Whether the hits were offered since the app was last opened; they are asked once each
+    /// time the app comes to the foreground, not on every return to the shelf.
+    @State private var askedForConfirmation = false
     @Environment(\.apiClient) private var apiClient
     @Environment(\.scenePhase) private var scenePhase
 
@@ -63,6 +69,7 @@ struct ShelfScreen: View {
         self.vocabulary = vocabulary
         self.language = language
         _model = State(initialValue: ShelfModel(store: store))
+        _pendingBeans = State(initialValue: PendingBeansModel(store: store))
     }
 
     var body: some View {
@@ -84,6 +91,25 @@ struct ShelfScreen: View {
                         }
                     }
                     .accessibilityIdentifier("shelf-sync-issues")
+                }
+            }
+            if model.confirmationCount > 0 {
+                Section {
+                    Button {
+                        isConfirmingBeans = true
+                    } label: {
+                        LabeledContent {
+                            Text(model.confirmationCount, format: .number)
+                        } label: {
+                            Label {
+                                Text(L10n.pendingBeansRow)
+                            } icon: {
+                                Image(systemName: "questionmark.circle")
+                                    .accessibilityHidden(true)
+                            }
+                        }
+                    }
+                    .accessibilityIdentifier("shelf-pending-beans")
                 }
             }
             Section {
@@ -154,8 +180,16 @@ struct ShelfScreen: View {
                 NotConfiguredView()
             }
         }
+        .sheet(isPresented: $isConfirmingBeans, onDismiss: {
+            model.reload()
+        }) {
+            NavigationStack {
+                PendingBeansScreen(model: pendingBeans, vocabulary: vocabulary, language: language)
+            }
+        }
         .onAppear {
             model.reload()
+            askForConfirmationIfDue()
         }
         .onReceive(NotificationCenter.default.publisher(for: AccountStore.didSaveNotification, object: store)) { _ in
             model.reload()
@@ -164,7 +198,25 @@ struct ShelfScreen: View {
             // Days since roast move on with the calendar day.
             if phase == .active {
                 model.reload()
+                askForConfirmationIfDue()
+            } else if phase == .background {
+                // The next opening asks again.
+                askedForConfirmation = false
             }
+        }
+    }
+
+    /// Opens the confirmation of pending beans' Open Food Facts hits once per opening of the
+    /// app, if there are any (M2-T25).
+    private func askForConfirmationIfDue() {
+        // Not over a brew form or a scan the user is in the middle of.
+        guard !askedForConfirmation, !isConfirmingBeans, brewing == nil, !isScanning else {
+            return
+        }
+        pendingBeans.reload()
+        if pendingBeans.current != nil {
+            askedForConfirmation = true
+            isConfirmingBeans = true
         }
     }
 }

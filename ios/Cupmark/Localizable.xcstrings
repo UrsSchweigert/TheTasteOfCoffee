@@ -487,6 +487,42 @@
         }
       }
     },
+    "bean_entry.saved_offline.message" : {
+      "comment" : "Message shown after a bean described with pick lists was saved on the device while offline.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Bohne kommt in den Katalog, sobald du online bist. Du kannst die Packung schon jetzt ins Regal legen und Brühungen erfassen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The bean is added to the catalogue once you are online. You can put the bag on your shelf and log brews now."
+          }
+        }
+      }
+    },
+    "bean_entry.saved_offline.title" : {
+      "comment" : "Title shown after a bean described with pick lists was saved on the device while offline.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auf diesem Gerät gespeichert"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saved on This Device"
+          }
+        }
+      }
+    },
     "bean_entry.title" : {
       "comment" : "Title of the pick-list entry, where the user describes a bean without an Open Food Facts hit.",
       "extractionState" : "manual",
@@ -1621,6 +1657,42 @@
         }
       }
     },
+    "lookup.keep_for_later" : {
+      "comment" : "Button on the lookup fallback that keeps a barcode scanned offline as a pending bean and adds it to the shelf.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jetzt ins Regal legen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add to Shelf Now"
+          }
+        }
+      }
+    },
+    "lookup.keep_for_later.hint" : {
+      "comment" : "Accessibility hint of the button that keeps a barcode scanned offline.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Behält den Barcode auf diesem Gerät und sucht ihn, sobald du online bist."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keeps the barcode on this device and looks it up once you are online."
+          }
+        }
+      }
+    },
     "lookup.limit.message" : {
       "comment" : "Message when the daily lookup limit for new barcodes is used up.",
       "extractionState" : "manual",
@@ -1707,6 +1779,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Barcode Not Found"
+          }
+        }
+      }
+    },
+    "lookup.pending.message" : {
+      "comment" : "Message shown after a barcode scanned offline was kept as a pending bean.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Barcode wird gesucht, sobald du online bist. Du kannst die Packung schon jetzt ins Regal legen und Brühungen erfassen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The barcode is looked up once you are online. You can put the bag on your shelf and log brews now."
+          }
+        }
+      }
+    },
+    "lookup.pending.title" : {
+      "comment" : "Title shown after a barcode scanned offline was kept as a pending bean.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auf diesem Gerät gespeichert"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saved on This Device"
           }
         }
       }
@@ -2031,6 +2139,132 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Name"
+          }
+        }
+      }
+    },
+    "pending_beans.done" : {
+      "comment" : "Button that closes the confirmation screen when nothing is left to confirm.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fertig"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done"
+          }
+        }
+      }
+    },
+    "pending_beans.later" : {
+      "comment" : "Button that closes the confirmation of a bag scanned offline without answering; it is asked again next time.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Später"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Later"
+          }
+        }
+      }
+    },
+    "pending_beans.none.message" : {
+      "comment" : "Message when no bag scanned offline waits for a confirmation.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle Packungen, die du offline gescannt hast, sind gesucht."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every bag you scanned offline has been looked up."
+          }
+        }
+      }
+    },
+    "pending_beans.none.title" : {
+      "comment" : "Title when no bag scanned offline waits for a confirmation.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nichts zu bestätigen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing to Confirm"
+          }
+        }
+      }
+    },
+    "pending_beans.row" : {
+      "comment" : "Shelf row that opens the confirmation of Open Food Facts matches for bags scanned offline.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bohnen zum Bestätigen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beans to Confirm"
+          }
+        }
+      }
+    },
+    "pending_beans.save_failed" : {
+      "comment" : "Note when the answer to a confirmation could not be saved on the device.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Antwort konnte nicht gespeichert werden. Versuche es noch einmal."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your answer could not be saved. Try again."
+          }
+        }
+      }
+    },
+    "pending_beans.title" : {
+      "comment" : "Title of the screen that asks to confirm an Open Food Facts match for a bag scanned offline.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bohne bestätigen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm Bean"
           }
         }
       }
@@ -3309,6 +3543,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No roast date"
+          }
+        }
+      }
+    },
+    "shelf.row.bean_awaiting_confirmation" : {
+      "comment" : "Note in a shelf row whose bean scanned offline has an Open Food Facts match waiting for the user's confirmation.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Food Facts hat sie gefunden: bitte bestätigen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Food Facts found it: please confirm"
+          }
+        }
+      }
+    },
+    "shelf.row.bean_looking_up" : {
+      "comment" : "Note in a shelf row whose bean was scanned offline and is not looked up yet.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wird gesucht, sobald du online bist"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Looked up once you are online"
           }
         }
       }

@@ -12,9 +12,13 @@ import Observation
 /// - A 409 means the barcode already has a bean: the model looks it up and uses it. A 400 is
 ///   shown and the same body is never sent again. Every other failure can be retried.
 ///
-/// The save goes straight to the API for now. `request` is the complete body, built from the
-/// picks alone, so M2-T25 can put it into the outbox instead of calling `save()`. Once an
-/// unverified bean is saved, its label photos are uploaded by `labelPhotoUploads` (M2-T24).
+/// The save goes straight to the API, so the saved bean and its label photo uploads can be
+/// shown at once (M2-T24). When it cannot answer now (no network, 429, 5xx) and the entry has a
+/// store (`offlineStore`, M2-T25), the bean is saved on the device instead: `request` goes into
+/// the outbox as the bean's create, the form's label photo into the account's label photo
+/// queue, and the bean can go on the shelf and have brews at once. Once online the outbox
+/// creates it without asking (a 409 for its barcode adopts the catalogue's bean), and the photo
+/// uploads once the bean has its server id.
 @MainActor
 @Observable
 final class BeanEntryModel {
@@ -36,6 +40,9 @@ final class BeanEntryModel {
         case saving
         /// The catalogue bean: the one created, or the barcode's existing bean after a 409.
         case saved(API.Bean)
+        /// Saved on the device while the API could not answer (M2-T25): the local bean with
+        /// this id, created by the outbox once online.
+        case savedOffline(UUID)
         /// The last save failed. The picks are kept.
         case failed(Failure)
     }
@@ -55,6 +62,8 @@ final class BeanEntryModel {
     private(set) var labelPhotoUploads: LabelPhotoUploadModel?
 
     private let client: APIClient
+    /// Where the bean is saved when the API cannot answer now (M2-T25); nil keeps "Try again".
+    private let offlineStore: AccountStore?
     /// Whose label photos these are; nil while nobody is signed in, and then none is uploaded.
     private let photoAccount: LabelPhotoAccount?
     private let photoUploader: (any LabelPhotoUploading)?
@@ -64,10 +73,12 @@ final class BeanEntryModel {
         client: APIClient,
         picks: API.BeanAttributes = API.BeanAttributes(),
         labelPhotos: LabelPhotoAccount? = nil,
-        photoUploader: (any LabelPhotoUploading)? = nil
+        photoUploader: (any LabelPhotoUploading)? = nil,
+        offlineStore: AccountStore? = nil
     ) {
         self.barcode = barcode
         self.client = client
+        self.offlineStore = offlineStore
         self.picks = picks
         self.photoAccount = labelPhotos
         if let photoUploader {
@@ -98,7 +109,7 @@ final class BeanEntryModel {
     var isEditable: Bool {
         switch state {
         case .editing, .failed: true
-        case .saving, .saved: false
+        case .saving, .saved, .savedOffline: false
         }
     }
 
@@ -122,9 +133,44 @@ final class BeanEntryModel {
             rejectedRequest = body
             state = .failed(.rejected)
         } catch APIError.conflict {
-            await useExistingBean()
+            await useExistingBean(body)
         } catch {
-            state = BeanEntryModel.failureState(after: error)
+            await didFail(after: error, body: body)
+        }
+    }
+
+    /// A failure that "Try again" might fix is saved on the device instead, when there is a
+    /// store (M2-T25); any other failure is shown.
+    private func didFail(after error: any Error, body: API.BeanCreate) async {
+        let failed = BeanEntryModel.failureState(after: error)
+        guard failed == .failed(.retryable), let offlineStore else {
+            state = failed
+            return
+        }
+        await saveOffline(body, in: offlineStore)
+    }
+
+    /// Saves the bean in the local store with its queued create, and the form's label photo in
+    /// the account's label photo queue, in one save (`AccountStore.addOfflineBean`).
+    private func saveOffline(_ body: API.BeanCreate, in store: AccountStore) async {
+        var queuedFile: URL?
+        if case .attached(let prepared) = labelPhoto.state, let photoAccount {
+            let queue = photoAccount.files.queued
+            let jpeg = prepared.photo.data
+            // Up to 8 MiB: written off the main actor.
+            queuedFile = try? await Task.detached(priority: .userInitiated) {
+                try queue.write(jpeg)
+            }.value
+        }
+        do {
+            let bean = try store.addOfflineBean(body, labelPhotoFiles: queuedFile.map { file in [file.lastPathComponent] } ?? [])
+            labelPhoto.remove()
+            state = .savedOffline(bean.localID)
+        } catch {
+            if let queuedFile, let photoAccount {
+                photoAccount.files.queued.delete(queuedFile)
+            }
+            state = .failed(.retryable)
         }
     }
 
@@ -139,7 +185,7 @@ final class BeanEntryModel {
 
     /// After a 409 the barcode already points to a bean: `GET /barcodes/{barcode}` and use it.
     /// Without a barcode a 409 is unexpected and can be retried.
-    private func useExistingBean() async {
+    private func useExistingBean(_ body: API.BeanCreate) async {
         guard let path = barcode?.lookupBarcode else {
             state = .failed(.retryable)
             return
@@ -147,9 +193,11 @@ final class BeanEntryModel {
         do {
             let existing = try await client.lookupBarcode(path)
             await didSave(existing)
-        } catch {
+        } catch APIError.notFound {
             // A 404 after a 409 contradicts it; "Try again" starts over with `POST /beans`.
-            state = BeanEntryModel.failureState(after: error)
+            state = .failed(.retryable)
+        } catch {
+            await didFail(after: error, body: body)
         }
     }
 

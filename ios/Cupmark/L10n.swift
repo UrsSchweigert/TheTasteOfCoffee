@@ -231,4 +231,20 @@ enum L10n {
     static var signInAgainTitle: LocalizedStringKey { "sign_in_again.title" }
     static var signInAgainMessage: LocalizedStringKey { "sign_in_again.message" }
     static var signInAgainButton: LocalizedStringKey { "sign_in_again.button" }
+    // Offline scan and pending beans (M2-T25)
+    static var lookupKeepForLater: LocalizedStringKey { "lookup.keep_for_later" }
+    static var lookupKeepForLaterHint: LocalizedStringKey { "lookup.keep_for_later.hint" }
+    static var lookupPendingTitle: LocalizedStringKey { "lookup.pending.title" }
+    static var lookupPendingMessage: LocalizedStringKey { "lookup.pending.message" }
+    static var beanEntrySavedOfflineTitle: LocalizedStringKey { "bean_entry.saved_offline.title" }
+    static var beanEntrySavedOfflineMessage: LocalizedStringKey { "bean_entry.saved_offline.message" }
+    static var shelfRowBeanLookingUp: LocalizedStringKey { "shelf.row.bean_looking_up" }
+    static var shelfRowBeanAwaitingConfirmation: LocalizedStringKey { "shelf.row.bean_awaiting_confirmation" }
+    static var pendingBeansRow: LocalizedStringKey { "pending_beans.row" }
+    static var pendingBeansTitle: LocalizedStringKey { "pending_beans.title" }
+    static var pendingBeansLater: LocalizedStringKey { "pending_beans.later" }
+    static var pendingBeansDone: LocalizedStringKey { "pending_beans.done" }
+    static var pendingBeansNoneTitle: LocalizedStringKey { "pending_beans.none.title" }
+    static var pendingBeansNoneMessage: LocalizedStringKey { "pending_beans.none.message" }
+    static var pendingBeansSaveFailed: LocalizedStringKey { "pending_beans.save_failed" }
 }
