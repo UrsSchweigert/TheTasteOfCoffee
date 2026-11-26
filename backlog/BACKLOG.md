@@ -1092,7 +1092,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job. Marked `needs-mac-verification` until it passes.
 
 ### M2-T49 Averages on the shelf list: per bag and per product
-- status: needs-mac-verification (written on Linux; Swift, XCTest and the UI tests have not run)
+- status: done (#108; macOS run green)
 - owner: ios-engineer
 - depends: M2-T44, M2-T48
 - implements: owner feedback of 2026-11-26 after testing the build ("I am missing the averages for a Packung"; chosen: on each bag in the shelf list, and across all bags of the product); ADR 0027 addenda
@@ -1106,7 +1106,7 @@ Planning notes (planned 2026-11-25):
   - Tests: unit tests of the pure function and of the shelf model rows (none, one rated brew, two bags of one bean, a removed brew, an older vocabulary version); a UI test with the harness for the row text. Mac: the `ios` job; `needs-mac-verification` until it passes.
 
 ### M2-T50 Statistics: a method drop-down instead of one long screen
-- status: needs-mac-verification
+- status: done (#109; macOS run green)
 - owner: ios-engineer
 - depends: M2-T28
 - implements: owner feedback of 2026-11-26 ("build a drop down switcher for the preparation types, the screen scrolls far too long"; chosen screen: Statistics); ADR 0027
@@ -1118,7 +1118,7 @@ Planning notes (planned 2026-11-25):
   - VoiceOver (the picker has a label and value), Dynamic Type, Theme colours, en and de strings, 44-point target, a UI test that picks a method and sees the sections change. Mac: the `ios` job; `needs-mac-verification` until it passes.
 
 ### M2-T51 Sign out moves into the settings
-- status: needs-mac-verification (written on Linux; Swift, XCTest and the UI tests have not run)
+- status: done (#107; macOS run green)
 - owner: ios-engineer
 - depends: M2-T29, M2-T31
 - implements: owner feedback of 2026-11-26 ("move the sign-out button into preferences, it does not belong on the main screen")
