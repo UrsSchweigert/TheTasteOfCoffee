@@ -1753,3 +1753,21 @@ test('check-ios-accessibility: the UI tests launch the screens the app knows, wi
   // No typed text in the UI tests either (invariant 1).
   assert.doesNotMatch(uiTests, /typeText|typeKey/);
 });
+
+// ITMS-90022 and ITMS-90713 (TestFlight, build 1): an app without an icon is refused.
+test('the app has a 1024 point icon without transparency and names it in the build settings', () => {
+  const iosDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'ios');
+  const set = join(iosDir, 'Cupmark', 'Assets.xcassets', 'AppIcon.appiconset');
+  const contents = JSON.parse(readFileSync(join(set, 'Contents.json'), 'utf8'));
+  const image = contents.images.find((i) => i.size === '1024x1024' && i.idiom === 'universal');
+  assert.ok(image?.filename, 'Contents.json lists a universal 1024x1024 image');
+  const png = readFileSync(join(set, image.filename));
+  assert.equal(png.subarray(1, 4).toString('latin1'), 'PNG');
+  assert.equal(png.readUInt32BE(16), 1024, 'width');
+  assert.equal(png.readUInt32BE(20), 1024, 'height');
+  // IHDR colour type: 2 = RGB, 6 = RGBA. App Store icons must not have an alpha channel.
+  assert.equal(png[25], 2, 'colour type RGB, no alpha channel');
+  const project = readFileSync(join(iosDir, 'Cupmark.xcodeproj', 'project.pbxproj'), 'utf8');
+  const named = project.match(/ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;/g) ?? [];
+  assert.equal(named.length, 2, 'Debug and Release of the app target');
+});
