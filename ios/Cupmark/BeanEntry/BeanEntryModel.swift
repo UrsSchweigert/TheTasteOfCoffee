@@ -31,6 +31,9 @@ final class BeanEntryModel {
         /// 401, also after the client's refresh: the user has to sign in again (M2-T18).
         /// Not retried; the screen offers the sign-in instead.
         case signInRequired
+        /// The label photo could not be written to the device (M2-T25): nothing was saved, the
+        /// photo is kept, and saving again (or removing the photo) is offered.
+        case photoNotSaved
     }
 
     enum State: Equatable, Sendable {
@@ -61,6 +64,13 @@ final class BeanEntryModel {
     /// unverified. The photo of the form is its first one and starts uploading at once.
     private(set) var labelPhotoUploads: LabelPhotoUploadModel?
 
+    /// Set when an offline save used a bean the catalogue already had, which cannot take the
+    /// picks (M2-T25). The saved screen says so.
+    private(set) var picksNotKept = false
+    /// The pending bean this entry describes (M2-T25, docs/04 F1 step 4): `save()` writes the
+    /// picks and the photo to it in the local store and sends nothing.
+    let describing: UUID?
+
     private let client: APIClient
     /// Where the bean is saved when the API cannot answer now (M2-T25); nil keeps "Try again".
     private let offlineStore: AccountStore?
@@ -74,11 +84,13 @@ final class BeanEntryModel {
         picks: API.BeanAttributes = API.BeanAttributes(),
         labelPhotos: LabelPhotoAccount? = nil,
         photoUploader: (any LabelPhotoUploading)? = nil,
-        offlineStore: AccountStore? = nil
+        offlineStore: AccountStore? = nil,
+        describing: UUID? = nil
     ) {
         self.barcode = barcode
         self.client = client
         self.offlineStore = offlineStore
+        self.describing = describing
         self.picks = picks
         self.photoAccount = labelPhotos
         if let photoUploader {
@@ -119,13 +131,18 @@ final class BeanEntryModel {
         isEditable && request != rejectedRequest && state != .failed(.signInRequired) && !labelPhoto.isPreparing
     }
 
-    /// Sends `POST /beans`. Does nothing unless `canSave`.
+    /// Sends `POST /beans`, or, when describing a pending bean, writes the description to the
+    /// store. Does nothing unless `canSave`.
     func save() async {
         guard canSave else {
             return
         }
         let body = self.request
         state = .saving
+        if let describing, let offlineStore {
+            await saveDescription(of: describing, in: offlineStore)
+            return
+        }
         do {
             let saved = try await client.createBean(body)
             await didSave(saved)
@@ -153,24 +170,78 @@ final class BeanEntryModel {
     /// Saves the bean in the local store with its queued create, and the form's label photo in
     /// the account's label photo queue, in one save (`AccountStore.addOfflineBean`).
     private func saveOffline(_ body: API.BeanCreate, in store: AccountStore) async {
-        var queuedFile: URL?
-        if case .attached(let prepared) = labelPhoto.state, let photoAccount {
-            let queue = photoAccount.files.queued
-            let jpeg = prepared.photo.data
-            // Up to 8 MiB: written off the main actor.
-            queuedFile = try? await Task.detached(priority: .userInitiated) {
-                try queue.write(jpeg)
-            }.value
+        let queued = await writeQueuedPhoto()
+        guard queued != .failed else {
+            state = .failed(.photoNotSaved)
+            return
         }
         do {
-            let bean = try store.addOfflineBean(body, labelPhotoFiles: queuedFile.map { file in [file.lastPathComponent] } ?? [])
+            let result = try store.addOfflineBean(body, labelPhotoFiles: queued.fileNames)
             labelPhoto.remove()
-            state = .savedOffline(bean.localID)
+            picksNotKept = !result.picksKept
+            state = .savedOffline(result.bean.localID)
         } catch {
-            if let queuedFile, let photoAccount {
-                photoAccount.files.queued.delete(queuedFile)
-            }
+            deleteQueued(queued)
             state = .failed(.retryable)
+        }
+    }
+
+    /// The description of a pending bean (M2-T25): the picks and the photo, in one save. A bean
+    /// that waits for no description any more (answered elsewhere) keeps what it has.
+    private func saveDescription(of beanID: UUID, in store: AccountStore) async {
+        let queued = await writeQueuedPhoto()
+        guard queued != .failed else {
+            state = .failed(.photoNotSaved)
+            return
+        }
+        do {
+            if try !store.describePendingBean(beanLocalID: beanID, picks: picks, labelPhotoFiles: queued.fileNames) {
+                deleteQueued(queued)
+            }
+            labelPhoto.remove()
+            state = .savedOffline(beanID)
+        } catch {
+            deleteQueued(queued)
+            state = .failed(.retryable)
+        }
+    }
+
+    /// The form's photo in the account's label photo queue.
+    private enum QueuedPhoto: Equatable {
+        /// No photo (or no account, which takes none).
+        case noPhoto
+        case file(URL)
+        /// The file could not be written.
+        case failed
+
+        var fileNames: [String] {
+            if case .file(let url) = self {
+                return [url.lastPathComponent]
+            }
+            return []
+        }
+    }
+
+    /// Writes the form's photo to the account's label photo queue, off the main actor.
+    private func writeQueuedPhoto() async -> QueuedPhoto {
+        guard case .attached(let prepared) = labelPhoto.state, let photoAccount else {
+            return .noPhoto
+        }
+        let queue = photoAccount.files.queued
+        let jpeg = prepared.photo.data
+        do {
+            let file = try await Task.detached(priority: .userInitiated) {
+                try queue.write(jpeg)
+            }.value
+            return .file(file)
+        } catch {
+            return .failed
+        }
+    }
+
+    private func deleteQueued(_ queued: QueuedPhoto) {
+        if case .file(let url) = queued, let photoAccount {
+            photoAccount.files.queued.delete(url)
         }
     }
 

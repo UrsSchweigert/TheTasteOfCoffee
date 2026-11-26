@@ -11,7 +11,8 @@ struct ShelfAddContext {
 /// The bar below a found, confirmed or created bean (F1 step 5): "Add to Shelf" opens the
 /// shelf entry form for that bean in a sheet. The sheet hangs off this bar, so it is
 /// presented by the screen the user sees, whichever screen of the scan flow that is.
-/// A pending bean (M2-T25), already in the local store, is added by its local id; with
+/// A scanned barcode without an answer (M2-T25) is added as a pending bean, and a bean saved
+/// offline by its local id; with
 /// `presentsAtOnce` the form opens as soon as the bar appears, so "Add to Shelf Now" on the
 /// lookup's fallback needs no second tap.
 struct AddToShelfBar: View {
@@ -33,7 +34,23 @@ struct AddToShelfBar: View {
         self.presentsAtOnce = false
     }
 
-    /// A bean in the local store, by its local id (a pending bean, M2-T25).
+    /// A barcode the lookup could not answer (M2-T25): the form saves the pending bean with the
+    /// entry, so cancelling it stores nothing.
+    init(
+        scanned barcode: CanonicalBarcode,
+        context: ShelfAddContext,
+        vocabulary: VocabularyStore,
+        language: VocabularyLanguage,
+        presentsAtOnce: Bool = false
+    ) {
+        self.mode = .addScanned(barcode)
+        self.context = context
+        self.vocabulary = vocabulary
+        self.language = language
+        self.presentsAtOnce = presentsAtOnce
+    }
+
+    /// A bean in the local store, by its local id (a bean saved offline, M2-T25).
     init(
         storedBean localID: UUID,
         context: ShelfAddContext,

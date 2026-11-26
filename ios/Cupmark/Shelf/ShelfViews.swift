@@ -77,9 +77,9 @@ struct ShelfRowView: View {
             .font(.subheadline)
             if let pending = row.pendingBean {
                 Label {
-                    Text(pending == .awaitingConfirmation ? L10n.shelfRowBeanAwaitingConfirmation : L10n.shelfRowBeanLookingUp)
+                    Text(ShelfRowView.note(for: pending))
                 } icon: {
-                    Image(systemName: pending == .awaitingConfirmation ? "questionmark.circle" : "clock.arrow.circlepath")
+                    Image(systemName: pending.asksUser ? "questionmark.circle" : "clock.arrow.circlepath")
                         .accessibilityHidden(true)
                 }
                 .font(.footnote)
@@ -98,6 +98,17 @@ struct ShelfRowView: View {
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
+    }
+}
+
+extension ShelfRowView {
+    /// The note of a row whose bean is a pending scan (M2-T25).
+    static func note(for state: PendingBeanState) -> LocalizedStringKey {
+        switch state {
+        case .lookingUp: L10n.shelfRowBeanLookingUp
+        case .awaitingConfirmation: L10n.shelfRowBeanAwaitingConfirmation
+        case .awaitingDescription: L10n.shelfRowBeanAwaitingDescription
+        }
     }
 }
 

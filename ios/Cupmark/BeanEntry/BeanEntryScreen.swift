@@ -81,7 +81,12 @@ struct BeanEntryScreen: View {
                         .accessibilityHidden(true)
                 }
             } description: {
-                Text(L10n.beanEntrySavedOfflineMessage)
+                VStack(spacing: 8) {
+                    Text(L10n.beanEntrySavedOfflineMessage)
+                    if model.picksNotKept {
+                        Text(L10n.beanEntryPicksNotKept)
+                    }
+                }
             }
             .accessibilityIdentifier("bean-entry-saved-offline")
             .safeAreaInset(edge: .bottom) {
@@ -210,7 +215,7 @@ struct BeanEntryScreen: View {
     private var saveTitle: LocalizedStringKey {
         switch model.state {
         case .saving: L10n.lookupSaving
-        case .failed(.retryable): L10n.lookupRetry
+        case .failed(.retryable), .failed(.photoNotSaved): L10n.lookupRetry
         case .editing, .saved, .savedOffline, .failed(.rejected), .failed(.signInRequired): L10n.beanEntrySave
         }
     }
@@ -229,6 +234,7 @@ struct BeanEntryScreen: View {
     static func title(for failure: BeanEntryModel.Failure) -> LocalizedStringKey {
         switch failure {
         case .rejected: L10n.beanEntryRejectedTitle
+        case .photoNotSaved: L10n.beanEntryPhotoNotSavedTitle
         case .retryable: L10n.beanEntryFailedTitle
         case .signInRequired: L10n.signInAgainTitle
         }
@@ -237,6 +243,7 @@ struct BeanEntryScreen: View {
     static func message(for failure: BeanEntryModel.Failure) -> LocalizedStringKey {
         switch failure {
         case .rejected: L10n.beanEntryRejectedMessage
+        case .photoNotSaved: L10n.beanEntryPhotoNotSavedMessage
         case .retryable: L10n.beanEntryFailedMessage
         case .signInRequired: L10n.signInAgainMessage
         }

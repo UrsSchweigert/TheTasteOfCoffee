@@ -25,9 +25,12 @@ final class ShelfEntryEditorModel {
     enum Mode: Equatable, Sendable {
         /// A new entry for a catalogue bean the API returned.
         case add(API.Bean)
-        /// A new entry for a bean in the local store, by its local id: a pending bean scanned
-        /// or described offline (M2-T25).
+        /// A new entry for a bean in the local store, by its local id: a bean described offline
+        /// (M2-T25).
         case addStored(UUID)
+        /// A new entry for a barcode the lookup could not answer (M2-T25): the pending bean
+        /// (`AccountStore.pendingBean(barcode:)`) is saved with the entry, in one save.
+        case addScanned(CanonicalBarcode)
         /// The stored entry with this local id.
         case edit(UUID)
     }
@@ -91,6 +94,9 @@ final class ShelfEntryEditorModel {
                 brand: apiBean.openFoodFacts?.brand,
                 attributes: apiBean.attributeRows
             )
+        case .addScanned(let barcode):
+            draft = ShelfEntryDraft.new(today: now(), calendar: calendar)
+            bean = ShelfBeanSummary(try? store.bean(barcode: barcode.digits))
         case .addStored(let beanID):
             draft = ShelfEntryDraft.new(today: now(), calendar: calendar)
             if let stored = try? store.bean(localID: beanID) {
@@ -120,7 +126,7 @@ final class ShelfEntryEditorModel {
 
     var isAdding: Bool {
         switch mode {
-        case .add, .addStored: return true
+        case .add, .addStored, .addScanned: return true
         case .edit: return false
         }
     }
@@ -227,6 +233,8 @@ final class ShelfEntryEditorModel {
             switch mode {
             case .add(let apiBean):
                 localID = try add(apiBean)
+            case .addScanned(let barcode):
+                localID = try add(try store.pendingBean(barcode: barcode))
             case .addStored(let beanID):
                 guard let stored = try store.bean(localID: beanID) else {
                     failure = .notFound

@@ -233,6 +233,12 @@ enum L10n {
     static var signInAgainMessage: LocalizedStringKey { "sign_in_again.message" }
     static var signInAgainButton: LocalizedStringKey { "sign_in_again.button" }
     // Offline scan and pending beans (M2-T25)
+    static var pendingBeansSkip: LocalizedStringKey { "pending_beans.skip" }
+    static var pendingBeansSkipHint: LocalizedStringKey { "pending_beans.skip.hint" }
+    static var shelfRowBeanAwaitingDescription: LocalizedStringKey { "shelf.row.bean_awaiting_description" }
+    static var beanEntryPhotoNotSavedTitle: LocalizedStringKey { "bean_entry.photo_not_saved.title" }
+    static var beanEntryPhotoNotSavedMessage: LocalizedStringKey { "bean_entry.photo_not_saved.message" }
+    static var beanEntryPicksNotKept: LocalizedStringKey { "bean_entry.picks_not_kept" }
     static var lookupKeepForLater: LocalizedStringKey { "lookup.keep_for_later" }
     static var lookupKeepForLaterHint: LocalizedStringKey { "lookup.keep_for_later.hint" }
     static var lookupPendingTitle: LocalizedStringKey { "lookup.pending.title" }

@@ -81,8 +81,9 @@ final class ShelfModel {
     private(set) var rows: [ShelfRow] = []
     /// How many items have a sync issue (`AccountStore.syncIssues()`).
     private(set) var issueCount = 0
-    /// How many pending beans have an Open Food Facts hit waiting for the user (M2-T25).
-    private(set) var confirmationCount = 0
+    /// How many pending beans on the shelf wait for the user's answer: an Open Food Facts hit
+    /// to confirm, or a bean to describe (M2-T25).
+    private(set) var questionCount = 0
     /// True when the last read of the store failed.
     private(set) var loadFailed = false
 
@@ -104,7 +105,7 @@ final class ShelfModel {
                 ShelfRow(entry, now: today, calendar: calendar, pendingBean: entry.bean.flatMap { bean in pending[bean.localID] })
             }
             issueCount = try store.syncIssues().count
-            confirmationCount = pending.values.filter { state in state == .awaitingConfirmation }.count
+            questionCount = try store.pendingBeanQuestions().count
             loadFailed = false
         } catch {
             loadFailed = true

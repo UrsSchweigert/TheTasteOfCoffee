@@ -58,24 +58,24 @@ struct LookupScreen: View {
                 onPickListEntry: onPickListEntry,
                 onKeepForLater: keepForLater(reason)
             )
-        case .pending(let beanID):
+        case .keptForLater:
             PendingBeanView(barcode: model.barcode)
                 .safeAreaInset(edge: .bottom) {
                     if let shelf {
-                        AddToShelfBar(storedBean: beanID, context: shelf, vocabulary: vocabulary, language: language, presentsAtOnce: true)
+                        AddToShelfBar(scanned: model.barcode, context: shelf, vocabulary: vocabulary, language: language, presentsAtOnce: true)
                     }
                 }
         }
     }
 
-    /// "Add to Shelf Now" while the lookup cannot answer (M2-T25): keeps the barcode as a
-    /// pending bean and opens the shelf entry form for it. Only with a shelf to add to.
+    /// "Add to Shelf Now" while the lookup cannot answer (M2-T25): opens the shelf entry form
+    /// for the scanned barcode, which saves the pending bean with the entry. Only with a shelf.
     private func keepForLater(_ reason: LookupModel.PickListReason) -> (@MainActor () -> Void)? {
-        guard let shelf, reason.allowsKeepingForLater else {
+        guard shelf != nil, reason.allowsKeepingForLater else {
             return nil
         }
         return { [model] in
-            _ = model.keepForLater(in: shelf.store)
+            model.keepForLater()
         }
     }
 
@@ -209,9 +209,10 @@ struct LookupFallbackView: View {
     }
 }
 
-/// A barcode kept as a pending bean (M2-T25): it is on the device, can go on the shelf and
-/// have brews now, and is looked up once the device is online. An Open Food Facts hit is then
-/// offered for confirmation the next time the app is opened.
+/// A barcode the lookup could not answer, to be put on the shelf now (M2-T25): once its bag is
+/// on the shelf it can have brews, and it is looked up when the device is online. An Open Food
+/// Facts hit is then offered for confirmation, and a bean nothing was found for for a
+/// description, the next time the app is opened.
 struct PendingBeanView: View {
     let barcode: CanonicalBarcode
 

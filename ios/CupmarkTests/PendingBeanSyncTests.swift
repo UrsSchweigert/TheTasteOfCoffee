@@ -80,25 +80,31 @@ final class PendingBeanSyncTests: XCTestCase {
         API.OpenFoodFactsProduct(name: "Test Roast Espresso", brand: "Test Roastery", imageId: id(990))
     }
 
-    /// The offline part of every case: the scan's lookup fails, the barcode is kept, the bag
-    /// goes on the shelf and a brew is logged. A drain then sends nothing: the look-up waits
-    /// for the network, and the shelf entry and brew wait for their bean.
+    private var scanned: CanonicalBarcode {
+        get throws { try XCTUnwrap(CanonicalBarcode(PendingBeanSyncTests.barcode)) }
+    }
+
+    /// The offline part of every case: the scan's lookup fails, the bag goes on the shelf
+    /// (which saves the pending bean with the entry) and a brew is logged. A drain then sends
+    /// nothing: the look-up waits for the network, and the entry and brew wait for their bean.
     private func scanShelveAndBrewOffline(_ harness: Harness) async throws -> Offline {
         goOffline(harness)
-        let barcode = try XCTUnwrap(CanonicalBarcode(PendingBeanSyncTests.barcode))
-        let lookup = LookupModel(barcode: barcode, client: harness.server.client())
+        let lookup = LookupModel(barcode: try scanned, client: harness.server.client())
         await lookup.lookUp()
         XCTAssertEqual(lookup.state, .pickList(.unavailable))
         XCTAssertTrue(lookup.canKeepForLater)
+        lookup.keepForLater()
+        XCTAssertEqual(lookup.state, .keptForLater)
+        // Nothing is stored before the form is saved.
+        XCTAssertTrue(try harness.store.beans().isEmpty)
+        XCTAssertTrue(try harness.store.outboxOperations().isEmpty)
 
-        let beanID = try XCTUnwrap(lookup.keepForLater(in: harness.store))
-        XCTAssertEqual(lookup.state, .pending(beanID))
-
-        let editor = ShelfEntryEditorModel(mode: .addStored(beanID), store: harness.store)
+        let editor = ShelfEntryEditorModel(mode: .addScanned(try scanned), store: harness.store)
         XCTAssertTrue(editor.canSave)
         let entryID = try XCTUnwrap(editor.save())
         let entry = try XCTUnwrap(harness.store.shelfEntry(localID: entryID))
-        XCTAssertEqual(entry.bean?.localID, beanID)
+        let bean = try XCTUnwrap(entry.bean)
+        XCTAssertEqual(bean.barcode, PendingBeanSyncTests.barcode)
 
         let brew = try StoredBrew(try StoreFixtures.brewInput())
         try harness.store.addBrew(brew, shelfEntry: entry)
@@ -122,10 +128,47 @@ final class PendingBeanSyncTests: XCTestCase {
         let lookUp = try XCTUnwrap(harness.store.outboxOperations().first)
         XCTAssertGreaterThan(lookUp.nextAttemptAt, harness.clock.now)
         XCTAssertFalse(lookUp.parked)
-
-        let bean = try XCTUnwrap(harness.store.bean(localID: beanID))
         XCTAssertNil(bean.serverID)
         return Offline(bean: bean, entry: entry, brew: brew)
+    }
+
+    /// Online, the look-up finds nothing the user accepted: the bean waits for a description
+    /// and nothing that names it is sent.
+    private func reachDescription(_ harness: Harness, _ offline: Offline, after expected: [String]) async throws -> PendingBeansModel {
+        let before = harness.server.requests.count
+        let result = await harness.engine.drain()
+        XCTAssertEqual(result, .idle)
+        XCTAssertEqual(Array(harness.server.log.dropFirst(before)), expected)
+        XCTAssertEqual(try queue(harness.store), ["await_description bean", "create shelf_entry", "create brew"])
+        XCTAssertTrue(harness.server.backend.storedBeans.isEmpty)
+        let shelf = ShelfModel(store: harness.store)
+        shelf.reload()
+        XCTAssertEqual(shelf.rows.first?.pendingBean, .awaitingDescription)
+        XCTAssertEqual(shelf.questionCount, 1)
+        let prompts = PendingBeansModel(store: harness.store)
+        prompts.reload()
+        XCTAssertEqual(prompts.current?.beanID, offline.bean.localID)
+        XCTAssertEqual(prompts.current?.kind, .describe)
+        XCTAssertEqual(prompts.current?.barcode, try scanned)
+        return prompts
+    }
+
+    /// The user describes the bean with the pick-list entry, as online.
+    private func describe(_ harness: Harness, _ offline: Offline) async throws -> Vocabulary.Process {
+        let entry = BeanEntryModel(
+            barcode: try scanned,
+            client: harness.server.client(),
+            offlineStore: harness.store,
+            describing: offline.bean.localID
+        )
+        let process = try StoreFixtures.first(Vocabulary.Process.self)
+        entry.picks.process = process
+        let before = harness.server.requests.count
+        await entry.save()
+        XCTAssertEqual(entry.state, .savedOffline(offline.bean.localID))
+        XCTAssertEqual(harness.server.requests.count, before, "describing sends nothing itself")
+        XCTAssertEqual(try queue(harness.store), ["create bean", "create shelf_entry", "create brew"])
+        return process
     }
 
     /// The brew is on the server, under the entry, which names `beanID`; nothing is queued.
@@ -145,6 +188,10 @@ final class PendingBeanSyncTests: XCTestCase {
         )
     }
 
+    private var lookUpRequests: [String] {
+        ["GET /barcodes/\(PendingBeanSyncTests.barcode)", "GET /barcodes/\(PendingBeanSyncTests.barcode)/open_food_facts"]
+    }
+
     // MARK: - Each lookup result
 
     func testAKnownBarcodeUsesTheCatalogueBeanWithoutAsking() async throws {
@@ -162,7 +209,7 @@ final class PendingBeanSyncTests: XCTestCase {
         ])
         try assertBrewOnServer(harness, offline, beanID: id(901))
         XCTAssertTrue(offline.bean.verified)
-        XCTAssertTrue(try harness.store.beansAwaitingConfirmation().isEmpty)
+        XCTAssertTrue(try harness.store.pendingBeanQuestions().isEmpty)
     }
 
     func testAConfirmedOpenFoodFactsHitIsCreatedAndTheWaitingEntryAndBrewFollow() async throws {
@@ -176,9 +223,7 @@ final class PendingBeanSyncTests: XCTestCase {
 
         // The hit waits for the user; the entry and brew wait for the bean.
         XCTAssertEqual(result, .idle)
-        XCTAssertEqual(Array(harness.server.log.dropFirst(before)), [
-            "GET /barcodes/\(PendingBeanSyncTests.barcode)", "GET /barcodes/\(PendingBeanSyncTests.barcode)/open_food_facts",
-        ])
+        XCTAssertEqual(Array(harness.server.log.dropFirst(before)), lookUpRequests)
         XCTAssertEqual(try queue(harness.store), ["await_confirmation bean", "create shelf_entry", "create brew"])
         XCTAssertTrue(harness.server.backend.storedBeans.isEmpty)
         // Not the bean's name before the user said so.
@@ -186,7 +231,7 @@ final class PendingBeanSyncTests: XCTestCase {
         let shelf = ShelfModel(store: harness.store)
         shelf.reload()
         XCTAssertEqual(shelf.rows.first?.pendingBean, .awaitingConfirmation)
-        XCTAssertEqual(shelf.confirmationCount, 1)
+        XCTAssertEqual(shelf.questionCount, 1)
 
         // A drain before the answer still waits.
         before = harness.server.requests.count
@@ -197,8 +242,8 @@ final class PendingBeanSyncTests: XCTestCase {
         // The next opening asks.
         let prompts = PendingBeansModel(store: harness.store)
         prompts.reload()
-        XCTAssertEqual(prompts.current?.id, offline.bean.localID)
-        XCTAssertEqual(prompts.current?.product, product)
+        XCTAssertEqual(prompts.current?.beanID, offline.bean.localID)
+        XCTAssertEqual(prompts.current?.kind, .confirm(product))
         let species = try StoreFixtures.first(Vocabulary.Species.self)
         prompts.picks.species = species
         prompts.confirm()
@@ -220,20 +265,51 @@ final class PendingBeanSyncTests: XCTestCase {
         XCTAssertEqual(ShelfBeanSummary(offline.bean).name, product.name)
     }
 
-    func testARejectedOpenFoodFactsHitIsCreatedFromTheBarcodeAlone() async throws {
+    func testARejectedHitAsksForADescriptionAndTheDescribedBeanIsCreated() async throws {
         let harness = try makeHarness()
         let offline = try await scanShelveAndBrewOffline(harness)
         harness.server.backend.seed(openFoodFacts: product, barcode: PendingBeanSyncTests.barcode)
         comeOnline(harness)
         _ = await harness.engine.drain()
-        XCTAssertEqual(try queue(harness.store), ["await_confirmation bean", "create shelf_entry", "create brew"])
+        let confirmations = PendingBeansModel(store: harness.store)
+        confirmations.reload()
+        XCTAssertEqual(confirmations.current?.kind, .confirm(product))
 
-        let prompts = PendingBeansModel(store: harness.store)
-        prompts.reload()
-        XCTAssertEqual(prompts.current?.id, offline.bean.localID)
-        prompts.reject()
-        XCTAssertNil(prompts.current)
+        confirmations.reject()
 
+        // The same bean is asked about again, now for a description (F1 step 4).
+        XCTAssertEqual(confirmations.current?.beanID, offline.bean.localID)
+        XCTAssertEqual(confirmations.current?.kind, .describe)
+        XCTAssertFalse(offline.bean.hasOpenFoodFactsProduct)
+        XCTAssertEqual(try queue(harness.store), ["await_description bean", "create shelf_entry", "create brew"])
+        var before = harness.server.requests.count
+        _ = await harness.engine.drain()
+        XCTAssertEqual(harness.server.requests.count, before, "nothing goes out before the description")
+
+        let process = try await describe(harness, offline)
+
+        before = harness.server.requests.count
+        let result = await harness.engine.drain()
+
+        XCTAssertEqual(result, .idle)
+        XCTAssertEqual(Array(harness.server.log.dropFirst(before)), ["POST /beans", "POST /shelf", "POST /brews"])
+        let sent = try body(API.BeanCreate.self, of: harness.server.requests[before])
+        XCTAssertEqual(sent.barcode, PendingBeanSyncTests.barcode)
+        XCTAssertNil(sent.openFoodFactsConfirmed)
+        XCTAssertEqual(sent.attributes.process, process)
+        let beanID = try XCTUnwrap(offline.bean.serverID)
+        try assertBrewOnServer(harness, offline, beanID: beanID)
+        XCTAssertNil(harness.server.backend.storedBeans[beanID]?.openFoodFacts)
+        XCTAssertNil(offline.bean.openFoodFactsName)
+    }
+
+    func testAMissAsksForADescriptionAndTheDescribedBeanIsCreated() async throws {
+        let harness = try makeHarness()
+        let offline = try await scanShelveAndBrewOffline(harness)
+        comeOnline(harness)
+        _ = try await reachDescription(harness, offline, after: lookUpRequests)
+
+        let process = try await describe(harness, offline)
         let before = harness.server.requests.count
         let result = await harness.engine.drain()
 
@@ -242,34 +318,124 @@ final class PendingBeanSyncTests: XCTestCase {
         let sent = try body(API.BeanCreate.self, of: harness.server.requests[before])
         XCTAssertEqual(sent.barcode, PendingBeanSyncTests.barcode)
         XCTAssertNil(sent.openFoodFactsConfirmed)
-        let beanID = try XCTUnwrap(offline.bean.serverID)
-        try assertBrewOnServer(harness, offline, beanID: beanID)
-        XCTAssertNil(harness.server.backend.storedBeans[beanID]?.openFoodFacts)
-        XCTAssertNil(offline.bean.openFoodFactsName)
-        XCTAssertFalse(offline.bean.hasOpenFoodFactsProduct)
+        XCTAssertEqual(sent.attributes.process, process)
+        try assertBrewOnServer(harness, offline, beanID: try XCTUnwrap(offline.bean.serverID))
+        XCTAssertTrue(try harness.store.pendingBeanQuestions().isEmpty)
     }
 
-    func testAMissIsCreatedWithoutAsking() async throws {
+    func testAMissTheUserSkipsIsCreatedFromItsBarcode() async throws {
         let harness = try makeHarness()
         let offline = try await scanShelveAndBrewOffline(harness)
         comeOnline(harness)
+        let prompts = try await reachDescription(harness, offline, after: lookUpRequests)
 
+        prompts.skip()
+        XCTAssertNil(prompts.current)
         let before = harness.server.requests.count
         let result = await harness.engine.drain()
 
         XCTAssertEqual(result, .idle)
-        XCTAssertEqual(Array(harness.server.log.dropFirst(before)), [
-            "GET /barcodes/\(PendingBeanSyncTests.barcode)",
-            "GET /barcodes/\(PendingBeanSyncTests.barcode)/open_food_facts",
-            "POST /beans",
-            "POST /shelf",
-            "POST /brews",
-        ])
-        let sent = try body(API.BeanCreate.self, of: harness.server.requests[before + 2])
+        XCTAssertEqual(Array(harness.server.log.dropFirst(before)), ["POST /beans", "POST /shelf", "POST /brews"])
+        let sent = try body(API.BeanCreate.self, of: harness.server.requests[before])
         XCTAssertEqual(sent.barcode, PendingBeanSyncTests.barcode)
-        XCTAssertNil(sent.openFoodFactsConfirmed)
+        XCTAssertEqual(sent.attributes, API.BeanAttributes())
         try assertBrewOnServer(harness, offline, beanID: try XCTUnwrap(offline.bean.serverID))
-        XCTAssertTrue(try harness.store.beansAwaitingConfirmation().isEmpty)
+    }
+
+    func testADescriptionWithAPhotoQueuesItForTheBean() async throws {
+        let harness = try makeHarness()
+        let root = LabelPhotoFixtures.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let folders = LabelPhotoFolders(root: root)
+        let offline = try await scanShelveAndBrewOffline(harness)
+        comeOnline(harness)
+        _ = try await reachDescription(harness, offline, after: lookUpRequests)
+        let entry = BeanEntryModel(
+            barcode: try scanned,
+            client: harness.server.client(),
+            labelPhotos: LabelPhotoFixtures.photoAccount(files: folders.store(for: LabelPhotoFixtures.account)),
+            offlineStore: harness.store,
+            describing: offline.bean.localID
+        )
+        await entry.labelPhoto.attach(LabelPhotoCapture(image: try LabelPhotoEncoderTests.quadrantImage(width: 40, height: 20), orientation: .up))
+
+        await entry.save()
+
+        XCTAssertEqual(entry.state, .savedOffline(offline.bean.localID))
+        let queued = try XCTUnwrap(harness.store.queuedLabelPhotos().first)
+        XCTAssertEqual(queued.beanLocalID, offline.bean.localID)
+        XCTAssertEqual(folders.queue(for: LabelPhotoFixtures.account).files().map(\.lastPathComponent), [queued.fileName])
+    }
+
+    // MARK: - Pending beans without a shelf entry
+
+    func testACancelledShelfFormLeavesNothing() async throws {
+        let harness = try makeHarness()
+        goOffline(harness)
+        let lookup = LookupModel(barcode: try scanned, client: harness.server.client())
+        await lookup.lookUp()
+        lookup.keepForLater()
+        // The form opens and is closed without saving.
+        _ = ShelfEntryEditorModel(mode: .addScanned(try scanned), store: harness.store)
+
+        XCTAssertTrue(try harness.store.beans().isEmpty)
+        XCTAssertTrue(try harness.store.outboxOperations().isEmpty)
+        comeOnline(harness)
+        let before = harness.server.requests.count
+        _ = await harness.engine.drain()
+        XCTAssertEqual(harness.server.requests.count, before)
+    }
+
+    func testRemovingTheLastShelfEntryOfAPendingBeanRemovesTheBeanAndItsQueue() throws {
+        let store = try AccountStore.inMemory()
+        let first = try XCTUnwrap(ShelfEntryEditorModel(mode: .addScanned(try scanned), store: store).save())
+        let second = try XCTUnwrap(ShelfEntryEditorModel(mode: .addScanned(try scanned), store: store).save())
+        let firstEntry = try XCTUnwrap(store.shelfEntry(localID: first))
+        let beanID = try XCTUnwrap(firstEntry.bean?.localID)
+        XCTAssertEqual(try store.shelfEntry(localID: second)?.bean?.localID, beanID, "one bean per barcode")
+        store.queueLabelPhoto(fileName: "label.jpg", beanLocalID: beanID)
+        try store.save()
+
+        try store.markDeleted(firstEntry)
+        XCTAssertNotNil(try store.bean(localID: beanID), "still on the other entry")
+
+        try store.markDeleted(try XCTUnwrap(store.shelfEntry(localID: second)))
+
+        XCTAssertNil(try store.bean(localID: beanID))
+        XCTAssertTrue(try store.outboxOperations().isEmpty)
+        XCTAssertTrue(try store.queuedLabelPhotos().isEmpty)
+    }
+
+    func testTheEngineDropsAPendingBeanWithoutAShelfEntry() async throws {
+        let harness = try makeHarness()
+        // As a form that was saved and its entry removed by a path that left the bean.
+        let bean = try harness.store.pendingBean(barcode: try scanned)
+        let beanID = bean.localID
+        try harness.store.save()
+        comeOnline(harness)
+
+        let result = await harness.engine.drain()
+
+        XCTAssertEqual(result, .idle)
+        XCTAssertTrue(harness.server.requests.isEmpty)
+        XCTAssertNil(try harness.store.bean(localID: beanID))
+        XCTAssertTrue(try harness.store.outboxOperations().isEmpty)
+    }
+
+    func testQuestionsSkipBeansWithoutAShelfEntry() async throws {
+        let harness = try makeHarness()
+        let offline = try await scanShelveAndBrewOffline(harness)
+        comeOnline(harness)
+        _ = try await reachDescription(harness, offline, after: lookUpRequests)
+        // The brew and then the entry go (both were never sent): the bean goes with them.
+        try harness.store.markDeleted(offline.brew)
+        try harness.store.markDeleted(offline.entry)
+
+        XCTAssertTrue(try harness.store.pendingBeanQuestions().isEmpty)
+        let shelf = ShelfModel(store: harness.store)
+        shelf.reload()
+        XCTAssertEqual(shelf.questionCount, 0)
+        XCTAssertTrue(try harness.store.outboxOperations().isEmpty)
     }
 
     // MARK: - The rest of the queue
@@ -293,6 +459,62 @@ final class PendingBeanSyncTests: XCTestCase {
         XCTAssertEqual(try queue(harness.store), ["await_confirmation bean", "create shelf_entry", "create brew"])
     }
 
+    func testAnEarlierEntryMovedToAPendingBeanWaitsForItsLookUp() async throws {
+        let harness = try makeHarness()
+        goOffline(harness)
+        // An entry made offline on a cached catalogue bean (sequence 1)...
+        let cached = StoredBean(catalogueBean(id(905), barcode: nil))
+        try harness.store.addBean(cached, syncState: .synced)
+        harness.server.backend.seed(bean: catalogueBean(id(905), barcode: nil))
+        let entry = StoredShelfEntry(try StoreFixtures.shelfEntryInput())
+        try harness.store.addShelfEntry(entry, bean: cached)
+        // ...then a pending scan with an entry of its own (sequences 2 and 3)...
+        let otherID = try XCTUnwrap(ShelfEntryEditorModel(mode: .addScanned(try scanned), store: harness.store).save())
+        let pending = try XCTUnwrap(harness.store.shelfEntry(localID: otherID)?.bean)
+        // ...and the first entry moved to the pending bean before anything was sent.
+        let editor = ShelfEntryEditorModel(mode: .edit(entry.localID), store: harness.store)
+        editor.chooseBean(ShelfBeanChoice(id: pending.localID, summary: ShelfBeanSummary(pending)))
+        XCTAssertNotNil(editor.save())
+        XCTAssertEqual(try queue(harness.store), ["create shelf_entry", "look_up bean", "create shelf_entry"])
+        harness.server.backend.seed(bean: catalogueBean(id(906), barcode: PendingBeanSyncTests.barcode))
+        comeOnline(harness)
+
+        let result = await harness.engine.drain()
+
+        XCTAssertEqual(result, .idle)
+        // The look-up went first, so the entry carried the bean's server id and was not parked.
+        XCTAssertEqual(harness.server.log, ["GET /barcodes/\(PendingBeanSyncTests.barcode)", "POST /shelf", "POST /shelf"])
+        let entryID = try XCTUnwrap(entry.serverID)
+        XCTAssertEqual(harness.server.backend.shelfEntries[entryID]?.beanId, id(906))
+        XCTAssertNil(entry.syncIssue)
+        XCTAssertTrue(try harness.store.outboxOperations().isEmpty)
+    }
+
+    func testADeleteOfAnEntryMovedToAPendingBeanDoesNotWaitForTheBean() async throws {
+        let harness = try makeHarness()
+        goOffline(harness)
+        // An entry the server has, on a synced bean.
+        let synced = try StoreFixtures.syncedShelfEntry(in: harness.store)
+        harness.server.backend.seed(bean: catalogueBean(StoreFixtures.beanID, barcode: nil))
+        harness.server.backend.seed(shelfEntry: StoreFixtures.shelfEntryID, try StoreFixtures.shelfEntryInput())
+        // A pending scan on the shelf, then the synced entry moved to it and removed, offline.
+        let otherID = try XCTUnwrap(ShelfEntryEditorModel(mode: .addScanned(try scanned), store: harness.store).save())
+        let pending = try XCTUnwrap(harness.store.shelfEntry(localID: otherID)?.bean)
+        let editor = ShelfEntryEditorModel(mode: .edit(synced.localID), store: harness.store)
+        editor.chooseBean(ShelfBeanChoice(id: pending.localID, summary: ShelfBeanSummary(pending)))
+        XCTAssertNotNil(editor.save())
+        try harness.store.markDeleted(synced)
+        XCTAssertEqual(try queue(harness.store), ["look_up bean", "create shelf_entry", "delete shelf_entry"])
+        harness.server.backend.seed(openFoodFacts: product, barcode: PendingBeanSyncTests.barcode)
+        comeOnline(harness)
+
+        _ = await harness.engine.drain()
+
+        // The bean waits for the user; the delete went all the same.
+        XCTAssertNil(harness.server.backend.shelfEntries[StoreFixtures.shelfEntryID])
+        XCTAssertEqual(try queue(harness.store), ["await_confirmation bean", "create shelf_entry"])
+    }
+
     func testTheDailyLookupCapWaitsAnHourWithoutHoldingTheQueue() async throws {
         let harness = try makeHarness()
         let offline = try await scanShelveAndBrewOffline(harness)
@@ -303,7 +525,7 @@ final class PendingBeanSyncTests: XCTestCase {
             request.path.hasSuffix("/open_food_facts") ? StubResponse(status: 429) : nil
         }
 
-        var result = await harness.engine.drain()
+        let result = await harness.engine.drain()
 
         XCTAssertEqual(result, .idle)
         XCTAssertNotNil(recipe.serverID)
@@ -312,20 +534,20 @@ final class PendingBeanSyncTests: XCTestCase {
         XCTAssertEqual(lookUp.nextAttemptAt, harness.clock.now.addingTimeInterval(SyncEngine.lookUpLimitWait))
         XCTAssertEqual(try harness.store.nextLookUpAttempt(after: harness.clock.now), lookUp.nextAttemptAt)
 
-        // An hour later the cap has room again: no product, so the bean is created.
+        // An hour later the cap has room again: no product, so the user is asked to describe it.
         harness.server.backend.setOverride(nil)
         harness.clock.advance(SyncEngine.lookUpLimitWait + 1)
-        result = await harness.engine.drain()
-
-        XCTAssertEqual(result, .idle)
+        let prompts = try await reachDescription(harness, offline, after: lookUpRequests)
+        prompts.skip()
+        _ = await harness.engine.drain()
         try assertBrewOnServer(harness, offline, beanID: try XCTUnwrap(offline.bean.serverID))
     }
 
     func testAScanOfABarcodeTheDeviceKnowsReusesItsBean() throws {
         let store = try AccountStore.inMemory()
-        let barcode = try XCTUnwrap(CanonicalBarcode(PendingBeanSyncTests.barcode))
-        let first = try store.pendingBean(barcode: barcode)
-        let second = try store.pendingBean(barcode: barcode)
+        let first = try store.pendingBean(barcode: try scanned)
+        try store.save()
+        let second = try store.pendingBean(barcode: try scanned)
 
         XCTAssertEqual(first.localID, second.localID)
         XCTAssertEqual(try queue(store), ["look_up bean"])
@@ -336,8 +558,7 @@ final class PendingBeanSyncTests: XCTestCase {
     func testAPickListBeanSavedOfflineIsCreatedWithoutAskingAndItsBrewFollows() async throws {
         let harness = try makeHarness()
         goOffline(harness)
-        let barcode = try XCTUnwrap(CanonicalBarcode(PendingBeanSyncTests.barcode))
-        let entryModel = BeanEntryModel(barcode: barcode, client: harness.server.client(), offlineStore: harness.store)
+        let entryModel = BeanEntryModel(barcode: try scanned, client: harness.server.client(), offlineStore: harness.store)
         let process = try StoreFixtures.first(Vocabulary.Process.self)
         entryModel.picks.process = process
 
@@ -346,6 +567,7 @@ final class PendingBeanSyncTests: XCTestCase {
         guard case .savedOffline(let beanID) = entryModel.state else {
             return XCTFail("expected the bean to be saved on the device, got \(entryModel.state)")
         }
+        XCTAssertFalse(entryModel.picksNotKept)
         XCTAssertEqual(try queue(harness.store), ["create bean"])
         let editor = ShelfEntryEditorModel(mode: .addStored(beanID), store: harness.store)
         let entryID = try XCTUnwrap(editor.save())
@@ -391,6 +613,39 @@ final class PendingBeanSyncTests: XCTestCase {
         try assertBrewOnServer(harness, Offline(bean: bean, entry: entry, brew: brew), beanID: try XCTUnwrap(bean.serverID))
     }
 
+    func testASecondOfflineDescriptionFoldsItsPicksIntoTheUnsentCreate() async throws {
+        let harness = try makeHarness()
+        goOffline(harness)
+        let first = BeanEntryModel(barcode: try scanned, client: harness.server.client(), offlineStore: harness.store)
+        await first.save()
+        let second = BeanEntryModel(barcode: try scanned, client: harness.server.client(), offlineStore: harness.store)
+        let process = try StoreFixtures.first(Vocabulary.Process.self)
+        second.picks.process = process
+
+        await second.save()
+
+        XCTAssertEqual(first.state, second.state)
+        XCTAssertFalse(second.picksNotKept)
+        XCTAssertEqual(try queue(harness.store), ["create bean"])
+        XCTAssertEqual(try harness.store.beans().first?.pickedAttributes.process, process)
+    }
+
+    func testAnOfflineDescriptionOfACatalogueBeanSaysThePicksWereNotKept() async throws {
+        let harness = try makeHarness()
+        try harness.store.addBean(StoredBean(catalogueBean(id(908), barcode: PendingBeanSyncTests.barcode)), syncState: .synced)
+        goOffline(harness)
+        let entryModel = BeanEntryModel(barcode: try scanned, client: harness.server.client(), offlineStore: harness.store)
+        entryModel.picks.process = try StoreFixtures.first(Vocabulary.Process.self)
+
+        await entryModel.save()
+
+        guard case .savedOffline = entryModel.state else {
+            return XCTFail("expected the bean to be saved on the device, got \(entryModel.state)")
+        }
+        XCTAssertTrue(entryModel.picksNotKept)
+        XCTAssertTrue(try harness.store.outboxOperations().isEmpty)
+    }
+
     func testWithoutAStoreAFailedSaveStillOffersTryAgain() async throws {
         let server = try FakeSyncServer()
         server.backend.setOverride { _ in throw URLError(.notConnectedToInternet) }
@@ -398,7 +653,9 @@ final class PendingBeanSyncTests: XCTestCase {
 
         await entryModel.save()
 
-        XCTAssertEqual(entryModel.state, .failed(.retryable))
+        withExtendedLifetime(server) {
+            XCTAssertEqual(entryModel.state, .failed(.retryable))
+        }
     }
 
     // MARK: - Durability
@@ -407,13 +664,12 @@ final class PendingBeanSyncTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appending(path: "PendingBeanSyncTests-\(UUID().uuidString)", directoryHint: .isDirectory)
         defer { try? FileManager.default.removeItem(at: directory) }
         let account = AccountID(subject: AuthFixtures.subject)
-        let barcode = try XCTUnwrap(CanonicalBarcode(PendingBeanSyncTests.barcode))
         let beanID: UUID
         do {
             let store = try AccountStore.open(for: account, in: directory)
-            beanID = try store.pendingBean(barcode: barcode).localID
-            let editor = ShelfEntryEditorModel(mode: .addStored(beanID), store: store)
+            let editor = ShelfEntryEditorModel(mode: .addScanned(try scanned), store: store)
             let entry = try XCTUnwrap(store.shelfEntry(localID: try XCTUnwrap(editor.save())))
+            beanID = try XCTUnwrap(entry.bean?.localID)
             try store.addBrew(try StoredBrew(try StoreFixtures.brewInput()), shelfEntry: entry)
         }
 

@@ -80,7 +80,15 @@ final class LabelPhotoQueue {
                 continue
             }
             let file = files.directory.appending(path: photo.fileName, directoryHint: .notDirectory)
-            guard let bean = try? store.bean(localID: photo.beanLocalID), !bean.verified else {
+            let found: StoredBean?
+            do {
+                found = try store.bean(localID: photo.beanLocalID)
+            } catch {
+                // The store could not be read: nothing is dropped; the next run tries again.
+                continue
+            }
+            guard let bean = found, !bean.verified else {
+                // Gone (discarded) or verified (it takes no photos): the photo ends here.
                 finish(id, deleting: file)
                 continue
             }

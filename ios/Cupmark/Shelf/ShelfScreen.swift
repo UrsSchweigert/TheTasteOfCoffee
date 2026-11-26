@@ -58,9 +58,13 @@ struct ShelfScreen: View {
     /// The Open Food Facts hits of pending beans waiting for the user (M2-T25).
     @State private var pendingBeans: PendingBeansModel
     @State private var isConfirmingBeans = false
-    /// Whether the hits were offered since the app was last opened; they are asked once each
-    /// time the app comes to the foreground, not on every return to the shelf.
+    /// Whether the questions were offered since the app was last opened; they are asked once
+    /// each time the app comes to the foreground, not on every return to the shelf.
     @State private var askedForConfirmation = false
+    /// Whether the shelf itself is on screen: false while a screen is pushed over it (an entry,
+    /// the scan flow, the sync issues), whatever that screen presents. With no sheet of its own
+    /// up, this is the gate for the questions.
+    @State private var isOnScreen = false
     @Environment(\.apiClient) private var apiClient
     @Environment(\.scenePhase) private var scenePhase
 
@@ -93,13 +97,13 @@ struct ShelfScreen: View {
                     .accessibilityIdentifier("shelf-sync-issues")
                 }
             }
-            if model.confirmationCount > 0 {
+            if model.questionCount > 0 {
                 Section {
                     Button {
                         isConfirmingBeans = true
                     } label: {
                         LabeledContent {
-                            Text(model.confirmationCount, format: .number)
+                            Text(model.questionCount, format: .number)
                         } label: {
                             Label {
                                 Text(L10n.pendingBeansRow)
@@ -188,8 +192,12 @@ struct ShelfScreen: View {
             }
         }
         .onAppear {
+            isOnScreen = true
             model.reload()
             askForConfirmationIfDue()
+        }
+        .onDisappear {
+            isOnScreen = false
         }
         .onReceive(NotificationCenter.default.publisher(for: AccountStore.didSaveNotification, object: store)) { _ in
             model.reload()
@@ -209,8 +217,9 @@ struct ShelfScreen: View {
     /// Opens the confirmation of pending beans' Open Food Facts hits once per opening of the
     /// app, if there are any (M2-T25).
     private func askForConfirmationIfDue() {
-        // Not over a brew form or a scan the user is in the middle of.
-        guard !askedForConfirmation, !isConfirmingBeans, brewing == nil, !isScanning else {
+        // Only on the bare shelf: not over its own brew sheet, and not while any pushed screen
+        // (and whatever sheet that screen shows) covers it.
+        guard isOnScreen, !askedForConfirmation, !isConfirmingBeans, brewing == nil, !isScanning else {
             return
         }
         pendingBeans.reload()

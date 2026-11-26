@@ -278,7 +278,8 @@ final class LabelPhotoQueueTests: XCTestCase {
         // A pending scan with a queued photo, and then the catalogue bean of the same barcode
         // cached on the device (by another flow) before the outbox looked the scan up.
         let barcode = try XCTUnwrap(CanonicalBarcode("4006381333931"))
-        let pending = try store.pendingBean(barcode: barcode)
+        let entryID = try XCTUnwrap(ShelfEntryEditorModel(mode: .addScanned(barcode), store: store).save())
+        let pending = try XCTUnwrap(store.shelfEntry(localID: entryID)?.bean)
         let file = try queuePhoto(for: pending, in: store)
         // Read now: the engine deletes the pending bean.
         let pendingID = pending.localID
@@ -291,6 +292,7 @@ final class LabelPhotoQueueTests: XCTestCase {
 
         XCTAssertNil(try store.bean(localID: pendingID))
         XCTAssertEqual(try store.queuedLabelPhotos().first?.beanLocalID, cached.localID)
+        XCTAssertEqual(try store.shelfEntry(localID: entryID)?.bean?.localID, cached.localID)
         XCTAssertTrue(LabelPhotoFixtures.fileExists(file))
     }
 }

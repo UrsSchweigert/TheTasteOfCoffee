@@ -1244,10 +1244,16 @@ test('label photo upload: the Swift patterns equal the contract, and the S3 POST
 test('offline scan: pending beans write through AccountStore and never send Open Food Facts text (M2-T25)', () => {
   const masked = (path) => lexSwift(readFileSync(join(repoRoot, path), 'utf8')).masked;
   const lookup = masked('ios/Cupmark/Lookup/LookupModel.swift');
-  assert.match(lookup, /store\.pendingBean\(barcode: barcode\)/, 'a barcode scanned offline is kept as a pending bean');
+  assert.doesNotMatch(lookup, /\bstore\b/, 'the lookup stores nothing: the shelf form saves the pending bean with its entry');
+  const editor = masked('ios/Cupmark/Shelf/ShelfEntryEditorModel.swift');
+  assert.match(editor, /try add\(try store\.pendingBean\(barcode: barcode\)\)/, 'a barcode scanned offline is kept with its shelf entry');
   const confirmation = masked('ios/Cupmark/Lookup/PendingBeanConfirmation.swift');
-  assert.match(confirmation, /store\.confirmOpenFoodFacts\(beanLocalID: prompt\.id, picks: self\.picks\)/);
-  assert.match(confirmation, /store\.rejectOpenFoodFacts\(beanLocalID: prompt\.id\)/);
+  assert.match(confirmation, /store\.confirmOpenFoodFacts\(beanLocalID: prompt\.beanID, picks: self\.picks\)/);
+  assert.match(confirmation, /store\.rejectOpenFoodFacts\(beanLocalID: prompt\.beanID\)/);
+  assert.match(confirmation, /store\.skipDescription\(beanLocalID: prompt\.beanID\)/);
+  // A miss or a rejected hit is described with the pick-list entry, as online (docs/04 F1 step 4).
+  assert.match(confirmation, /BeanEntryScreen\(model: entry/);
+  assert.match(confirmation, /describing: prompt\.beanID/);
   for (const code of [lookup, confirmation, masked('ios/Cupmark/LabelPhoto/LabelPhotoQueue.swift')]) {
     assert.doesNotMatch(code, /\bcontext\s*\.\s*(insert|save|delete)\(/, 'writes go through AccountStore (ADR 0025)');
     assert.doesNotMatch(code, /\.searchable\b|\bTextField\b|\bTextEditor\b|\bSecureField\b/, 'no typed text (invariant 1)');
