@@ -123,6 +123,40 @@ final class AccessibilityAuditTests: XCTestCase {
         try auditAtBothSizes(.settings) { app in app.switches["settings-consent"] }
     }
 
+    // MARK: - Navigation
+
+    /// M2-T40: back from a brew's rating shows the brew list, not an empty screen with a
+    /// warning triangle. Uses the real shelf stack: bag, "Brews", a brew, Back.
+    @MainActor
+    func testBackFromARatingShowsTheBrewList() throws {
+        let app = launch(.shelf, size: .standard)
+        let rows = app.buttons.matching(identifier: "shelf-entry-row")
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 30), "the shelf did not appear")
+        // The fixture's first bag has the brews; try each bag until one lists a brew.
+        var opened = false
+        for index in 0..<rows.count {
+            rows.element(boundBy: index).tap()
+            let brews = app.buttons["shelf-entry-brews"]
+            XCTAssertTrue(brews.waitForExistence(timeout: 10), "the shelf entry did not open")
+            brews.tap()
+            if app.buttons["brew-list-row"].firstMatch.waitForExistence(timeout: 5) {
+                opened = true
+                break
+            }
+            app.navigationBars.buttons.firstMatch.tap()
+            app.navigationBars.buttons.firstMatch.tap()
+            XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 10))
+        }
+        XCTAssertTrue(opened, "no bag of the fixture lists a brew")
+        app.buttons["brew-list-row"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["rating-save"].waitForExistence(timeout: 10), "the rating did not open")
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.buttons["brew-list-row"].firstMatch.waitForExistence(timeout: 10), "back from the rating did not show the brew list")
+        XCTAssertFalse(app.buttons["rating-save"].exists, "the rating is still shown")
+        XCTAssertFalse(app.buttons["shelf-entry-brews"].exists, "back went past the brew list to the shelf entry")
+        XCTAssertFalse(app.images["exclamationmark.triangle"].exists, "a placeholder for a missing destination is shown")
+    }
+
     // MARK: - VoiceOver label, value and adjusting
 
     /// A score reads "<criterion>, <score> of 10" and moves along its scale (the slider is the

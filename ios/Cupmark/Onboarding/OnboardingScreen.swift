@@ -53,19 +53,20 @@ struct OnboardingScreen: View {
             VStack(alignment: .leading, spacing: 20) {
                 Text(L10n.onboardingStep(model.stepNumber.formatted(), of: model.stepCount.formatted()))
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .secondaryText()
                 Image(systemName: symbol(for: model.page))
                     .font(.largeTitle)
                     .foregroundStyle(.tint)
                     .accessibilityHidden(true)
                 Text(title(for: model.page))
-                    .font(.title2.bold())
+                    .themeTitle(.title2)
                     .accessibilityAddTraits(.isHeader)
                 pageBody
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
         }
+        .screenBackground()
         .accessibilityIdentifier("onboarding")
         .safeAreaInset(edge: .bottom) {
             controls
@@ -85,10 +86,11 @@ struct OnboardingScreen: View {
             Toggle(isOn: $model.agrees) {
                 Text(L10n.onboardingConsentAgree)
             }
+            .tint(Theme.accent)
             .accessibilityIdentifier("onboarding-consent-agree")
             Text(L10n.onboardingConsentChangeLater)
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .secondaryText()
         }
     }
 
@@ -101,7 +103,7 @@ struct OnboardingScreen: View {
                     Image(systemName: "exclamationmark.triangle")
                         .accessibilityHidden(true)
                 }
-                .foregroundStyle(.red)
+                .foregroundStyle(Theme.errorText)
             }
             Button {
                 model.next()
@@ -109,7 +111,7 @@ struct OnboardingScreen: View {
                 Text(model.page.isLast ? L10n.onboardingFinish : L10n.onboardingNext)
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.prominent)
             .controlSize(.large)
             .accessibilityIdentifier(model.page.isLast ? "onboarding-finish" : "onboarding-next")
             Button {
@@ -127,7 +129,7 @@ struct OnboardingScreen: View {
         }
         .padding()
         // A solid colour: the contrast audit measures against what shows through a material.
-        .background(Color(.systemBackground))
+        .background(Theme.listBackground)
     }
 
     private func title(for page: OnboardingPage) -> LocalizedStringKey {

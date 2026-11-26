@@ -51,7 +51,8 @@ struct AccountDeletionRequests: Sendable {
 ///    A record that cannot be decoded asks the same before the signed-in account is deleted.
 /// 4. After the 204 the record becomes `serverDeleted`; then the local data of every account in
 ///    the record goes (`AccountLocalData`: the store with the outbox, the label photo folder
-///    with its queued photos, the cached images, export files), then the sign-out (the Keychain
+///    with its queued photos, the brew photo folder (M2-T42), the cached images, export files),
+///    then the sign-out (the Keychain
 ///    sign-in, with `accountDeleted`, or `otherAccountDeleted` when the record was moved), and
 ///    last the record itself. Every step is safe to repeat.
 @MainActor

@@ -27,7 +27,9 @@ struct FlavourCategoryList: View {
                     .accessibilityIdentifier("rating-flavour-category")
                 }
             }
+            .surfaceRow()
         }
+        .listBackground()
         .navigationTitle(Text(L10n.ratingNotesHeader))
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -54,6 +56,7 @@ struct FlavourNoteList: View {
                             Spacer()
                             if model.draft.isPicked(note) {
                                 Image(systemName: "checkmark")
+                                    .accentText()
                                     .accessibilityHidden(true)
                             }
                         }
@@ -65,7 +68,9 @@ struct FlavourNoteList: View {
                     .accessibilityIdentifier("rating-flavour-note")
                 }
             }
+            .surfaceRow()
         }
+        .listBackground()
         .navigationTitle(Text(verbatim: VocabularyLabels.label(for: category, in: vocabulary, language: language)))
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -93,7 +98,9 @@ struct FlavourNoteCountSection: View {
             if !draft.canPickMoreNotes {
                 Text(L10n.ratingNotesFull)
                     .accessibilityIdentifier("rating-notes-full")
+                    .secondaryText()
             }
         }
+        .surfaceRow()
     }
 }

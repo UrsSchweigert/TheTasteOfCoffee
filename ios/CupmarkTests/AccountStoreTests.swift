@@ -7,14 +7,20 @@ import XCTest
 final class AccountStoreTests: XCTestCase {
     // MARK: - Schema
 
-    func testTheSchemaIsAtVersion3WithLightweightStagesFromVersions1And2() {
+    func testTheSchemaIsAtVersion4WithLightweightStagesFromVersions1To3() {
         XCTAssertEqual(CupmarkSchemaV1.versionIdentifier, Schema.Version(1, 0, 0))
         XCTAssertEqual(CupmarkSchemaV2.versionIdentifier, Schema.Version(2, 0, 0))
         XCTAssertEqual(CupmarkSchemaV3.versionIdentifier, Schema.Version(3, 0, 0))
-        XCTAssertEqual(CupmarkMigrationPlan.schemas.count, 3)
+        XCTAssertEqual(CupmarkSchemaV4.versionIdentifier, Schema.Version(4, 0, 0))
+        XCTAssertEqual(CupmarkMigrationPlan.schemas.count, 4)
         XCTAssertTrue(CupmarkMigrationPlan.schemas.first == CupmarkSchemaV1.self)
-        XCTAssertTrue(CupmarkMigrationPlan.schemas.last == CupmarkSchemaV3.self)
-        XCTAssertEqual(CupmarkMigrationPlan.stages.count, 2)
+        XCTAssertTrue(CupmarkMigrationPlan.schemas.last == CupmarkSchemaV4.self)
+        XCTAssertEqual(CupmarkMigrationPlan.stages.count, 3)
+        // The app opens stores with the newest version's entities.
+        XCTAssertEqual(
+            Set(AccountStore.schema.entities.map(\.name)),
+            Set(CupmarkSchemaV4.models.map { model in String(describing: model) })
+        )
         let names = Set(CupmarkSchemaV1.models.map { model in String(describing: model) })
         // `OutboxOperation` joined version 1 before any release (M2-T16, ADR 0025).
         XCTAssertEqual(names, ["StoredBean", "StoredShelfEntry", "StoredBrew", "StoredRecipe", "StoredProfile", "OutboxOperation"])
@@ -22,8 +28,12 @@ final class AccountStoreTests: XCTestCase {
         let second = Set(CupmarkSchemaV2.models.map { model in String(describing: model) })
         XCTAssertEqual(second, names.union(["QueuedLabelPhoto"]))
         // Version 3 (M2-T26) has the same entities; brews and recipes gain the grinder columns.
-        let current = Set(CupmarkSchemaV3.models.map { model in String(describing: model) })
-        XCTAssertEqual(current, second)
+        let third = Set(CupmarkSchemaV3.models.map { model in String(describing: model) })
+        XCTAssertEqual(third, second)
+        // Version 4 (M2-T42) keeps every model of version 3 and adds the brew photo.
+        let current = Set(CupmarkSchemaV4.models.map { model in String(describing: model) })
+        XCTAssertEqual(current, third.union(["StoredBrewPhoto"]))
+        XCTAssertEqual(CupmarkSchemaV4.models.count, CupmarkSchemaV3.models.count + 1)
     }
 
     // MARK: - Outbox sequences
@@ -189,7 +199,7 @@ final class AccountStoreTests: XCTestCase {
     func testOnlyBeansShelfEntriesBrewsAndRecipesCanBeDeleted() {
         // `markDeleted` takes `LocalDeletable` models only, so the profile does not compile
         // as an argument. This pins the list of conforming models.
-        let deletable = CupmarkSchemaV3.models
+        let deletable = CupmarkSchemaV4.models
             .filter { model in model is any LocalDeletable.Type }
             .map { model in String(describing: model) }
         XCTAssertEqual(Set(deletable), ["StoredBean", "StoredShelfEntry", "StoredBrew", "StoredRecipe"])

@@ -73,7 +73,7 @@ struct AddToShelfBar: View {
             Text(L10n.shelfAdd)
                 .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(.prominent)
         .controlSize(.large)
         .accessibilityIdentifier("add-to-shelf")
         .padding()

@@ -144,14 +144,14 @@ struct LookupFallbackView: View {
                             .accessibilityHidden(true)
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.prominent)
                 .controlSize(.large)
                 .accessibilityHint(Text(L10n.lookupKeepForLaterHint))
                 .accessibilityIdentifier("lookup-keep-for-later")
             }
             if onKeepForLater == nil {
                 pickListButton
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.prominent)
                     .controlSize(.large)
             } else {
                 pickListButton
@@ -173,6 +173,7 @@ struct LookupFallbackView: View {
                 .accessibilityIdentifier("lookup-retry")
             }
         }
+        .screenBackground()
     }
 
     private var pickListButton: some View {
@@ -253,6 +254,7 @@ struct PendingBeanView: View {
                     .accessibilityValue(Text(verbatim: barcode.digits))
             }
         }
+        .screenBackground()
     }
 }
 

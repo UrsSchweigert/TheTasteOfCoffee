@@ -68,6 +68,7 @@ struct RootView: View {
                         }
                     }
                 }
+                .surfaceRow()
                 Section {
                     ForEach(Vocabulary.Method.allCases) { method in
                         // Vocabulary labels come from contracts/i18n, not the String Catalog.
@@ -75,8 +76,11 @@ struct RootView: View {
                     }
                 } header: {
                     Text(L10n.rootMethodsHeader)
+                        .secondaryText()
                 }
+                .surfaceRow()
             }
+            .listBackground()
         case .failed:
             ContentUnavailableView {
                 Label {
@@ -88,6 +92,7 @@ struct RootView: View {
             } description: {
                 Text(L10n.rootVocabularyErrorMessage)
             }
+            .screenBackground()
         }
     }
 }

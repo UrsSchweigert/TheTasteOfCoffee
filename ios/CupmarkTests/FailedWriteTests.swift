@@ -85,6 +85,7 @@ final class FailedWriteTests: XCTestCase {
         case let profile as StoredProfile: return "profile \(profile.localID)"
         case let operation as OutboxOperation: return "operation \(operation.sequence)"
         case let photo as QueuedLabelPhoto: return "photo \(photo.localID)"
+        case let photo as StoredBrewPhoto: return "brew_photo \(photo.localID)"
         default: return "unknown \(type(of: model))"
         }
     }
@@ -202,10 +203,11 @@ final class FailedWriteTests: XCTestCase {
             "StoredProfile": (restored(StoredProfile.self), ["localID"]),
             "OutboxOperation": (restored(OutboxOperation.self), ["sequence", "localID"]),
             "QueuedLabelPhoto": (restored(QueuedLabelPhoto.self), ["localID"]),
+            "StoredBrewPhoto": (restored(StoredBrewPhoto.self), ["localID"]),
         ]
         let entities = AccountStore.schema.entities
         XCTAssertEqual(Set(entities.map(\.name)), Set(expected.keys))
-        XCTAssertTrue(CupmarkSchemaV3.models.allSatisfy { model in model is any SavedValuesRestorable.Type })
+        XCTAssertTrue(CupmarkSchemaV4.models.allSatisfy { model in model is any SavedValuesRestorable.Type })
         for entity in entities {
             guard let names = expected[entity.name] else {
                 XCTFail("no restore for \(entity.name)")
@@ -235,6 +237,7 @@ final class FailedWriteTests: XCTestCase {
         check(StoredProfile.self)
         check(OutboxOperation.self)
         check(QueuedLabelPhoto.self)
+        check(StoredBrewPhoto.self)
     }
 
     // MARK: - What a restore reports, and the faults of a discard (M2-T37)

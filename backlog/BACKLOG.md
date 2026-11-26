@@ -931,6 +931,109 @@ Planning notes (planned 2026-11-25):
   - If the owner would rather have a Cupmark-owned site (S3 and CloudFront named `cupmark-`), that is a cost and DNS decision: ask first, record an ADR.
   - When M4 adds the paid tier, its terms are added to the page first.
 
+### M2-T40 Back from a brew's rating shows an empty screen with a warning triangle
+- status: needs-mac-verification (found on a device by the owner; the fix and its UI test first run in the `ios` job)
+- owner: ios-engineer
+- depends: M2-T20
+- acceptance: the brew list is pushed and the rating is pushed with destinations registered at the stack root; back from a rating shows the brew list; a UI test covers it; no other pushed destination registers a value destination inside a pushed view.
+- Mac: the `ios` job; the owner re-checks on the device in M2-T34.
+
+### M2-T41 The coffee look: palette, named colours and warmer headings
+- status: done (#89; the macOS `ios` job passed on d8015e3, including the contrast tests; the look on a device is judged by the owner)
+- owner: ios-engineer
+- depends: M2-T40
+- implements: owner decision of 2026-11-26 ("the taste looks good"); docs/04-specification.md, Non-functional (Accessibility: Dynamic Type); docs/03-project-brief.md, Goals
+- note: the owner accepted the lead's proposal: a warm espresso-brown accent colour (a lighter caramel variant in dark mode), cream backgrounds behind forms and lists in light mode and a dark-roast brown in dark mode, rating sliders and scores in the accent colour, slightly warmer heading styles on system fonts. The app icon stays the placeholder bean; it is redrawn later and is not part of this task. If this task turns out larger than one pull request, split the colour sets and the ADR from the screen changes.
+- acceptance:
+  - An ADR (lead, ADR 0014) records the palette: each colour's name, its light and dark value, and the contrast ratio it was checked at. Text on its background passes WCAG AA (4.5:1; 3:1 for large text and for the slider track and thumb). The ADR is written before the colour sets.
+  - All colours are named colour sets in `ios/Cupmark/Assets.xcassets`, each with a light and a dark (`appearances`) value: at least `AccentColor` (espresso brown; caramel in dark), `FormBackground` and `ListBackground` (cream; dark-roast brown in dark), and any surface or secondary colour the ADR names. The set names are the only place a colour is defined.
+  - Screens read colours only through these names (the asset's generated symbols or one `Theme` file). No `Color(red:`, `Color(white:`, `UIColor(red:`, hex literal or system colour used as a brand colour remains in a screen. A static check in `scripts/` (run by the `ios` job and `npm test` alongside the other script checks) fails on such a literal outside the `Theme` file, with a test that shows it failing on a fixture that has one.
+  - Forms and lists use the cream and dark-roast backgrounds (`scrollContentBackground(.hidden)` with the named background). Rating sliders, scores and the selected state of pick lists use the accent colour. Headings use a slightly warmer style by weight and design (for example `.rounded` design for titles) on system fonts only: no bundled or downloaded font, so Dynamic Type works unchanged.
+  - A unit test reads each named colour set from the asset catalogue JSON and checks the contrast of every text and background pairing the ADR lists, in both appearances, against 4.5:1 (3:1 where the ADR says large text or a control). It fails when a value is changed to a failing one.
+  - The accessibility static checks (`scripts/check-ios-accessibility.mjs`) still pass. The UI test audits (M2-T33) still run on every screen at both text sizes and still only report; this task does not turn them into a gate. The findings count in the job log does not rise compared with the previous run on `main`.
+  - No new dependency, no third-party SDK (invariant 7), no text typed by the user (invariant 1).
+  - Mac: the `ios` job. Marked `needs-mac-verification` until it passes; the look on a device is judged by the owner in M2-T34.
+
+### M2-T42 Brew photos: the local model, the files and their deletion
+- status: needs-mac-verification (written on Linux; the schema v4 migration from a real v3 store and the brew photo store tests first run in the `ios` job)
+- owner: ios-engineer (run on the opus model: it touches `ios/Cupmark/Store`)
+- depends: M2-T40, M2-T31, M2-T23
+- implements: owner decision of 2026-11-26 (brew photos stay on the device); docs/05-system-design.md, Security and Data (local store); docs/04-specification.md, Non-functional (account deletion in the app); ADR 0030 (how a local schema version is added); ADR 0031 (the account deletion cleanup, point 6); invariants 1 and 6
+- note: from the owner's decision: stored on the device only. Nothing is uploaded, nothing goes to the CSV export, there is no cloud cost and no change to the App Privacy answers. No captions or any typed text (invariant 1): a photo has no title, no note. No endpoint, no contract change, no outbox operation. If this task turns out larger than one pull request, split the schema and the store API from the cleanup paths.
+- acceptance:
+  - An ADR (lead, ADR 0014, like 0030) records: local schema version 4 with one new model, `StoredBrewPhoto`; a lightweight stage from version 3; photos are files in `Application Support/BrewPhotos/<account id>/` (next to `LabelPhotos`, one folder per account like the store, ADR 0020); a photo is linked to its brew by the brew's `localID` (a `UUID` attribute, no SwiftData relationship, so `StoredBrew` and its hash do not change); an iCloud device backup includes the files, so they are not excluded from backups, in contrast to the label photos, and the privacy text says nothing contrary; files are written with `.completeFileProtection` like the label photos.
+  - `CupmarkSchemaV4` lists version 3's models unchanged plus `StoredBrewPhoto` (`localID` unique, `brewLocalID`, `fileName`, `createdAt`; no `serverID`, no sync state, no `vocabularyVersion` since it holds no vocabulary value). `CupmarkMigrationPlan` gets the lightweight stage 3 to 4, and the typealiases move. `StoredBrewPhoto` is not part of any API type, the outbox or the CSV export.
+  - A brew holds up to 6 photos (`BrewPhotoLimits.maxPerBrew = 6`). Adding a seventh is refused with a typed error and writes no file and no record.
+  - Metadata is stripped on the device by reusing `LabelPhotoEncoder` (orientation applied to the pixels, a fresh bitmap, only the allowed JPEG segments). It is called with its own `Limits` value for local photos (a smaller longest side and file size than the upload limits, named in the ADR). A test encodes a fixture with EXIF, GPS and TIFF segments and checks that none of them is in the stored file.
+  - `AccountStore+BrewPhotos`: `addBrewPhoto(to:jpeg:)` (writes the file, then the record in one `write { }`; a failed save removes the file), `brewPhotos(of:)` newest first, `allBrewPhotos()` newest first, `deleteBrewPhoto(_:)` (record and file), and a file URL lookup by record. A photo whose file is missing is reported, not a crash.
+  - Deleting a brew deletes its photos: every path that removes a `StoredBrew` from the device (the user's delete, a pull that drops a brew deleted on another device, discarding a sync issue that removes the brew) also deletes its records and files. A test per path.
+  - An orphan sweep at store open: records whose brew is gone, and files in the account's folder that no record lists, are deleted. Tests cover both.
+  - Account deletion removes all of them: the cleanup after the 204 (ADR 0031, point 6) also deletes `BrewPhotos/<account>/` for each listed account, before the sign-out, and is safe to repeat. "Remove Data of Other Accounts" (M2-T30) removes the other accounts' brew photo folders. A test proves that after a deletion run, with brews that hold photos, no file and no folder of `BrewPhotos` is left for the account, and a second run changes nothing. Signing out alone keeps the photos with the account's store, as it keeps the store (ADR 0020).
+  - Tests: the migration from a real version 3 store file to version 4 keeps every brew and adds an empty photo list (in `StoreMigrationTests`); the limit of 6; delete one photo; delete a brew; the sweep; the account cleanup; the encoder strips metadata. `StoreFixtures` ids stay valid ULIDs.
+  - Privacy manifest: any file API the new code uses is checked against the required-reason list. File timestamps are already declared with C617.1; the task states in the ADR whether anything else (disk space, user defaults, system boot time) is used, and adds an entry only if it is. `scripts/check-no-free-text.sh` passes.
+  - Mac: the `ios` job. Marked `needs-mac-verification` until it passes.
+
+### M2-T42b Brew photos: take or pick a photo on a brew
+- status: todo
+- owner: ios-engineer
+- depends: M2-T42
+- implements: owner decision of 2026-11-26 (brew photos); docs/04-specification.md, F2 (brew log); invariants 1 and 7
+- acceptance:
+  - On a brew (the rating screen from M2-T20 and the brew list's detail), a "Photos" section shows the brew's photos as small thumbnails with a control to add one. Two ways, both optional: take a picture with the camera (reusing `LabelPhotoCamera` and its availability check; the step is hidden without a camera, and a denied permission shows the Settings link as for label photos), or pick one from the photo library with the system picker (`PhotosPicker`, out of process, so no photo library permission and no `NSPhotoLibraryUsageDescription`). No captions or any text field (invariant 1). No third-party SDK.
+  - A capture or a pick is encoded off the main actor by the M2-T42 store API (metadata stripped). A failure (unreadable image, too large, the limit of 6) shows a localised message and keeps the brew as it was. When the brew has 6 photos the add control is disabled and says why.
+  - A photo can be deleted from the brew's section with a confirmation; deleting it deletes the file.
+  - The camera usage description in `InfoPlist.xcstrings` (en and de) and the matching `INFOPLIST_KEY_NSCameraUsageDescription` in `project.pbxproj` also say that the camera photographs a brew. `scripts/check-ios-strings.mjs` still passes. The ADR of M2-T42 or a short note records that the photo picker needs nothing else and that the privacy manifest needs no change (checked against the required-reason APIs).
+  - The companion page (`site/index.html` and `site/de/index.html`) gets one added sentence in the privacy text: brew photos stay on the device and are never uploaded. `scripts/site.test.mjs` is updated so that the sentence is required in both languages and the two pages stay in step. The page remains a draft owned by the owner for publishing (M2-T39); this task only edits the repo files.
+  - Every control has a VoiceOver label and value through the localisation catalogue (for example "Brew photos, 2 of 6"), and the 44-point targets and Dynamic Type hold; the static accessibility checks pass.
+  - Tests: unit tests of the section's model with a fake camera environment and a fake picker result (add, limit, failure, delete with confirmation); a UI test with the harness (M2-T33) that adds a fixture photo to a brew through a debug-only stub of the picker, sees the thumbnail, and deletes it.
+  - Mac: the `ios` job; the camera and the real picker are checked on a device in M2-T34. Marked `needs-mac-verification` until the job passes.
+
+### M2-T43 Brew photo gallery from the shelf, with pick-list filters
+- status: todo
+- owner: ios-engineer
+- depends: M2-T42
+- implements: owner decision of 2026-11-26 (photo browsing); docs/04-specification.md, F2; M2-T40 (the route registration rule); invariant 1 (no search box)
+- note: M2-T42b is where photos are added in the app; the gallery is built and tested with fixture photos, so it does not wait for it, but merging it first lets the owner try both together.
+- acceptance:
+  - A toolbar button (or a row) on the shelf screen opens the gallery: a grid of all brew photos of the account, newest first (the store's `allBrewPhotos()`), with an empty state. The grid uses adaptive columns (`GridItem(.adaptive(minimum:))`) so Dynamic Type and the width change the column count; at the largest accessibility size it is one column.
+  - Filters are pick lists only: method (from the vocabulary) and bag (the user's shelf entries, shown by bean attributes and purchase date like the rest of the app). No search box and no text field (invariant 1). A filter can be cleared. Filtering changes the grid and its count in the VoiceOver value.
+  - Each photo's accessibility label is built from method, bag and date through the localisation catalogue with formatters (no typed text), for example "Espresso, Ethiopia washed bag, 12 Nov 2026". `scripts/check-ios-strings.mjs` passes (en and de).
+  - Navigation: the gallery is reached by a value route registered at the stack root with the other routes in `ShelfScreen.swift` (or a file added to the allow-list on purpose, with the reason in a comment). Photos load as downsampled thumbnails off the main actor, not the full file in the grid.
+  - From the M2-T40 review: strengthen the static test for navigation destinations. Every type `X` used in `NavigationLink(value: X(...))` anywhere in `ios/Cupmark` must have a matching `navigationDestination(for: X.self)` in the allowed files. A test of the check shows it failing on a fixture with a link whose type has no destination, and passing when the destination exists. The allow-list stays `Shelf/ShelfScreen.swift` and `Brew/BrewRoutes.swift`, plus a file added here only on purpose.
+  - Tests: unit tests of the gallery model (order, each filter alone and both, clear, empty, photos of another account never shown, the VoiceOver label parts in en and de); a UI test with the harness (M2-T33) that opens the gallery from the shelf with fixture photos, applies a method filter, and sees the count change.
+  - Mac: the `ios` job. Marked `needs-mac-verification` until it passes.
+
+### M2-T43b Brew photo viewer: details, links back and delete
+- status: todo
+- owner: ios-engineer
+- depends: M2-T43
+- implements: owner decision of 2026-11-26 (photo browsing); docs/04-specification.md, F2; M2-T20 (the rating screen), M2-T27 (recipes and `AccountStore.recipe(matching:)`)
+- acceptance:
+  - Tapping a photo in the gallery opens a viewer by a value route registered at the stack root with the others (the static test of M2-T43 passes). It shows the photo full size and the brew's key details: method, dose, ratio, temperature, grind, and the overall score if rated, formatted in the device locale.
+  - Links from the viewer:
+    - to the brew: its rating screen from M2-T20 (`BrewRatingRoute`), which the brew list also uses;
+    - to its bag: the shelf entry screen (`ShelfEntryRoute`); no link when the brew has no shelf entry;
+    - to the recipe: a brew does not store which recipe it came from, so the link shows the saved recipe whose parameters equal the brew's, found with `AccountStore.recipe(matching:)` (parameters conformed to the method rules, as for saving a recipe). When no saved recipe has those parameters the link is not shown; there is no "create recipe" here.
+  - A photo can be deleted from the viewer, after a confirmation with buttons only. It deletes the file and the record, returns to the gallery, and the grid updates. Deleting does not touch the brew.
+  - VoiceOver: the image has the same label as in the grid; the links and the delete button have labels; the viewer works at the largest text size (the details scroll), and a drag or pinch is not the only way to anything.
+  - Tests: unit tests of the viewer model (details, the three links present and absent, the recipe match by parameters and no match, delete); UI tests with the harness for each link (brew, bag, recipe) landing on the right screen, and for delete with its confirmation.
+  - Mac: the `ios` job. Marked `needs-mac-verification` until it passes.
+
+### M2-T44 My averages for one coffee: the dimensions over all my brews of it
+- status: todo
+- owner: ios-engineer
+- depends: M2-T28, M2-T40
+- implements: owner request of 2026-11-26 ("if I click on a coffee, I want to see the averages of all my brews, the dimensions, for that coffee, and later also the community ones"); docs/04-specification.md, F2 and F3; ADR 0027 (personal statistics, computed on the device)
+- note: ADR 0027 gives the taste profile overall and per method, but not per shelf entry. This task adds that view. "A coffee" is a line item on the user's shelf (a shelf entry, one bag), as the owner clarified on 2026-11-26, so the averages cover the brews of that one entry, not every bag of the same bean. The screen says how many rated brews it rests on. No cloud cost: computed on the device from the local store, offline, like the other statistics. The community numbers come with M4 and are not part of this task, but the screen is laid out so they can sit next to the user's own. Note for M4: community aggregates are per bean, so they sit next to the user's averages as "this bean, all raters" while the user's own numbers are for this bag. A view of all of the user's bags of one bean can be added later if wanted (not part of this task).
+- acceptance:
+  - Tapping a line item on the shelf opens its screen (the shelf entry screen, as today, with Brews, the bean and the bag); it gains a "My brews of this coffee" section: the mean of each rating criterion (the dimensions from the vocabulary, in their vocabulary order) over the rated, not removed brews of that shelf entry, plus the mean overall score and the number of rated brews. One decimal, device locale. An optional breakdown by method, shown once a method has at least 2 rated brews (the same threshold as ADR 0027).
+  - The rule set is added to ADR 0027 as an addendum (lead, ADR 0014) and to docs/04 and ios/README.md: which brews count (rated, not removed, of this shelf entry), the threshold, the rounding, the empty state ("Rate a brew to see your averages here", no zeros), and what a single rated brew shows (the values, labelled as one brew, no "average").
+  - The averages come from one function in the statistics code (`StatisticsRules`), with tests on fixtures: brews of two shelf entries of the same bean (each entry counts only its own brews); a removed brew; an unrated brew excluded; a brew rated with an older vocabulary version (read-only, still counted); one rated brew; none; the order of the dimensions; the method breakdown threshold.
+  - The view shows the dimensions as rows with the value and a simple bar (no chart library; SwiftUI shapes in the theme's accent colour). VoiceOver reads "Aroma, 7.5 of 10" through the existing value formatting; 44-point targets and Dynamic Type hold; strings through the catalogue (en and de).
+  - The layout leaves room for a second value per dimension (the community mean and its number of raters, M4): the row's model has an optional community value and the view hides it while it is nil. No server call and no contract change here.
+  - Tests: unit tests of the rules and the row model; a UI test with the harness (M2-T33) that opens a shelf entry with brews and sees the dimension rows and the count.
+  - Mac: the `ios` job. Marked `needs-mac-verification` until it passes.
+
 ## M3 Aggregation
 
 Goal: aggregates per bean and per method stay correct under create, edit, delete and replay. Not yet planned.
@@ -941,13 +1044,13 @@ Scope: stream aggregator, rater markers, recipe histogram buckets, nightly ranki
 
 Goal: subscribers see Explore; free users see the give-to-get teaser. Not yet planned.
 
-Scope: StoreKit 2 purchase and restore, transaction verification, App Store Server Notifications route, entitlement on the profile, paid API routes, Explore screens (bean page, method breakdown, top recipes, rankings), paywall.
+Scope: StoreKit 2 purchase and restore, transaction verification, App Store Server Notifications route, entitlement on the profile, paid API routes, Explore screens (bean page, method breakdown, top recipes, rankings), paywall; the community mean and number of raters per dimension appear next to the user's own averages on the shelf entry screen of M2-T44, labelled as the bean's community numbers (free users see the community overall only for beans they rated, the rest is paid); the privacy manifest gains a purchase-history entry when StoreKit 2 lands (from the review of #84).
 
 ## M5 Hardening
 
 Goal: ready for strangers. Not yet planned.
 
-Scope: App Attest, per-user write caps, budgets and alarms, operator CLI for the review queue and catalogue curation, restore drill from point-in-time recovery and from the S3 export, privacy review, performance against the 300 ms target.
+Scope: App Attest, per-user write caps, budgets and alarms, operator CLI for the review queue and catalogue curation, restore drill from point-in-time recovery and from the S3 export, privacy review, performance against the 300 ms target, Swift 6 readiness (about 55 warnings today, mostly SwiftData `#Predicate` key paths that are not `Sendable`, plus test and sync isolation warnings).
 
 From M1-T4d (ADR 0016, D10): the operator CLI reads label photos from `labels/<photo_id>.jpg` (it needs `s3:GetObject` on `labels/*`) by following the bean's `PHOTO#` items. On verification it copies the photo to `verified/`, where it expires after 90 days, and removes the user-side `PHOTO#` link, so the verified photo is no longer tied to the user.
 
@@ -1013,3 +1116,38 @@ Scope: App Store listing, screenshots, privacy nutrition labels, privacy policy 
     - the ADR 0025 addendum M2-T29 and the code agree on parked profile operations in the merge and adopt branches;
     - a test covers an edit made during the GET while `sentWithoutAnswer` is already true.
   - Mac: the `ios` job.
+
+## Later ideas (not planned, not scheduled)
+
+Owner ideas of 2026-11-26 for after launch or between M4 and M6. Each is planned with `/plan-milestone` when its turn comes. The notes list what a plan has to settle first, so nothing here is decided yet.
+
+### L1 A widget to record a brew
+- status: idea (owner, 2026-11-26)
+- owner: ios-engineer, after a design decision by the lead
+- goal: start or record a brew from the Home Screen or Lock Screen without opening the app.
+- to settle before planning:
+  - **What the widget does.** The shortest useful path is repeating the last brew or a saved recipe in one tap (docs/04 F2, M2-T27), and starting the timer. An interactive widget (iOS 17, App Intents) can run an intent without opening the app; a Live Activity could show a running timer. Pick one or two of these.
+  - **No typed text (invariant 1).** A widget has no text input either; everything it records must be a pick from the vocabulary or a copy of an earlier brew.
+  - **A second target and a shared store.** A widget extension is its own process. It needs the store, so the SwiftData store (and the per-account folders, ADR 0020) must move into an App Group container, with a migration for existing installs. That touches `ios/Cupmark/Store` and the account deletion cleanup (ADR 0031), so it needs an ADR and the Opus engineer.
+  - **A human step.** The App Group and the widget's App ID are created in the Apple Developer account (the owner, as for Sign in with Apple); the entitlement goes in the project. No cloud cost.
+  - **Sign-in state and the token.** The widget must not hold a token; it writes through the app's outbox and the app syncs later. Check that this keeps invariant 3.
+  - **Privacy.** On-device only; the privacy manifest and the App Privacy answers need no change unless a new required-reason API is used (check).
+  - **Accessibility and localisation** (en, de) as for the app.
+
+### L2 Rate coffees from restaurants and other places of purchase
+- status: idea (owner, 2026-11-26); needs the owner before anything is built
+- owner: lead (design), then contract-keeper and the engineers
+- goal: rate a coffee that is not a bag from the shelf: a cup in a café or restaurant, or beans bought somewhere without a barcode.
+- why this is not a small task: it conflicts with three standing rules, so it needs decisions, an ADR and probably an invariant discussion with the owner:
+  - **Identifying the place without typing (invariant 1).** No free text and no arbitrary strings in the API. Options to compare: (a) pick a place from the system's map search (MapKit points of interest, a first-party Apple framework, not a third-party SDK) and store only a server-generated id for it; (b) a closed list of place types (café, restaurant, bakery, roastery, shop, market, other) with no name; (c) a place the user saved earlier. A place name coming from Apple is a string that is not in the vocabulary, so storing it needs an explicit decision on invariant 1 (ADR) or must stay on the device.
+  - **Location.** Finding nearby places needs the location permission. The privacy policy and the companion page say the app uses no location; the App Privacy answers (coarse or precise location) and the privacy manifest change, and the text must say so. Decide between coarse location only, location used on the device and never stored or sent, or no location at all (option b).
+  - **What is being rated.** A cup has no barcode and often an unknown bean. The rating needs its own small shape: a drink type from a closed list (espresso, flat white, filter, and so on), the place (see above), the same criteria or a subset, and optionally the bean when it is known. Decide whether it reuses the brew record or is a new `Outing` model (contract change, vocabulary version bump: contract-keeper first, a new published vocabulary version, never an edit of a published one).
+  - **Community data (invariants 4 and 6).** Decide whether cup ratings feed aggregates, and per place (a place's page would be a new aggregate: five distinct raters, subtract on delete, EU only) or not at all. A place is also personal data of where a person drinks coffee: the policy, the deletion cascade and the export have to cover it.
+  - **Cost (invariant 5).** A server-side place table and any aggregates per place add DynamoDB items; estimate against docs/06 before deciding (pay-per-use only). Ask the owner if it adds cost.
+  - **Photos.** A photo of the cup could reuse the brew photo store (M2-T42) with the same local-only rule.
+- **Artfulness (owner, 2026-11-26).** The owner wants an "artfulness" score for a cup (latte art, presentation) that OTHER people can see, but at the level of the place, not the coffee:
+  - It is not one of the eight bean criteria (those are about how a bean tastes and stay as they are in vocabulary v3). No vocabulary change for beans, no ninth bean criterion. It belongs to the cup-at-a-place rating of this idea, as a score of its own with the same 1 to 10 scale in half steps (a new published vocabulary version when this is built, never an edit of v3; contract-keeper first).
+  - It is shown per place as an aggregate, never as one person's rating: at least five distinct raters before it is returned (invariant 4), subtracted when an account is deleted, EU only (invariant 6). The photo of the cup stays on the device (M2-T42 and ADR 0033); only the score would be shared, so the privacy text, the App Privacy answers and the manifest need the update this idea already lists.
+  - It needs the place to exist first: identifying a place without typing, the location question and the cost are the same open points as above, and artfulness cannot ship before them. Until then, brew photos (M2-T42 and the gallery) stay personal and carry no score.
+  - Who sees place averages (free or paid) is a product decision for the owner when the idea is planned; it affects the business model.
+- first step when it is planned: a design note (ADR) answering the points above, with the owner's decision on location and invariant 1, before any contract or code.

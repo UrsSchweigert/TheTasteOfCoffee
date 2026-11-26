@@ -601,6 +601,9 @@ extension AccountStore {
     /// `lastDiscardReport`). Behaves exactly the same; the report is for tests.
     @discardableResult
     func discardUnsavedChangesReporting() -> DiscardReport {
+        // The brew photo records deleted in the discarded changes come back, so their files
+        // stay (M2-T42, ADR 0033).
+        brewPhotoFilesToRemove.removeAll()
         let changed = context.changedModelsArray
         let deleted = context.deletedModelsArray
         var report = DiscardReport(changedModels: changed.count, deletedModels: deleted.count, heldCaptures: failedSaveCaptures.count)
@@ -1021,6 +1024,23 @@ extension QueuedLabelPhoto: SavedValuesRestorable {
             .attribute("jobData", \.jobData),
             .attribute("attemptCount", \.attemptCount),
             .attribute("nextAttemptAt", \.nextAttemptAt),
+        ]
+    }
+}
+
+extension StoredBrewPhoto: SavedValuesRestorable {
+    static func savedCopy(of model: StoredBrewPhoto, in context: ModelContext) throws -> StoredBrewPhoto? {
+        let localID = model.localID
+        var descriptor = FetchDescriptor<StoredBrewPhoto>(predicate: #Predicate<StoredBrewPhoto> { photo in photo.localID == localID })
+        descriptor.fetchLimit = 1
+        return try context.fetch(descriptor).first
+    }
+
+    static var restoredProperties: [RestoredProperty<StoredBrewPhoto>] {
+        [
+            .attribute("brewLocalID", \.brewLocalID),
+            .attribute("fileName", \.fileName),
+            .attribute("createdAt", \.createdAt),
         ]
     }
 }

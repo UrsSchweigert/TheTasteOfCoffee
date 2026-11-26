@@ -32,6 +32,7 @@ struct IndexedPickList<Item: VocabularyItem>: View {
                     }
                     .accessibilityAddTraits(selection == nil ? [.isSelected] : [])
                 }
+                .surfaceRow()
                 if !recentRows.isEmpty {
                     Section {
                         ForEach(recentRows) { row in
@@ -46,7 +47,9 @@ struct IndexedPickList<Item: VocabularyItem>: View {
                         }
                     } header: {
                         Text(L10n.pickListRecent)
+                            .secondaryText()
                     }
+                    .surfaceRow()
                 }
                 ForEach(sections) { section in
                     Section {
@@ -63,9 +66,12 @@ struct IndexedPickList<Item: VocabularyItem>: View {
                         }
                     } header: {
                         Text(verbatim: section.letter)
+                            .secondaryText()
                     }
+                    .surfaceRow()
                 }
             }
+            .listBackground()
             .safeAreaInset(edge: .trailing, spacing: 0) {
                 // At accessibility text sizes the letters would not fit; the section headers
                 // remain, and VoiceOver users move between them with the headings rotor.
@@ -125,7 +131,7 @@ struct PickListRowLabel<Content: View>: View {
             Spacer(minLength: 8)
             if isSelected {
                 Image(systemName: "checkmark")
-                    .foregroundStyle(.tint)
+                    .accentText()
                     .accessibilityHidden(true)
             }
         }

@@ -302,7 +302,8 @@ extension AccountStore {
         case .shelfEntry:
             if let item = try shelfEntry(localID: localID) { context.delete(item) }
         case .brew:
-            if let item = try brew(localID: localID) { context.delete(item) }
+            // With its photos (M2-T42); their files go after the save.
+            if let item = try brew(localID: localID) { try deleteFromDevice(item) }
         case .recipe:
             if let item = try recipe(localID: localID) { context.delete(item) }
         case .profile:

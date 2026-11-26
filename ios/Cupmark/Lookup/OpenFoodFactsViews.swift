@@ -69,9 +69,12 @@ struct OpenFoodFactsSection: View {
             }
         } header: {
             Text(L10n.openFoodFactsHeader)
+                .secondaryText()
         } footer: {
             Text(L10n.openFoodFactsAttribution)
+                .secondaryText()
         }
+        .surfaceRow()
     }
 }
 
@@ -119,7 +122,9 @@ struct OpenFoodFactsConfirmView: View {
                 Text(L10n.lookupConfirmMessage)
             } header: {
                 Text(L10n.lookupConfirmTitle)
+                    .secondaryText()
             }
+            .surfaceRow()
             OpenFoodFactsSection(product: product, loadImage: loadImage)
             Section {
                 OptionalVocabularyPicker(title: BeanAttributeField.species.title, selection: $picks.species, vocabulary: vocabulary, language: language)
@@ -127,9 +132,12 @@ struct OpenFoodFactsConfirmView: View {
                 OptionalVocabularyPicker(title: BeanAttributeField.roastLevel.title, selection: $picks.roastLevel, vocabulary: vocabulary, language: language)
             } header: {
                 Text(L10n.lookupPicksHeader)
+                    .secondaryText()
             }
+            .surfaceRow()
             .disabled(isSaving)
         }
+        .formBackground()
         .safeAreaInset(edge: .bottom) {
             actions
         }
@@ -149,7 +157,7 @@ struct OpenFoodFactsConfirmView: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.prominent)
             .controlSize(.large)
             .accessibilityIdentifier("lookup-confirm")
             Button {

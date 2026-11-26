@@ -10,15 +10,17 @@ final class LocalDataRemoverTests: XCTestCase {
     private let third = AccountID(subject: "a-third-account-on-this-device")
     private var stores = FileManager.default.temporaryDirectory.appending(path: "LocalDataTests-\(UUID().uuidString)", directoryHint: .isDirectory)
     private var photos = LabelPhotoFixtures.temporaryDirectory()
+    private var brewPhotos = BrewPhotoFixtures.temporaryDirectory()
 
     override func tearDown() {
         try? FileManager.default.removeItem(at: stores)
         try? FileManager.default.removeItem(at: photos)
+        try? FileManager.default.removeItem(at: brewPhotos)
         super.tearDown()
     }
 
     private var remover: LocalDataRemover {
-        LocalDataRemover(storesDirectory: stores, labelPhotos: LabelPhotoFolders(root: photos))
+        LocalDataRemover(storesDirectory: stores, labelPhotos: LabelPhotoFolders(root: photos), brewPhotos: BrewPhotoFolders(root: brewPhotos))
     }
 
     private func exists(_ url: URL) -> Bool {
@@ -92,6 +94,25 @@ final class LocalDataRemoverTests: XCTestCase {
         XCTAssertFalse(exists(folders.store(for: other).directory))
         XCTAssertTrue(exists(folders.store(for: own).directory))
         XCTAssertTrue(exists(folders.queue(for: own).directory))
+    }
+
+    /// M2-T42: the other accounts' brew photo folders go with their stores; the signed-in
+    /// account's photos stay.
+    func testOtherAccountsBrewPhotosGoToo() throws {
+        let folders = BrewPhotoFolders(root: brewPhotos)
+        let jpeg = try BrewPhotoFixtures.photo()
+        let ownPhoto = try folders.files(for: own).write(jpeg)
+        _ = try folders.files(for: other).write(jpeg)
+        _ = try folders.files(for: third).write(jpeg)
+        try FileManager.default.createDirectory(at: stores, withIntermediateDirectories: true)
+
+        try remover.removeOtherAccounts(keeping: own)
+
+        XCTAssertFalse(exists(folders.files(for: other).directory))
+        XCTAssertFalse(exists(folders.files(for: third).directory))
+        XCTAssertTrue(folders.files(for: own).fileExists(ownPhoto))
+        let left = try FileManager.default.contentsOfDirectory(atPath: brewPhotos.path(percentEncoded: false))
+        XCTAssertEqual(left, [own.rawValue])
     }
 
     func testNothingToRemoveIsFine() throws {

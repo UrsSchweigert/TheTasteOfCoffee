@@ -47,3 +47,7 @@ The task leaves open what happens when the token cannot be refreshed before a 20
 - Follow-up: a `DELETE /account` that keeps answering 400, 403 or 404 is retried forever; a note after many attempts is left for a later task.
 - Cost: none beyond the `DELETE /account` requests ADR 0017 already counts and a Cognito token request per run.
 - Revisit if the server's deletion becomes asynchronous (ADR 0017, Alternatives), since the 204 would then no longer mean "deleted".
+
+## Addendum (M2-T42, lead, ADR 0014; no cloud cost)
+
+- Point 6 also deletes the brew photo folder `BrewPhotos/<account>/` of each listed account, after its label photo folder and before the sign-out (`AccountLocalData.remove`), and is safe to repeat like the other steps. Brew photos are on the device only (ADR 0033); while the record exists no store is opened, so no sweep deletes any before the 204.

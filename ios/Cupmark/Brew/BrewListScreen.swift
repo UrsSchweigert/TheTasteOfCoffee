@@ -19,14 +19,17 @@ struct BrewListScreen: View {
         List {
             if model.loadFailed {
                 Text(L10n.shelfStoreErrorTitle)
-                    .foregroundStyle(.secondary)
+                    .secondaryText()
+                    .surfaceRow()
             } else if model.entryMissing {
                 Text(L10n.brewNotFound)
-                    .foregroundStyle(.secondary)
+                    .secondaryText()
+                    .surfaceRow()
                     .accessibilityIdentifier("brew-list-not-found")
             } else if model.rows.isEmpty {
                 Text(L10n.brewListEmpty)
-                    .foregroundStyle(.secondary)
+                    .secondaryText()
+                    .surfaceRow()
                     .accessibilityIdentifier("brew-list-empty")
             } else {
                 ForEach(model.rows) { row in
@@ -35,6 +38,7 @@ struct BrewListScreen: View {
                         BrewListRowView(row: row, vocabulary: vocabulary, language: language)
                     }
                     .accessibilityIdentifier("brew-list-row")
+                    .surfaceRow()
                     .swipeActions(edge: .leading, allowsFullSwipe: true) {
                         // Keeps the brew's parameters as a recipe (M2-T27); VoiceOver lists it
                         // as an action.
@@ -48,20 +52,22 @@ struct BrewListScreen: View {
                                     Image(systemName: "bookmark")
                                 }
                             }
-                            .tint(.indigo)
+                            .tint(Theme.swipeAction)
                             .accessibilityIdentifier("brew-list-save-recipe")
                         }
                     }
                 }
                 if model.recipeSaveFailed {
                     Text(L10n.brewListRecipeSaveFailed)
-                        .foregroundStyle(.secondary)
+                        .secondaryText()
+                        .surfaceRow()
                 }
             }
         }
-        .navigationDestination(for: BrewRatingRoute.self) { route in
-            RatingScreen(store: model.store, brew: route.brewLocalID, mode: .later, vocabulary: vocabulary, language: language)
-        }
+        .listBackground()
+        // No destination is registered here (M2-T40): this view is itself pushed, and a
+        // destination declared inside a pushed view can be lost when the stack rebuilds it.
+        // `BrewRatingRoute` is registered at the stack root, by `brewNavigationDestinations`.
         .navigationTitle(Text(L10n.brewListTitle))
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
@@ -71,11 +77,6 @@ struct BrewListScreen: View {
             model.reload()
         }
     }
-}
-
-/// Pushes the rating of a brew from the brew list.
-struct BrewRatingRoute: Hashable {
-    let brewLocalID: UUID
 }
 
 /// One brew in the list: the time it was brewed, the method, rated or not, and a sync issue.
@@ -99,7 +100,7 @@ struct BrewListRowView: View {
                     .accessibilityHidden(true)
             }
             .font(.subheadline)
-            .foregroundStyle(row.isRated ? HierarchicalShapeStyle.primary : HierarchicalShapeStyle.secondary)
+            .foregroundStyle(row.isRated ? Theme.accent : Theme.textSecondary)
             if row.isRecipe {
                 Label {
                     Text(L10n.brewListIsRecipe)
@@ -108,17 +109,18 @@ struct BrewListRowView: View {
                         .accessibilityHidden(true)
                 }
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .secondaryText()
             }
             if row.issue != nil {
                 Label {
                     Text(L10n.shelfRowIssue)
                 } icon: {
                     Image(systemName: "exclamationmark.icloud")
+                        .foregroundStyle(Theme.errorText)
                         .accessibilityHidden(true)
                 }
                 .font(.footnote)
-                .foregroundStyle(.orange)
+                .secondaryText()
             }
         }
         .padding(.vertical, 2)
