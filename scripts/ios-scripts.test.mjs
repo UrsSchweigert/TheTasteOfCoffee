@@ -1742,7 +1742,8 @@ test('sign-out is in Settings only, not on any toolbar (M2-T51)', () => {
   assert.match(settings, /confirmationDialog\(L10n\.accountSignOutConfirmTitle/);
   // Sign-out sits in the account section, before the account deletion.
   const account = settings.slice(settings.indexOf('private var accountSection'));
-  assert.ok(account.indexOf('settings-sign-out') < account.indexOf('AccountDeletionDestination'), 'sign-out before deletion');
+  assert.ok(account.includes('isConfirmingSignOut'), 'the account section holds the sign-out row');
+  assert.ok(account.indexOf('isConfirmingSignOut') < account.indexOf('AccountDeletionDestination'), 'sign-out before deletion');
 });
 
 // ---- M2-T33: the Xcode project, the UI-test start and the accessibility rules ----

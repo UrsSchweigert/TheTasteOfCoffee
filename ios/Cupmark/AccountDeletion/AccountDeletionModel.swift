@@ -95,8 +95,8 @@ final class AccountDeletionModel {
     /// account.
     private(set) var confirmationAccount: AccountID?
 
-    /// True while a deletion runs: the app shows its progress instead of the shelf, and no
-    /// sign-out button.
+    /// True while a deletion runs: the app shows its progress instead of the shelf, so the
+    /// Settings screen with its sign-out row cannot be reached.
     var isActive: Bool {
         record != nil || recordUnreadable
     }

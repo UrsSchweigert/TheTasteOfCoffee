@@ -6,7 +6,8 @@ struct SettingsRoute: Hashable {}
 
 /// Settings, one tap from the shelf. Each topic is its own section, built by its own
 /// function: Privacy (the consent, M2-T29), Export (M2-T30), the removal of other accounts'
-/// data on this device (M2-T30), and the account: Sign Out (M2-T51) and Delete Account (M2-T31). No control takes typed text.
+/// data on this device (M2-T30), and the account: Sign Out (M2-T51) and Delete Account (M2-T31).
+/// No control takes typed text.
 /// Export and account deletion are pushed screens outside `Settings/`, which read what they
 /// need from the environment, so no settings file touches the API client.
 struct SettingsScreen: View {
