@@ -2665,6 +2665,132 @@
         }
       }
     },
+    "coffee_averages.community %@ %@" : {
+      "comment" : "The community mean of a criterion next to the user's own, for the bean; the first %@ is the mean, the second the number of raters. Hidden until the community numbers exist.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle Bewertenden: %1$@ (Bewertende: %2$@)"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All raters: %1$@ (raters: %2$@)"
+          }
+        }
+      }
+    },
+    "coffee_averages.empty" : {
+      "comment" : "Empty state of the averages section on a shelf entry while none of its brews is rated; no zeros are shown.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bewerte eine Zubereitung, um hier deine Durchschnitte zu sehen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rate a brew to see your averages here"
+          }
+        }
+      }
+    },
+    "coffee_averages.footer_many" : {
+      "comment" : "Footer of the averages section on a shelf entry with two or more rated brews.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Durchschnitt deiner bewerteten Zubereitungen dieses Beutels, auf der Skala bis 10."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Averages of your rated brews of this bag, on the scale up to 10."
+          }
+        }
+      }
+    },
+    "coffee_averages.footer_single" : {
+      "comment" : "Footer of the averages section on a shelf entry with exactly one rated brew: its own values, not an average.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das sind die Werte deiner einen bewerteten Zubereitung dieses Beutels. Durchschnitte erscheinen, sobald du eine zweite Zubereitung bewertet hast."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "These are the values of your one rated brew of this bag. Averages appear once you have rated a second brew."
+          }
+        }
+      }
+    },
+    "coffee_averages.header" : {
+      "comment" : "Header of the section on a shelf entry (one bag) with the averages of the user's rated brews of it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Meine Zubereitungen dieses Kaffees"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "My brews of this coffee"
+          }
+        }
+      }
+    },
+    "coffee_averages.method_header %@ %@" : {
+      "comment" : "Header of the averages of one brew method on a shelf entry; the first %@ is the method label, the second the number of rated brews with it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, bewertete Zubereitungen: %2$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, rated brews: %2$@"
+          }
+        }
+      }
+    },
+    "coffee_averages.rated_count" : {
+      "comment" : "Label of the number of rated brews the averages of a shelf entry rest on.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bewertete Zubereitungen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rated brews"
+          }
+        }
+      }
+    },
     "export.done" : {
       "comment" : "Button that deletes the temporary export file.",
       "extractionState" : "manual",

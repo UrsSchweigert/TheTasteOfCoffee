@@ -25,7 +25,7 @@ Cupmark/                  app target sources and resources
                           BrewSheet and the brew list (M2-T20); the brew timer (M2-T21);
                           recipes and one-tap repeat (M2-T27): BrewStart, BrewFlowModel, BrewStartModel, RecipeViews
   Rating/                 rating of a brew (M2-T20): RatingDraft, RatingFormModel, RatingScreen, flavour note lists
-  Statistics/             personal statistics (M2-T28): PersonalStatistics, StatisticsModel, StatisticsScreen
+  Statistics/             personal statistics (M2-T28): PersonalStatistics, StatisticsModel, StatisticsScreen; the averages of one coffee (M2-T44): CoffeeAverages, CoffeeAveragesSection
   Export/                 CSV export (M2-T30): ExportModel, ExportFileStore, ExportScreen
   Onboarding/             onboarding with consent (M2-T29): OnboardingRules, OnboardingModel, OnboardingGate, OnboardingScreen
   Settings/               Settings (M2-T29, M2-T30, M2-T31): SettingsModel, SettingsScreen (consent, export link, delete account link), removal of other accounts' local data
@@ -345,6 +345,17 @@ M2-T27 implements docs/04 F2, "A brew can be saved as a recipe and repeated with
 - **How shown.** Means with `StatisticsRules.meanFractionDigits` (one) decimal and the share as a whole percentage, in the device locale (`StatisticsRules.meanStyle()`, `shareStyle()`). With no brews or no rated brews a section shows an empty state, never zeros. Rated brews that score only criteria this build does not know get their own text in the taste profile. Criterion, method and note labels come from contracts/i18n through `Text(verbatim:)`; the bean is shown with `BeanSummaryView`, so unconfirmed Open Food Facts text is not shown and confirmed text only through `Text(verbatim:)`. Plain lists, no charts.
 - The thresholds are defined only in `StatisticsRules`; `scripts/ios-scripts.test.mjs` checks that, and that the statistics sources write nothing and have no typed text.
 - Tests: `PersonalStatisticsTests` (the ADR's thresholds, one decimal in de and en, the empty state, unrated brews, means and partly scored ratings, the per-method threshold, top notes with ties and unknown ids, best method and bean with threshold and both tie rules in either input order, the buy-again share without unanswered ratings, removed brews, ISO weeks across New Year and across the end of summer time in Europe/Berlin, ratings that score only unknown criteria) and `StatisticsModelTests` (read from an in-memory store without removed brews, with the shelf entry's bean, and no outbox change; scheduled reloads coalesced into one, and dropped by an immediate one).
+
+### My brews of this coffee (M2-T44)
+
+`Statistics/CoffeeAverages.swift` and `CoffeeAveragesSection.swift` add the user's own averages for one shelf entry (one bag; ADR 0027 addendum) to the shelf entry screen, between the brew actions and the bean. Read-only and offline.
+
+- **One pure function.** `StatisticsRules.coffeeAverages(of:shelfEntry:community:)` takes `StatisticsBrew` values (which now carry `shelfEntryID`) and returns `CoffeeAverages`: `ratedBrews`, `rows` (one `CoffeeAverageRow` per criterion that has a score, vocabulary order, `overall` last) and `methods` (`CoffeeMethodAverages`, for methods with at least `StatisticsRules.minimumRatedBrews` rated brews). `ShelfEntryEditorModel.averages` reads the entry's own brews from the store at open and on each save notification.
+- **Which brews.** Rated, not removed (`pendingDelete`), of this entry only; ratings of an older vocabulary version count on the criteria they score. Unrounded in the model; one decimal in the device locale in the view (`StatisticsRules.meanStyle()`).
+- **States.** No rated brew: "Rate a brew to see your averages here", no rows, no zeros. One rated brew (`isSingleBrew`): its values, and a footer that says they are one brew's. Two or more: the averages, and "Rated brews: n".
+- **Row.** Label, value and a bar (`AverageBar`: two capsules in `Theme.accent`, no chart library). One accessibility element per row with the label and the value "7.5 of 10" (`RatingFormat.spokenScore`), at least 44 points tall; at accessibility text sizes the label stacks above the value. `CoffeeAverageRow.community` (`CommunityValue`: mean and raters) is optional; the view shows it only when set, nothing sets it until M4 (no server call, no contract change).
+- **Taps.** The section is on the shelf entry screen, one tap from the shelf, no extra tap and no input.
+- Tests: `CoffeeAveragesTests` (two bags of one bean count only their own brews, a removed brew, an unrated brew, an older-vocabulary rating, ratings of unknown criteria only, none, one, the vocabulary order, rounding in en and de, the bar, the method threshold with other-bag, removed and unrated brews not lifting a method over it, the community slot), `ShelfModelTests` (the editor model's averages follow a refresh), and `CoffeeAveragesUITests` (the bag with brews shows the rows read as "x of 10" and the count; the bag without shows the empty state).
 
 ## Onboarding and Settings
 

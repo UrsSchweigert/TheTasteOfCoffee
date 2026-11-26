@@ -189,6 +189,28 @@ final class ShelfModelTests: XCTestCase {
         XCTAssertFalse(model.canChangeBean)
     }
 
+    func testTheAveragesCoverOnlyTheRatedBrewsOfThisEntryAndFollowARefresh() throws {
+        let store = try AccountStore.inMemory()
+        let entry = try StoreFixtures.syncedShelfEntry(in: store)
+        let sameBean = try XCTUnwrap(entry.bean)
+        let otherEntry = StoredShelfEntry(try StoreFixtures.shelfEntryInput(), serverID: "01JD00000000000000000SHEF2")
+        try store.addShelfEntry(otherEntry, bean: sameBean, syncState: .synced)
+        let model = try editor(.edit(entry.localID), store)
+        XCTAssertTrue(model.averages.isEmpty, "no brews: the empty state")
+
+        try addBrew(to: entry, in: store)
+        let unrated = try StoredBrew(try StoreFixtures.brewInput(rated: false), serverID: "01JD00000000000000000BREW2")
+        try store.addBrew(unrated, shelfEntry: entry, syncState: .synced)
+        let elsewhere = try StoredBrew(try StoreFixtures.brewInput(), serverID: "01JD00000000000000000BREW3")
+        try store.addBrew(elsewhere, shelfEntry: otherEntry, syncState: .synced)
+        model.refresh()
+
+        XCTAssertEqual(model.averages.ratedBrews, 1, "the unrated brew and the other bag's brew do not count")
+        XCTAssertTrue(model.averages.isSingleBrew)
+        XCTAssertEqual(model.averages.rows.map(\.criterion), Vocabulary.Criterion.allCases)
+        XCTAssertEqual(model.averages.rows.first?.mean, 5)
+    }
+
     // MARK: - Editing and removing without brews
 
     func testChangingTheBeanAndTheValuesQueuesOneUpdate() throws {

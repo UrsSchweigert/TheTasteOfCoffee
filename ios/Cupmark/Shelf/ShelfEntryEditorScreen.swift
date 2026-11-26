@@ -74,6 +74,10 @@ struct ShelfEntryEditorScreen: View {
                     }
                 }
             }
+            // The user's own averages for this bag (M2-T44).
+            if brewRoute != nil {
+                CoffeeAveragesSection(averages: model.averages, vocabulary: vocabulary, language: language)
+            }
             beanSection
             datesSection
             bagSection

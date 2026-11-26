@@ -50,8 +50,19 @@ struct StatisticsBrew: Equatable, Sendable {
     let rating: RatingValues?
     /// Removed on the device (`pendingDelete`): left out of everything.
     let isRemoved: Bool
+    /// The local id of the brew's shelf entry (one bag), nil if it has none. The averages of
+    /// one coffee (`StatisticsRules.coffeeAverages`) count only the brews of their own entry.
+    let shelfEntryID: UUID?
 
-    init(brewedAt: Date, method: Vocabulary.Method?, bean: StatisticsBean?, rating: RatingValues?, isRemoved: Bool = false) {
+    init(
+        brewedAt: Date,
+        method: Vocabulary.Method?,
+        bean: StatisticsBean?,
+        rating: RatingValues?,
+        isRemoved: Bool = false,
+        shelfEntryID: UUID? = nil
+    ) {
+        self.shelfEntryID = shelfEntryID
         self.brewedAt = brewedAt
         self.method = method
         self.bean = bean

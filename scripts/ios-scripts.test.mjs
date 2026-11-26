@@ -1492,7 +1492,7 @@ test('offline scan: pending beans write through AccountStore and never send Open
 
 test('statistics: read-only, offline, no typed text, thresholds only in StatisticsRules (M2-T28)', () => {
   const masked = (path) => lexSwift(readFileSync(join(repoRoot, path), 'utf8')).masked;
-  const files = ['PersonalStatistics.swift', 'StatisticsModel.swift', 'StatisticsScreen.swift'].map((name) => `ios/Cupmark/Statistics/${name}`);
+  const files = ['PersonalStatistics.swift', 'StatisticsModel.swift', 'StatisticsScreen.swift', 'CoffeeAverages.swift', 'CoffeeAveragesSection.swift'].map((name) => `ios/Cupmark/Statistics/${name}`);
   for (const file of files) {
     const code = masked(file);
     assert.doesNotMatch(code, /\.searchable\b|\bTextField\b|\bTextEditor\b|\bSecureField\b/, `${file}: no typed text (invariant 1)`);
@@ -1509,6 +1509,17 @@ test('statistics: read-only, offline, no typed text, thresholds only in Statisti
   assert.doesNotMatch(screen, /(>=|<=|[<>]|==)\s*\d|prefix\(\s*\d|fractionLength\(/, 'the screen hard-codes no threshold or decimal count');
   assert.doesNotMatch(screen, /\bText\(\s*(?!verbatim:)[^)\n]*\b(name|brand)\b/, 'Open Food Facts text only through Text(verbatim:)');
   assert.match(masked('ios/Cupmark/Shelf/ShelfScreen.swift'), /StatisticsScreen\(store: store/, 'the shelf opens the statistics');
+  // My brews of this coffee (M2-T44): one pure function in StatisticsRules, on the shared threshold, with no number of its own;
+  // the view shows only what it is given, and the shelf entry screen hosts it for a stored entry.
+  const averages = masked('ios/Cupmark/Statistics/CoffeeAverages.swift');
+  assert.match(averages, /extension StatisticsRules\s*\{[\s\S]*static func coffeeAverages\(/, 'coffeeAverages is in StatisticsRules');
+  assert.match(averages, />=\s*minimumRatedBrews/, 'the method breakdown uses the threshold of ADR 0027');
+  assert.doesNotMatch(averages, /(>=|<=)\s*\d|fractionLength\(/, "no threshold or decimal count of its own in the averages");
+  const section = masked('ios/Cupmark/Statistics/CoffeeAveragesSection.swift');
+  assert.match(section, /StatisticsRules\.meanStyle\(\)/, 'one decimal from StatisticsRules');
+  assert.match(section, /RatingFormat\.spokenScore\(/, 'VoiceOver reads "x of 10" through the existing formatting');
+  assert.doesNotMatch(section, /\bColor\(|\.foregroundColor\(|\bChart\b|import Charts/, 'Theme colours only, no chart library');
+  assert.match(masked('ios/Cupmark/Shelf/ShelfEntryEditorScreen.swift'), /CoffeeAveragesSection\(averages: model\.averages/, 'the shelf entry screen shows the section');
 });
 
 // ---- Recipes and one-tap repeat (M2-T27, docs/04 F2) ----
