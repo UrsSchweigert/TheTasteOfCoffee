@@ -198,7 +198,21 @@ final class AccessibilityAuditTests: XCTestCase {
                 XCTAssertTrue(ready(app).waitForExistence(timeout: timeout), "\(screen.rawValue) did not appear")
                 try prepare(app)
                 try app.performAccessibilityAudit { issue in
-                    AccessibilityAuditTests.isKnownFalsePositive(issue, in: app)
+                    let ignored = AccessibilityAuditTests.isKnownFalsePositive(issue, in: app)
+                    if !ignored {
+                        // The failure message alone does not say which element it is about.
+                        let element = issue.element
+                        print(
+                            "AUDIT-ISSUE screen=\(screen.rawValue) size=\(size.rawValue)",
+                            "type=\(issue.auditType.rawValue)",
+                            "detail=\(issue.detailedDescription)",
+                            "element=\(element?.elementType.rawValue ?? 0)",
+                            "id=\(element?.identifier ?? "-")",
+                            "label=\(element?.label ?? "-")",
+                            "frame=\(element?.frame ?? .zero)"
+                        )
+                    }
+                    return ignored
                 }
                 app.terminate()
             }
