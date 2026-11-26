@@ -133,7 +133,7 @@ CloudFormation cannot put a SecureString into `ProviderDetails.private_key` (`{{
 
 | Role | Actions | Resource |
 | --- | --- | --- |
-| both | `logs:CreateLogStream`, `logs:PutLogEvents` | its own log group |
+| both | `logs:CreateLogStream`, `logs:PutLogEvents` | its own log group, `log-group:/aws/lambda/cupmark-<stage>-<part>:*`, built from the literal name and never from the log group's `Arn` attribute: CloudFormation resolves `Fn::GetAtt LogGroup.Arn` with `logs:DescribeLogGroups`, which cannot be name-scoped and is not in CupmarkCfnExecution (found on the first dev deploy; pinned by `test/lambda-role-logs.test.ts`) |
 | api | `dynamodb:GetItem`, `PutItem`, `UpdateItem`, `DeleteItem`, `Query`, `ConditionCheckItem` (the repository's transactions are authorised per contained action), `BatchWriteItem` (account deletion deletes the user partition in pages of 25, ADR 0017) | the table |
 | api | `dynamodb:Query` | the index `gsi1` |
 | api | `ssm:GetParameter` | exactly `/cupmark/<stage>/cursor-key` (the AWS-managed `aws/ssm` key needs no grant) |
@@ -348,7 +348,7 @@ Steps 1 and 4 below, and the trust edit of #46, are done by `scripts/aws/first-d
 4. **Import the GitHub deploy role** into `cupmark-github-oidc` and tag it ("One-time import", above). This is needed before the M1-T7 workflow deploys anything, but not before a stage deploy as such.
 5. **Domain prefix risk.** Cognito prefix domains are unique per region across all AWS customers. If `cupmark-dev` or `cupmark-prod` is taken, the deploy fails at the domain, and a new prefix also means a new return URL in Apple's portal (and in this repo's tests).
 
-Still unverified until the first dev deploy: whether CloudFormation's `AWS::Logs::LogGroup` handler also needs `logs:DescribeLogGroups` beyond `log-group:/aws/lambda/cupmark-*` (not added, because it could not be confirmed offline; an AccessDenied on the log groups would say so), and whether Cognito accepts empty Apple scopes.
+Still unverified until the first dev deploy: whether Cognito accepts empty Apple scopes.
 
 ## Deploy pipeline (M1-T7, `.github/workflows/deploy.yml`)
 

@@ -6,7 +6,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { RemovalPolicy } from 'aws-cdk-lib';
+import { ArnFormat, RemovalPolicy, Stack } from 'aws-cdk-lib';
 import type { Duration } from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
@@ -39,6 +39,16 @@ export function backendBundle(name: BackendHandler, distDir: string = BACKEND_DI
   return lambda.Code.fromAsset(dir);
 }
 
+/** `arn:<partition>:logs:<region>:<account>:log-group:<name>:*`, the streams of a log group, from its literal name. */
+export function logStreamsArn(scope: Construct, logGroupName: string): string {
+  return Stack.of(scope).formatArn({
+    service: 'logs',
+    resource: 'log-group',
+    resourceName: `${logGroupName}:*`,
+    arnFormat: ArnFormat.COLON_RESOURCE_NAME,
+  });
+}
+
 export interface FunctionSpec {
   readonly stage: StageName;
   readonly part: BackendHandler;
@@ -55,8 +65,9 @@ export interface FunctionSpec {
 export function cupmarkFunction(scope: Construct, spec: FunctionSpec): lambda.Function {
   const name = functionName(spec.stage, spec.part);
 
+  const logGroupName = `/aws/lambda/${name}`;
   const logGroup = new logs.LogGroup(scope, `${spec.id}Logs`, {
-    logGroupName: `/aws/lambda/${name}`,
+    logGroupName,
     retention: LOG_RETENTION,
     // Logs are operational only (docs/06: no payloads); they go with the stack.
     removalPolicy: RemovalPolicy.DESTROY,
@@ -72,7 +83,10 @@ export function cupmarkFunction(scope: Construct, spec: FunctionSpec): lambda.Fu
           new iam.PolicyStatement({
             sid: 'Logs',
             actions: ['logs:CreateLogStream', 'logs:PutLogEvents'],
-            resources: [logGroup.logGroupArn],
+            // Built from the literal name, not logGroup.logGroupArn: that is Fn::GetAtt Arn,
+            // which CloudFormation resolves with logs:DescribeLogGroups, and the execution
+            // role cannot have that (it cannot be scoped to named log groups).
+            resources: [logStreamsArn(scope, logGroupName)],
           }),
           ...spec.statements,
         ],
