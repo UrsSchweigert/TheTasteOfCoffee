@@ -809,7 +809,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T29 Onboarding with consent (D1)
-- status: done (built and tested by the macOS `ios` job in #66; ADR 0025 addendum M2-T29)
+- status: in-review (#66; round 1 asked for changes to the consent resolution and texts)
 - owner: ios-engineer
 - depends: M2-T1, M2-T11, M2-T16
 - implements: docs/07 D1; ADR 0017 (opt-in); docs/03-project-brief.md, Risks ("Plain consent at onboarding; an opt-out that keeps the personal log working"); contracts `Profile`
