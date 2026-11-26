@@ -260,7 +260,8 @@ final class SyncEngineTests: XCTestCase {
         let result = await harness.engine.drain()
 
         XCTAssertEqual(result, .idle)
-        XCTAssertEqual(harness.server.log, ["POST /beans", "PUT /profile"])
+        // A profile the server never confirmed is checked first (M2-T29): 404, so it is sent.
+        XCTAssertEqual(harness.server.log, ["POST /beans", "GET /profile", "PUT /profile"])
         XCTAssertEqual(bean.serverID, id(1))
         // Values only the server has: `verified` and the operator attributes.
         XCTAssertFalse(bean.verified)

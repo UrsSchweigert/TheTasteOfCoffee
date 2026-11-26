@@ -1361,3 +1361,39 @@ test('recipes: no name, no typed text, written through AccountStore, and one tap
   assert.match(views, /onStart\(model\.route\(\.recipe\(row\.id\)\)\)/);
   assert.match(views, /\.onDelete\b/, 'recipes can be removed');
 });
+
+// ---- Onboarding with consent and Settings (M2-T29, docs/07 D1, ADR 0017) ----
+
+test('onboarding and settings: no typed text, opt-in by default, written through AccountStore (M2-T29)', () => {
+  const masked = (path) => lexSwift(readFileSync(join(repoRoot, path), 'utf8')).masked;
+  const files = [
+    'Onboarding/OnboardingRules.swift',
+    'Onboarding/OnboardingModel.swift',
+    'Onboarding/OnboardingScreen.swift',
+    'Settings/SettingsModel.swift',
+    'Settings/SettingsScreen.swift',
+  ].map((name) => `ios/Cupmark/${name}`);
+  for (const file of files) {
+    const code = masked(file);
+    assert.doesNotMatch(code, /\.searchable\b|\bTextField\b|\bTextEditor\b|\bSecureField\b/, `${file}: no typed text (invariant 1)`);
+    assert.doesNotMatch(code, /\bcontext\s*\.\s*(insert|save|delete)\(/, `${file}: writes go through AccountStore`);
+    assert.doesNotMatch(code, /\bapiClient\b|\bAPIClient\b|URLSession|putProfile\(/, `${file}: PUT /profile only through the outbox`);
+  }
+  // Not agreeing is the default, and skipping sends false (D1).
+  const model = masked('ios/Cupmark/Onboarding/OnboardingModel.swift');
+  assert.match(model, /var agrees = false/);
+  assert.match(model, /func skip\(\) \{\s*finish\(agreed: false\)/);
+  assert.match(model, /store\.setProfile\(/);
+  assert.match(masked('ios/Cupmark/Settings/SettingsModel.swift'), /store\.setProfile\(/);
+  // The locale comes from the preferred languages, never a list typed here.
+  const rules = masked('ios/Cupmark/Onboarding/OnboardingRules.swift');
+  assert.match(rules, /Locale\.LanguageCode\.german \? \.de : \.en/);
+  // The gate sits before the shelf, and Settings is one tap from it.
+  const shelf = masked('ios/Cupmark/Shelf/ShelfScreen.swift');
+  assert.match(shelf, /OnboardingGate\(store: store, sync: sync\)\s*\{\s*ShelfScreen\(/);
+  assert.match(shelf, /NavigationLink\(value: SettingsRoute\(\)\)/);
+  assert.match(shelf, /SettingsScreen\(store: store\)/);
+  // A profile made before the server answered is checked first, so the server's wins.
+  const engine = masked('ios/Cupmark/Sync/SyncEngine.swift');
+  assert.match(engine, /if checked\.syncState == \.pendingCreate \{[\s\S]*?client\.getProfile\(\)/);
+});

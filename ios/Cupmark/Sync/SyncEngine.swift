@@ -905,7 +905,47 @@ final class SyncEngine {
     // MARK: - Profile
 
     /// `PUT /profile`. The profile has no server id; the token says whose it is.
+    ///
+    /// A profile made on this device that the server never confirmed (`pendingCreate`, for
+    /// example from onboarding while offline, M2-T29) is first checked with `GET /profile`:
+    /// if the server has one, the server's wins, as a pull would make it (ADR 0025 Addendum
+    /// M2-T29). The local profile takes its values and its operations are removed, so a
+    /// profile made on another device is never overwritten by a fresh one. A 404 sends ours.
     private func putProfile(_ sequence: Int, _ localID: UUID) async throws -> Outcome {
+        guard let checked = try store.profile(), checked.localID == localID else {
+            return try drop(sequence)
+        }
+        var counted = false
+        if checked.syncState == .pendingCreate {
+            // The check counts as an attempt, so a failing read backs off like a send.
+            if let operation = try store.outboxOperation(sequence: sequence) {
+                operation.attemptCount += 1
+                try store.save()
+                counted = true
+            }
+            switch await call({ try await self.client.getProfile() }) {
+            case .value(let server):
+                guard let current = try store.profile(), current.localID == localID else {
+                    return try drop(sequence)
+                }
+                return try store.write { () throws -> Outcome in
+                    try store.removeOutboxOperations(for: localID)
+                    current.apply(server)
+                    current.syncState = .synced
+                    try store.save()
+                    return .next
+                }
+            case .failed(.notFound):
+                // None on the server: ours goes out.
+                break
+            case .cancelled:
+                return .cancelled
+            case .failed(let error):
+                // A read on the way; the PUT has not been sent.
+                return try failure(error, sequence, resource: .profile, localID: localID, answersTheWrite: false)
+            }
+        }
+        // Read again: the user may have changed it during the check.
         guard let profile = try store.profile(), profile.localID == localID else {
             return try drop(sequence)
         }
@@ -916,7 +956,7 @@ final class SyncEngine {
             return try park(sequence, .notSendable, resource: .profile, localID: localID)
         }
 
-        try markSending(sequence)
+        try markSending(sequence, countsAttempt: !counted)
         switch await call({ try await self.client.putProfile(body) }) {
         case .value(let server):
             guard let current = try store.profile(), current.localID == localID else {
