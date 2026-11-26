@@ -1749,7 +1749,7 @@ test('check-ios-accessibility: the UI tests launch the screens the app knows, wi
     assert.match(uiTests, new RegExp(`auditAtBothSizes\\(\\.${screen}\\b`), screen);
   }
   assert.match(uiTests, /UICTContentSizeCategoryAccessibilityXXXL/);
-  assert.match(uiTests, /try app\.performAccessibilityAudit \{/);
+  assert.match(uiTests, /try app\.performAccessibilityAudit\(for: types\) \{/);
   // No typed text in the UI tests either (invariant 1).
   assert.doesNotMatch(uiTests, /typeText|typeKey/);
 });
