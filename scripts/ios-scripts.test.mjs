@@ -3,7 +3,7 @@
 // Run: node --test scripts/ios-scripts.test.mjs (needs `npm ci` in contracts/).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LANGUAGES, loadVocabulary } from '../contracts/lib/vocabulary.mjs';
@@ -1405,4 +1405,63 @@ test('onboarding and settings: no typed text, opt-in by default, written through
   const engine = masked('ios/Cupmark/Sync/SyncEngine.swift');
   assert.match(engine, /if checked\.syncState == \.pendingCreate \{[\s\S]*?client\.getProfile\(\)/);
   assert.match(engine, /server\.consent\.contributeToAggregates && localConsent/);
+});
+
+// ---- Account deletion (M2-T31, ADR 0017 and its Addendum, ADR 0031) ----
+
+test('account deletion: buttons only, outside Settings, the record first, no sign-out before the 204 (M2-T31)', () => {
+  const masked = (path) => lexSwift(readFileSync(join(repoRoot, path), 'utf8')).masked;
+  const swiftIn = (dir) => readdirSync(join(repoRoot, dir)).filter((name) => name.endsWith('.swift')).map((name) => `${dir}/${name}`);
+  const deletionFiles = swiftIn('ios/Cupmark/AccountDeletion');
+  assert.ok(deletionFiles.length >= 4, 'the account deletion sources exist');
+  for (const file of deletionFiles) {
+    assert.doesNotMatch(masked(file), /\.searchable\b|\bTextField\b|\bTextEditor\b|\bSecureField\b/, `${file}: no typed text (invariant 1)`);
+    assert.doesNotMatch(masked(file), /\bcontext\s*\.\s*(insert|save|delete)\(/, `${file}: no store writes`);
+  }
+  // Every Settings file, not only the two the M2-T29 test lists, stays off the API client: the
+  // deletion screen is pushed from there but lives outside it.
+  for (const file of swiftIn('ios/Cupmark/Settings')) {
+    assert.doesNotMatch(masked(file), /\bapiClient\b|\bAPIClient\b|URLSession|putProfile\(|deleteAccount\(/, `${file}: no API client in Settings`);
+  }
+  assert.match(masked('ios/Cupmark/Settings/SettingsScreen.swift'), /NavigationLink\s*\{\s*AccountDeletionDestination\(\)/);
+
+  const model = masked('ios/Cupmark/AccountDeletion/AccountDeletionModel.swift');
+  const body = (name) => {
+    const start = model.indexOf(`func ${name}(`);
+    assert.ok(start >= 0, `${name} exists`);
+    const rest = model.slice(start);
+    return rest.slice(0, rest.indexOf('\n    }\n'));
+  };
+  const inOrder = (text, parts, message) => {
+    let at = -1;
+    for (const part of parts) {
+      const next = text.indexOf(part, at + 1);
+      assert.ok(next > at, `${message}: ${part}`);
+      at = next;
+    }
+  };
+  // The record is saved before the sync is held and before anything is sent.
+  inOrder(body('start'), ['try records.save(started)', 'sync?.holdForAccountDeletion()', 'launch()'], 'start');
+  // The token is refreshed, then DELETE /account is sent.
+  inOrder(body('attempt'), ['requests.refreshToken()', 'requests.deleteAccount()'], 'attempt');
+  // The only sign-out is in the cleanup after the 204: local data, sign-out, then the record.
+  assert.equal((model.match(/\bsignOut\(/g) ?? []).length, 1, 'one sign-out in the deletion model');
+  inOrder(body('finish'), ['localData.remove(', 'auth.signOut(reason: .accountDeleted)', 'records.delete()'], 'finish');
+  inOrder(body('proceed'), ['case .serverDeleted:', 'await finish(current)', 'case .requested:', 'switch await attempt()'], 'proceed');
+
+  // Nothing is sent while a deletion is recorded: the host opens no store, and every sender asks
+  // `maySend(as:)`, which reads the record.
+  const host = masked('ios/Cupmark/Sync/SyncHost.swift');
+  assert.match(host, /let next = isHeld\(\) \? nil : requested/);
+  assert.match(host, /isHeld: \{ deletions\.holdsSending \}/);
+  const live = host.slice(host.indexOf('static func live('), host.indexOf('func switchTo('));
+  assert.doesNotMatch(live, /isSignedIn\(as:/, 'the live senders ask maySend(as:)');
+  assert.equal((live.match(/session\.maySend\(as:/g) ?? []).length, 3);
+  assert.match(masked('ios/Cupmark/LabelPhoto/LabelPhotoFileStore.swift'), /await session\.maySend\(as: candidate\)/);
+  assert.match(masked('ios/Cupmark/Auth/AuthSession.swift'), /func maySend\(as account: AccountID\) -> Bool \{\s*!isSendingHeld\(\) && isSignedIn\(as: account\)/);
+  // While a deletion runs the signed-in content, with its sign-out button, is replaced.
+  assert.match(masked('ios/Cupmark/Auth/AuthGate.swift'), /if let deletion, deletion\.isActive \{\s*AccountDeletionProgressView\(model: deletion\)\s*\} else \{\s*signedIn\(account, auth: auth\)/);
+  // A sign-in-required stop of sync signs out with the reason (from the M2-T16 review).
+  assert.match(host, /await auth\.signOutAfterServerRefusal\(of: account\)/);
+  assert.match(masked('ios/Cupmark/Auth/AuthModel.swift'), /await signOut\(reason: \.signInRequired\)/);
 });

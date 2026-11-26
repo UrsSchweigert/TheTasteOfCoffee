@@ -18,10 +18,14 @@ actor CatalogueImageCache {
 
     /// The cache in `Library/Caches/CatalogueImages`, or nil if the system has no Caches directory.
     static func standard() -> CatalogueImageCache? {
-        guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
-            return nil
-        }
-        return CatalogueImageCache(directory: caches.appending(path: "CatalogueImages", directoryHint: .isDirectory))
+        standardDirectory.map { directory in CatalogueImageCache(directory: directory) }
+    }
+
+    /// `Library/Caches/CatalogueImages`, or nil if the system has no Caches directory. Account
+    /// deletion (M2-T31) removes it.
+    static var standardDirectory: URL? {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+            .appending(path: "CatalogueImages", directoryHint: .isDirectory)
     }
 
     /// The stored bytes, or nil on a miss. A hit counts as a use for the size bound.

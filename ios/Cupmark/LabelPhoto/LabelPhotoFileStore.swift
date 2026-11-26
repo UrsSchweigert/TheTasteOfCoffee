@@ -214,10 +214,11 @@ struct LabelPhotoAccount: Sendable {
         self.isSignedIn = isSignedIn
     }
 
-    /// The live account: its folder of `LabelPhotoFolders.standard`, checked with `session`.
+    /// The live account: its folder of `LabelPhotoFolders.standard`, checked with `session`
+    /// (`maySend(as:)`: also false once an account deletion has started, M2-T31).
     static func live(account: AccountID, session: AuthSession) -> LabelPhotoAccount {
         LabelPhotoAccount(account: account, files: LabelPhotoFolders.standard.store(for: account)) { candidate in
-            await session.isSignedIn(as: candidate)
+            await session.maySend(as: candidate)
         }
     }
 }

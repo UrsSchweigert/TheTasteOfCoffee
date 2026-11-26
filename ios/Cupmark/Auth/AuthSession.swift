@@ -45,14 +45,23 @@ actor AuthSession: TokenProvider {
     private var tokens: SessionTokens?
     private var refreshTask: Task<SessionTokens, any Error>?
     private var statusHandler: (@Sendable (AuthStatus) -> Void)?
+    /// True while an account deletion is recorded (M2-T31, `AccountDeletionStore.holdsSending`):
+    /// `maySend(as:)` is then false for every account.
+    private let isSendingHeld: @Sendable () -> Bool
     /// Callers waiting on the running refresh without having started it. Read by the tests to
     /// know a second caller has joined; never used for a decision.
     private(set) var refreshJoinerCount = 0
 
-    init(endpoint: any TokenEndpoint, store: any CredentialStore, now: @escaping @Sendable () -> Date = { Date() }) {
+    init(
+        endpoint: any TokenEndpoint,
+        store: any CredentialStore,
+        now: @escaping @Sendable () -> Date = { Date() },
+        isSendingHeld: @escaping @Sendable () -> Bool = { false }
+    ) {
         self.endpoint = endpoint
         self.store = store
         self.now = now
+        self.isSendingHeld = isSendingHeld
     }
 
     /// Called with every change of status made by the session itself: sign-in, sign-out and
@@ -124,6 +133,15 @@ actor AuthSession: TokenProvider {
     /// another account's token.
     func isSignedIn(as account: AccountID) -> Bool {
         loadedCredential()?.accountID == account
+    }
+
+    /// Whether the outbox, the pull and the label photo uploads may send for `account` now:
+    /// it is the signed-in account and no account deletion is recorded (M2-T31). Once a
+    /// deletion has started nothing more is sent, also after a token refresh, a return to the
+    /// foreground or a restart, until the deletion is done; `DELETE /account` itself does not
+    /// ask. Reads the Keychain, never the network.
+    func maySend(as account: AccountID) -> Bool {
+        !isSendingHeld() && isSignedIn(as: account)
     }
 
     // MARK: - Refresh

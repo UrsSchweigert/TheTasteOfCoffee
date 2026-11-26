@@ -37,6 +37,402 @@
         }
       }
     },
+    "account_deletion.cleanup_failed" : {
+      "comment" : "Shown when the account was deleted on the server but local data could not all be removed yet.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dein Konto wurde auf dem Server gelöscht, aber einige Daten auf diesem iPhone konnten noch nicht entfernt werden."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your account was deleted on the server, but some data on this iPhone could not be removed yet."
+          }
+        }
+      }
+    },
+    "account_deletion.confirm" : {
+      "comment" : "Destructive button of the final confirmation that starts account deletion.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konto löschen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete Account"
+          }
+        }
+      }
+    },
+    "account_deletion.confirm.message" : {
+      "comment" : "Message of the final confirmation of account deletion: what is deleted.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Daten, die Etikettenfotos nicht bestätigter Bohnen und deine Anmeldung werden gelöscht. Das lässt sich nicht rückgängig machen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your data, the label photos of unverified beans and your sign-in are deleted. This cannot be undone."
+          }
+        }
+      }
+    },
+    "account_deletion.confirm.title" : {
+      "comment" : "Title of the final confirmation of account deletion.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konto endgültig löschen?"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete Your Account for Good?"
+          }
+        }
+      }
+    },
+    "account_deletion.continue" : {
+      "comment" : "First confirmation step of account deletion: opens the final confirmation.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weiter zum Löschen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue to Deletion"
+          }
+        }
+      }
+    },
+    "account_deletion.continue.hint" : {
+      "comment" : "VoiceOver hint of the first confirmation step of account deletion.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fragt noch einmal, bevor etwas gelöscht wird."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Asks once more before anything is deleted."
+          }
+        }
+      }
+    },
+    "account_deletion.could_not_start" : {
+      "comment" : "Shown when account deletion could not record its start; nothing was deleted or sent.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Löschen konnte nicht gestartet werden. Es wurde nichts gelöscht. Bitte versuche es erneut."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The deletion could not be started. Nothing was deleted. Please try again."
+          }
+        }
+      }
+    },
+    "account_deletion.export_hint" : {
+      "comment" : "Footer below the first confirmation step of account deletion.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wenn du eine Kopie behalten möchtest, exportiere deine Daten zuerst in den Einstellungen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "To keep a copy, export your data in Settings first."
+          }
+        }
+      }
+    },
+    "account_deletion.progress.message" : {
+      "comment" : "Shown while the account is being deleted.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Du bleibst angemeldet, bis der Server das Löschen bestätigt. Wenn Cupmark geschlossen wird, geht das Löschen beim nächsten Öffnen weiter."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You stay signed in until the server confirms the deletion. If Cupmark closes, the deletion goes on the next time you open it."
+          }
+        }
+      }
+    },
+    "account_deletion.progress.title" : {
+      "comment" : "Title of the screen shown while the account is being deleted.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dein Konto wird gelöscht"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deleting Your Account"
+          }
+        }
+      }
+    },
+    "account_deletion.retry_now" : {
+      "comment" : "Button that tries the account deletion again at once.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jetzt versuchen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try Now"
+          }
+        }
+      }
+    },
+    "account_deletion.retrying" : {
+      "comment" : "Shown while account deletion waits to try the server again.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Server war nicht erreichbar oder konnte noch nicht fertig werden. Cupmark versucht es von selbst erneut."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server could not be reached or could not finish yet. Cupmark tries again by itself."
+          }
+        }
+      }
+    },
+    "account_deletion.settings_footer" : {
+      "comment" : "Footer below the Delete Account row in Settings.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Löscht deine Daten, die Etikettenfotos nicht bestätigter Bohnen und deine Anmeldung, auf dem Server und auf diesem iPhone."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deletes your data, the label photos of unverified beans and your sign-in, on the server and on this iPhone."
+          }
+        }
+      }
+    },
+    "account_deletion.sign_in_again" : {
+      "comment" : "Button that signs in again to finish deleting the account.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erneut anmelden"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign In Again"
+          }
+        }
+      }
+    },
+    "account_deletion.sign_in_note" : {
+      "comment" : "Shown on the sign-in screen while an account deletion waits for a new sign-in.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Melde dich erneut an, um das Löschen deines Kontos abzuschließen. Das Konto, mit dem du dich anmeldest, wird gelöscht."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in again to finish deleting your account. The account you sign in with is deleted."
+          }
+        }
+      }
+    },
+    "account_deletion.sign_in_required" : {
+      "comment" : "Shown while account deletion needs a new sign-in because the sign-in could not be renewed.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Anmeldung konnte nicht erneuert werden. Melde dich erneut an, um das Löschen abzuschließen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your sign-in could not be renewed. Sign in again to finish deleting your account."
+          }
+        }
+      }
+    },
+    "account_deletion.title" : {
+      "comment" : "Settings row and screen title that lead to deleting the account.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Konto löschen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete Account"
+          }
+        }
+      }
+    },
+    "account_deletion.what.data" : {
+      "comment" : "First item of what account deletion deletes: the user's data.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Daten: Regal, Zubereitungen, Bewertungen, Rezepte, Statistik und Einstellungen, auf dem Server und auf diesem iPhone, auch noch nicht gesendete Änderungen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your data: shelf, brews, ratings, recipes, statistics and settings, on the server and on this iPhone, including changes not sent yet."
+          }
+        }
+      }
+    },
+    "account_deletion.what.footer" : {
+      "comment" : "Footer below the list of what account deletion deletes.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das lässt sich nicht rückgängig machen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This cannot be undone."
+          }
+        }
+      }
+    },
+    "account_deletion.what.header" : {
+      "comment" : "Header of the list of what account deletion deletes.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Was gelöscht wird"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What Is Deleted"
+          }
+        }
+      }
+    },
+    "account_deletion.what.photos" : {
+      "comment" : "Second item of what account deletion deletes: label photos of beans that are not verified.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Etikettenfotos, die du von nicht bestätigten Bohnen gemacht hast. Fotos bestätigter Bohnen bleiben im Katalog, ohne Verbindung zu dir."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The label photos you took of beans that are not verified. Photos of verified beans stay in the catalogue without any link to you."
+          }
+        }
+      }
+    },
+    "account_deletion.what.sign_in" : {
+      "comment" : "Third item of what account deletion deletes: the sign-in.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Anmeldung: Dein Cupmark-Konto wird entfernt, und dieses iPhone wird abgemeldet."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your sign-in: your Cupmark account is removed, and this iPhone is signed out."
+          }
+        }
+      }
+    },
     "app.title" : {
       "comment" : "App name, shown as the title of the root screen.",
       "extractionState" : "manual",
@@ -5311,6 +5707,24 @@
         }
       }
     },
+    "sign_in.account_deleted" : {
+      "comment" : "Shown on the sign-in screen after this device deleted the account.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dein Konto und seine Daten wurden gelöscht."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your account and its data were deleted."
+          }
+        }
+      }
+    },
     "sign_in.apple_button" : {
       "comment" : "Title of the Sign in with Apple button. Use Apple's official wording for the language.",
       "extractionState" : "manual",
@@ -5397,6 +5811,24 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No connection. Check your internet connection and try again."
+          }
+        }
+      }
+    },
+    "sign_in.required_by_server" : {
+      "comment" : "Shown on the sign-in screen after the server refused the session, also after a refresh: the account was deleted (for example on another device) or its sign-in ended.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieses Konto wurde gelöscht, oder seine Anmeldung ist beendet. Bitte melde dich erneut an."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This account was deleted, or its sign-in ended. Please sign in again."
           }
         }
       }

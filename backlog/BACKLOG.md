@@ -841,7 +841,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T31 Account deletion
-- status: in-progress
+- status: needs-mac-verification
 - owner: ios-engineer
 - depends: M2-T16
 - implements: docs/04-specification.md, Non-functional (account deletion in the app); ADR 0017 and its Addendum; contracts `deleteAccount`
