@@ -69,10 +69,11 @@ struct ScannerScreen: View {
                     Text(Self.message(for: reason))
                 } actions: {
                     pickListButton
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.prominent)
                         .controlSize(.large)
                     settingsButton
                 }
+                .screenBackground()
             }
         case .scanned(let barcode):
             ContentUnavailableView {
@@ -86,6 +87,7 @@ struct ScannerScreen: View {
                 // Digits only, checked by CanonicalBarcode; not translatable text.
                 Text(verbatim: barcode.digits)
             }
+            .screenBackground()
         }
     }
 

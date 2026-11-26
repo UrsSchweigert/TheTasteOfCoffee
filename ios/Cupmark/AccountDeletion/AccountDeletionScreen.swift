@@ -36,9 +36,12 @@ struct AccountDeletionScreen: View {
                 AccountDeletionItem(text: L10n.accountDeletionWhatSignIn, systemImage: "person.crop.circle.badge.xmark")
             } header: {
                 Text(L10n.accountDeletionWhatHeader)
+                    .secondaryText()
             } footer: {
                 Text(L10n.accountDeletionWhatFooter)
+                    .secondaryText()
             }
+            .surfaceRow()
             Section {
                 Button(role: .destructive) {
                     isConfirming = true
@@ -55,12 +58,15 @@ struct AccountDeletionScreen: View {
                         Image(systemName: "exclamationmark.triangle")
                             .accessibilityHidden(true)
                     }
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Theme.errorText)
                 }
             } footer: {
                 Text(L10n.accountDeletionExportHint)
+                    .secondaryText()
             }
+            .surfaceRow()
         }
+        .listBackground()
         .navigationTitle(Text(L10n.accountDeletionTitle))
         .accessibilityIdentifier("account-deletion")
         .confirmationDialog(L10n.accountDeletionConfirmTitle, isPresented: $isConfirming, titleVisibility: .visible) {
@@ -107,10 +113,10 @@ struct AccountDeletionProgressView: View {
                 Image(systemName: "person.crop.circle.badge.xmark")
                     .font(.largeTitle)
                     .imageScale(.large)
-                    .foregroundStyle(.secondary)
+                    .secondaryText()
                     .accessibilityHidden(true)
                 Text(L10n.accountDeletionProgressTitle)
-                    .font(.title2.bold())
+                    .themeTitle(.title2)
                     .multilineTextAlignment(.center)
                     .accessibilityAddTraits(.isHeader)
                 status
@@ -119,6 +125,7 @@ struct AccountDeletionProgressView: View {
             .frame(maxWidth: 480)
             .frame(maxWidth: .infinity)
         }
+        .screenBackground()
         .accessibilityIdentifier("account-deletion-progress")
     }
 
@@ -145,7 +152,7 @@ struct AccountDeletionProgressView: View {
             if let failure = model.signInAgainFailure {
                 Text(failure.message)
                     .font(.callout)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Theme.errorText)
                     .multilineTextAlignment(.center)
                     .accessibilityIdentifier("account-deletion-sign-in-failure")
             }
@@ -156,13 +163,13 @@ struct AccountDeletionProgressView: View {
             } label: {
                 Text(L10n.accountDeletionSignInAgain)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.prominent)
             .disabled(auth?.isSigningInAgain ?? false)
             .accessibilityIdentifier("account-deletion-sign-in-again")
         case .confirmDifferentAccount, .confirmUnreadableRecord:
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.title)
-                .foregroundStyle(.red)
+                .foregroundStyle(Theme.errorText)
                 .accessibilityHidden(true)
             Text(model.state == .confirmDifferentAccount ? L10n.accountDeletionDifferentAccountMessage : L10n.accountDeletionUnreadableRecordMessage)
                 .font(.body)
@@ -201,7 +208,7 @@ struct AccountDeletionProgressView: View {
     private func message(_ key: LocalizedStringKey) -> some View {
         Text(key)
             .font(.body)
-            .foregroundStyle(.secondary)
+            .secondaryText()
             .multilineTextAlignment(.center)
             .accessibilityIdentifier("account-deletion-status")
     }

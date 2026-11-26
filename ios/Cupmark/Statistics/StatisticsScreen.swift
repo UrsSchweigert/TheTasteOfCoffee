@@ -43,6 +43,7 @@ struct StatisticsScreen: View {
                             .accessibilityHidden(true)
                     }
                 }
+                .surfaceRow()
             } else if let statistics = model.statistics {
                 brewsSection(statistics)
                 if statistics.hasBrews {
@@ -58,6 +59,7 @@ struct StatisticsScreen: View {
                     .accessibilityLabel(Text(L10n.statisticsLoading))
             }
         }
+        .listBackground()
         .navigationTitle(Text(L10n.statisticsTitle))
         .accessibilityIdentifier("statistics")
         .onAppear {
@@ -96,7 +98,9 @@ struct StatisticsScreen: View {
             }
         } header: {
             Text(L10n.statisticsBrewsHeader)
+                .secondaryText()
         }
+        .surfaceRow()
     }
 
     private func weeksSection(_ statistics: PersonalStatistics) -> some View {
@@ -111,9 +115,12 @@ struct StatisticsScreen: View {
             }
         } header: {
             Text(L10n.statisticsWeeksHeader)
+                .secondaryText()
         } footer: {
             Text(verbatim: L10n.statisticsWeeksFooter(weeks: StatisticsRules.weekCount.formatted()))
+                .secondaryText()
         }
+        .surfaceRow()
     }
 
     @ViewBuilder
@@ -129,11 +136,14 @@ struct StatisticsScreen: View {
             }
         } header: {
             Text(L10n.statisticsTasteProfileHeader)
+                .secondaryText()
         } footer: {
             if statistics.hasRatedBrews {
                 Text(L10n.statisticsTasteProfileFooter)
+                    .secondaryText()
             }
         }
+        .surfaceRow()
     }
 
     @ViewBuilder
@@ -144,7 +154,9 @@ struct StatisticsScreen: View {
                     emptyText(verbatim: L10n.statisticsMethodsNone(brews: StatisticsRules.minimumRatedBrews.formatted()))
                 } header: {
                     Text(L10n.statisticsMethodsHeader)
+                        .secondaryText()
                 }
+                .surfaceRow()
             } else {
                 ForEach(statistics.methodProfiles, id: \.method) { profile in
                     Section {
@@ -156,7 +168,9 @@ struct StatisticsScreen: View {
                         criterionRows(profile.means)
                     } header: {
                         Text(verbatim: L10n.statisticsMethodProfileHeader(method: label(profile.method)))
+                            .secondaryText()
                     }
+                    .surfaceRow()
                 }
             }
         }
@@ -180,11 +194,14 @@ struct StatisticsScreen: View {
             }
         } header: {
             Text(L10n.statisticsNotesHeader)
+                .secondaryText()
         } footer: {
             if !statistics.topFlavourNotes.isEmpty {
                 Text(L10n.statisticsNotesFooter)
+                    .secondaryText()
             }
         }
+        .surfaceRow()
     }
 
     private func bestSection(_ statistics: PersonalStatistics) -> some View {
@@ -207,11 +224,14 @@ struct StatisticsScreen: View {
             }
         } header: {
             Text(L10n.statisticsBestHeader)
+                .secondaryText()
         } footer: {
             if statistics.hasRatedBrews {
                 Text(verbatim: L10n.statisticsBestFooter(brews: StatisticsRules.minimumRatedBrews.formatted()))
+                    .secondaryText()
             }
         }
+        .surfaceRow()
     }
 
     private func buyAgainSection(_ statistics: PersonalStatistics) -> some View {
@@ -235,11 +255,14 @@ struct StatisticsScreen: View {
             }
         } header: {
             Text(L10n.statisticsBuyAgainHeader)
+                .secondaryText()
         } footer: {
             if statistics.buyAgain != nil {
                 Text(L10n.statisticsBuyAgainFooter)
+                    .secondaryText()
             }
         }
+        .surfaceRow()
     }
 
     // MARK: - Rows
@@ -248,6 +271,7 @@ struct StatisticsScreen: View {
         ForEach(means, id: \.criterion) { entry in
             LabeledContent {
                 Text(entry.mean, format: StatisticsRules.meanStyle())
+                    .accentText()
             } label: {
                 Text(verbatim: label(entry.criterion))
             }
@@ -264,11 +288,12 @@ struct StatisticsScreen: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .secondaryText()
             if let score {
                 winner()
                 LabeledContent {
                     Text(score.mean, format: StatisticsRules.meanStyle())
+                        .accentText()
                 } label: {
                     Text(L10n.statisticsMeanOverall)
                 }
@@ -281,7 +306,7 @@ struct StatisticsScreen: View {
                 .font(.subheadline)
             } else {
                 Text(L10n.statisticsBestNone)
-                    .foregroundStyle(.secondary)
+                    .secondaryText()
             }
         }
         .padding(.vertical, 2)
@@ -290,12 +315,12 @@ struct StatisticsScreen: View {
 
     private func emptyText(_ key: LocalizedStringKey) -> some View {
         Text(key)
-            .foregroundStyle(.secondary)
+            .secondaryText()
     }
 
     private func emptyText(verbatim text: String) -> some View {
         Text(verbatim: text)
-            .foregroundStyle(.secondary)
+            .secondaryText()
     }
 
     /// A vocabulary label from contracts/i18n, the id if the bundle has none.

@@ -88,6 +88,7 @@ struct BeanEntryScreen: View {
                     }
                 }
             }
+            .screenBackground()
             .accessibilityIdentifier("bean-entry-saved-offline")
             .safeAreaInset(edge: .bottom) {
                 if let shelf {
@@ -114,6 +115,7 @@ struct BeanEntryScreen: View {
                     }
                     .accessibilityElement(children: .combine)
                 }
+                .surfaceRow()
             }
             Section {
                 IndexedPickListRow(
@@ -159,9 +161,12 @@ struct BeanEntryScreen: View {
                 RoastLevelPicker(selection: $model.picks.roastLevel, vocabulary: vocabulary, language: language)
             } header: {
                 Text(L10n.beanEntryPicksHeader)
+                    .secondaryText()
             } footer: {
                 Text(L10n.beanEntryPicksFooter)
+                    .secondaryText()
             }
+            .surfaceRow()
             .disabled(!model.isEditable)
 
             LabelPhotoSection(draft: model.labelPhoto, availability: cameraAvailability)
@@ -183,8 +188,10 @@ struct BeanEntryScreen: View {
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("bean-entry-error")
                 }
+                .surfaceRow()
             }
         }
+        .formBackground()
         .safeAreaInset(edge: .bottom) {
             saveBar
         }
@@ -205,7 +212,7 @@ struct BeanEntryScreen: View {
             }
             .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(.prominent)
         .controlSize(.large)
         .disabled(!model.canSave)
         .accessibilityIdentifier("bean-entry-save")

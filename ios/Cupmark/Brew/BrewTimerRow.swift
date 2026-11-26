@@ -45,7 +45,7 @@ struct BrewTimerRow: View {
     private func readout(seconds: Int?) -> some View {
         Text(verbatim: BrewTimerFormat.readout(seconds ?? 0, locale: locale))
             .font(.largeTitle.monospacedDigit())
-            .foregroundStyle(seconds == nil ? Color.secondary : Color.primary)
+            .foregroundStyle(seconds == nil ? Theme.textSecondary : Theme.textPrimary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(L10n.brewTimer))
@@ -101,7 +101,7 @@ struct BrewTimerRow: View {
                         .accessibilityHidden(true)
                 }
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.prominent)
             .accessibilityHint(Text(L10n.brewTimerStopHint))
             .accessibilityIdentifier("brew-timer-stop")
         } else {
@@ -115,7 +115,7 @@ struct BrewTimerRow: View {
                         .accessibilityHidden(true)
                 }
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.prominent)
             .accessibilityHint(Text(L10n.brewTimerStartHint))
             .accessibilityIdentifier("brew-timer-start")
         }

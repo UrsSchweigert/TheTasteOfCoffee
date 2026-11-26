@@ -939,7 +939,7 @@ Planning notes (planned 2026-11-25):
 - Mac: the `ios` job; the owner re-checks on the device in M2-T34.
 
 ### M2-T41 The coffee look: palette, named colours and warmer headings
-- status: todo
+- status: done (#89; the macOS `ios` job passed on d8015e3, including the contrast tests; the look on a device is judged by the owner)
 - owner: ios-engineer
 - depends: M2-T40
 - implements: owner decision of 2026-11-26 ("the taste looks good"); docs/04-specification.md, Non-functional (Accessibility: Dynamic Type); docs/03-project-brief.md, Goals
@@ -1101,3 +1101,33 @@ Scope: App Store listing, screenshots, privacy nutrition labels, privacy policy 
     - the ADR 0025 addendum M2-T29 and the code agree on parked profile operations in the merge and adopt branches;
     - a test covers an edit made during the GET while `sentWithoutAnswer` is already true.
   - Mac: the `ios` job.
+
+## Later ideas (not planned, not scheduled)
+
+Owner ideas of 2026-11-26 for after launch or between M4 and M6. Each is planned with `/plan-milestone` when its turn comes. The notes list what a plan has to settle first, so nothing here is decided yet.
+
+### L1 A widget to record a brew
+- status: idea (owner, 2026-11-26)
+- owner: ios-engineer, after a design decision by the lead
+- goal: start or record a brew from the Home Screen or Lock Screen without opening the app.
+- to settle before planning:
+  - **What the widget does.** The shortest useful path is repeating the last brew or a saved recipe in one tap (docs/04 F2, M2-T27), and starting the timer. An interactive widget (iOS 17, App Intents) can run an intent without opening the app; a Live Activity could show a running timer. Pick one or two of these.
+  - **No typed text (invariant 1).** A widget has no text input either; everything it records must be a pick from the vocabulary or a copy of an earlier brew.
+  - **A second target and a shared store.** A widget extension is its own process. It needs the store, so the SwiftData store (and the per-account folders, ADR 0020) must move into an App Group container, with a migration for existing installs. That touches `ios/Cupmark/Store` and the account deletion cleanup (ADR 0031), so it needs an ADR and the Opus engineer.
+  - **A human step.** The App Group and the widget's App ID are created in the Apple Developer account (the owner, as for Sign in with Apple); the entitlement goes in the project. No cloud cost.
+  - **Sign-in state and the token.** The widget must not hold a token; it writes through the app's outbox and the app syncs later. Check that this keeps invariant 3.
+  - **Privacy.** On-device only; the privacy manifest and the App Privacy answers need no change unless a new required-reason API is used (check).
+  - **Accessibility and localisation** (en, de) as for the app.
+
+### L2 Rate coffees from restaurants and other places of purchase
+- status: idea (owner, 2026-11-26); needs the owner before anything is built
+- owner: lead (design), then contract-keeper and the engineers
+- goal: rate a coffee that is not a bag from the shelf: a cup in a café or restaurant, or beans bought somewhere without a barcode.
+- why this is not a small task: it conflicts with three standing rules, so it needs decisions, an ADR and probably an invariant discussion with the owner:
+  - **Identifying the place without typing (invariant 1).** No free text and no arbitrary strings in the API. Options to compare: (a) pick a place from the system's map search (MapKit points of interest, a first-party Apple framework, not a third-party SDK) and store only a server-generated id for it; (b) a closed list of place types (café, restaurant, bakery, roastery, shop, market, other) with no name; (c) a place the user saved earlier. A place name coming from Apple is a string that is not in the vocabulary, so storing it needs an explicit decision on invariant 1 (ADR) or must stay on the device.
+  - **Location.** Finding nearby places needs the location permission. The privacy policy and the companion page say the app uses no location; the App Privacy answers (coarse or precise location) and the privacy manifest change, and the text must say so. Decide between coarse location only, location used on the device and never stored or sent, or no location at all (option b).
+  - **What is being rated.** A cup has no barcode and often an unknown bean. The rating needs its own small shape: a drink type from a closed list (espresso, flat white, filter, and so on), the place (see above), the same criteria or a subset, and optionally the bean when it is known. Decide whether it reuses the brew record or is a new `Outing` model (contract change, vocabulary version bump: contract-keeper first, a new published vocabulary version, never an edit of a published one).
+  - **Community data (invariants 4 and 6).** Decide whether cup ratings feed aggregates, and per place (a place's page would be a new aggregate: five distinct raters, subtract on delete, EU only) or not at all. A place is also personal data of where a person drinks coffee: the policy, the deletion cascade and the export have to cover it.
+  - **Cost (invariant 5).** A server-side place table and any aggregates per place add DynamoDB items; estimate against docs/06 before deciding (pay-per-use only). Ask the owner if it adds cost.
+  - **Photos.** A photo of the cup could reuse the brew photo store (M2-T42) with the same local-only rule.
+- first step when it is planned: a design note (ADR) answering the points above, with the owner's decision on location and invariant 1, before any contract or code.

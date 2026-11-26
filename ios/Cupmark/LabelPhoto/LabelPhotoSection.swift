@@ -24,9 +24,12 @@ struct LabelPhotoSection: View {
                 content
             } header: {
                 Text(L10n.labelPhotoHeader)
+                    .secondaryText()
             } footer: {
                 Text(L10n.labelPhotoFooter)
+                    .secondaryText()
             }
+            .surfaceRow()
             .fullScreenCover(isPresented: $isCapturing) {
                 LabelPhotoCamera(
                     onCapture: { capture in

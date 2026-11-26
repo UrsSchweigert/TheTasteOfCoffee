@@ -33,6 +33,7 @@ struct SettingsScreen: View {
             localDataSection
             deleteAccountSection
         }
+        .listBackground()
         .navigationTitle(Text(L10n.settingsTitle))
         .accessibilityIdentifier("settings")
         .confirmationDialog(L10n.localDataConfirmTitle, isPresented: $isConfirmingRemoval, titleVisibility: .visible) {
@@ -65,12 +66,13 @@ struct SettingsScreen: View {
             )) {
                 Text(L10n.settingsConsentToggle)
             }
+            .tint(Theme.accent)
             .disabled(model.loadFailed)
             .accessibilityHint(Text(L10n.settingsConsentHint))
             .accessibilityIdentifier("settings-consent")
             if model.loadFailed {
                 Text(L10n.settingsLoadFailed)
-                    .foregroundStyle(.secondary)
+                    .secondaryText()
             }
             if model.saveFailed {
                 Label {
@@ -79,13 +81,16 @@ struct SettingsScreen: View {
                     Image(systemName: "exclamationmark.triangle")
                         .accessibilityHidden(true)
                 }
-                .foregroundStyle(.red)
+                .foregroundStyle(Theme.errorText)
             }
         } header: {
             Text(L10n.settingsPrivacyHeader)
+                .secondaryText()
         } footer: {
             Text(L10n.settingsConsentFooter)
+                .secondaryText()
         }
+        .surfaceRow()
     }
 
     /// CSV export (M2-T30).
@@ -103,6 +108,7 @@ struct SettingsScreen: View {
             }
             .accessibilityIdentifier("settings-export")
         }
+        .surfaceRow()
     }
 
     /// Account deletion (M2-T31): pushes the two confirmation steps (`AccountDeletionDestination`).
@@ -122,7 +128,9 @@ struct SettingsScreen: View {
             .accessibilityIdentifier("settings-delete-account")
         } footer: {
             Text(L10n.accountDeletionSettingsFooter)
+                .secondaryText()
         }
+        .surfaceRow()
     }
 
     /// Removal of other accounts' data on this device (M2-T30).
@@ -152,9 +160,12 @@ struct SettingsScreen: View {
                 }
             } header: {
                 Text(L10n.localDataHeader)
+                    .secondaryText()
             } footer: {
                 Text(localData.otherAccountCount == 0 ? L10n.localDataNone : L10n.localDataFooter)
+                    .secondaryText()
             }
+            .surfaceRow()
         }
     }
 }
