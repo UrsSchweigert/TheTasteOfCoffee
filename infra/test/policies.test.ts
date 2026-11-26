@@ -208,6 +208,43 @@ describe('CupmarkCfnExecution and the bootstrap version parameter', () => {
   });
 });
 
+describe('CupmarkCfnExecution and IAM role tagging', () => {
+  const role = (name: string) => `arn:aws:iam::${FAKE_ACCOUNT}:role/${name}`;
+
+  it('allows TagRole and UntagRole on cupmark-* roles without a boundary condition, and on no other role', () => {
+    for (const action of ['iam:TagRole', 'iam:UntagRole']) {
+      expect(allows(execution, action, role('cupmark-dev-api')), action).toBe(true);
+      expect(allows(execution, action, role('other-dev-api')), action).toBe(false);
+      expect(allows(execution, action, role('Cupmark-dev-api')), action).toBe(false);
+      expect(allows(execution, action, role('derschweigert-x')), action).toBe(false);
+    }
+    const tagging = execution.filter((s) => list(s.Action).some((a) => /^iam:(Un)?TagRole$/.test(a)));
+    expect(tagging.map((s) => s.Sid)).toEqual(['CupmarkIamOther']);
+    expect(tagging[0]?.Condition).toBeUndefined();
+  });
+
+  it('keeps exactly the other role-writing actions under the CupmarkBoundary condition', () => {
+    const bounded = execution.find((s) => s.Sid === 'CupmarkIamRolesWithBoundary');
+    expect(list(bounded?.Action)).toEqual([
+      'iam:CreateRole',
+      'iam:PutRolePolicy',
+      'iam:AttachRolePolicy',
+      'iam:DetachRolePolicy',
+      'iam:DeleteRolePolicy',
+      'iam:UpdateAssumeRolePolicy',
+    ]);
+    expect(bounded?.Resource).toBe(role('cupmark-*'));
+    expect(bounded?.Condition).toEqual({
+      StringEquals: { 'iam:PermissionsBoundary': `arn:aws:iam::${FAKE_ACCOUNT}:policy/CupmarkBoundary` },
+    });
+  });
+
+  it('grants no iam:* action', () => {
+    const iamActions = execution.filter((s) => s.Effect === 'Allow').flatMap((s) => list(s.Action)).filter((a) => /^iam:/i.test(a));
+    expect(iamActions.filter((a) => a.includes('*'))).toEqual([]);
+  });
+});
+
 describe('the boundary stays narrow', () => {
   it('allows the Cognito identity-provider actions and AdminDeleteUser only, and only on user pools in eu-central-1', () => {
     const pool = `arn:aws:cognito-idp:${REGION}:${FAKE_ACCOUNT}:userpool/${REGION}_Example1`;
