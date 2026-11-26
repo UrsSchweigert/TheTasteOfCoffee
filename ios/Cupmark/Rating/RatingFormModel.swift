@@ -176,6 +176,7 @@ final class RatingFormModel {
             failure = .incomplete
             return false
         }
+        var snapshot: (brew: StoredBrew, before: BrewRatingSnapshot)?
         do {
             guard let brew = try store.brew(localID: brewLocalID), brew.syncState != .pendingDelete else {
                 failure = .notFound
@@ -190,6 +191,7 @@ final class RatingFormModel {
                 failure = nil
                 return true
             }
+            snapshot = (brew, BrewRatingSnapshot(brew))
             try rate(store, brew, values)
             failure = nil
             didSave = true
@@ -197,7 +199,11 @@ final class RatingFormModel {
             lastRating = nil
             return true
         } catch {
-            // Nothing half-made stays in the shared context for the engine to save.
+            // Nothing half-made stays in the shared context for the engine to save. The brew's
+            // own fields are put back by hand, since `rollback()` does not restore them.
+            if let snapshot {
+                snapshot.before.restore(snapshot.brew)
+            }
             store.context.rollback()
             failure = .saveFailed
             return false
