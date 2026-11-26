@@ -59,12 +59,24 @@ extension VocabularyRange {
 /// `Vocabulary.Ranges` range; nothing is typed (invariant 1). Only the method is required.
 /// `water_temp_c` and `water_temp_special` are one `API.WaterTemperature`, so a temperature
 /// and `cold` can never both be set.
+///
+/// The draft holds only fields its method allows (M2-T26, `Vocabulary.Method.allows(_:)`, the
+/// rules of vocabulary v3): changing the method clears the fields it no longer allows, and a
+/// setter ignores a field the method does not allow. The grind setting lies on the scale of
+/// the grinder (`Vocabulary.Grinder.scale`), and picking another grinder clears it, because a
+/// number of one dial means nothing on another. So `parameters` never holds a field the server
+/// would answer with 400.
 struct BrewDraft: Equatable, Sendable {
     /// Tenths of a gram per gram: `dose_dg` holds the dose in decigrams (ADR 0004).
     static let decigramsPerGram = 10
 
-    /// `method`, required.
-    var method: Vocabulary.Method?
+    /// `method`, required. Setting it clears every field the new method does not allow. With
+    /// no method, nothing is cleared (nothing can be saved or sent yet).
+    var method: Vocabulary.Method? {
+        didSet {
+            conformToMethod()
+        }
+    }
     /// `dose_dg`, optional. Set it through `setValue(_:of:)` or `step(_:by:seed:)`.
     private(set) var doseDg: API.DoseDg?
     /// `water_g`, optional.
@@ -81,6 +93,11 @@ struct BrewDraft: Equatable, Sendable {
     var waterType: Vocabulary.WaterType?
     /// `milk`, optional.
     var milk: Vocabulary.MilkType?
+    /// `grinder`, optional, only with a method that allows it. Set it through `setGrinder(_:)`.
+    private(set) var grinder: Vocabulary.Grinder?
+    /// `grind_setting`, optional, on the scale of `grinder`. Set it through
+    /// `setGrindSetting(_:)` or `stepGrindSetting(by:seed:)`.
+    private(set) var grindSetting: API.GrindSetting?
 
     init(method: Vocabulary.Method? = nil) {
         self.method = method
@@ -91,11 +108,15 @@ struct BrewDraft: Equatable, Sendable {
         self.grindNormalised = nil
         self.waterType = nil
         self.milk = nil
+        self.grinder = nil
+        self.grindSetting = nil
     }
 
     /// The values of a stored brew or recipe, as they are (the steppers' start values, and
     /// the copy a repeat starts from, M2-T27). An id the bundled vocabulary does not know
-    /// reads as not set.
+    /// reads as not set. A field the method does not allow (a brew or recipe of vocabulary 1 or
+    /// 2 has no rules) or a grind setting off its grinder's scale is left out, so the copy can
+    /// be saved as a brew of the bundled version.
     init(_ stored: some BrewParameterColumns) {
         self.init(method: stored.method)
         doseDg = stored.doseDg
@@ -105,6 +126,9 @@ struct BrewDraft: Equatable, Sendable {
         grindNormalised = stored.grindNormalised
         waterType = stored.waterType
         milk = stored.milk
+        grinder = stored.grinder
+        grindSetting = stored.grindSetting
+        conformToMethod()
     }
 
     /// Sets `brew_time_s` to `seconds`, moved into its vocabulary range and onto its step
@@ -151,9 +175,13 @@ struct BrewDraft: Equatable, Sendable {
         case .water:
             waterG = snapped.flatMap { grams in API.scaledInteger(grams, scale: 1) }
         case .temperature:
-            waterTemperature = snapped
-                .flatMap { celsius in API.scaledInteger(celsius, scale: 1) }
-                .map { celsius in API.WaterTemperature.celsius(celsius) }
+            if allows(.waterTempC) {
+                waterTemperature = snapped
+                    .flatMap { celsius in API.scaledInteger(celsius, scale: 1) }
+                    .map { celsius in API.WaterTemperature.celsius(celsius) }
+            } else if case .some(.celsius) = waterTemperature {
+                waterTemperature = nil
+            }
         case .grind:
             grindNormalised = snapped
         }
@@ -185,6 +213,20 @@ struct BrewDraft: Equatable, Sendable {
         }
     }
 
+    /// The choices the method allows: "not set", a temperature in °C where `water_temp_c` is
+    /// allowed, and the special values where `water_temp_special` is. Only "not set" for a
+    /// method that allows neither (moka pot, cezve), and while no method is picked.
+    var temperatureChoices: [TemperatureChoice] {
+        var choices: [TemperatureChoice] = [.notSet]
+        if allows(.waterTempC) {
+            choices.append(.celsius)
+        }
+        if allows(.waterTempSpecial) {
+            choices += Vocabulary.WaterTempSpecial.allCases.map { special in TemperatureChoice.special(special) }
+        }
+        return choices
+    }
+
     var temperatureChoice: TemperatureChoice {
         switch waterTemperature {
         case .some(.celsius): .celsius
@@ -200,11 +242,124 @@ struct BrewDraft: Equatable, Sendable {
         case .notSet:
             waterTemperature = nil
         case .celsius:
+            guard allows(.waterTempC) else {
+                return
+            }
             if value(of: .temperature) == nil {
                 setValue(seed.flatMap { value in BrewNumberField.temperature.range.snapped(value) } ?? BrewNumberField.temperature.range.middle, of: .temperature)
             }
         case .special(let special):
+            guard allows(.waterTempSpecial) else {
+                return
+            }
             waterTemperature = .special(special)
+        }
+    }
+
+    // MARK: - Method rules, grinder and grind setting (M2-T26)
+
+    /// Whether the method allows `field` (`Vocabulary.Method.allows(_:)`, the generated rules).
+    /// While no method is picked, only a field without a rule is allowed, so the form shows
+    /// no field that a method might not allow.
+    func allows(_ field: Vocabulary.BrewField) -> Bool {
+        if let method {
+            return method.allows(field)
+        }
+        return Vocabulary.Method.fieldRules[field] == nil
+    }
+
+    /// The fields the form shows, in `BrewParameters` order.
+    var visibleFields: [Vocabulary.BrewField] {
+        Vocabulary.BrewField.allCases.filter { field in allows(field) }
+    }
+
+    /// The scale of the grinder's grind setting: nil while the method allows no grind setting,
+    /// no grinder is picked, or the grinder has no scale (`pre_ground`, `other`, a grinder
+    /// whose dial is not in steps). The stepper is hidden then, and `grind_normalised` stays.
+    var grindSettingRange: VocabularyRange? {
+        allows(.grindSetting) ? grinder?.scale : nil
+    }
+
+    /// Picks the grinder, or none for nil. Another grinder clears the grind setting. Ignored
+    /// (the grinder stays unset) where the method allows no grinder.
+    mutating func setGrinder(_ newGrinder: Vocabulary.Grinder?) {
+        guard allows(.grinder) else {
+            grinder = nil
+            grindSetting = nil
+            return
+        }
+        if newGrinder != grinder {
+            grindSetting = nil
+        }
+        grinder = newGrinder
+    }
+
+    /// Sets the grind setting, moved onto the grinder's scale (`grindSettingRange`), or clears
+    /// it for nil. Without a scale it stays unset.
+    mutating func setGrindSetting(_ value: Double?) {
+        guard let range = grindSettingRange else {
+            grindSetting = nil
+            return
+        }
+        grindSetting = value.flatMap { number in range.snapped(number) }
+    }
+
+    /// One stepper tap on the grind setting: moves a set value by `steps` steps of the scale.
+    /// A setting that is not set starts at `seed` (moved onto the scale) or the middle of the
+    /// scale.
+    mutating func stepGrindSetting(by steps: Int, seed: Double?) {
+        guard let range = grindSettingRange else {
+            grindSetting = nil
+            return
+        }
+        if let current = grindSetting {
+            setGrindSetting(range.stepped(current, by: steps))
+        } else {
+            setGrindSetting(seed.flatMap { value in range.snapped(value) } ?? range.middle)
+        }
+    }
+
+    /// Clears every field the method does not allow, and a grind setting that is not on the
+    /// grinder's scale. Does nothing while no method is picked.
+    private mutating func conformToMethod() {
+        guard method != nil else {
+            return
+        }
+        for field in Vocabulary.BrewField.allCases where !allows(field) {
+            clear(field)
+        }
+        if let setting = grindSetting, grinder?.accepts(setting) != true {
+            grindSetting = nil
+        }
+    }
+
+    private mutating func clear(_ field: Vocabulary.BrewField) {
+        switch field {
+        case .doseDg:
+            doseDg = nil
+        case .waterG:
+            waterG = nil
+        case .waterTempC:
+            if case .some(.celsius) = waterTemperature {
+                waterTemperature = nil
+            }
+        case .waterTempSpecial:
+            if case .some(.special) = waterTemperature {
+                waterTemperature = nil
+            }
+        case .brewTimeS:
+            brewTimeS = nil
+        case .grindNormalised:
+            grindNormalised = nil
+        case .waterType:
+            waterType = nil
+        case .milk:
+            milk = nil
+        case .grinder:
+            grinder = nil
+            grindSetting = nil
+        case .grindSetting:
+            grindSetting = nil
         }
     }
 
@@ -215,7 +370,9 @@ struct BrewDraft: Equatable, Sendable {
         BrewDerivedValues.ratio(doseDg: doseDg, waterG: waterG)
     }
 
-    /// The `parameters` of the request, nil without a method.
+    /// The `parameters` of the request, nil without a method. The draft holds only what the
+    /// method allows, and `conformingToMethodRules()` makes sure once more, so no request
+    /// holds a field the server would refuse.
     var parameters: API.BrewParameters? {
         guard let method else {
             return nil
@@ -228,13 +385,15 @@ struct BrewDraft: Equatable, Sendable {
             brewTimeS: brewTimeS,
             grindNormalised: grindNormalised,
             waterType: waterType,
-            milk: milk
-        )
+            milk: milk,
+            grinder: grinder,
+            grindSetting: grindSetting
+        ).conformingToMethodRules()
     }
 
     /// The `POST /brews` body for the shelf entry with server id `shelfEntryID`, brewed at
-    /// `brewedAt`: the bundled vocabulary version, the draft's values and no rating (F3 rates
-    /// it). Nil without a method. The outbox builds the body from the stored brew when it is
+    /// `brewedAt`: the bundled vocabulary version (3 or later, which a grinder needs), the
+    /// draft's values and no rating (F3 rates it). Nil without a method. The outbox builds the body from the stored brew when it is
     /// sent; this is the same mapping.
     func input(shelfEntryID: API.Id, brewedAt: API.Timestamp) -> API.BrewInput? {
         guard let parameters else {
@@ -283,6 +442,12 @@ enum BrewFormat {
             digits += 1
         }
         return digits
+    }
+
+    /// The text the grind setting stepper shows: the number with the digits of the grinder's
+    /// own step (`1` for a dial in whole steps, `1.5` for one in halves).
+    static func grindSetting(_ value: Double, on scale: VocabularyRange, locale: Locale = .current) -> String {
+        number(value, fractionDigits: fractionDigits(for: scale), locale: locale)
     }
 
     /// The text a stepper shows for `field` at `value`.

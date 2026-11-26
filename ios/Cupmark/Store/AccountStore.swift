@@ -32,7 +32,7 @@ final class AccountStore {
     // MARK: - Containers
 
     /// The schema of the current version.
-    static var schema: Schema { Schema(versionedSchema: CupmarkSchemaV2.self) }
+    static var schema: Schema { Schema(versionedSchema: CupmarkSchemaV3.self) }
 
     /// The store of `account`: its own file in `directory` (`StoreLocation`). No other
     /// account's file is ever opened. CloudKit is off: data leaves the device only through

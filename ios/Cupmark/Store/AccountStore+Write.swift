@@ -499,6 +499,8 @@ extension StoredBrew: SavedValuesRestorable {
             .attribute("grindNormalised", \.grindNormalised),
             .attribute("waterTypeID", \.waterTypeID),
             .attribute("milkID", \.milkID),
+            .attribute("grinderID", \.grinderID),
+            .attribute("grindSetting", \.grindSetting),
             .attribute("ratingData", \.ratingData),
             .toOne("shelfEntry", \.shelfEntry, id: \StoredShelfEntry.localID) { store, saved in store.liveShelfEntry(saved) },
         ]
@@ -529,6 +531,8 @@ extension StoredRecipe: SavedValuesRestorable {
             .attribute("grindNormalised", \.grindNormalised),
             .attribute("waterTypeID", \.waterTypeID),
             .attribute("milkID", \.milkID),
+            .attribute("grinderID", \.grinderID),
+            .attribute("grindSetting", \.grindSetting),
         ]
     }
 }

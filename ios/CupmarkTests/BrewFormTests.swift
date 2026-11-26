@@ -162,25 +162,40 @@ final class BrewFormTests: XCTestCase {
     // MARK: - Temperature or cold, never both
 
     func testTemperatureAndColdExcludeEachOther() throws {
+        // No method allows both (the generated rules), and the type holds only one of them.
         let special = try StoreFixtures.first(Vocabulary.WaterTempSpecial.self)
-        var draft = BrewDraft(method: try StoreFixtures.first(Vocabulary.Method.self))
+        let heated = try XCTUnwrap(Vocabulary.Method.allCases.first { method in method.allows(.waterTempC) })
+        let cold = try XCTUnwrap(Vocabulary.Method.allCases.first { method in method.allows(.waterTempSpecial) })
+        XCTAssertFalse(heated.allows(.waterTempSpecial))
+        XCTAssertFalse(cold.allows(.waterTempC))
+
+        var draft = BrewDraft(method: heated)
         draft.setValue(94, of: .temperature)
         XCTAssertEqual(draft.temperatureChoice, .celsius)
         XCTAssertEqual(draft.waterTemperature, .celsius(94))
+        draft.chooseTemperature(.special(special), seed: nil)
+        XCTAssertEqual(draft.waterTemperature, .celsius(94), "cold is ignored where the method does not allow it")
+        var json = try encodedParameters(draft)
+        XCTAssertEqual(json["water_temp_c"] as? Int, 94)
+        XCTAssertNil(json["water_temp_special"])
 
+        draft.method = cold
+        XCTAssertNil(draft.waterTemperature, "changing to a method without a temperature clears it")
         draft.chooseTemperature(.special(special), seed: nil)
         XCTAssertEqual(draft.waterTemperature, .special(special))
         XCTAssertNil(draft.value(of: .temperature), "the temperature is gone once cold is picked")
-        var json = try encodedParameters(draft)
+        json = try encodedParameters(draft)
         XCTAssertEqual(json["water_temp_special"] as? String, special.rawValue)
         XCTAssertNil(json["water_temp_c"])
-
         draft.step(.temperature, by: 1, seed: 92)
-        XCTAssertEqual(draft.waterTemperature, .celsius(92), "a temperature replaces cold")
-        json = try encodedParameters(draft)
-        XCTAssertEqual(json["water_temp_c"] as? Int, 92)
-        XCTAssertNil(json["water_temp_special"])
+        XCTAssertEqual(draft.waterTemperature, .special(special), "a temperature is ignored where the method does not allow it")
+        draft.chooseTemperature(.celsius, seed: 80)
+        XCTAssertEqual(draft.waterTemperature, .special(special))
 
+        draft.method = heated
+        XCTAssertNil(draft.waterTemperature, "cold is cleared by a method that does not allow it")
+        draft.step(.temperature, by: 1, seed: 92)
+        XCTAssertEqual(draft.waterTemperature, .celsius(92))
         draft.chooseTemperature(.celsius, seed: 80)
         XCTAssertEqual(draft.waterTemperature, .celsius(92), "choosing °C again keeps the temperature")
         draft.chooseTemperature(.notSet, seed: nil)
