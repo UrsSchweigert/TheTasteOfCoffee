@@ -96,6 +96,7 @@ struct StatisticsScreen: View {
                 } label: {
                     Text(L10n.statisticsBrewsTotal)
                 }
+                .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("statistics-brews-total")
                 LabeledContent {
                     Text(statistics.ratedBrews, format: .number)

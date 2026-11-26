@@ -49,13 +49,19 @@ final class StatisticsMethodPickerUITests: XCTestCase {
         XCTAssertTrue(picker.label.contains("Method"), "the picker has a label: \(picker.label)")
         let total = element("statistics-brews-total", in: app)
         XCTAssertTrue(total.waitForExistence(timeout: 10), "the brew total is shown")
-        let totalOfAll = total.label
+        // Four brews in the fixture: one unrated, three rated, of three methods.
+        XCTAssertTrue(total.label.contains("4"), "all methods count every brew: \(total.label)")
         XCTAssertTrue(element("statistics-best-method", in: app).exists, "all methods compare methods")
         XCTAssertFalse(element("statistics-method-below", in: app).exists, "no empty state of a method yet")
 
         // Pick the first method the menu offers.
         picker.tap()
-        let option = app.buttons.matching(identifier: "statistics-method-option").firstMatch
+        // The identifier may not survive on a menu item: fall back to the first menu button
+        // that is not "All Methods".
+        var option = app.buttons.matching(identifier: "statistics-method-option").firstMatch
+        if !option.waitForExistence(timeout: 5) {
+            option = app.buttons.matching(NSPredicate(format: "label != %@ AND label != %@ AND label != %@", "All Methods", "Method", "")).firstMatch
+        }
         guard option.waitForExistence(timeout: 10) else {
             attachDiagnostics(app, "missing: the method options")
             XCTFail("the menu did not offer a method")
@@ -70,7 +76,10 @@ final class StatisticsMethodPickerUITests: XCTestCase {
             return
         }
         XCTAssertFalse(element("statistics-best-method", in: app).exists, "one method has nothing to compare")
-        XCTAssertNotEqual(element("statistics-brews-total", in: app).label, totalOfAll, "the total is that of the method")
+        // The first method has two of the fixture's four brews (one rated, the newest unrated).
+        let methodTotal = element("statistics-brews-total", in: app).label
+        XCTAssertTrue(methodTotal.contains("2"), "the total is that of the method: \(methodTotal)")
+        XCTAssertFalse(methodTotal.contains("4"), "not the total of all methods: \(methodTotal)")
 
         // Back to all methods.
         element("statistics-method-picker", in: app).tap()
@@ -83,6 +92,6 @@ final class StatisticsMethodPickerUITests: XCTestCase {
         all.tap()
         XCTAssertTrue(element("statistics-best-method", in: app).waitForExistence(timeout: 10), "the best method is back")
         XCTAssertFalse(element("statistics-method-below", in: app).exists)
-        XCTAssertEqual(element("statistics-brews-total", in: app).label, totalOfAll)
+        XCTAssertTrue(element("statistics-brews-total", in: app).label.contains("4"), "all methods again")
     }
 }

@@ -257,4 +257,33 @@ final class StatisticsMethodPickerTests: XCTestCase {
         XCTAssertEqual(model.choice, .all)
         XCTAssertEqual(model.statistics?.totalBrews, 0)
     }
+
+    func testABrewOfAnOlderVocabularyAndARatingOfUnknownCriteriaCountInThePicker() throws {
+        let store = try AccountStore.inMemory()
+        let entry = try StoreFixtures.syncedShelfEntry(in: store)
+        // A rating recorded under an earlier vocabulary version.
+        var olderInput = try StoreFixtures.brewInput(brewedAt: "2026-11-24T08:00:00.000Z")
+        olderInput.vocabularyVersion = Vocabulary.version - 1
+        let older = try StoredBrew(olderInput, serverID: StoreFixtures.brewID)
+        try store.addBrew(older, shelfEntry: entry, syncState: .synced)
+        // A rating that scores only criteria this build does not know.
+        let unknown = try StoredBrew(try StoreFixtures.brewInput(brewedAt: "2026-11-25T08:00:00.000Z"), serverID: StoreFixtures.brewID)
+        try unknown.setRating(RatingValues(scores: ["criterion-of-a-newer-vocabulary": 5]))
+        try store.addBrew(unknown, shelfEntry: entry, syncState: .synced)
+
+        let values = StatisticsBrew.values(of: try store.brewsNewestFirst())
+        let offered = PersonalStatistics.ratedMethods(in: values)
+        XCTAssertEqual(offered.count, 1, "both brews are rated and have the same method")
+        let method = try XCTUnwrap(offered.first)
+
+        let statistics = PersonalStatistics.compute(
+            values,
+            now: try date("2026-11-26T12:00:00Z"),
+            calendar: try calendar(),
+            method: method
+        )
+        XCTAssertEqual(statistics.ratedBrews, 2, "the unknown-criteria rating is a rated brew")
+        XCTAssertFalse(statistics.tasteProfile.isEmpty, "the older rating is read")
+        XCTAssertTrue(statistics.tasteProfile.allSatisfy { mean in mean.count == 1 }, "only the older rating scores a known criterion")
+    }
 }

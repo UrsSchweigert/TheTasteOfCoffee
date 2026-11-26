@@ -155,6 +155,8 @@ struct PersonalStatistics: Equatable, Sendable {
     /// The mean per criterion over all rated brews, in vocabulary order. Empty without
     /// rated brews.
     let tasteProfile: [CriterionMean]
+    /// Kept for the unfiltered output (and its tests); the screen no longer lists it, because
+    /// its method picker shows one method at a time (M2-T50).
     /// The taste profile per method, for methods with at least
     /// `StatisticsRules.minimumRatedBrews` rated brews, in vocabulary order.
     let methodProfiles: [MethodProfile]

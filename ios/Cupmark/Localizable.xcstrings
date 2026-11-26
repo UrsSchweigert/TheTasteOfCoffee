@@ -8030,7 +8030,7 @@
       }
     },
     "statistics.methods.none %@" : {
-      "comment" : "Shown while no brew method has enough rated brews for its own taste profile; %@ is that number, for example \"2\".",
+      "comment" : "Shown as the taste profile of a chosen brew method that has fewer rated brews than needed for its own profile (M2-T50); %@ is that number, for example \"2\".",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
