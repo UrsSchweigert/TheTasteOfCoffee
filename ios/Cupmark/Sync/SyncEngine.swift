@@ -235,6 +235,9 @@ final class SyncEngine {
         }
         isDraining = true
         defer { isDraining = false }
+        // The operations deferred in this drain (a bean look-up that waits). They are not picked
+        // again before the next drain, so the loop cannot spin on one that keeps deferring.
+        var deferred = Set<Int>()
 
         while true {
             if isStopped || Task.isCancelled {
@@ -242,7 +245,7 @@ final class SyncEngine {
             }
             let next: OutboxOperation?
             do {
-                next = try store.nextOutboxOperation(at: now())
+                next = try store.nextOutboxOperation(at: now(), skipping: deferred)
             } catch {
                 return .waiting(until: now().addingTimeInterval(backoff.maximum))
             }
@@ -274,6 +277,7 @@ final class SyncEngine {
                 continue
             case .deferred:
                 // A bean look-up waits (for its next attempt or for the user); the rest goes on.
+                deferred.insert(sequence)
                 continue
             case .retry:
                 guard let retried = try? store.outboxOperation(sequence: sequence) else {

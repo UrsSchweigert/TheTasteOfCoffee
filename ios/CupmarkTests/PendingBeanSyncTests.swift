@@ -494,10 +494,18 @@ final class PendingBeanSyncTests: XCTestCase {
     func testADeleteOfAnEntryMovedToAPendingBeanDoesNotWaitForTheBean() async throws {
         let harness = try makeHarness()
         goOffline(harness)
-        // An entry the server has, on a synced bean.
-        let synced = try StoreFixtures.syncedShelfEntry(in: harness.store)
-        harness.server.backend.seed(bean: catalogueBean(StoreFixtures.beanID, barcode: nil))
-        harness.server.backend.seed(shelfEntry: StoreFixtures.shelfEntryID, try StoreFixtures.shelfEntryInput())
+        // An entry the server has, on a synced bean. Server-style ids (ULIDs): the fixtures'
+        // `StoreFixtures.shelfEntryID` holds an "L", which is not in the contract's alphabet, so
+        // the engine would park its delete as not sendable instead of sending it.
+        let serverBean = catalogueBean(id(909), barcode: nil)
+        harness.server.backend.seed(bean: serverBean)
+        var values = try StoreFixtures.shelfEntryInput()
+        values.beanId = id(909)
+        harness.server.backend.seed(shelfEntry: id(910), values)
+        let localBean = StoredBean(serverBean)
+        try harness.store.addBean(localBean, syncState: .synced)
+        let synced = StoredShelfEntry(values, serverID: id(910))
+        try harness.store.addShelfEntry(synced, bean: localBean, syncState: .synced)
         // A pending scan on the shelf, then the synced entry moved to it and removed, offline.
         let otherID = try XCTUnwrap(ShelfEntryEditorModel(mode: .addScanned(try scanned), store: harness.store).save())
         let pending = try XCTUnwrap(harness.store.shelfEntry(localID: otherID)?.bean)
@@ -512,8 +520,10 @@ final class PendingBeanSyncTests: XCTestCase {
         _ = await harness.engine.drain()
 
         // The bean waits for the user; the delete went all the same.
-        XCTAssertNil(harness.server.backend.shelfEntries[StoreFixtures.shelfEntryID])
+        XCTAssertTrue(harness.server.log.contains("DELETE /shelf/\(id(910))"))
+        XCTAssertNil(harness.server.backend.shelfEntries[id(910)])
         XCTAssertEqual(try queue(harness.store), ["await_confirmation bean", "create shelf_entry"])
+        XCTAssertFalse(try harness.store.outboxOperations().contains { operation in operation.parked })
     }
 
     func testTheDailyLookupCapWaitsAnHourWithoutHoldingTheQueue() async throws {

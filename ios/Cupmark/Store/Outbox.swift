@@ -134,7 +134,9 @@ extension AccountStore {
     /// - A bean whose look-up waits (for its next attempt, or for the user's answer) is skipped
     ///   with everything that needs it; everything else keeps its order.
     /// - A delete never waits: an item the server never had is removed locally by the engine.
-    func nextOutboxOperation(at now: Date = Date()) throws -> OutboxOperation? {
+    /// - `skipping` lists sequences the caller already deferred in this pass (the engine's
+    ///   drain), treated as waiting, so a deferred operation is never picked twice in a row.
+    func nextOutboxOperation(at now: Date = Date(), skipping: Set<Int> = []) throws -> OutboxOperation? {
         let descriptor = FetchDescriptor<OutboxOperation>(
             predicate: #Predicate<OutboxOperation> { operation in operation.parked == false },
             sortBy: [SortDescriptor(\OutboxOperation.sequence)]
@@ -142,7 +144,7 @@ extension AccountStore {
         let candidates = try context.fetch(descriptor)
         let queue = OutboxDependencies(operations: candidates, now: now)
         for operation in candidates {
-            if let next = try resolve(operation, in: queue, depth: 0) {
+            if let next = try resolve(operation, in: queue, depth: 0), !skipping.contains(next.sequence) {
                 return next
             }
         }
