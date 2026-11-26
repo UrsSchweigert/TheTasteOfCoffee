@@ -1,12 +1,14 @@
 import Combine
 import SwiftUI
 
-/// Opens the brew form for a shelf entry (M2-T19).
+/// Opens the brew form for a shelf entry (M2-T19), empty or as a repeat (M2-T27).
 struct BrewRoute: Identifiable, Hashable {
     /// The shelf entry's local id.
     let shelfEntryLocalID: UUID
+    /// What the new brew starts from.
+    var start: BrewStart = .blank
 
-    var id: UUID { shelfEntryLocalID }
+    var id: BrewRoute { self }
 }
 
 /// The brew form of a shelf entry (M2-T19, docs/04 F2), shown in a sheet.
@@ -19,6 +21,8 @@ struct BrewRoute: Identifiable, Hashable {
 /// - The ratio and days since roast follow the values as they change.
 /// - Save writes through `BrewFormModel` to `AccountStore`, which queues the create in the
 ///   outbox, so it works offline. In `BrewSheet` the rating of the new brew follows (M2-T20).
+/// - A repeat (M2-T27) opens prefilled and says what it was copied from; a toggle keeps the
+///   values as a recipe, or replaces the recipe the form was started from.
 struct BrewFormScreen: View {
     @State private var model: BrewFormModel
     let vocabulary: VocabularyStore
@@ -39,7 +43,24 @@ struct BrewFormScreen: View {
         dismissesOnSave: Bool = true,
         onSaved: @escaping @MainActor (UUID) -> Void = { _ in }
     ) {
-        _model = State(initialValue: BrewFormModel(shelfEntry: localID, store: store))
+        self.init(
+            model: BrewFormModel(shelfEntry: localID, store: store),
+            vocabulary: vocabulary,
+            language: language,
+            dismissesOnSave: dismissesOnSave,
+            onSaved: onSaved
+        )
+    }
+
+    /// The form of `model`, which `BrewSheet`'s flow holds (M2-T27).
+    init(
+        model: BrewFormModel,
+        vocabulary: VocabularyStore,
+        language: VocabularyLanguage,
+        dismissesOnSave: Bool = true,
+        onSaved: @escaping @MainActor (UUID) -> Void = { _ in }
+    ) {
+        _model = State(initialValue: model)
         self.vocabulary = vocabulary
         self.language = language
         self.dismissesOnSave = dismissesOnSave
@@ -54,6 +75,7 @@ struct BrewFormScreen: View {
             timerSection
             waterSection
             grindAndMilkSection
+            recipeSection
             if let failure = model.failure {
                 Section {
                     Label {
@@ -97,6 +119,15 @@ struct BrewFormScreen: View {
 
     private var beanSection: some View {
         Section {
+            if let note = startNote {
+                Label {
+                    Text(note)
+                } icon: {
+                    Image(systemName: "arrow.clockwise")
+                        .accessibilityHidden(true)
+                }
+                .accessibilityIdentifier("brew-started-from")
+            }
             BeanSummaryView(summary: model.bean, vocabulary: vocabulary, language: language)
                 .accessibilityIdentifier("brew-bean")
             if let days = model.daysSinceRoast {
@@ -204,6 +235,40 @@ struct BrewFormScreen: View {
         }
     }
 
+    /// Keeps the values as a recipe on save (M2-T27): a new recipe, or the recipe the form was
+    /// started from, replaced. A recipe has no name, so there is nothing else to set.
+    private var recipeSection: some View {
+        Section {
+            Toggle(isOn: $model.keepsAsRecipe) {
+                Text(model.replacesStartedRecipe ? L10n.brewRecipeUpdate : L10n.brewRecipeSave)
+            }
+            .disabled(model.savedBrewID != nil)
+            .accessibilityIdentifier("brew-keep-recipe")
+        } header: {
+            Text(L10n.recipeHeader)
+        } footer: {
+            if model.valuesAreAnotherRecipe {
+                // Keeping them keeps that recipe; two equal recipes are never made (ADR 0028).
+                Text(L10n.brewRecipeAlreadyKept)
+                    .accessibilityIdentifier("brew-recipe-already-kept")
+            } else {
+                Text(L10n.recipeFooter)
+            }
+        }
+    }
+
+    /// What a repeat was copied from, nil for an empty form.
+    private var startNote: LocalizedStringKey? {
+        switch model.startedFrom {
+        case .blank:
+            return nil
+        case .lastBrew:
+            return L10n.brewStartedFromLastBrew
+        case .recipe:
+            return L10n.brewStartedFromRecipe
+        }
+    }
+
     // MARK: - Rows
 
     private func stepperRow(
@@ -258,6 +323,7 @@ struct BrewFormScreen: View {
         switch failure {
         case .notFound: L10n.brewNotFound
         case .saveFailed: L10n.brewSaveFailed
+        case .startNotFound: L10n.brewStartNotFound
         }
     }
 }

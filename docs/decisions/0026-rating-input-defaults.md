@@ -26,3 +26,13 @@ M2-T20 builds the rating screen (docs/04 F3). Four details were left open:
 
 - A rating saved on its own is `PUT /brews/{brew_id}` through the outbox. If the brew's create has not been sent yet, the rating goes with the create (ADR 0025).
 - The aggregator (M3) counts buy-again only for ratings that carry it.
+
+## Addendum (M2-T27, lead, ADR 0014; no cloud cost)
+
+Decision 2 only offered a rating of the same shelf entry, so the first repeat onto a new bag (a new bag of the usual coffee, or a repeat of the last brew onto another coffee) needed eight slider touches and missed the 8-tap target. The offer now falls back, in this order:
+
+1. the newest rating of an earlier brew of the same shelf entry (as before);
+2. else the newest rating of an earlier brew of the same bean, on any shelf entry;
+3. else, for a brew started as a repeat of the last brew (ADR 0028), the rating of the brew it copied. A brew started from a recipe has no such brew: a recipe holds parameters, not a rating.
+
+Every candidate is another brew, not removed, brewed no later than the brew being rated, so a later brew's rating is never offered. It is still copied only when the user taps the offer. The offer says where it comes from: "Start from the Last Rating of This Bag", "... of This Coffee", or "Start from the Rating of the Repeated Brew". The brew a repeat copied is known only to the sheet that logged it; rating the brew later from the brew list offers fallbacks 1 and 2 only.

@@ -35,6 +35,27 @@ struct BrewListScreen: View {
                         BrewListRowView(row: row, vocabulary: vocabulary, language: language)
                     }
                     .accessibilityIdentifier("brew-list-row")
+                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                        // Keeps the brew's parameters as a recipe (M2-T27); VoiceOver lists it
+                        // as an action.
+                        if !row.isRecipe {
+                            Button {
+                                model.saveAsRecipe(row.id)
+                            } label: {
+                                Label {
+                                    Text(L10n.brewListSaveAsRecipe)
+                                } icon: {
+                                    Image(systemName: "bookmark")
+                                }
+                            }
+                            .tint(.indigo)
+                            .accessibilityIdentifier("brew-list-save-recipe")
+                        }
+                    }
+                }
+                if model.recipeSaveFailed {
+                    Text(L10n.brewListRecipeSaveFailed)
+                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -79,6 +100,16 @@ struct BrewListRowView: View {
             }
             .font(.subheadline)
             .foregroundStyle(row.isRated ? HierarchicalShapeStyle.primary : HierarchicalShapeStyle.secondary)
+            if row.isRecipe {
+                Label {
+                    Text(L10n.brewListIsRecipe)
+                } icon: {
+                    Image(systemName: "bookmark.fill")
+                        .accessibilityHidden(true)
+                }
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            }
             if row.issue != nil {
                 Label {
                     Text(L10n.shelfRowIssue)

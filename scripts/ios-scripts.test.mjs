@@ -1147,7 +1147,7 @@ test('the brew form has no typed text, takes its ranges from the vocabulary and 
     assert.match(draft, new RegExp(`Vocabulary\\.Ranges\\.${range}\\b`), `the ${range} stepper reads Vocabulary.Ranges.${range}`);
   }
   const model = lexSwift(readFileSync(join(repoRoot, 'ios/Cupmark/Brew/BrewFormModel.swift'), 'utf8')).masked;
-  assert.match(model, /store\.addBrew\(brew, shelfEntry: entry\)/);
+  assert.match(model, /store\.addBrew\(brew, shelfEntry: entry, then: stageMore\)/);
   assert.match(model, /API\.Timestamp\(now\(\)\)/, 'brewed_at is recorded on the device');
 
   // No range is written in the view: no stepper bounds or steps, and no number of any brew range.
@@ -1169,7 +1169,11 @@ test('the brew form has no typed text, takes its ranges from the vocabulary and 
   const editor = lexSwift(readFileSync(join(repoRoot, 'ios/Cupmark/Shelf/ShelfEntryEditorScreen.swift'), 'utf8')).masked;
   assert.match(editor, /BrewSheet\(store: model\.store, route: route/);
   const sheet = lexSwift(readFileSync(join(repoRoot, 'ios/Cupmark/Brew/BrewSheet.swift'), 'utf8')).masked;
-  assert.match(sheet, /BrewFormScreen\(\s*store: store,\s*shelfEntry: route\.shelfEntryLocalID/);
+  // The sheet's flow builds the form for the route's shelf entry and start (M2-T27).
+  assert.match(sheet, /BrewFlowModel\(route: route, store: store\)/);
+  assert.match(sheet, /BrewFormScreen\(\s*model: flow\.form/);
+  const flow = lexSwift(readFileSync(join(repoRoot, 'ios/Cupmark/Brew/BrewFlowModel.swift'), 'utf8')).masked;
+  assert.match(flow, /shelfEntry: route\.shelfEntryLocalID,[^)]*start: route\.start/s);
 });
 
 // ---- Brew timer (M2-T21, docs/04 Input model "Timer") ----
@@ -1228,7 +1232,7 @@ test('the rating has no typed text, takes its lists, scale and limit from the vo
   assert.match(store, /try markUpdated\(brew\)/);
   // Rated right after the brew, or later from the shelf entry's brew list.
   const sheet = read('ios/Cupmark/Brew/BrewSheet.swift');
-  assert.match(sheet, /RatingScreen\(store: store, brew: savedBrewID, mode: \.afterBrew/);
+  assert.match(sheet, /RatingScreen\(\s*store: store,\s*brew: savedBrewID,\s*mode: \.afterBrew,\s*repeatedFrom: flow\.form\.copiedBrewID/);
   const list = read('ios/Cupmark/Brew/BrewListScreen.swift');
   assert.match(list, /NavigationLink\(value: BrewRatingRoute\(brewLocalID: row\.id\)\)/, 'the rating is made only when it opens');
   assert.match(list, /RatingScreen\(store: model\.store, brew: route\.brewLocalID, mode: \.later/);
@@ -1290,4 +1294,70 @@ test('offline scan: pending beans write through AccountStore and never send Open
   const engine = masked('ios/Cupmark/Sync/SyncEngine.swift');
   assert.match(engine, /case \(\.bean, \.lookUp\):\s*return try await lookUpBean\(sequence, localID\)/);
   assert.match(masked('ios/Cupmark/Sync/SyncHost.swift'), /queue\.run\(\)/, 'queued label photos run in the idle slot');
+});
+
+// ---- Personal statistics (M2-T28, ADR 0027) ----
+
+test('statistics: read-only, offline, no typed text, thresholds only in StatisticsRules (M2-T28)', () => {
+  const masked = (path) => lexSwift(readFileSync(join(repoRoot, path), 'utf8')).masked;
+  const files = ['PersonalStatistics.swift', 'StatisticsModel.swift', 'StatisticsScreen.swift'].map((name) => `ios/Cupmark/Statistics/${name}`);
+  for (const file of files) {
+    const code = masked(file);
+    assert.doesNotMatch(code, /\.searchable\b|\bTextField\b|\bTextEditor\b|\bSecureField\b/, `${file}: no typed text (invariant 1)`);
+    assert.doesNotMatch(code, /\bcontext\s*\.|\.write\s*\{|\bmark(Updated|Deleted)\(|\.add(Brew|Bean|ShelfEntry|Recipe)\(|\.save\(\)/, `${file}: never writes to the store`);
+    assert.doesNotMatch(code, /\bapiClient\b|\bAPIClient\b|URLSession/, `${file}: no route (ADR 0027)`);
+    assert.doesNotMatch(code, /\.rawValue\s*==|rawValue:\s*"/, `${file}: no vocabulary id as a string`);
+  }
+  // The thresholds are defined once; the computation and the screen name them.
+  const rules = masked('ios/Cupmark/Statistics/PersonalStatistics.swift');
+  for (const name of ['minimumRatedBrews', 'weekCount', 'topFlavourNoteCount', 'meanFractionDigits']) {
+    assert.equal(rules.match(new RegExp(`static let ${name}\\s*=`, 'g'))?.length, 1, `${name} is defined once`);
+  }
+  const screen = masked('ios/Cupmark/Statistics/StatisticsScreen.swift');
+  assert.doesNotMatch(screen, /(>=|<=|[<>]|==)\s*\d|prefix\(\s*\d|fractionLength\(/, 'the screen hard-codes no threshold or decimal count');
+  assert.doesNotMatch(screen, /\bText\(\s*(?!verbatim:)[^)\n]*\b(name|brand)\b/, 'Open Food Facts text only through Text(verbatim:)');
+  assert.match(masked('ios/Cupmark/Shelf/ShelfScreen.swift'), /StatisticsScreen\(store: store/, 'the shelf opens the statistics');
+});
+
+// ---- Recipes and one-tap repeat (M2-T27, docs/04 F2) ----
+
+test('recipes: no name, no typed text, written through AccountStore, and one tap from a repeat (M2-T27)', () => {
+  const masked = (path) => lexSwift(readFileSync(join(repoRoot, path), 'utf8')).masked;
+  const files = ['Brew/BrewStart.swift', 'Brew/BrewStartModel.swift', 'Brew/BrewFlowModel.swift', 'Brew/RecipeViews.swift', 'Store/AccountStore+Recipes.swift']
+    .map((name) => `ios/Cupmark/${name}`);
+  for (const file of files) {
+    const code = masked(file);
+    assert.doesNotMatch(code, /\.searchable\b|\bTextField\b|\bTextEditor\b|\bSecureField\b/, `${file}: no typed text (invariant 1)`);
+    assert.doesNotMatch(code, /\.rawValue\s*==|rawValue:\s*"/, `${file}: no vocabulary id as a string`);
+    // A recipe has no name (invariant 1): nothing names one.
+    assert.doesNotMatch(code, /\b(recipeName|nickname|title:\s*String)\b/, `${file}: a recipe has no name`);
+  }
+  for (const file of files.filter((name) => !name.includes('/Store/'))) {
+    assert.doesNotMatch(masked(file), /\bcontext\s*\.\s*(insert|save|delete)\(/, `${file}: writes go through AccountStore`);
+    assert.doesNotMatch(masked(file), /Vocabulary\.(Ranges|Constants)/, `${file}: no range or limit outside BrewDraft`);
+  }
+  // Every recipe write is inside write { } (ADR 0025, Addendum M2-T35) and queues its operation.
+  const store = masked('ios/Cupmark/Store/AccountStore+Recipes.swift');
+  for (const name of ['saveRecipe', 'replaceRecipe']) {
+    const body = store.slice(store.indexOf(`func ${name}(`));
+    assert.match(body.slice(0, body.indexOf('\n    }\n')), /try write \{/, `${name} writes inside write { }`);
+  }
+  assert.match(store, /try enqueue\(\.create, \.recipe, localID: recipe\.localID\)/);
+  assert.match(store, /try enqueueEdit\(of: recipe\)/);
+  assert.match(store, /try markDeleted\(recipe\)/);
+  // The brew form keeps the recipe in the brew's one save, queued after the brew.
+  const model = masked('ios/Cupmark/Brew/BrewFormModel.swift');
+  assert.match(model, /try store\.write \{[^}]*try addBrew\(store, brew, entry\) \{[^}]*stageRecipe\(parameters\)/);
+  // The rating offer says where it comes from (ADR 0026, Addendum M2-T27).
+  const rating = masked('ios/Cupmark/Rating/RatingScreen.swift');
+  for (const key of ['ratingUseLast', 'ratingUseLastSameBean', 'ratingUseLastRepeatedBrew']) {
+    assert.match(rating, new RegExp(`L10n\\.${key}\\b`), `the offer can say ${key}`);
+  }
+  // A repeat is one tap: on the shelf row and on the entry's screen.
+  assert.match(masked('ios/Cupmark/Shelf/ShelfScreen.swift'), /BrewRoute\(shelfEntryLocalID: row\.id, start: \.lastBrew\)/);
+  assert.match(masked('ios/Cupmark/Shelf/ShelfEntryEditorScreen.swift'), /BrewStartSection\(model: repeats/);
+  const views = masked('ios/Cupmark/Brew/RecipeViews.swift');
+  assert.match(views, /onStart\(model\.route\(\.lastBrew\)\)/);
+  assert.match(views, /onStart\(model\.route\(\.recipe\(row\.id\)\)\)/);
+  assert.match(views, /\.onDelete\b/, 'recipes can be removed');
 });

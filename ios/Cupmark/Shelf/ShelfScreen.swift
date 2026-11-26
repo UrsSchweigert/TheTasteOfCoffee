@@ -128,6 +128,17 @@ struct ShelfScreen: View {
                     }
                 }
                 .accessibilityIdentifier("shelf-scan")
+                // Personal statistics (M2-T28), read from this store, offline. A value route,
+                // so the screen and its model are made only when it opens.
+                NavigationLink(value: StatisticsRoute()) {
+                    Label {
+                        Text(L10n.statisticsTitle)
+                    } icon: {
+                        Image(systemName: "chart.bar")
+                            .accessibilityHidden(true)
+                    }
+                }
+                .accessibilityIdentifier("shelf-statistics")
             }
             Section {
                 if model.loadFailed {
@@ -155,6 +166,20 @@ struct ShelfScreen: View {
                             }
                             .tint(.brown)
                             .accessibilityIdentifier("shelf-entry-brew")
+                            // Repeats the last brew on this bag, prefilled (M2-T27).
+                            if model.canRepeatLastBrew {
+                                Button {
+                                    brewing = BrewRoute(shelfEntryLocalID: row.id, start: .lastBrew)
+                                } label: {
+                                    Label {
+                                        Text(L10n.brewRepeatLast)
+                                    } icon: {
+                                        Image(systemName: "arrow.clockwise")
+                                    }
+                                }
+                                .tint(.indigo)
+                                .accessibilityIdentifier("shelf-entry-repeat")
+                            }
                         }
                     }
                 }
@@ -168,6 +193,9 @@ struct ShelfScreen: View {
         }
         .navigationDestination(for: ShelfEntryRoute.self) { route in
             ShelfEntryEditorScreen(store: store, mode: .edit(route.localID), vocabulary: vocabulary, language: language)
+        }
+        .navigationDestination(for: StatisticsRoute.self) { _ in
+            StatisticsScreen(store: store, vocabulary: vocabulary, language: language)
         }
         .navigationDestination(isPresented: $isScanning) {
             if let apiClient {

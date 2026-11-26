@@ -268,4 +268,65 @@ enum L10n {
     static var pendingBeansNoneTitle: LocalizedStringKey { "pending_beans.none.title" }
     static var pendingBeansNoneMessage: LocalizedStringKey { "pending_beans.none.message" }
     static var pendingBeansSaveFailed: LocalizedStringKey { "pending_beans.save_failed" }
+    // Personal statistics (M2-T28, ADR 0027)
+    static var statisticsTitle: LocalizedStringKey { "statistics.title" }
+    static var statisticsLoading: LocalizedStringKey { "statistics.loading" }
+    static var statisticsLoadFailed: LocalizedStringKey { "statistics.load_failed" }
+    static var statisticsBrewsHeader: LocalizedStringKey { "statistics.brews.header" }
+    static var statisticsBrewsTotal: LocalizedStringKey { "statistics.brews.total" }
+    static var statisticsBrewsRated: LocalizedStringKey { "statistics.brews.rated" }
+    static var statisticsBrewsEmpty: LocalizedStringKey { "statistics.brews.empty" }
+    static var statisticsWeeksHeader: LocalizedStringKey { "statistics.weeks.header" }
+    /// The weeks footer; the catalog value places `%@`, the number of weeks.
+    static func statisticsWeeksFooter(weeks: String) -> String { String(localized: "statistics.weeks.footer \(weeks)") }
+    static var statisticsNoRatings: LocalizedStringKey { "statistics.no_ratings" }
+    static var statisticsNoKnownScores: LocalizedStringKey { "statistics.no_known_scores" }
+    static var statisticsTasteProfileHeader: LocalizedStringKey { "statistics.taste_profile.header" }
+    static var statisticsTasteProfileFooter: LocalizedStringKey { "statistics.taste_profile.footer" }
+    static var statisticsMethodsHeader: LocalizedStringKey { "statistics.methods.header" }
+    /// Shown while no method has enough rated brews; `%@` is that number.
+    static func statisticsMethodsNone(brews: String) -> String { String(localized: "statistics.methods.none \(brews)") }
+    /// A method's taste profile header; `%@` is the method's vocabulary label.
+    static func statisticsMethodProfileHeader(method: String) -> String { String(localized: "statistics.method_profile.header \(method)") }
+    static var statisticsNotesHeader: LocalizedStringKey { "statistics.notes.header" }
+    static var statisticsNotesFooter: LocalizedStringKey { "statistics.notes.footer" }
+    static var statisticsNotesEmpty: LocalizedStringKey { "statistics.notes.empty" }
+    static var statisticsBestHeader: LocalizedStringKey { "statistics.best.header" }
+    static var statisticsBestMethod: LocalizedStringKey { "statistics.best.method" }
+    static var statisticsBestBean: LocalizedStringKey { "statistics.best.bean" }
+    static var statisticsBestNone: LocalizedStringKey { "statistics.best.none" }
+    /// The "best" footer; `%@` is the number of rated brews a method or bean needs.
+    static func statisticsBestFooter(brews: String) -> String { String(localized: "statistics.best.footer \(brews)") }
+    static var statisticsMeanOverall: LocalizedStringKey { "statistics.mean_overall" }
+    static var statisticsBuyAgainHeader: LocalizedStringKey { "statistics.buy_again.header" }
+    static var statisticsBuyAgainShare: LocalizedStringKey { "statistics.buy_again.share" }
+    static var statisticsBuyAgainAnswered: LocalizedStringKey { "statistics.buy_again.answered" }
+    static var statisticsBuyAgainEmpty: LocalizedStringKey { "statistics.buy_again.empty" }
+    static var statisticsBuyAgainFooter: LocalizedStringKey { "statistics.buy_again.footer" }
+    // Recipes and repeats (M2-T27).
+    static var brewRepeatLast: LocalizedStringKey { "brew.repeat_last" }
+    static var brewRepeatHint: LocalizedStringKey { "brew.repeat.hint" }
+    static var brewRepeatHeader: LocalizedStringKey { "brew.repeat.header" }
+    static var brewRepeatFooter: LocalizedStringKey { "brew.repeat.footer" }
+    static var brewStartedFromLastBrew: LocalizedStringKey { "brew.started_from.last_brew" }
+    static var brewStartedFromRecipe: LocalizedStringKey { "brew.started_from.recipe" }
+    static var brewStartNotFound: LocalizedStringKey { "brew.start_not_found" }
+    static var brewRecipeSave: LocalizedStringKey { "brew.recipe.save" }
+    static var brewRecipeUpdate: LocalizedStringKey { "brew.recipe.update" }
+    static var recipeHeader: LocalizedStringKey { "recipe.header" }
+    static var recipeFooter: LocalizedStringKey { "recipe.footer" }
+    static var recipeListTitle: LocalizedStringKey { "recipe_list.title" }
+    static var recipeEmpty: LocalizedStringKey { "recipe_list.empty" }
+    static var recipeDeleteFailed: LocalizedStringKey { "recipe_list.delete_failed" }
+    static var recipeUnknownMethod: LocalizedStringKey { "recipe.unknown_method" }
+    static var brewListSaveAsRecipe: LocalizedStringKey { "brew_list.save_as_recipe" }
+    static var brewListIsRecipe: LocalizedStringKey { "brew_list.is_recipe" }
+    static var brewListRecipeSaveFailed: LocalizedStringKey { "brew_list.recipe_save_failed" }
+    /// The grind in a recipe or brew summary; the catalog value places `%@`.
+    static func recipeGrindValue(_ value: String) -> String { String(localized: "recipe.grind_value \(value)") }
+    /// Between the values of a recipe or brew summary (" · ").
+    static var recipeSummarySeparator: String { String(localized: "recipe.summary.separator") }
+    static var brewRecipeAlreadyKept: LocalizedStringKey { "brew.recipe.already_kept" }
+    static var ratingUseLastSameBean: LocalizedStringKey { "rating.use_last.same_bean" }
+    static var ratingUseLastRepeatedBrew: LocalizedStringKey { "rating.use_last.repeated_brew" }
 }

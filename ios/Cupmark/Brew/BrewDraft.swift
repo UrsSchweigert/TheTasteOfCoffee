@@ -93,17 +93,18 @@ struct BrewDraft: Equatable, Sendable {
         self.milk = nil
     }
 
-    /// The values of a stored brew, as they are (used for the steppers' start values). An id
-    /// the bundled vocabulary does not know reads as not set.
-    init(_ brew: StoredBrew) {
-        self.init(method: brew.method)
-        doseDg = brew.doseDg
-        waterG = brew.waterG
-        waterTemperature = brew.waterTemperature
-        brewTimeS = brew.brewTimeS
-        grindNormalised = brew.grindNormalised
-        waterType = brew.waterType
-        milk = brew.milk
+    /// The values of a stored brew or recipe, as they are (the steppers' start values, and
+    /// the copy a repeat starts from, M2-T27). An id the bundled vocabulary does not know
+    /// reads as not set.
+    init(_ stored: some BrewParameterColumns) {
+        self.init(method: stored.method)
+        doseDg = stored.doseDg
+        waterG = stored.waterG
+        waterTemperature = stored.waterTemperature
+        brewTimeS = stored.brewTimeS
+        grindNormalised = stored.grindNormalised
+        waterType = stored.waterType
+        milk = stored.milk
     }
 
     /// Sets `brew_time_s` to `seconds`, moved into its vocabulary range and onto its step

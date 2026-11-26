@@ -69,6 +69,18 @@ Three additions keep the picture complete without text:
 
 The vocabulary and criteria are versioned. A rating stores the version it was made with, so later changes do not corrupt old aggregates.
 
+### Personal statistics (free)
+
+The user's own statistics are computed on the device from the local store and work offline (ADR 0027). They use the F4 measures on the user's own brews; removed brews count nowhere and only rated brews count for scores:
+
+- brews in total and per ISO week for the last 8 weeks;
+- the taste profile: the mean per criterion, overall and per method, a method once it has 2 rated brews;
+- the 5 most-picked flavour notes;
+- the best method and the best bean by mean overall score, each with at least 2 rated brews; on a tie, more rated brews win, then the most recent;
+- the buy-again share among the ratings that answer it (ADR 0026).
+
+Means have one decimal in the device locale. Without rated brews a section shows an empty state, not zeros.
+
 ## F4 Explore (paid)
 
 - Bean page: number of raters, mean and spread per criterion, most-picked flavour notes, buy-again share.

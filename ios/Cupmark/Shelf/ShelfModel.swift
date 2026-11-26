@@ -86,6 +86,9 @@ final class ShelfModel {
     private(set) var questionCount = 0
     /// True when the last read of the store failed.
     private(set) var loadFailed = false
+    /// Whether the device has a brew that "Repeat Last Brew" can copy onto any bag (M2-T27,
+    /// `AccountStore.lastBrewToRepeat(for:)`: the bag's newest brew, else the device's).
+    private(set) var canRepeatLastBrew = false
 
     let store: AccountStore
     private let now: () -> Date
@@ -106,6 +109,7 @@ final class ShelfModel {
             }
             issueCount = try store.syncIssues().count
             questionCount = try store.pendingBeanQuestions().count
+            canRepeatLastBrew = try store.latestBrew() != nil
             loadFailed = false
         } catch {
             loadFailed = true

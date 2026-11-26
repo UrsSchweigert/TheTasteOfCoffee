@@ -901,6 +901,132 @@
         }
       }
     },
+    "brew.recipe.already_kept" : {
+      "comment" : "Footer of the recipe toggle when the brew's values are already another recipe.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Werte sind bereits ein Rezept. Es bleibt, wie es ist, damit es nie zwei gleiche Rezepte gibt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "These values are already a recipe. It is kept as it is, so there are never two equal recipes."
+          }
+        }
+      }
+    },
+    "brew.recipe.save" : {
+      "comment" : "Toggle in the brew form that keeps the brew's values as a recipe when it is saved.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auch als Rezept sichern"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Also Save as a Recipe"
+          }
+        }
+      }
+    },
+    "brew.recipe.update" : {
+      "comment" : "Toggle in a brew form started from a recipe that replaces the recipe's values when the brew is saved.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rezept mit diesen Werten aktualisieren"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update the Recipe with These Values"
+          }
+        }
+      }
+    },
+    "brew.repeat.footer" : {
+      "comment" : "Footer of the repeat section: one tap starts a prefilled brew; swiping removes a recipe.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ein Tippen öffnet eine neue Zubereitung dieser Packung mit diesen Werten, der Timer ist bereit. Wische über ein Rezept, um es zu entfernen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "One tap opens a new brew of this bag with these values and the timer ready. Swipe a recipe to remove it."
+          }
+        }
+      }
+    },
+    "brew.repeat.header" : {
+      "comment" : "Header of the section on a bag with the last brew and the recipes to repeat.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiederholen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repeat"
+          }
+        }
+      }
+    },
+    "brew.repeat.hint" : {
+      "comment" : "VoiceOver hint of a repeat of the last brew or of a recipe.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffnet eine neue Zubereitung dieser Packung mit diesen Werten."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opens a new brew of this bag with these values."
+          }
+        }
+      }
+    },
+    "brew.repeat_last" : {
+      "comment" : "Button on a bag that opens a new brew of it with every value of the last brew.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Letzte Zubereitung wiederholen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repeat Last Brew"
+          }
+        }
+      }
+    },
     "brew.save" : {
       "comment" : "Saves the brew.",
       "extractionState" : "manual",
@@ -951,6 +1077,60 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Log a Brew"
+          }
+        }
+      }
+    },
+    "brew.start_not_found" : {
+      "comment" : "Shown when the recipe or brew a repeat was to copy is gone; the form starts empty.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieses Rezept oder diese Zubereitung ist nicht mehr auf diesem iPhone. Stelle die Werte für diese Zubereitung ein."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That recipe or brew is no longer on this iPhone. Set the values for this brew."
+          }
+        }
+      }
+    },
+    "brew.started_from.last_brew" : {
+      "comment" : "Note at the top of a brew form that was filled from the last brew.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Werte deiner letzten Zubereitung"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Values from your last brew"
+          }
+        }
+      }
+    },
+    "brew.started_from.recipe" : {
+      "comment" : "Note at the top of a brew form that was filled from a recipe.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Werte aus einem Rezept"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Values from a recipe"
           }
         }
       }
@@ -1351,6 +1531,24 @@
         }
       }
     },
+    "brew_list.is_recipe" : {
+      "comment" : "Note on a brew in the brew list whose values are a recipe.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Als Rezept gesichert"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saved as a recipe"
+          }
+        }
+      }
+    },
     "brew_list.not_rated" : {
       "comment" : "Status of a brew in the brew list that has no rating yet.",
       "extractionState" : "manual",
@@ -1383,6 +1581,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rated"
+          }
+        }
+      }
+    },
+    "brew_list.recipe_save_failed" : {
+      "comment" : "Shown when keeping a brew's values as a recipe failed on the device.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Zubereitung konnte nicht als Rezept gesichert werden."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This brew could not be saved as a recipe."
+          }
+        }
+      }
+    },
+    "brew_list.save_as_recipe" : {
+      "comment" : "Swipe action on a brew in the brew list that keeps its values as a recipe.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Als Rezept sichern"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save as Recipe"
           }
         }
       }
@@ -3044,19 +3278,199 @@
       }
     },
     "rating.use_last.footer" : {
-      "comment" : "Explains the button that copies the last rating of the bag.",
+      "comment" : "Explains the button that copies an earlier rating (of this bag, this coffee or the repeated brew).",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Übernimmt Punkte, Intensitäten, Aromen und Wiederkauf der zuletzt bewerteten Zubereitung aus dieser Packung. Danach änderst du, was anders war."
+            "value" : "Übernimmt Punkte, Intensitäten, Aromen und Wiederkauf dieser früheren Bewertung. Danach änderst du, was anders war."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copies the scores, intensities, flavour notes and buy again of the latest rated brew of this bag. Then change what was different."
+            "value" : "Copies the scores, intensities, flavour notes and buy again of that earlier rating. Then change what was different."
+          }
+        }
+      }
+    },
+    "rating.use_last.repeated_brew" : {
+      "comment" : "Button that fills the rating with the rating of the brew this brew repeated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mit der Bewertung der wiederholten Zubereitung beginnen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start from the Rating of the Repeated Brew"
+          }
+        }
+      }
+    },
+    "rating.use_last.same_bean" : {
+      "comment" : "Button that fills the rating with the latest rating of an earlier brew of the same bean, from another bag.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mit der letzten Bewertung dieses Kaffees beginnen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start from the Last Rating of This Coffee"
+          }
+        }
+      }
+    },
+    "recipe.footer" : {
+      "comment" : "Footer of the recipe toggle: recipes are shown by their values, not by a name.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ein Rezept hat keinen Namen. Es wird mit Methode, Dosis, Verhältnis, Temperatur und Mahlgrad angezeigt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A recipe has no name. It is listed by method, dose, ratio, temperature and grind."
+          }
+        }
+      }
+    },
+    "recipe.grind_value %@" : {
+      "comment" : "The normalised grind of a recipe or brew in its summary; %@ is the value, for example \"4.5\".",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mahlgrad %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grind %@"
+          }
+        }
+      }
+    },
+    "recipe.header" : {
+      "comment" : "Header of the recipe toggle in the brew form.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rezept"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recipe"
+          }
+        }
+      }
+    },
+    "recipe.summary.separator" : {
+      "comment" : "Separator between the dose, ratio, temperature and grind in the one-line summary of a recipe or brew. Keep the spaces around the dot.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · "
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · "
+          }
+        }
+      }
+    },
+    "recipe.unknown_method" : {
+      "comment" : "Shown instead of the method of a recipe or brew whose method this app version does not know.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Methode aus einer neueren App-Version"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Method from a newer app version"
+          }
+        }
+      }
+    },
+    "recipe_list.delete_failed" : {
+      "comment" : "Shown when removing a recipe failed on the device.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Rezept konnte auf diesem iPhone nicht entfernt werden. Bitte versuche es noch einmal."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The recipe could not be removed on this iPhone. Please try again."
+          }
+        }
+      }
+    },
+    "recipe_list.empty" : {
+      "comment" : "Shown when there is no brew and no recipe to repeat.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch nichts zum Wiederholen. Erfasste Zubereitungen und gesicherte Rezepte erscheinen hier."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing to repeat yet. Brews you log, and recipes you keep, appear here."
+          }
+        }
+      }
+    },
+    "recipe_list.title" : {
+      "comment" : "Title of the list of every recipe, and the row on a bag that opens it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle Rezepte"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All Recipes"
           }
         }
       }
@@ -4155,6 +4569,546 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Please sign in again"
+          }
+        }
+      }
+    },
+    "statistics.best.bean" : {
+      "comment" : "Title of the row with the best-rated bean.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beste Bohne"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Best bean"
+          }
+        }
+      }
+    },
+    "statistics.best.footer %@" : {
+      "comment" : "Footer of the best-rated section; %@ is the number of rated brews needed, for example \"2\".",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nach mittlerer Gesamtpunktzahl. Eine Zubereitungsart oder Bohne zählt ab %@ bewerteten Zubereitungen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "By mean overall score. A method or bean takes part once it has %@ rated brews."
+          }
+        }
+      }
+    },
+    "statistics.best.header" : {
+      "comment" : "Header of the best-rated method and bean.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Am besten bewertet"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Best Rated"
+          }
+        }
+      }
+    },
+    "statistics.best.method" : {
+      "comment" : "Title of the row with the best-rated brew method.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beste Zubereitungsart"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Best method"
+          }
+        }
+      }
+    },
+    "statistics.best.none" : {
+      "comment" : "Shown in a best-rated row while no method or bean has enough rated brews.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch nicht genug bewertete Zubereitungen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not enough rated brews yet."
+          }
+        }
+      }
+    },
+    "statistics.brews.empty" : {
+      "comment" : "Empty state of the statistics when there are no brews.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch keine Zubereitung. Erfasse eine Zubereitung aus deinem Regal."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No brews yet. Log a brew from your shelf."
+          }
+        }
+      }
+    },
+    "statistics.brews.header" : {
+      "comment" : "Header of the brew counts in the statistics.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zubereitungen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brews"
+          }
+        }
+      }
+    },
+    "statistics.brews.rated" : {
+      "comment" : "Row label: the number of brews that have a rating.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bewertete Zubereitungen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rated brews"
+          }
+        }
+      }
+    },
+    "statistics.brews.total" : {
+      "comment" : "Row label: the number of all brews.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle Zubereitungen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All brews"
+          }
+        }
+      }
+    },
+    "statistics.buy_again.answered" : {
+      "comment" : "Row label: the number of ratings that answer whether to buy the bean again.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bewertungen mit Antwort"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ratings that answer"
+          }
+        }
+      }
+    },
+    "statistics.buy_again.empty" : {
+      "comment" : "Shown when rated brews exist but none answers whether to buy the bean again.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch keine Bewertung sagt, ob du die Bohne wieder kaufen würdest."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No rating answers buy again yet."
+          }
+        }
+      }
+    },
+    "statistics.buy_again.footer" : {
+      "comment" : "Footer of the buy-again share.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es zählen nur Bewertungen, die die Frage beantworten."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only ratings that answer the question count."
+          }
+        }
+      }
+    },
+    "statistics.buy_again.header" : {
+      "comment" : "Header of the buy-again share in the statistics.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wieder kaufen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buy Again"
+          }
+        }
+      }
+    },
+    "statistics.buy_again.share" : {
+      "comment" : "Row label: the share of ratings that answered yes to buying the bean again.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Würde wieder kaufen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Would buy again"
+          }
+        }
+      }
+    },
+    "statistics.load_failed" : {
+      "comment" : "Shown when the statistics could not be read from the local store.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Statistik konnte auf diesem Gerät nicht gelesen werden."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your statistics could not be read on this device."
+          }
+        }
+      }
+    },
+    "statistics.loading" : {
+      "comment" : "VoiceOver label of the spinner while the statistics are read from the device.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Statistik wird geladen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading statistics"
+          }
+        }
+      }
+    },
+    "statistics.mean_overall" : {
+      "comment" : "Row label: the mean overall score of the best method or bean.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mittlere Gesamtpunktzahl"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mean overall score"
+          }
+        }
+      }
+    },
+    "statistics.method_profile.header %@" : {
+      "comment" : "Header of one method's taste profile; %@ is the method, for example \"V60\".",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geschmacksprofil: %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taste Profile: %@"
+          }
+        }
+      }
+    },
+    "statistics.methods.header" : {
+      "comment" : "Header of the taste profiles per brew method.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geschmacksprofil nach Zubereitungsart"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taste Profile by Method"
+          }
+        }
+      }
+    },
+    "statistics.methods.none %@" : {
+      "comment" : "Shown while no brew method has enough rated brews for its own taste profile; %@ is that number, for example \"2\".",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eine Zubereitungsart bekommt ihr eigenes Geschmacksprofil, sobald sie %@ bewertete Zubereitungen hat."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A method gets its own taste profile once it has %@ rated brews."
+          }
+        }
+      }
+    },
+    "statistics.no_known_scores" : {
+      "comment" : "Taste profile empty state when brews are rated, but only on criteria this version of the app does not know.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Bewertungen nutzen Kriterien, die diese Version der App noch nicht kennt. Aktualisiere die App, um sie zu sehen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your ratings use criteria this version of the app does not know yet. Update the app to see them."
+          }
+        }
+      }
+    },
+    "statistics.no_ratings" : {
+      "comment" : "Empty state of a statistics section while no brew is rated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch keine bewertete Zubereitung. Bewerte eine Zubereitung, um das hier zu sehen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No rated brews yet. Rate a brew to see this."
+          }
+        }
+      }
+    },
+    "statistics.notes.empty" : {
+      "comment" : "Shown when rated brews exist but none picked a flavour note.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch keine Aromen gewählt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No flavour notes picked yet."
+          }
+        }
+      }
+    },
+    "statistics.notes.footer" : {
+      "comment" : "Footer of the most-picked flavour notes: the number is how many ratings picked the note.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wie viele deiner Bewertungen das Aroma gewählt haben."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How many of your ratings picked each note."
+          }
+        }
+      }
+    },
+    "statistics.notes.header" : {
+      "comment" : "Header of the flavour notes picked most often.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Am häufigsten gewählte Aromen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Most-Picked Flavour Notes"
+          }
+        }
+      }
+    },
+    "statistics.taste_profile.footer" : {
+      "comment" : "Footer of the taste profile.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die mittlere Punktzahl jedes Kriteriums über alle deine bewerteten Zubereitungen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The mean score of each criterion over all your rated brews."
+          }
+        }
+      }
+    },
+    "statistics.taste_profile.header" : {
+      "comment" : "Header of the mean score per criterion over all rated brews.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geschmacksprofil"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taste Profile"
+          }
+        }
+      }
+    },
+    "statistics.title" : {
+      "comment" : "Title of the personal statistics screen, and the shelf row that opens it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Statistik"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Statistics"
+          }
+        }
+      }
+    },
+    "statistics.weeks.footer %@" : {
+      "comment" : "Footer of the brews per week; %@ is the number of weeks shown, for example \"8\".",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die letzten %@ Wochen. Jede Zeile ist die Woche, die an diesem Montag beginnt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The last %@ weeks. Each row is the week that starts on that Monday."
+          }
+        }
+      }
+    },
+    "statistics.weeks.header" : {
+      "comment" : "Header of the brews per week; each row is a week, labelled with its Monday.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zubereitungen pro Woche"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brews per Week"
           }
         }
       }

@@ -321,7 +321,7 @@ final class BrewFormTests: XCTestCase {
             store: store,
             now: { now },
             calendar: try StoreFixtures.calendar("Europe/Berlin"),
-            addBrew: { _, _, _ in throw LocalStoreError.invalidDate }
+            addBrew: { _, _, _, _ in throw LocalStoreError.invalidDate }
         )
         model.draft.method = try StoreFixtures.first(Vocabulary.Method.self)
 

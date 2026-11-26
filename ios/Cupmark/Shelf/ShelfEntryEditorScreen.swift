@@ -20,6 +20,8 @@ struct ShelfEntryEditorScreen: View {
     @State private var confirmingDelete = false
     /// The brew form of this entry, while open (M2-T19).
     @State private var brewing: BrewRoute?
+    /// "Repeat Last Brew" and the recipes of a stored entry (M2-T27); nil while adding.
+    @State private var repeats: BrewStartModel?
 
     init(
         store: AccountStore,
@@ -29,6 +31,9 @@ struct ShelfEntryEditorScreen: View {
         onFinished: @escaping @MainActor (UUID?) -> Void = { _ in }
     ) {
         _model = State(initialValue: ShelfEntryEditorModel(mode: mode, store: store))
+        if case .edit(let localID) = mode {
+            _repeats = State(initialValue: BrewStartModel(shelfEntry: localID, store: store))
+        }
         self.vocabulary = vocabulary
         self.language = language
         self.onFinished = onFinished
@@ -61,6 +66,12 @@ struct ShelfEntryEditorScreen: View {
                         }
                     }
                     .accessibilityIdentifier("shelf-entry-brews")
+                }
+                // One tap from a repeat of the last brew or a recipe (M2-T27).
+                if let repeats {
+                    BrewStartSection(model: repeats, vocabulary: vocabulary, language: language) { start in
+                        brewing = start
+                    }
                 }
             }
             beanSection
