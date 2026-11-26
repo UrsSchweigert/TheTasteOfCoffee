@@ -6031,6 +6031,96 @@
         }
       }
     },
+    "settings.photo_backup.apply_failed" : {
+      "comment" : "Shown in Settings when the backup setting could not be applied to every brew photo; it is tried again at the next start.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Einstellung konnte nicht auf jedes Foto angewendet werden. Beim nächsten Start wird es noch einmal versucht."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The setting could not be applied to every photo. It is tried again at the next start."
+          }
+        }
+      }
+    },
+    "settings.photo_backup.footer_off" : {
+      "comment" : "Footer below the brew photo backup switch while it is off: photos stay on this phone only.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fotos von Zubereitungen bleiben nur auf diesem iPhone. Wenn das iPhone ersetzt wird, werden sie nicht aus einer Sicherung wiederhergestellt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brew photos stay on this phone only. If the phone is replaced, they are not restored from a backup."
+          }
+        }
+      }
+    },
+    "settings.photo_backup.footer_on" : {
+      "comment" : "Footer below the brew photo backup switch while it is on: photos are in the backup the user already has with Apple.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fotos von Zubereitungen sind in der Sicherung dieses iPhones enthalten, die du bereits bei Apple hast, in iCloud oder auf einem Computer."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brew photos are included in the backup of this phone that you already have with Apple, in iCloud or on a computer."
+          }
+        }
+      }
+    },
+    "settings.photo_backup.toggle" : {
+      "comment" : "Switch in Settings: whether brew photos are part of the device backup (off by default). Also its VoiceOver label.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fotos von Zubereitungen in die Gerätesicherung einbeziehen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Include brew photos in the device backup"
+          }
+        }
+      }
+    },
+    "settings.photos.header" : {
+      "comment" : "Header of the brew photos section in Settings.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fotos von Zubereitungen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brew Photos"
+          }
+        }
+      }
+    },
     "settings.privacy.header" : {
       "comment" : "Header of the privacy section in Settings.",
       "extractionState" : "manual",

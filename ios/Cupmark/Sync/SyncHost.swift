@@ -179,6 +179,8 @@ final class SyncHost {
         // Brew photos (M2-T42, ADR 0033) stay with the store across sign-outs; at every open
         // the records of removed brews and the files no record lists go.
         opened.sweepBrewPhotos()
+        // The device-backup setting (M2-T45) is applied again to the folder and its files.
+        opened.applyBrewPhotoBackupSetting()
         let started = makeEngine(next, opened)
         started.onSignInRequired = { [weak self, weak started] in
             // Only the current engine speaks for the host; a stopped one may still finish.

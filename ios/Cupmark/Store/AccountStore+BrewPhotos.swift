@@ -226,6 +226,17 @@ extension AccountStore {
         return sweep
     }
 
+    // MARK: - Backup
+
+    /// Sets the device-backup flag of this account's photo folder and its files to the current
+    /// setting (M2-T45), at every store open (`SyncHost`) so an older folder or a restored
+    /// install is corrected. Touches no record and no file content; a folder that is not there
+    /// yet follows the setting when it is created. Safe to repeat.
+    @discardableResult
+    func applyBrewPhotoBackupSetting() -> Bool {
+        brewPhotoFiles?.applyBackupSetting() ?? true
+    }
+
     // MARK: - Helpers
 
     private static var newestBrewPhotoFirst: [SortDescriptor<StoredBrewPhoto>] {

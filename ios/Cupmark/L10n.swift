@@ -371,6 +371,12 @@ enum L10n {
     static var settingsConsentHint: LocalizedStringKey { "settings.consent.hint" }
     static var settingsConsentFooter: LocalizedStringKey { "settings.consent.footer" }
     static var settingsConsentSaveFailed: LocalizedStringKey { "settings.consent.save_failed" }
+    // Brew photos in the device backup (M2-T45).
+    static var settingsPhotosHeader: LocalizedStringKey { "settings.photos.header" }
+    static var settingsPhotoBackupToggle: LocalizedStringKey { "settings.photo_backup.toggle" }
+    static var settingsPhotoBackupFooterOff: LocalizedStringKey { "settings.photo_backup.footer_off" }
+    static var settingsPhotoBackupFooterOn: LocalizedStringKey { "settings.photo_backup.footer_on" }
+    static var settingsPhotoBackupApplyFailed: LocalizedStringKey { "settings.photo_backup.apply_failed" }
     // Export and local data (M2-T30).
     static var exportTitle: LocalizedStringKey { "export.title" }
     static var exportStart: LocalizedStringKey { "export.start" }

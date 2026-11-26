@@ -1035,7 +1035,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job. Marked `needs-mac-verification` until it passes.
 
 ### M2-T45 A setting: include brew photos in the device backup
-- status: in-progress
+- status: needs-mac-verification (written and statically checked on Linux; the Swift tests and the UI test have not run, the `ios` job on macOS must pass)
 - owner: ios-engineer
 - depends: M2-T42, M2-T42b
 - implements: owner decision of 2026-11-26 ("the iCloud backup should include the photos if the user wishes, to be toggled in the options"); ADR 0033 (brew photos on the device; its first version left them in the backup, as iOS does by default); invariant 6 and the privacy policy (nothing leaves the device on our initiative)

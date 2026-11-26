@@ -98,6 +98,9 @@ test('site: the facts of the policy match the decisions it states', () => {
 test('site: the privacy text says brew photos stay on the device and are never uploaded, in both languages (M2-T42b)', () => {
   assert.match(pages.en, /Brew photos stay on the device and are never uploaded\./);
   assert.match(pages.de, /Fotos von Zubereitungen bleiben auf dem Gerät und werden nie hochgeladen\./);
+  // M2-T45: the backup setting is Apple's service, off by default, and the pages say so alike.
+  assert.match(pages.en, /If you turn on "Include brew photos in the device backup" in Settings, Apple includes them in the backup of that phone \(iCloud or a computer\); that backup is Apple's service under Apple's terms, and Cupmark does not receive the photos\. The setting is off by default\./);
+  assert.match(pages.de, /Wenn Sie in den Einstellungen „Fotos von Zubereitungen in die Gerätesicherung einbeziehen“ einschalten, nimmt Apple sie in die Sicherung dieses iPhones auf \(iCloud oder ein Computer\); diese Sicherung ist ein Dienst von Apple unter den Bedingungen von Apple, und Cupmark erhält die Fotos nicht\. Die Einstellung ist standardmäßig aus\./);
   // The camera section also says the camera photographs a brew, as the permission prompt does.
   assert.match(pages.en, /to photograph a label or a brew/);
   assert.match(pages.de, /um ein Etikett oder eine Zubereitung zu fotografieren/);
