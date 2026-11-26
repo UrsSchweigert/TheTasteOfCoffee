@@ -156,7 +156,7 @@ describe('POST /beans', () => {
     ['an off-vocabulary origin', beanBody({ vocabulary_version: 2 }, { origin: 'atlantis' })],
     ['an off-vocabulary variety', beanBody({ vocabulary_version: 2 }, { variety: 'robusta' })],
     ['a label instead of an id', beanBody({}, { process: 'Washed' })],
-    ['an unpublished vocabulary version', beanBody({ vocabulary_version: 3 })],
+    ['an unpublished vocabulary version', beanBody({ vocabulary_version: 4 })],
     ['no vocabulary version', { attributes: {} }],
     ['no attributes', { vocabulary_version: 1 }],
     ['a numeric barcode', beanBody({ barcode: 4006381333931 })],

@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "status": "draft",
+  "status": "published",
   "scale": { "minimum": 1, "maximum": 10, "multipleOf": 0.5 },
   "criteria": [
     { "id": "aroma" },

@@ -4,8 +4,8 @@
 // The spec does not say which field applies to which method, vocabulary v1
 // defines no such mapping, and contracts/openapi.yaml says so on
 // BrewParameters ("Which fields apply to which method is not defined in
-// vocabulary v1 yet"). So the rule set is empty: every field is allowed with
-// every method. This module is the hook where rules go once they exist. They
+// vocabulary v1 yet", until v3). So the rule set is still empty (M2-T5 adds the
+// v3 rules): every field is allowed with every method. This module is the hook where rules go once they exist. They
 // belong in the vocabulary (CLAUDE.md, invariant 2), so `methodRulesFor`
 // should then read them from src/generated/vocabulary.ts, not from a list
 // written here.

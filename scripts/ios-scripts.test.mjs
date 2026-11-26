@@ -106,7 +106,7 @@ test('generateSwift uses the renamed case for parents and children too', () => {
 
 test('no generated case of the real vocabulary is none or some', () => {
   const version = latestPublishedVersion();
-  const swift = generateSwift({ version, files: loadVocabulary(version), languages: LANGUAGES });
+  const swift = generateSwift({ version, files: loadVocabulary(version), languages: LANGUAGES, brewFields: v3BrewFields() });
   assert.doesNotMatch(swift, /^\s*case `?(none|some)`?\b/m);
   assert.doesNotMatch(swift, /\.(none|some)\b/);
   assert.match(swift, /case noMilk = "none"/);
@@ -143,8 +143,8 @@ test('generateSwift emits a parent reference (country in origins) as a typed, op
 
 test('the real vocabulary: Origin.country, Species and Variety, and java in two enums without a clash', () => {
   const version = latestPublishedVersion();
-  assert.equal(version, 2);
-  const swift = generateSwift({ version, files: loadVocabulary(version), languages: LANGUAGES });
+  assert.equal(version, 3);
+  const swift = generateSwift({ version, files: loadVocabulary(version), languages: LANGUAGES, brewFields: v3BrewFields() });
   assert.match(swift, /var country: Vocabulary\.Origin\? \{/);
   for (const region of ['hawaii: return .usa', 'sumatra: return .indonesia', 'java: return .indonesia', 'bali: return .indonesia', 'flores: return .indonesia']) {
     assert.ok(swift.includes(`case .${region}`), region);
@@ -215,14 +215,9 @@ test('the committed Vocabulary.swift matches the latest published vocabulary', (
 
 // ---- Vocabulary v3 (draft, M2-T3): grinders with a scale, and the method field rules. ----
 
-/**
- * Fields the v3 rules name that BrewParameters gets when v3 is published
- * (M2-T4); the same list as V3_FIELDS_NOT_IN_API_YET in
- * contracts/test/vocabulary.test.mjs. Until then the draft is generated
- * with them added, as the contract test checks it.
- */
-const V3_FIELDS_NOT_IN_API_YET = ['grinder', 'grind_setting'];
-const v3BrewFields = () => [...new Set([...brewParameterFields(loadOpenApi()), ...V3_FIELDS_NOT_IN_API_YET])];
+/** The fields v3 added to BrewParameters when it was published (M2-T4). */
+const V3_FIELDS = ['grinder', 'grind_setting'];
+const v3BrewFields = () => brewParameterFields(loadOpenApi());
 const v3Files = () => structuredClone(loadVocabulary(3));
 const generateV3 = (files = v3Files(), brewFields = v3BrewFields()) =>
   generateSwift({ version: 3, files, languages: LANGUAGES, brewFields });
@@ -312,7 +307,7 @@ test('v3 draft: generation fails on a rule that names an unknown method or field
   unknownField.brew.field_rules.grind_size = { allowed_methods: { espresso: true } };
   assert.throws(() => generateV3(unknownField), /field_rules\.grind_size: grind_size is not a BrewParameters field/);
   // The fields come from BrewParameters: without the v3 fields the draft does not generate.
-  assert.throws(() => generateV3(v3Files(), brewParameterFields(loadOpenApi())), /grinder is not a BrewParameters field/);
+  assert.throws(() => generateV3(v3Files(), v3BrewFields().filter((field) => !V3_FIELDS.includes(field))), /grinder is not a BrewParameters field/);
   // Rules need the field list; the method itself is never ruled.
   assert.throws(() => generateSwift({ version: 3, files: v3Files(), languages: LANGUAGES }), /needs brewFields/);
   const methodRule = v3Files();
@@ -343,14 +338,11 @@ test('v3 draft: generation fails on a scale off its step or with an inexact step
   assert.throws(() => generateV3(otherList), /methods\.espresso: scale is only allowed in grinders/);
 });
 
-test('the v3 fields are in BrewParameters exactly when v3 is published', () => {
-  const published = Object.values(loadVocabulary(3)).every((file) => file.status === 'published');
-  for (const field of V3_FIELDS_NOT_IN_API_YET) {
-    assert.equal(brewParameterFields(loadOpenApi()).includes(field), published, field);
-  }
+test('the v3 fields are in BrewParameters, because v3 is published', () => {
+  for (const field of V3_FIELDS) assert.ok(brewParameterFields(loadOpenApi()).includes(field), field);
 });
 
-test('the bundled v2 has no grinders and no rules, so its output is unchanged', () => {
+test('v2 has no grinders and no rules, so its output is unchanged', () => {
   const swift = generateSwift({ version: 2, files: loadVocabulary(2), languages: LANGUAGES, brewFields: brewParameterFields(loadOpenApi()) });
   assert.equal(swift, generateSwift({ version: 2, files: loadVocabulary(2), languages: LANGUAGES }));
   assert.doesNotMatch(swift, /Grinder|BrewField|fieldRules/);

@@ -31,8 +31,8 @@ describe('src/generated/vocabulary.ts', () => {
     expect(committed === generateVocabularyFromContract(), 'run `npm run generate` and commit the result').toBe(true);
   });
 
-  it('holds v1 and v2, the published versions', () => {
-    expect(Object.keys(publishedVocabularies)).toEqual(['1', '2']);
+  it('holds v1, v2 and v3, the published versions', () => {
+    expect(Object.keys(publishedVocabularies)).toEqual(['1', '2', '3']);
     const lists = publishedVocabularies[1]?.lists ?? {};
     expect(lists.methods).toEqual(ids(v1('brew').methods));
     expect(lists.milk_types).toEqual(ids(v1('brew').milk_types));
@@ -94,10 +94,11 @@ describe('conformsToVocabulary', () => {
   });
 
   it('rejects an unpublished or unknown version', () => {
-    expect(publishedVocabulary(3)).toBeUndefined();
+    expect(publishedVocabulary(3)).toBeDefined();
+    expect(publishedVocabulary(4)).toBeUndefined();
     expect(publishedVocabulary(0)).toBeUndefined();
     expect(publishedVocabulary(1.5)).toBeUndefined();
-    expect(conformsToVocabulary('BrewInput', { ...brew, vocabulary_version: 3 }, 3)).toBe(false);
+    expect(conformsToVocabulary('BrewInput', { ...brew, vocabulary_version: 4 }, 4)).toBe(false);
     expect(conformsToVocabulary('NoSuchSchema', brew, 1)).toBe(false);
   });
 
@@ -186,18 +187,18 @@ describe('the vocabulary generator', () => {
   });
 
   it('leaves out a draft version, and refuses one that is half published', () => {
-    // A draft v3, copied from v2 as contracts/README.md "Publishing a version" says.
+    // A draft v4, copied from v3 as contracts/README.md "Publishing a version" says.
     const root = copy();
-    cpSync(join(root, 'v2'), join(root, 'v3'), { recursive: true });
+    cpSync(join(root, 'v3'), join(root, 'v4'), { recursive: true });
     for (const name of ['bean', 'brew', 'criteria', 'flavour_notes', 'shelf']) {
-      const file = join(root, 'v3', `${name}.json`);
-      writeFileSync(file, readFileSync(file, 'utf8').replace('"version": 2', '"version": 3').replace('"status": "published"', '"status": "draft"'));
+      const file = join(root, 'v4', `${name}.json`);
+      writeFileSync(file, readFileSync(file, 'utf8').replace('"version": 3', '"version": 4').replace('"status": "published"', '"status": "draft"'));
     }
     const source = generateVocabularySource(contract, readVocabularyDir(root));
-    expect(source).toContain('"2"');
-    expect(source).not.toContain('"3"');
+    expect(source).toContain('"3"');
+    expect(source).not.toContain('"4"');
     expect(source).toBe(generateVocabularyFromContract());
-    const file = join(root, 'v3', 'bean.json');
+    const file = join(root, 'v4', 'bean.json');
     writeFileSync(file, readFileSync(file, 'utf8').replace('"status": "draft"', '"status": "published"'));
     expect(() => generateVocabularySource(contract, readVocabularyDir(root))).toThrow(/some files are published/);
   });

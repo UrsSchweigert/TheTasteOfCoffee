@@ -54,3 +54,4 @@ What this costs, what it rules out, when to revisit.
 - [0026 Rating input: no default answers, an offered last rating, and the version raised on rating](0026-rating-input-defaults.md)
 - [0027 Personal statistics: the default set, computed on the device](0027-personal-statistics-set.md)
 - [0028 Recipes and one-tap repeat: no name, copied into a new brew, kept from the brew form](0028-recipes-and-one-tap-repeat.md)
+- [0029 Processes gain `unknown` and species gain `other` in vocabulary v3](0029-processes-gain-unknown-and-species-gain-other.md)
