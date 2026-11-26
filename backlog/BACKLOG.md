@@ -238,7 +238,7 @@ Goal: a signed-in user can store and read their own shelf, brews and recipes thr
   - The boundary policy lacks `s3:DeleteObject`, `s3:DeleteObjectVersion` and `s3:ListBucketVersions` on the photo bucket. The policy change goes into `scripts/aws/`, and the owner re-applies it before deploy.
 
 ### M1-T7 Deploy pipeline to dev
-- status: blocked (pipeline merged; waiting for the owner's setup issue, the first approved dev deploy and the post-deploy checks)
+- status: done (the owner approved and ran the first dev deploy on 2026-11-26; `cupmark-dev-core` is up, `GET /health` answers 200 and `scripts/smoke/post-deploy-checks.sh dev` passes; infra/README.md, "If the first deploy fails", records what the first deploy taught)
 - owner: infra-engineer
 - depends: M1-T2, M0-T5, M1-T9
 - needs: human (approve the first deployment)
@@ -468,7 +468,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T10 Dev stage values in the app
-- status: needs-mac-verification (the owner posted the dev outputs on 2026-11-26; the values are in Config/Dev.xcconfig and the script test accepts them; the `ios` job runs the StageConfig tests)
+- status: done (merged in #77; the `ios` job runs `StageConfigTests` against the built app with the dev values)
 - owner: ios-engineer
 - needs: human (after the first dev deploy, the owner reads the outputs `AppClientId`, `ApiUrl` and `HostedDomain` of `cupmark-dev-core` and posts them on the task's issue)
 - depends: M1-T7, M2-T9
@@ -763,7 +763,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T26 Brew form: method fields and grinder (vocabulary v3)
-- status: needs-mac-verification (written on Linux and not built; the macOS `ios` job must build and run it; ADR 0030)
+- status: done (merged in #74; the `ios` job built it and ran the schema migrations and the method rules tests)
 - owner: ios-engineer
 - depends: M2-T4, M2-T5, M2-T19
 - implements: docs/04-specification.md, F2; the D13 decision (M2-T2)
