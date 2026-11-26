@@ -945,6 +945,7 @@ Scope: App Store listing, screenshots, privacy nutrition labels, privacy policy 
     - moving the last shelf entry off a pending bean (ShelfEntryEditorModel) drops the bean as `markDeleted` does, so a bean waiting for an answer cannot stay in the outbox forever;
     - `BeanEntryModel` never calls `createBean` while `describing` is set, even without an offline store;
     - add tests that a failed `.addScanned` save leaves nothing behind and that a parked dependency does not loop.
+  - From PR #63: some `StoreFixtures` ids are not valid contract ids (`shelfEntryID` has an `L`, `recipeID` an `I`), so the engine parks any operation that names them. Make every fixture id a valid ULID.
   - Prefer one shared mechanism in `AccountStore` (for example, a write that snapshots the changed models' sync state and fields and restores them on failure) over a snapshot per screen.
   - Each site has a test like `RatingTests.testAFailedSaveLeavesNothingBehind`: a write that throws after changing a saved model leaves the model as it was and queues nothing.
   - Mac: the `ios` job.
