@@ -22,6 +22,23 @@ final class AccountStore {
     /// The writes under way (`write { }`, `Store/AccountStore+Write.swift`). Only `write`
     /// changes it.
     var writeNesting = WriteNesting()
+    /// Called when a failed write's discard could not put everything back (`DiscardFault`),
+    /// after the fault was logged. An `assertionFailure` in the app; tests record the fault
+    /// instead, so that a test of that path does not stop a Debug run.
+    var onDiscardFault: (DiscardFault) -> Void = { fault in
+        assertionFailure(fault.assertionMessage)
+    }
+    /// True once a discard left values the store does not have (`DiscardFault`,
+    /// `leavesUnsavedState`). Every later `save()` then throws `DiscardError.storeNeedsReopening`
+    /// (ADR 0025 Addendum M2-T37). Only `reportDiscardFault` sets it; it is never cleared: a
+    /// new `AccountStore` on the same file starts without it.
+    var needsReopening = false
+    /// The saved values captured before `ModelContext.save()` calls that failed, by live model,
+    /// until that model is saved (`capturePendingSave`, `finishSave`, ADR 0025 Addendum
+    /// M2-T37). Every discard uses them in place of reading the store again.
+    var failedSaveCaptures: [ObjectIdentifier: SavedValuesCapture] = [:]
+    /// What the last discard saw and did, for tests (`DiscardReport`).
+    var lastDiscardReport: DiscardReport?
     /// The account's brew photo folder (M2-T42, ADR 0033), nil for a store that has none (an
     /// in-memory store without one, or an account whose id is not an `AccountID`). Without
     /// it no photo can be added; removals of records still work.
@@ -251,18 +268,29 @@ final class AccountStore {
     /// changed models take their saved values again, inserts and deletes are rolled back) and
     /// the error thrown. After a save `onSave` is called, so the sync engine can look at the
     /// outbox, and `didSaveNotification` is posted with this store as its object, so screens
-    /// read again. The files of brew photo records the save deleted are deleted right after
-    /// it (`brewPhotoFilesToRemove`); a file left by an app ended in between goes at the next
-    /// sweep (`sweepBrewPhotos()`).
+    /// read again. Once a discard could not put everything back (`needsReopening`) every save
+    /// is refused this way, with `DiscardError.storeNeedsReopening`. The files of brew photo
+    /// records the save deleted are deleted right after it (`brewPhotoFilesToRemove`); a file
+    /// left by an app ended in between goes at the next sweep (`sweepBrewPhotos()`).
+    ///
+    /// Right before `ModelContext.save()`, the saved values of the changed and deleted models
+    /// are captured (`capturePendingSave`); if the save fails in the store they, not a read of
+    /// the store after the failure, are what the discard puts back, now and in every later
+    /// discard until those models are saved (ADR 0025 Addendum M2-T37).
     func save() throws {
+        var pending = PendingSave()
         do {
             try refuseSaveAfterFailedInnerWrite()
+            try refuseSaveWhileNeedsReopening()
             try willSave?()
+            pending = capturePendingSave()
             try context.save()
         } catch {
+            finishSave(pending, succeeded: false)
             discardUnsavedChanges()
             throw error
         }
+        finishSave(pending, succeeded: true)
         removeBrewPhotoFilesOfSavedDeletes()
         onSave?()
         NotificationCenter.default.post(name: AccountStore.didSaveNotification, object: self)

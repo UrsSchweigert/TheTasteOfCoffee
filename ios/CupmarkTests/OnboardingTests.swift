@@ -440,6 +440,141 @@ final class OnboardingTests: XCTestCase {
         XCTAssertTrue(try store.outboxOperations().isEmpty)
     }
 
+    /// As if an earlier `PUT` had gone out without an answer: its operation no longer carries
+    /// a later edit, so an edit queues a second one.
+    private func markSentWithoutAnswer(_ store: AccountStore) throws {
+        let operation = try XCTUnwrap(try store.outboxOperations().first)
+        try store.write {
+            operation.sentWithoutAnswer = true
+            try store.save()
+        }
+    }
+
+    /// `GET /profile` answers `remote` after a short delay, so the test can edit meanwhile.
+    private func answerTheReadLate(_ server: FakeSyncServer, with remote: API.Profile) throws {
+        let answer = try JSONEncoder().encode(remote)
+        server.backend.setOverride { request in
+            request.method == "GET" && request.path == "/profile" ? StubResponse(status: 200, body: answer, delay: 0.5) : nil
+        }
+    }
+
+    /// M2-T37 (M2-T29 review): the operation was sent without an answer, so the edit made
+    /// during the read is a second operation. The merge keeps one, and the merged values go out
+    /// in one `PUT`.
+    func testAnEditDuringTheReadAfterAnUnansweredPutIsMergedAndSentOnce() async throws {
+        let server = try FakeSyncServer()
+        try answerTheReadLate(server, with: profileValues(consent: true, locale: .de))
+        let store = try AccountStore.inMemory()
+        onboard(store, agreed: true)
+        try markSentWithoutAnswer(store)
+        let engine = makeEngine(store, server)
+
+        let drain = Task { await engine.drain() }
+        try await waitUntil("the read is on its way") { server.log.contains("GET /profile") }
+        SettingsModel(store: store).setContributesToAggregates(false)
+        XCTAssertEqual(try queue(store), ["update profile", "update profile"], "the first one may already be on the server")
+        let result = await drain.value
+
+        XCTAssertEqual(result, .idle)
+        withExtendedLifetime(server) {
+            XCTAssertEqual(server.log, ["GET /profile", "PUT /profile"], "one PUT for both operations")
+            let sent = try? JSONDecoder().decode(API.Profile.self, from: server.requests.last?.body ?? Data())
+            XCTAssertEqual(sent, profileValues(consent: false, locale: .de))
+            XCTAssertEqual(server.backend.storedProfile, profileValues(consent: false, locale: .de))
+        }
+        let profile = try XCTUnwrap(try store.profile())
+        XCTAssertFalse(profile.contributeToAggregates)
+        XCTAssertEqual(profile.syncState, .synced)
+        XCTAssertTrue(try store.outboxOperations().isEmpty)
+    }
+
+    /// The same with a merge that equals the server's profile: both operations go, nothing is
+    /// sent, and the "yes" given during the read does not override the server's "no".
+    func testAnEditDuringTheReadAfterAnUnansweredPutIsAdoptedWithoutAPut() async throws {
+        let server = try FakeSyncServer()
+        try answerTheReadLate(server, with: profileValues(consent: false, locale: .de))
+        let store = try AccountStore.inMemory()
+        onboard(store, agreed: false)
+        try markSentWithoutAnswer(store)
+        let engine = makeEngine(store, server)
+
+        let drain = Task { await engine.drain() }
+        try await waitUntil("the read is on its way") { server.log.contains("GET /profile") }
+        SettingsModel(store: store).setContributesToAggregates(true)
+        XCTAssertEqual(try queue(store), ["update profile", "update profile"])
+        let result = await drain.value
+
+        XCTAssertEqual(result, .idle)
+        withExtendedLifetime(server) {
+            XCTAssertEqual(server.log, ["GET /profile"])
+        }
+        let profile = try XCTUnwrap(try store.profile())
+        XCTAssertFalse(profile.contributeToAggregates)
+        XCTAssertEqual(profile.locale, .de)
+        XCTAssertEqual(profile.syncState, .synced)
+        XCTAssertTrue(try store.outboxOperations().isEmpty)
+    }
+
+    /// Parks the profile's operation (as a refused send would, with its flag) and queues
+    /// another, which the engine then sends with the check.
+    private func parkTheFirstAndQueueAnother(_ store: AccountStore) throws {
+        let profile = try XCTUnwrap(try store.profile())
+        let first = try XCTUnwrap(try store.outboxOperations().first)
+        try store.write {
+            first.parked = true
+            first.parkReason = .rejected
+            profile.syncIssue = .rejected
+            try store.enqueue(.update, .profile, localID: profile.localID)
+            try store.save()
+        }
+        XCTAssertEqual(try store.outboxOperations().map(\.parked), [true, false])
+        XCTAssertEqual(profile.syncState, .pendingCreate)
+    }
+
+    /// M2-T37 (M2-T29 review): the merge and the adopt branch treat a parked operation of the
+    /// profile alike, as ADR 0025 Addendum M2-T29 says: it goes with the others, so the profile
+    /// has no operation left once it is synced, and a later edit is queued and sent. The flag
+    /// stays for the screen's "OK" (Addendum M2-T18).
+    func testAParkedProfileOperationGoesInTheMergeAndTheAdoptBranch() async throws {
+        // Merge: the server says yes, here no, so the merged "no" is sent.
+        let merged = try FakeSyncServer()
+        merged.backend.seed(profile: profileValues(consent: true, locale: .de))
+        let mergeStore = try AccountStore.inMemory()
+        onboard(mergeStore, agreed: false)
+        try parkTheFirstAndQueueAnother(mergeStore)
+
+        let mergeResult = await makeEngine(mergeStore, merged).drain()
+
+        XCTAssertEqual(mergeResult, .idle)
+        withExtendedLifetime(merged) {
+            XCTAssertEqual(merged.log, ["GET /profile", "PUT /profile"])
+        }
+        XCTAssertEqual(try queue(mergeStore), [], "the parked operation went too")
+        XCTAssertEqual(try mergeStore.profile()?.syncState, .synced)
+        XCTAssertEqual(try mergeStore.profile()?.syncIssue, .rejected)
+        SettingsModel(store: mergeStore).setContributesToAggregates(true)
+        XCTAssertEqual(try queue(mergeStore), ["update profile"], "a later edit is queued")
+
+        // Adopt: both say no, so the server's profile is taken and nothing is sent.
+        let adopted = try FakeSyncServer()
+        adopted.backend.seed(profile: profileValues(consent: false, locale: .de))
+        let adoptStore = try AccountStore.inMemory()
+        onboard(adoptStore, agreed: false)
+        try parkTheFirstAndQueueAnother(adoptStore)
+
+        let adoptResult = await makeEngine(adoptStore, adopted).drain()
+
+        XCTAssertEqual(adoptResult, .idle)
+        withExtendedLifetime(adopted) {
+            XCTAssertEqual(adopted.log, ["GET /profile"])
+        }
+        XCTAssertEqual(try queue(adoptStore), [], "the parked operation went too")
+        XCTAssertEqual(try adoptStore.profile()?.syncState, .synced)
+        XCTAssertEqual(try adoptStore.profile()?.syncIssue, .rejected)
+        SettingsModel(store: adoptStore).setContributesToAggregates(true)
+        XCTAssertEqual(try queue(adoptStore), ["update profile"], "a later edit is queued")
+    }
+
     func testAFailingReadBacksOffOneAttemptPerCycleThenSendsOn404() async throws {
         let server = try FakeSyncServer()
         server.backend.setOverride { request in
