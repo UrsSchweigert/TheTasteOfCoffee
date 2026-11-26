@@ -494,9 +494,7 @@ final class PendingBeanSyncTests: XCTestCase {
     func testADeleteOfAnEntryMovedToAPendingBeanDoesNotWaitForTheBean() async throws {
         let harness = try makeHarness()
         goOffline(harness)
-        // An entry the server has, on a synced bean. Server-style ids (ULIDs): the fixtures'
-        // `StoreFixtures.shelfEntryID` holds an "L", which is not in the contract's alphabet, so
-        // the engine would park its delete as not sendable instead of sending it.
+        // An entry the server has, on a synced bean, with the fake server's own ids.
         let serverBean = catalogueBean(id(909), barcode: nil)
         harness.server.backend.seed(bean: serverBean)
         var values = try StoreFixtures.shelfEntryInput()

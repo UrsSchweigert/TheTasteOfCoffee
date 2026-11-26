@@ -110,6 +110,15 @@ extension AccountStore {
         return try pendingScanOperation(of: bean.localID) != nil
     }
 
+    /// Whether `bean` is a pending scan that no live shelf entry but `entry` names: once
+    /// `entry` is removed or moved to another bean, nothing needs it any more.
+    func isOrphanedScan(_ bean: StoredBean, without entry: StoredShelfEntry) throws -> Bool {
+        guard try isPendingScan(bean) else {
+            return false
+        }
+        return !bean.shelfEntries.contains { other in other.localID != entry.localID && other.syncState != .pendingDelete }
+    }
+
     /// Removes a pending bean with its operations and queued label photos (the files go with
     /// the folder clean-up, `LabelPhotoFolders`). Does not save.
     func dropPendingBean(_ bean: StoredBean) throws {
@@ -132,8 +141,17 @@ extension AccountStore {
     ///   becomes a create, without its Open Food Facts question);
     /// - with one, the server's bean cannot take them: `picksKept` is false, so the screen can
     ///   say so. The photos are queued for it all the same.
+    ///
+    /// On failure nothing is changed: an existing bean and its operation get their saved
+    /// values back (`write`).
     @discardableResult
     func addOfflineBean(_ create: API.BeanCreate, labelPhotoFiles: [String] = []) throws -> OfflineBeanResult {
+        try write {
+            try storeOfflineBean(create, labelPhotoFiles: labelPhotoFiles)
+        }
+    }
+
+    private func storeOfflineBean(_ create: API.BeanCreate, labelPhotoFiles: [String]) throws -> OfflineBeanResult {
         let bean: StoredBean
         var picksKept = true
         if let barcode = create.barcode, let existing = try self.bean(barcode: barcode) {
@@ -194,14 +212,16 @@ extension AccountStore {
     /// it go out after it. False when the bean waits for no confirmation (any more).
     @discardableResult
     func confirmOpenFoodFacts(beanLocalID: UUID, picks: API.BeanAttributes) throws -> Bool {
-        guard let operation = try question(.awaitConfirmation, of: beanLocalID), let bean = try self.bean(localID: beanLocalID) else {
-            return false
+        try write {
+            guard let operation = try question(.awaitConfirmation, of: beanLocalID), let bean = try self.bean(localID: beanLocalID) else {
+                return false
+            }
+            bean.openFoodFactsConfirmed = true
+            bean.pickedAttributeIDs = BeanAttributeIDs(picks)
+            settleQuestion(operation, as: .create)
+            try save()
+            return true
         }
-        bean.openFoodFactsConfirmed = true
-        bean.pickedAttributeIDs = BeanAttributeIDs(picks)
-        settleQuestion(operation, as: .create)
-        try save()
-        return true
     }
 
     /// The user says the hit is not their coffee: the product is dropped and the user is asked
@@ -209,14 +229,16 @@ extension AccountStore {
     /// confirmation (any more).
     @discardableResult
     func rejectOpenFoodFacts(beanLocalID: UUID) throws -> Bool {
-        guard let operation = try question(.awaitConfirmation, of: beanLocalID), let bean = try self.bean(localID: beanLocalID) else {
-            return false
+        try write {
+            guard let operation = try question(.awaitConfirmation, of: beanLocalID), let bean = try self.bean(localID: beanLocalID) else {
+                return false
+            }
+            bean.openFoodFactsConfirmed = false
+            bean.clearOpenFoodFactsProduct()
+            settleQuestion(operation, as: .awaitDescription)
+            try save()
+            return true
         }
-        bean.openFoodFactsConfirmed = false
-        bean.clearOpenFoodFactsProduct()
-        settleQuestion(operation, as: .awaitDescription)
-        try save()
-        return true
     }
 
     /// The user described a pending bean: it is created with the picks, and the label photos in
@@ -224,28 +246,32 @@ extension AccountStore {
     /// when the bean waits for no description (any more).
     @discardableResult
     func describePendingBean(beanLocalID: UUID, picks: API.BeanAttributes, labelPhotoFiles: [String] = []) throws -> Bool {
-        guard let operation = try question(.awaitDescription, of: beanLocalID), let bean = try self.bean(localID: beanLocalID) else {
-            return false
+        try write {
+            guard let operation = try question(.awaitDescription, of: beanLocalID), let bean = try self.bean(localID: beanLocalID) else {
+                return false
+            }
+            bean.pickedAttributeIDs = BeanAttributeIDs(picks)
+            for fileName in labelPhotoFiles {
+                queueLabelPhoto(fileName: fileName, beanLocalID: beanLocalID)
+            }
+            settleQuestion(operation, as: .create)
+            try save()
+            return true
         }
-        bean.pickedAttributeIDs = BeanAttributeIDs(picks)
-        for fileName in labelPhotoFiles {
-            queueLabelPhoto(fileName: fileName, beanLocalID: beanLocalID)
-        }
-        settleQuestion(operation, as: .create)
-        try save()
-        return true
     }
 
     /// The user skips the description: the bean is created from its barcode alone. False when
     /// the bean waits for no description (any more).
     @discardableResult
     func skipDescription(beanLocalID: UUID) throws -> Bool {
-        guard let operation = try question(.awaitDescription, of: beanLocalID) else {
-            return false
+        try write {
+            guard let operation = try question(.awaitDescription, of: beanLocalID) else {
+                return false
+            }
+            settleQuestion(operation, as: .create)
+            try save()
+            return true
         }
-        settleQuestion(operation, as: .create)
-        try save()
-        return true
     }
 
     /// The state of every pending bean with a look-up or a question still queued, by its local
@@ -287,6 +313,8 @@ extension AccountStore {
         }
     }
 
+    /// Turns a question into `action`, to be sent at once. Does not save; only called inside a
+    /// `write`, so a failed save puts the question back.
     private func settleQuestion(_ operation: OutboxOperation, as action: OutboxAction) {
         operation.actionRaw = action.rawValue
         operation.attemptCount = 0

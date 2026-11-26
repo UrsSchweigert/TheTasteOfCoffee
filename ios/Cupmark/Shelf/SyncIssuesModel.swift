@@ -64,7 +64,7 @@ final class SyncIssuesModel {
             reload()
             return true
         } catch {
-            store.context.rollback()
+            // `redo` and `discard` already put back what they changed (`AccountStore.write`).
             failure = .saveFailed
             return false
         }
@@ -86,7 +86,7 @@ final class SyncIssuesModel {
             failure = .discardBlocked(.beanHasShelfEntries)
             return false
         } catch {
-            store.context.rollback()
+            // `redo` and `discard` already put back what they changed (`AccountStore.write`).
             failure = .saveFailed
             return false
         }

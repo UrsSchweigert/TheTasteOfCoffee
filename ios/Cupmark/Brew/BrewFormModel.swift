@@ -186,13 +186,15 @@ final class BrewFormModel {
                 methodID: parameters.method.rawValue
             )
             brew.setParameters(parameters)
-            try addBrew(store, brew, entry)
+            // A failed write puts the entry's saved fields back (`AccountStore.write`), so
+            // nothing half-made stays in the shared context for the engine to save.
+            try store.write {
+                try addBrew(store, brew, entry)
+            }
             failure = nil
             savedBrewID = brew.localID
             return brew.localID
         } catch {
-            // Nothing half-made stays in the shared context for the engine to save.
-            store.context.rollback()
             failure = .saveFailed
             return nil
         }
