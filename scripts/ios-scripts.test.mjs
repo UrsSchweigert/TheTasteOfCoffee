@@ -1169,7 +1169,11 @@ test('the brew form has no typed text, takes its ranges from the vocabulary and 
   const editor = lexSwift(readFileSync(join(repoRoot, 'ios/Cupmark/Shelf/ShelfEntryEditorScreen.swift'), 'utf8')).masked;
   assert.match(editor, /BrewSheet\(store: model\.store, route: route/);
   const sheet = lexSwift(readFileSync(join(repoRoot, 'ios/Cupmark/Brew/BrewSheet.swift'), 'utf8')).masked;
-  assert.match(sheet, /BrewFormScreen\(\s*store: store,\s*shelfEntry: route\.shelfEntryLocalID/);
+  // The sheet's flow builds the form for the route's shelf entry and start (M2-T27).
+  assert.match(sheet, /BrewFlowModel\(route: route, store: store\)/);
+  assert.match(sheet, /BrewFormScreen\(\s*model: flow\.form/);
+  const flow = lexSwift(readFileSync(join(repoRoot, 'ios/Cupmark/Brew/BrewFlowModel.swift'), 'utf8')).masked;
+  assert.match(flow, /shelfEntry: route\.shelfEntryLocalID,[^)]*start: route\.start/s);
 });
 
 // ---- Brew timer (M2-T21, docs/04 Input model "Timer") ----
@@ -1313,4 +1317,42 @@ test('statistics: read-only, offline, no typed text, thresholds only in Statisti
   assert.doesNotMatch(screen, /(>=|<=|[<>]|==)\s*\d|prefix\(\s*\d|fractionLength\(/, 'the screen hard-codes no threshold or decimal count');
   assert.doesNotMatch(screen, /\bText\(\s*(?!verbatim:)[^)\n]*\b(name|brand)\b/, 'Open Food Facts text only through Text(verbatim:)');
   assert.match(masked('ios/Cupmark/Shelf/ShelfScreen.swift'), /StatisticsScreen\(store: store/, 'the shelf opens the statistics');
+});
+
+// ---- Recipes and one-tap repeat (M2-T27, docs/04 F2) ----
+
+test('recipes: no name, no typed text, written through AccountStore, and one tap from a repeat (M2-T27)', () => {
+  const masked = (path) => lexSwift(readFileSync(join(repoRoot, path), 'utf8')).masked;
+  const files = ['Brew/BrewStart.swift', 'Brew/BrewStartModel.swift', 'Brew/BrewFlowModel.swift', 'Brew/RecipeViews.swift', 'Store/AccountStore+Recipes.swift']
+    .map((name) => `ios/Cupmark/${name}`);
+  for (const file of files) {
+    const code = masked(file);
+    assert.doesNotMatch(code, /\.searchable\b|\bTextField\b|\bTextEditor\b|\bSecureField\b/, `${file}: no typed text (invariant 1)`);
+    assert.doesNotMatch(code, /\.rawValue\s*==|rawValue:\s*"/, `${file}: no vocabulary id as a string`);
+    // A recipe has no name (invariant 1): nothing names one.
+    assert.doesNotMatch(code, /\b(recipeName|nickname|title:\s*String)\b/, `${file}: a recipe has no name`);
+  }
+  for (const file of files.filter((name) => !name.includes('/Store/'))) {
+    assert.doesNotMatch(masked(file), /\bcontext\s*\.\s*(insert|save|delete)\(/, `${file}: writes go through AccountStore`);
+    assert.doesNotMatch(masked(file), /Vocabulary\.(Ranges|Constants)/, `${file}: no range or limit outside BrewDraft`);
+  }
+  // Every recipe write is inside write { } (ADR 0025, Addendum M2-T35) and queues its operation.
+  const store = masked('ios/Cupmark/Store/AccountStore+Recipes.swift');
+  for (const name of ['saveRecipe', 'replaceRecipe']) {
+    const body = store.slice(store.indexOf(`func ${name}(`));
+    assert.match(body.slice(0, body.indexOf('\n    }\n')), /try write \{/, `${name} writes inside write { }`);
+  }
+  assert.match(store, /try enqueue\(\.create, \.recipe, localID: recipe\.localID\)/);
+  assert.match(store, /try enqueueEdit\(of: recipe\)/);
+  assert.match(store, /try markDeleted\(recipe\)/);
+  // The brew form keeps the recipe in the brew's one save.
+  const model = masked('ios/Cupmark/Brew/BrewFormModel.swift');
+  assert.match(model, /try store\.write \{[^}]*stageRecipe\(parameters\)[\s\S]*?try addBrew\(store, brew, entry\)/);
+  // A repeat is one tap: on the shelf row and on the entry's screen.
+  assert.match(masked('ios/Cupmark/Shelf/ShelfScreen.swift'), /BrewRoute\(shelfEntryLocalID: row\.id, start: \.lastBrew\)/);
+  assert.match(masked('ios/Cupmark/Shelf/ShelfEntryEditorScreen.swift'), /BrewStartSection\(model: repeats/);
+  const views = masked('ios/Cupmark/Brew/RecipeViews.swift');
+  assert.match(views, /onStart\(model\.route\(\.lastBrew\)\)/);
+  assert.match(views, /onStart\(model\.route\(\.recipe\(row\.id\)\)\)/);
+  assert.match(views, /\.onDelete\b/, 'recipes can be removed');
 });
