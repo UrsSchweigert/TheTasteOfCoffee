@@ -329,6 +329,19 @@ enum L10n {
     static func coffeeAveragesMethodHeader(method: String, brews: String) -> String { String(localized: "coffee_averages.method_header \(method) \(brews)") }
     /// The community mean next to the user's own (M4); `%1$@` is the mean, `%2$@` the number of raters.
     static func coffeeAveragesCommunity(mean: String, raters: String) -> String { String(localized: "coffee_averages.community \(mean) \(raters)") }
+    // Averages in context (M2-T48): the summary row on a coffee's screen, the brew list rows and
+    // the markers on the rating sliders. Placeholders are positional; no plural forms.
+    static var coffeeSummaryLabel: LocalizedStringKey { "coffee_summary.label" }
+    static var coffeeSummaryHint: LocalizedStringKey { "coffee_summary.hint" }
+    /// `%1$@` is the mean overall score, `%2$@` the number of rated brews.
+    static func coffeeSummaryOverall(mean: String, brews: String) -> String { String(localized: "coffee_summary.overall \(mean) \(brews)") }
+    /// `%1$@` is the number.
+    static func brewListOverall(_ score: String) -> String { String(localized: "brew_list.overall \(score)") }
+    static func brewListAverage(_ mean: String) -> String { String(localized: "brew_list.average \(mean)") }
+    static func brewListAverageSpoken(_ mean: String) -> String { String(localized: "brew_list.average_spoken \(mean)") }
+    /// The slider's marker: `%1$@` is the number, or "7.5 of 10" for the spoken one.
+    static func ratingMarkerOwn(_ mean: String) -> String { String(localized: "rating.marker.own \(mean)") }
+    static func ratingMarkerOwnSpoken(_ mean: String) -> String { String(localized: "rating.marker.own_spoken \(mean)") }
     // Recipes and repeats (M2-T27).
     static var brewRepeatLast: LocalizedStringKey { "brew.repeat_last" }
     static var brewRepeatHint: LocalizedStringKey { "brew.repeat.hint" }

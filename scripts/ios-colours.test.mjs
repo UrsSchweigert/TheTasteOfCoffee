@@ -127,13 +127,14 @@ test('colour sets: the values of ADR 0032 and every pairing at 4.5:1 in both app
     SwipeAction: ['6B4428', '8A5A36'],
     SwipeActionSecondary: ['5E4B3C', '6B5645'],
     ErrorText: ['A3261A', 'FF9B8F'],
+    AverageMarker: ['005C66', '5FD0C8'],
   };
   for (const [name, [light, dark]] of Object.entries(expected)) {
     assert.equal(hexOf(sets[name].light), light, `${name} light`);
     assert.equal(hexOf(sets[name].dark), dark, `${name} dark`);
   }
   assert.deepEqual(colours.contrastProblems(sets), []);
-  assert.equal(colours.PAIRINGS.length, 15);
+  assert.equal(colours.PAIRINGS.length, 18);
   for (const [fg, bg, ratios] of colours.PAIRINGS) {
     for (const mode of colours.APPEARANCES) {
       const ratio = colours.contrastRatio(sets[fg][mode], sets[bg][mode]);

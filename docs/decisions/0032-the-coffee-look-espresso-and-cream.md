@@ -24,6 +24,7 @@ The app uses the default system look: grey grouped forms, a blue accent. The own
    | `SwipeAction` | `#6B4428` | `#8A5A36` | background of a swipe action; the system draws its label in white |
    | `SwipeActionSecondary` | `#5E4B3C` | `#6B5645` | background of a second swipe action next to the first |
    | `ErrorText` | `#A3261A` | `#FF9B8F` | error and failure text and its icon (the system red is 3.0 to 3.4:1 on cream); the destructive button role keeps the system red |
+   | `AverageMarker` | `#005C66` | `#5FD0C8` | the marker of the user's average on a rating slider and its number (M2-T48): a teal diamond, distinct in hue and shape from the espresso thumb and track; drawn beside the track on the row, so its contrast is against the row, not the track |
 
 2. **Contrast was calculated, not judged by eye** (WCAG 2.x relative luminance). Every text and tint pairing passes AA for normal text (4.5:1), with the margin shown:
 
@@ -44,6 +45,9 @@ The app uses the default system look: grey grouped forms, a blue accent. The own
    | `ErrorText` on `FormBackground` | 6.24 | 9.08 |
    | `ErrorText` on `ListBackground` | 6.51 | 8.84 |
    | `ErrorText` on `Surface` | 7.14 | 7.97 |
+   | `AverageMarker` on `FormBackground` | 6.53 | 9.96 |
+   | `AverageMarker` on `ListBackground` | 6.82 | 9.70 |
+   | `AverageMarker` on `Surface` | 7.48 | 8.75 |
 
    A unit test reads the colour set JSON and recomputes every pairing above, in both appearances, so a changed value that fails fails the build.
 3. **Secondary text uses `TextSecondary`, not the system's `.secondary`.** The system secondary colour is a 60% alpha grey; on cream it falls close to the 4.5:1 line, which is what the accessibility audit kept reporting as "Contrast nearly passed". Footers, hints and captions use the named colour.

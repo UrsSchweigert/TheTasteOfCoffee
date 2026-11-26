@@ -32,7 +32,8 @@ final class CoffeeAveragesTests: XCTestCase {
         in entry: UUID?,
         method: Vocabulary.Method?,
         rating: RatingValues?,
-        removed: Bool = false
+        removed: Bool = false,
+        id: UUID? = nil
     ) -> StatisticsBrew {
         StatisticsBrew(
             brewedAt: Date(timeIntervalSince1970: 1_795_000_000),
@@ -40,7 +41,8 @@ final class CoffeeAveragesTests: XCTestCase {
             bean: nil,
             rating: rating,
             isRemoved: removed,
-            shelfEntryID: entry
+            shelfEntryID: entry,
+            id: id
         )
     }
 
@@ -245,5 +247,75 @@ final class CoffeeAveragesTests: XCTestCase {
         XCTAssertEqual(result.rows.first { row in row.criterion == .acidity }?.community, community)
         XCTAssertEqual(result.rows.filter { row in row.community != nil }.count, 1)
         XCTAssertTrue(result.methods.allSatisfy { entry in entry.rows.allSatisfy { row in row.community == nil } }, "the method rows are the user's own")
+    }
+
+    // MARK: - Excluding the brew being rated (M2-T48)
+
+    func testTheExcludedBrewIsLeftOutOfEveryMean() throws {
+        let first = try method(0)
+        let rated = UUID()
+        let brews = [
+            brew(in: bag, method: first, rating: rating(9), id: rated),
+            brew(in: bag, method: first, rating: rating(6), id: UUID()),
+            brew(in: bag, method: first, rating: rating(7), id: UUID()),
+        ]
+        let others = StatisticsRules.coffeeAverages(of: brews, shelfEntry: bag, excluding: rated)
+        XCTAssertEqual(others.ratedBrews, 2)
+        XCTAssertEqual(try mean(others, .overall), 6.5, accuracy: 0.0001)
+        let all = StatisticsRules.coffeeAverages(of: brews, shelfEntry: bag)
+        XCTAssertEqual(all.ratedBrews, 3, "no exclusion by default")
+    }
+
+    func testExcludingTheOnlyRatedBrewLeavesNothing() throws {
+        let rated = UUID()
+        let result = StatisticsRules.coffeeAverages(
+            of: [brew(in: bag, method: nil, rating: rating(9), id: rated)],
+            shelfEntry: bag,
+            excluding: rated
+        )
+        XCTAssertTrue(result.isEmpty)
+        XCTAssertTrue(result.rows.isEmpty, "no marker, no zeros")
+    }
+
+    func testExcludingOneOtherRatedBrewGivesItsOwnValues() throws {
+        let rated = UUID()
+        let result = StatisticsRules.coffeeAverages(
+            of: [
+                brew(in: bag, method: nil, rating: rating(9), id: rated),
+                brew(in: bag, method: nil, rating: rating(7.5, [.aroma: 8]), id: UUID()),
+            ],
+            shelfEntry: bag,
+            excluding: rated
+        )
+        XCTAssertTrue(result.isSingleBrew)
+        XCTAssertEqual(try mean(result, .aroma), 8, accuracy: 0.0001)
+    }
+
+    func testExclusionKeepsTheOtherRules() throws {
+        let rated = UUID()
+        let older = RatingValues(scores: [Vocabulary.Criterion.overall.rawValue: 5])
+        let result = StatisticsRules.coffeeAverages(
+            of: [
+                brew(in: bag, method: nil, rating: rating(9), id: rated),
+                brew(in: bag, method: nil, rating: rating(1), removed: true, id: UUID()),
+                brew(in: bag, method: nil, rating: nil, id: UUID()),
+                brew(in: otherBag, method: nil, rating: rating(2), id: UUID()),
+                brew(in: bag, method: nil, rating: older, id: UUID()),
+            ],
+            shelfEntry: bag,
+            excluding: rated
+        )
+        XCTAssertEqual(result.ratedBrews, 1, "removed, unrated and other-bag brews stay out; the older rating counts")
+        XCTAssertEqual(try mean(result, .overall), 5, accuracy: 0.0001)
+        XCTAssertEqual(result.rows.count, 1, "only the criterion the older rating scores")
+    }
+
+    func testABrewWithoutAnIdIsNeverExcluded() throws {
+        let result = StatisticsRules.coffeeAverages(
+            of: [brew(in: bag, method: nil, rating: rating(8))],
+            shelfEntry: bag,
+            excluding: UUID()
+        )
+        XCTAssertEqual(result.ratedBrews, 1)
     }
 }

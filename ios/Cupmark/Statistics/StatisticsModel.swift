@@ -10,7 +10,8 @@ extension StatisticsBrew {
             bean: bean,
             rating: brew.rating,
             isRemoved: brew.syncState == .pendingDelete,
-            shelfEntryID: brew.shelfEntry?.localID
+            shelfEntryID: brew.shelfEntry?.localID,
+            id: brew.localID
         )
     }
 

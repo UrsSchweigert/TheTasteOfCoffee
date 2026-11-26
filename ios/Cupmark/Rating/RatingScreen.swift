@@ -194,10 +194,12 @@ struct RatingScreen: View {
                     question: question(for: criterion),
                     valueText: model.scoreText(for: criterion, locale: locale),
                     spokenValueText: model.spokenScoreText(for: criterion, locale: locale),
+                    markers: model.markers(for: criterion),
+                    markerIdentifier: "rating-marker-\(criterion.rawValue)",
+                    sliderIdentifier: "rating-score-\(criterion.rawValue)",
                     value: scoreBinding(for: criterion),
                     onBegin: { model.beginSliding(criterion) }
                 )
-                .accessibilityIdentifier("rating-score-\(criterion.rawValue)")
             }
             if !model.draft.isComplete {
                 LabeledContent {
@@ -338,10 +340,18 @@ struct RatingScoreRow: View {
     let valueText: String?
     /// VoiceOver's value, "7.5 of 10"; `valueText` when nil.
     var spokenValueText: String? = nil
+    /// The average markers (M2-T48), nil until the score is set and while there is nothing
+    /// to show. They never change the slider's value or behaviour.
+    var markers: SliderMarkers? = nil
+    /// The accessibility identifier of the marker's label.
+    var markerIdentifier = "rating-marker"
+    /// On the slider only: an identifier on the whole row would also replace the markers' own.
+    var sliderIdentifier = "rating-score"
     @Binding var value: Double
     /// Called when the slider is touched, before it moves.
     let onBegin: @MainActor () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.locale) private var locale
 
     private var bounds: ClosedRange<Double> {
         RatingDraft.scale.minimum...RatingDraft.scale.maximum
@@ -390,11 +400,74 @@ struct RatingScoreRow: View {
             )
             .tint(Theme.accent)
             .opacity(valueText == nil ? 0.5 : 1)
+            // The marker is drawn over the bottom edge of the slider and takes no touch, so
+            // the slider keeps its value, its adjustable action and its hit area.
+            .overlay(alignment: .bottom) {
+                if let markers {
+                    SliderMarkerTrack(markers: markers)
+                        .offset(y: 7)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(.bottom, markers == nil ? 0 : 8)
             .accessibilityLabel(Text(verbatim: title))
             .accessibilityValue(accessibilityValue)
             .accessibilityHint(Text(verbatim: question ?? title))
+            .accessibilityIdentifier(sliderIdentifier)
+            if let markers {
+                markerLabels(markers)
+            }
         }
         .padding(.vertical, 4)
+    }
+
+    /// The numbers of the markers, under the slider at every text size so they never push the
+    /// score off the row. Each is its own accessibility element, "Your average for this
+    /// coffee, 7.5 of 10", present only while the marker is (after the score is set).
+    @ViewBuilder
+    private func markerLabels(_ markers: SliderMarkers) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if let own = markers.own {
+                let mean = own.formatted(StatisticsRules.meanStyle().locale(locale))
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    DiamondShape()
+                        .fill(Theme.averageMarker)
+                        .frame(width: 8, height: 8)
+                        .accessibilityHidden(true)
+                    Text(verbatim: L10n.ratingMarkerOwn(mean))
+                        .font(.footnote)
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.averageMarker)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(verbatim: L10n.ratingMarkerOwnSpoken(
+                    AccessibilityValue.ofScale(mean, maximum: RatingDraft.scale.maximum, locale: locale)
+                )))
+                .accessibilityIdentifier(markerIdentifier)
+            }
+            if let community = markers.community {
+                let text = L10n.coffeeAveragesCommunity(
+                    mean: community.mean.formatted(StatisticsRules.meanStyle().locale(locale)),
+                    raters: community.raters.formatted(.number.locale(locale))
+                )
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Circle()
+                        .stroke(Theme.averageMarker, lineWidth: 2)
+                        .frame(width: 8, height: 8)
+                        .accessibilityHidden(true)
+                    Text(verbatim: text)
+                        .font(.footnote)
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.averageMarker)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(verbatim: text))
+                .accessibilityIdentifier("\(markerIdentifier)-community")
+            }
+        }
     }
 
     private var accessibilityValue: Text {
@@ -402,6 +475,50 @@ struct RatingScoreRow: View {
             return Text(verbatim: text)
         }
         return Text(L10n.lookupPickNotSet)
+    }
+}
+
+/// A diamond, the shape of the user's average marker (a circle is the thumb's).
+struct DiamondShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+        path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.midY))
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// The markers on a slider's scale: a diamond at the user's average and, while there is one,
+/// a ring at the community's. Drawn with shapes in `Theme.averageMarker`, under the track so
+/// it does not hide the thumb; the numbers are in the labels under the slider. The thumb of
+/// a system slider is inset from the ends of the track, so the positions are too.
+struct SliderMarkerTrack: View {
+    let markers: SliderMarkers
+    /// Half the width of the system slider's thumb, in points.
+    private static let inset: CGFloat = 14
+
+    var body: some View {
+        GeometryReader { proxy in
+            let width = max(0, proxy.size.width - 2 * Self.inset)
+            ZStack(alignment: .topLeading) {
+                if let own = markers.own {
+                    DiamondShape()
+                        .fill(Theme.averageMarker)
+                        .frame(width: 10, height: 10)
+                        .position(x: Self.inset + width * SliderMarkers.fraction(of: own), y: 5)
+                }
+                if let community = markers.community {
+                    Circle()
+                        .stroke(Theme.averageMarker, lineWidth: 2)
+                        .frame(width: 10, height: 10)
+                        .position(x: Self.inset + width * SliderMarkers.fraction(of: community.mean), y: 5)
+                }
+            }
+        }
+        .frame(height: 10)
     }
 }
 

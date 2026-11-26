@@ -95,6 +95,14 @@ The shelf entry screen (one bag) shows "My brews of this coffee" (M2-T44, ADR 00
 - no rated brew: "Rate a brew to see your averages here", no zeros; exactly one rated brew: its values, labelled as one brew, not as an average;
 - the community mean and number of raters for the bean will sit next to each value (M4, paid rules apply); until then nothing is shown there.
 
+#### Averages in context (free, M2-T48)
+
+The same numbers appear where the user looks at them, without scrolling to the section above:
+
+- **Rating sliders:** under each slider a marker and its number show the mean of the user's other rated brews of this shelf entry ("Your average for this coffee 7.5"), but only after the user has set that slider in this rating, so the average does not anchor the score. The brew being rated is left out. A brew opened with a rating shows its markers at once. The marker never changes the slider; VoiceOver reads it as "Your average for this coffee, 7.5 of 10". A second marker for the community's mean is reserved for M4 and hidden until it exists.
+- **Top of the coffee's screen:** "Overall 7.4, rated brews 3" at the very top; a tap scrolls to the section above. Shown with at least one rated brew.
+- **Brew list:** each rated brew shows its own overall score and the coffee's average ("avg 7.4"); unrated brews show neither, and one rated brew shows no average.
+
 ## F4 Explore (paid)
 
 - Bean page: number of raters, mean and spread per criterion, most-picked flavour notes, buy-again share.

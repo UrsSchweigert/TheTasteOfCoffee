@@ -60,7 +60,7 @@ final class ThemeColourTests: XCTestCase {
         let colors: [Entry]
     }
 
-    static let names = ["AccentColor", "OnAccent", "FormBackground", "ListBackground", "Surface", "TextPrimary", "TextSecondary", "SwipeAction", "SwipeActionSecondary", "ErrorText"]
+    static let names = ["AccentColor", "OnAccent", "FormBackground", "ListBackground", "Surface", "TextPrimary", "TextSecondary", "SwipeAction", "SwipeActionSecondary", "ErrorText", "AverageMarker"]
 
     /// Every pairing of ADR 0032, point 2: foreground, background.
     static let pairings: [(foreground: String, background: String)] = [
@@ -79,7 +79,11 @@ final class ThemeColourTests: XCTestCase {
         ("White", "SwipeActionSecondary"),
         ("ErrorText", "FormBackground"),
         ("ErrorText", "ListBackground"),
-        ("ErrorText", "Surface")
+        ("ErrorText", "Surface"),
+        // The average marker of the rating sliders (M2-T48).
+        ("AverageMarker", "FormBackground"),
+        ("AverageMarker", "ListBackground"),
+        ("AverageMarker", "Surface")
     ]
 
     static let minimumContrast = 4.5
@@ -170,7 +174,8 @@ final class ThemeColourTests: XCTestCase {
             "TextSecondary": ("5E4B3C", "BFAE9C"),
             "SwipeAction": ("6B4428", "8A5A36"),
             "SwipeActionSecondary": ("5E4B3C", "6B5645"),
-            "ErrorText": ("A3261A", "FF9B8F")
+            "ErrorText": ("A3261A", "FF9B8F"),
+            "AverageMarker": ("005C66", "5FD0C8")
         ]
         for (name, values) in expected {
             XCTAssertEqual(sets[name]?[.light]?.hex, values.light, "\(name) light")

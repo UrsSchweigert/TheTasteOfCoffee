@@ -17,6 +17,9 @@ struct CoffeeAveragesSection: View {
     let vocabulary: VocabularyStore
     let language: VocabularyLanguage
 
+    /// The scroll anchor of the section, for `CoffeeSummaryRow`.
+    static let anchor = "coffee-averages-section"
+
     var body: some View {
         Group {
             summarySection
@@ -49,6 +52,8 @@ struct CoffeeAveragesSection: View {
                 .frame(minHeight: 44)
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("coffee-averages-count")
+                // Where the summary row at the top of the screen scrolls to (M2-T48).
+                .id(CoffeeAveragesSection.anchor)
                 if averages.hasNoKnownScores {
                     // Rated, but only on criteria a newer vocabulary has.
                     Text(L10n.statisticsNoKnownScores)
@@ -76,6 +81,48 @@ struct CoffeeAveragesSection: View {
     /// A vocabulary label from contracts/i18n, the id if the bundle has none.
     private func label<Item: VocabularyItem>(_ item: Item) -> String {
         (try? vocabulary.label(for: item, language: language)) ?? item.rawValue
+    }
+}
+
+/// The compact summary at the very top of a stored coffee's screen (M2-T48): "Overall 7.4,
+/// rated brews 3". Shown only with a rated brew that scores `overall` (no zeros, no empty
+/// state: the section below has that). A tap calls `onSelect`, which scrolls to the
+/// dimension section. At least 44 points; VoiceOver reads the label "Your ratings of this
+/// coffee", the text as the value and the hint says where the tap goes.
+struct CoffeeSummaryRow: View {
+    let averages: CoffeeAverages
+    let onSelect: () -> Void
+    @Environment(\.locale) private var locale
+
+    var body: some View {
+        if let mean = averages.summaryOverall {
+            let text = L10n.coffeeSummaryOverall(
+                mean: mean.formatted(StatisticsRules.meanStyle().locale(locale)),
+                brews: averages.ratedBrews.formatted(.number.locale(locale))
+            )
+            Section {
+                Button(action: onSelect) {
+                    HStack(spacing: 8) {
+                        Text(verbatim: text)
+                            .font(.headline)
+                            .monospacedDigit()
+                            .accentText()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Image(systemName: "chevron.down")
+                            .font(.footnote)
+                            .secondaryText()
+                            .accessibilityHidden(true)
+                    }
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .accessibilityLabel(Text(L10n.coffeeSummaryLabel))
+                .accessibilityValue(Text(verbatim: text))
+                .accessibilityHint(Text(L10n.coffeeSummaryHint))
+                .accessibilityIdentifier("coffee-summary")
+            }
+            .surfaceRow()
+        }
     }
 }
 

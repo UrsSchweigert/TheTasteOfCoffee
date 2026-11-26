@@ -12,9 +12,19 @@ struct BrewListRow: Identifiable, Equatable, Sendable {
     let issue: SyncIssue?
     /// Whether a recipe with exactly the brew's parameters is on the device (M2-T27).
     let isRecipe: Bool
+    /// The brew's own overall score, nil for an unrated brew or a rating without one (M2-T48).
+    let overall: Double?
+    /// The mean overall score of the coffee's rated brews, nil unless at least two brews are
+    /// rated (one rated brew is not an average) and for a row without an overall (M2-T48).
+    let coffeeAverageOverall: Double?
 
-    init(_ brew: StoredBrew, recipes: Set<API.BrewParameters> = []) {
+    init(_ brew: StoredBrew, recipes: Set<API.BrewParameters> = [], coffeeAverageOverall: Double? = nil) {
         id = brew.localID
+        let overall = brew.rating?.score(for: .overall)
+        self.overall = overall
+        // An unrated row shows neither number; a rated row without an overall has nothing to
+        // compare.
+        self.coffeeAverageOverall = overall == nil ? nil : coffeeAverageOverall
         brewedAt = brew.brewedAt
         method = brew.method
         isRated = brew.rating != nil
@@ -56,7 +66,13 @@ final class BrewListModel {
                 return
             }
             let recipes = Set(try store.recipes().compactMap { recipe in try? recipe.apiParameters() })
-            rows = entry.liveBrewsNewestFirst.map { brew in BrewListRow(brew, recipes: recipes) }
+            // The coffee's average overall (M2-T48): the same pure function as the shelf entry
+            // screen, over this entry's own brews; shown only from two rated brews on.
+            let averages = StatisticsRules.coffeeAverages(of: StatisticsBrew.values(of: entry.brews), shelfEntry: entry.localID)
+            let average = averages.ratedBrews >= 2 ? averages.overall?.mean : nil
+            rows = entry.liveBrewsNewestFirst.map { brew in
+                BrewListRow(brew, recipes: recipes, coffeeAverageOverall: average)
+            }
             entryMissing = false
             loadFailed = false
         } catch {

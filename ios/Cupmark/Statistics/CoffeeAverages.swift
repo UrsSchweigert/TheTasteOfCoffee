@@ -66,6 +66,11 @@ struct CoffeeAverages: Equatable, Sendable {
     var overall: CoffeeAverageRow? {
         rows.first { row in row.criterion == .overall }
     }
+    /// The mean overall score for the summary row at the top of the coffee's screen (M2-T48):
+    /// nil with no rated brew (no zeros) and while no rated brew scores `overall`.
+    var summaryOverall: Double? {
+        isEmpty ? nil : overall?.mean
+    }
 }
 
 extension StatisticsRules {
@@ -78,16 +83,20 @@ extension StatisticsRules {
     ///   threshold as the taste profile of ADR 0027; a brew with a method this build does
     ///   not know counts in the totals only;
     /// - means are not rounded here, `meanStyle()` rounds them when shown;
+    /// - `excluding` (M2-T48) leaves one brew out, the brew being rated, so the markers on its
+    ///   sliders show the mean of the others; nil leaves none out;
     /// - `community` (M4) is attached to the matching rows; the app passes none yet.
     ///
     /// Pure: reads nothing else.
     static func coffeeAverages(
         of brews: [StatisticsBrew],
         shelfEntry: UUID,
+        excluding excluded: UUID? = nil,
         community: [Vocabulary.Criterion: CommunityValue] = [:]
     ) -> CoffeeAverages {
         let rated = brews.filter { brew in
             brew.shelfEntryID == shelfEntry && !brew.isRemoved && brew.rating != nil
+                && (excluded == nil || brew.id != excluded)
         }
         let methods = Vocabulary.Method.allCases.compactMap { method -> CoffeeMethodAverages? in
             let ratings = rated.filter { brew in brew.method == method }.compactMap { brew in brew.rating }

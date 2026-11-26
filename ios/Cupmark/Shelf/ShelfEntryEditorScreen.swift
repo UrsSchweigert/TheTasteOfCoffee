@@ -40,7 +40,22 @@ struct ShelfEntryEditorScreen: View {
     }
 
     var body: some View {
+        ScrollViewReader { proxy in
+            form(scrollTo: proxy)
+        }
+    }
+
+    private func form(scrollTo proxy: ScrollViewProxy) -> some View {
         Form {
+            // The very top of a stored entry: "Overall 7.4, rated brews 3" (M2-T48); a tap
+            // scrolls to the dimension section below.
+            if brewRoute != nil {
+                CoffeeSummaryRow(averages: model.averages) {
+                    withAnimation {
+                        proxy.scrollTo(CoffeeAveragesSection.anchor, anchor: .top)
+                    }
+                }
+            }
             if let route = brewRoute {
                 Section {
                     Button {

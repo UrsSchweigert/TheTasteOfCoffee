@@ -30,6 +30,10 @@ enum Theme {
     /// Error and failure text and its icon. The system red is 3.0 to 3.4:1 on cream; the
     /// destructive button role keeps the system red.
     static let errorText = Color("ErrorText")
+    /// The marker of the user's average on a rating slider, and its number (M2-T48). Teal, so
+    /// it differs in hue from the espresso thumb and track; the marker is also a diamond, not
+    /// a circle. Drawn beside the track, on the row.
+    static let averageMarker = Color("AverageMarker")
 
     /// A title or large heading: system font, rounded design, heavier weight. A text style, not
     /// a size, so Dynamic Type scales it.
