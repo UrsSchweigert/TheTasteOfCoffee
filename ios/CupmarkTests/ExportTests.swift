@@ -265,7 +265,9 @@ final class ExportTests: XCTestCase {
         )
         await model.export()
 
-        XCTAssertEqual(server.log, ["PUT /profile", "GET /export"])
+        // A profile the server has never confirmed is read first, so a server profile wins
+        // (M2-T29); the whole outbox is then sent before the export request.
+        XCTAssertEqual(server.log, ["GET /profile", "PUT /profile", "GET /export"])
         XCTAssertFalse(try readyFile(model).hasPendingChanges)
         XCTAssertEqual(try store.outboxOperations().count, 0)
     }
