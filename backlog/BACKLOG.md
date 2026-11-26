@@ -950,3 +950,18 @@ Scope: App Store listing, screenshots, privacy nutrition labels, privacy policy 
   - Prefer one shared mechanism in `AccountStore` (for example, a write that snapshots the changed models' sync state and fields and restores them on failure) over a snapshot per screen.
   - Each site has a test like `RatingTests.testAFailedSaveLeavesNothingBehind`: a write that throws after changing a saved model leaves the model as it was and queues nothing.
   - Mac: the `ios` job.
+
+### M2-T36 Harden the failed-write mechanism
+- status: todo
+- owner: ios-engineer
+- depends: M2-T35
+- implements: ADR 0025 (addendum M2-T35)
+- acceptance:
+  - These come from the M2-T35 review (PR #64), none of them blocking.
+  - A test where `ModelContext.save()` itself fails on a deletion with relationships, not just the `willSave` hook. If that cannot be forced, the limit is documented.
+  - `addShelfEntry` and `addBrew` run inside `write { }`, as `markUpdated` does.
+  - When `savedCopy` cannot read the store, `discardUnsavedChanges` falls back to a bare `rollback()` without saying so. It should raise a debug assertion and log a fixed message.
+  - A comment in `LabelPhotoQueue` says that a failed save after an upload repeats the S3 POST, and why that is safe.
+  - Describing without a store shows a state that does not offer a retry.
+  - The schema test also compares each property's key path, not only its name.
+  - Mac: the `ios` job.
