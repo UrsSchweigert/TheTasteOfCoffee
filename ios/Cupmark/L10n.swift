@@ -508,4 +508,34 @@ enum L10n {
     static var recipeDetailBrew: LocalizedStringKey { "recipe_detail.brew" }
     static var recipeDetailBrewHint: LocalizedStringKey { "recipe_detail.brew.hint" }
     static var recipeDetailNotFound: LocalizedStringKey { "recipe_detail.not_found" }
+
+    // Starting points: reference recipes in the recipe list (M2-T47)
+    static var recipeListOwnHeader: LocalizedStringKey { "recipe_list.own.header" }
+    static var startingPointsTitle: LocalizedStringKey { "starting_points.title" }
+    static var startingPointsFooter: LocalizedStringKey { "starting_points.footer" }
+    static var startingPointsGroupHint: LocalizedStringKey { "starting_points.group.hint" }
+    /// What VoiceOver reads as the value of a method's row; `%@` is the number of recipes.
+    static func startingPointsGroupCount(_ count: String, bundle: Bundle = .main) -> String { String(localized: "starting_points.group.count \(count)", bundle: bundle) }
+    static var startingPointRowHint: LocalizedStringKey { "starting_point.row.hint" }
+    static var startingPointTitle: LocalizedStringKey { "starting_point.title" }
+    static var startingPointFooter: LocalizedStringKey { "starting_point.footer" }
+    static var startingPointInferredFooter: LocalizedStringKey { "starting_point.inferred.footer" }
+    static func startingPointFieldDose(bundle: Bundle = .main) -> String { String(localized: "starting_point.field.dose", bundle: bundle) }
+    static func startingPointFieldWater(bundle: Bundle = .main) -> String { String(localized: "starting_point.field.water", bundle: bundle) }
+    static func startingPointFieldRatio(bundle: Bundle = .main) -> String { String(localized: "starting_point.field.ratio", bundle: bundle) }
+    static func startingPointFieldTemperature(bundle: Bundle = .main) -> String { String(localized: "starting_point.field.temperature", bundle: bundle) }
+    static func startingPointFieldTime(bundle: Bundle = .main) -> String { String(localized: "starting_point.field.time", bundle: bundle) }
+    static func startingPointFieldGrind(bundle: Bundle = .main) -> String { String(localized: "starting_point.field.grind", bundle: bundle) }
+    /// The mark next to a number that was not published for the recipe.
+    static func startingPointInferred(bundle: Bundle = .main) -> String { String(localized: "starting_point.inferred", bundle: bundle) }
+    /// What VoiceOver reads for such a number; `%@` is the number as it is read.
+    static func startingPointInferredSpoken(_ value: String, bundle: Bundle = .main) -> String { String(localized: "starting_point.inferred.spoken \(value)", bundle: bundle) }
+    static var startingPointCopy: LocalizedStringKey { "starting_point.copy" }
+    static var startingPointCopyHint: LocalizedStringKey { "starting_point.copy.hint" }
+    static var startingPointKept: LocalizedStringKey { "starting_point.kept" }
+    /// Also the announcement after a copy.
+    static func startingPointCopied(bundle: Bundle = .main) -> String { String(localized: "starting_point.copied", bundle: bundle) }
+    static var startingPointCopyFailed: LocalizedStringKey { "starting_point.copy_failed" }
+    /// The label of the typical ranges the paid Explore screens show (M4).
+    static var referenceLabel: LocalizedStringKey { "reference.label" }
 }

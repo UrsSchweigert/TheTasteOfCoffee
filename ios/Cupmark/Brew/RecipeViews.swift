@@ -31,14 +31,20 @@ struct BrewStartSection: View {
                     model.delete(rows[index].id)
                 }
             }
-            if model.hasMoreRecipes {
+            if model.offersRecipeList {
                 NavigationLink {
                     RecipeListScreen(model: model, vocabulary: vocabulary, language: language)
                 } label: {
-                    LabeledContent {
-                        Text(model.recipes.count, format: .number)
-                    } label: {
-                        Text(L10n.recipeListTitle)
+                    if model.recipes.isEmpty {
+                        // Nothing of the user's own to count: the list is the starting points.
+                        Text(L10n.startingPointsTitle)
+                            .minimumTapTarget()
+                    } else {
+                        LabeledContent {
+                            Text(model.recipes.count, format: .number)
+                        } label: {
+                            Text(L10n.recipeListTitle)
+                        }
                     }
                 }
                 .accessibilityIdentifier("recipe-list")
@@ -70,7 +76,8 @@ struct BrewStartSection: View {
 }
 
 /// Every recipe, newest first (M2-T27). A tap opens a new brew of the shelf entry from it;
-/// swiping removes it.
+/// swiping removes it. Below them are the starting points (M2-T47): reference recipes by
+/// method, which can be copied into the user's own recipes.
 struct RecipeListScreen: View {
     let model: BrewStartModel
     let vocabulary: VocabularyStore
@@ -108,6 +115,9 @@ struct RecipeListScreen: View {
                             model.delete(rows[index].id)
                         }
                     }
+                } header: {
+                    Text(L10n.recipeListOwnHeader)
+                        .secondaryText()
                 } footer: {
                     if model.deleteFailed {
                         Text(L10n.recipeDeleteFailed)
@@ -118,6 +128,9 @@ struct RecipeListScreen: View {
                     }
                 }
                 .surfaceRow()
+            }
+            if !model.loadFailed {
+                StartingPointsSection(set: model.startingPoints, store: model.store, vocabulary: vocabulary, language: language)
             }
         }
         .listBackground()

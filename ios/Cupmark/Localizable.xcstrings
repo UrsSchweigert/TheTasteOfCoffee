@@ -5743,6 +5743,24 @@
         }
       }
     },
+    "recipe_list.own.header" : {
+      "comment" : "Header of the user's own recipes in the recipe list, above the starting points.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Rezepte"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your Recipes"
+          }
+        }
+      }
+    },
     "recipe_list.title" : {
       "comment" : "Title of the list of every recipe, and the row on a bag that opens it.",
       "extractionState" : "manual",
@@ -5757,6 +5775,24 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "All Recipes"
+          }
+        }
+      }
+    },
+    "reference.label" : {
+      "comment" : "Label on the typical ranges of reference recipes in the paid Explore screens.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Referenz"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reference"
           }
         }
       }
@@ -7125,6 +7161,384 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Please sign in again"
+          }
+        }
+      }
+    },
+    "starting_point.copied" : {
+      "comment" : "Shown, and announced, after a reference recipe was copied into the user's recipes.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In deine Rezepte kopiert"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copied to your recipes"
+          }
+        }
+      }
+    },
+    "starting_point.copy" : {
+      "comment" : "Button that copies a reference recipe into the user's own recipes.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In meine Rezepte kopieren"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy to My Recipes"
+          }
+        }
+      }
+    },
+    "starting_point.copy.hint" : {
+      "comment" : "VoiceOver hint of the copy button.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fügt deinen Rezepten ein Rezept mit diesen Zahlen hinzu. Du kannst damit mit einem Tipp brühen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adds a recipe with these numbers to your recipes. You can brew from it with one tap."
+          }
+        }
+      }
+    },
+    "starting_point.copy_failed" : {
+      "comment" : "Shown when copying a reference recipe failed; nothing was changed.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Rezept konnte nicht kopiert werden. Es wurde nichts geändert."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The recipe could not be copied. Nothing was changed."
+          }
+        }
+      }
+    },
+    "starting_point.field.dose" : {
+      "comment" : "Name of the coffee dose on a reference recipe.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dosis"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dose"
+          }
+        }
+      }
+    },
+    "starting_point.field.grind" : {
+      "comment" : "Name of the normalised grind on a reference recipe, from fine (1) to coarse (10).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mahlgrad"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grind"
+          }
+        }
+      }
+    },
+    "starting_point.field.ratio" : {
+      "comment" : "Name of the ratio on a reference recipe.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verhältnis"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ratio"
+          }
+        }
+      }
+    },
+    "starting_point.field.temperature" : {
+      "comment" : "Name of the water temperature on a reference recipe.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Temperatur"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Temperature"
+          }
+        }
+      }
+    },
+    "starting_point.field.time" : {
+      "comment" : "Name of the brew time on a reference recipe.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brühzeit"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brew Time"
+          }
+        }
+      }
+    },
+    "starting_point.field.water" : {
+      "comment" : "Name of the water amount on a reference recipe.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wasser"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Water"
+          }
+        }
+      }
+    },
+    "starting_point.footer" : {
+      "comment" : "Footer of a reference recipe: what it is, and what copying does.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ein Referenzrezept aus veröffentlichten Quellen, auf Zahlen reduziert. Es sind keine Community-Daten und keine Bewertung. Kopieren fügt deinen Rezepten ein gewöhnliches Rezept hinzu; wie jedes Rezept hat es keinen Namen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A reference recipe from published sources, reduced to numbers. It is not community data and not a rating. Copying adds an ordinary recipe to yours; like every recipe it has no name."
+          }
+        }
+      }
+    },
+    "starting_point.inferred" : {
+      "comment" : "Mark next to a number of a reference recipe that was not published and is the method's typical value.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geschätzt"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estimated"
+          }
+        }
+      }
+    },
+    "starting_point.inferred.footer" : {
+      "comment" : "Footer of a reference recipe that has estimated numbers.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geschätzte Zahlen sind der typische Wert dieser Methode unter den Referenzrezepten; die Quellen haben sie für dieses Rezept nicht angegeben."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estimated numbers are the typical value of this method among the reference recipes; the sources did not publish them for this recipe."
+          }
+        }
+      }
+    },
+    "starting_point.inferred.spoken %@" : {
+      "comment" : "What VoiceOver reads for an estimated number; %@ is the number as it is read, for example \"2 minutes\".",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, geschätzt"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, estimated"
+          }
+        }
+      }
+    },
+    "starting_point.kept" : {
+      "comment" : "Shown instead of the copy button when the user already has a recipe with these numbers.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bereits in deinen Rezepten"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Already in your recipes"
+          }
+        }
+      }
+    },
+    "starting_point.row.hint" : {
+      "comment" : "VoiceOver hint of a reference recipe in the list of a method.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zeigt die Zahlen dieses Referenzrezepts."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shows the numbers of this reference recipe."
+          }
+        }
+      }
+    },
+    "starting_point.title" : {
+      "comment" : "Title of the screen of one reference recipe.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Referenzrezept"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reference Recipe"
+          }
+        }
+      }
+    },
+    "starting_points.footer" : {
+      "comment" : "Footer of the starting points: where the recipes come from and what they are not.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Referenzrezepte aus veröffentlichten Quellen, auf Zahlen reduziert. Sie sind keine Community-Daten und keine Bewertungen. Wähle eines, um die Zahlen zu sehen und es in deine Rezepte zu kopieren."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reference recipes from published sources, reduced to numbers. They are not community data and not ratings. Pick one to see its numbers and copy it to your recipes."
+          }
+        }
+      }
+    },
+    "starting_points.group.count %@" : {
+      "comment" : "VoiceOver value of a method row of the starting points; %@ is the number of reference recipes of the method.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ Referenzrezepte"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ reference recipes"
+          }
+        }
+      }
+    },
+    "starting_points.group.hint" : {
+      "comment" : "VoiceOver hint of a method row of the starting points.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffnet die Referenzrezepte dieser Methode."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opens the reference recipes of this method."
+          }
+        }
+      }
+    },
+    "starting_points.title" : {
+      "comment" : "Title of the starting points: the reference recipes, in the recipe list and on the bag's screen.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ausgangspunkte"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starting Points"
           }
         }
       }
