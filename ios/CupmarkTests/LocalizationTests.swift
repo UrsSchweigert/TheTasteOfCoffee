@@ -22,8 +22,23 @@ final class LocalizationTests: XCTestCase {
         }
     }
 
+    /// Format placeholders in `text`: `%@`, `%1$@`, `%d`, `%ld`, `%lld`, `%f`, `%s`. `%%` is not one.
+    /// The same pattern as `placeholderCount` in `scripts/check-ios-strings.mjs`.
     private func placeholderCount(_ text: String) -> Int {
-        text.components(separatedBy: "%@").count - 1
+        guard let pattern = try? NSRegularExpression(pattern: "%(?:\\d+\\$)?(?:l{0,2}[dfs]|@)") else {
+            XCTFail("placeholder pattern does not compile")
+            return 0
+        }
+        let range = NSRange(text.startIndex..., in: text)
+        return pattern.numberOfMatches(in: text, range: range)
+    }
+
+    func testPlaceholdersAreCountedPositionalAndPlain() {
+        XCTAssertEqual(placeholderCount("Step %1$@ of %2$@"), 2)
+        XCTAssertEqual(placeholderCount("onboarding.step %@ %@"), 2)
+        XCTAssertEqual(placeholderCount("%d of %ld and %lld, %f %s"), 5)
+        XCTAssertEqual(placeholderCount("100%% done"), 0)
+        XCTAssertEqual(placeholderCount("No placeholder"), 0)
     }
 
     /// `scripts/check-ios-strings.mjs` proves every key of `L10n.swift` is in the catalogue, and

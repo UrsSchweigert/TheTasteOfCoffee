@@ -198,17 +198,23 @@ final class VocabularyStoreTests: XCTestCase {
 
     // MARK: - The language rule (M2-T32)
 
-    func testTheLanguageRuleIsGermanForAnyGermanFirstLanguageElseEnglish() {
+    func testTheLanguageRuleIsTheFirstPreferredLanguageThatIsGermanOrEnglish() {
         XCTAssertEqual(VocabularyLanguage.resolving(preferredLanguages: ["de"]), .de)
         XCTAssertEqual(VocabularyLanguage.resolving(preferredLanguages: ["de-CH", "en-US"]), .de)
+        XCTAssertEqual(VocabularyLanguage.resolving(preferredLanguages: ["de-AT"]), .de)
+        XCTAssertEqual(VocabularyLanguage.resolving(preferredLanguages: ["de-Latn-DE"]), .de)
         XCTAssertEqual(VocabularyLanguage.resolving(preferredLanguages: ["en-US"]), .en)
+        XCTAssertEqual(VocabularyLanguage.resolving(preferredLanguages: ["en-GB", "de-DE"]), .en, "the first supported language counts")
         XCTAssertEqual(VocabularyLanguage.resolving(preferredLanguages: ["fr-FR"]), .en, "French falls back to English")
-        XCTAssertEqual(VocabularyLanguage.resolving(preferredLanguages: ["fr-FR", "de-DE"]), .en, "only the first language counts")
+        XCTAssertEqual(VocabularyLanguage.resolving(preferredLanguages: ["fr"]), .en)
+        XCTAssertEqual(VocabularyLanguage.resolving(preferredLanguages: ["fr-FR", "de-DE"]), .de, "an unsupported language is skipped, as the UI does")
+        XCTAssertEqual(VocabularyLanguage.resolving(preferredLanguages: ["fr", "en", "de"]), .en)
+        XCTAssertEqual(VocabularyLanguage.resolving(preferredLanguages: ["fr", "it"]), .en)
         XCTAssertEqual(VocabularyLanguage.resolving(preferredLanguages: []), .en)
     }
 
     func testTheProfileLocaleUsesTheSameRuleAsTheVocabularyLabels() {
-        for languages in [["de"], ["de-AT"], ["en-GB"], ["fr-FR"], ["fr-FR", "de-DE"], []] {
+        for languages in [["de"], ["de-AT"], ["en-GB"], ["fr-FR"], ["fr-FR", "de-DE"], ["fr", "en", "de"], []] {
             XCTAssertEqual(
                 OnboardingRules.profileLocale(preferredLanguages: languages),
                 VocabularyLanguage.resolving(preferredLanguages: languages),

@@ -122,7 +122,8 @@ struct VocabularyStore: Sendable {
     }
 
     /// The display label of `id` in `namespace`. Throws if the id is not in
-    /// the bundled vocabulary or its label is missing or empty.
+    /// the bundled vocabulary or its label is missing or empty in English too (a label missing
+    /// or empty in another language falls back to English).
     func label(namespace: Vocabulary.Namespace, id: String, language: VocabularyLanguage) throws -> String {
         try text(in: labels, namespace: namespace, id: id, language: language, isQuestion: false)
     }

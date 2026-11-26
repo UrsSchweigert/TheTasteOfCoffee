@@ -1483,7 +1483,7 @@ test('onboarding and settings: no typed text, opt-in by default, written through
   const rules = masked('ios/Cupmark/Onboarding/OnboardingRules.swift');
   // M2-T32: the rule moved to VocabularyLanguage.resolving, shared with the vocabulary labels.
   assert.match(rules, /VocabularyLanguage\.resolving\(preferredLanguages: preferredLanguages\)/);
-  assert.match(masked('ios/Cupmark/Vocabulary/VocabularyItem.swift'), /Locale\.LanguageCode\.german \? \.de : \.fallback/);
+  assert.match(masked('ios/Cupmark/Vocabulary/VocabularyItem.swift'), /LanguageCode\.german[\s\S]*LanguageCode\.english[\s\S]*return \.fallback/);
   // The gate sits before the shelf, and Settings is one tap from it.
   const shelf = masked('ios/Cupmark/Shelf/ShelfScreen.swift');
   assert.match(shelf, /OnboardingGate\(store: store, sync: sync\)\s*\{\s*ShelfScreen\(/);

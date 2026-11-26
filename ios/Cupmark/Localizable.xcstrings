@@ -1574,7 +1574,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ein Tipp öffnet eine neue Zubereitung dieser Packung mit diesen Werten und startbereitem Timer. Wische über ein Rezept, um es zu entfernen."
+            "value" : "Tippen öffnet eine neue Zubereitung dieser Packung mit diesen Werten und startbereitem Timer. Wische über ein Rezept, um es zu entfernen."
           }
         },
         "en" : {
@@ -2330,7 +2330,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Der Export konnte nicht erstellt werden. Möglicherweise ist er größer als die Grenze von 5 MiB; so große Exporte sind noch nicht möglich. Versuche es später erneut."
+            "value" : "Der Export konnte nicht erstellt werden. Möglicherweise überschreitet er die Grenze von 5 MiB; so große Exporte sind noch nicht möglich. Versuche es später erneut."
           }
         },
         "en" : {
@@ -3986,7 +3986,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Für alle Packungen, die du offline gescannt hast, wurde die Suche abgeschlossen."
+            "value" : "Alle Packungen, die du offline gescannt hast, wurden nachgeschlagen."
           }
         },
         "en" : {

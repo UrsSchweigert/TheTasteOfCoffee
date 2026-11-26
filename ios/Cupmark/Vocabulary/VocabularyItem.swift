@@ -32,17 +32,25 @@ struct VocabularyRange: Equatable, Sendable {
 }
 
 extension VocabularyLanguage {
-    /// The one language rule of the app (M2-T32): German when the first preferred language is
-    /// German (`de`, `de-CH`, `de-AT` and so on), otherwise English. The profile's `locale`
-    /// (`OnboardingRules.profileLocale`) and the language of every vocabulary label use this
-    /// function, so they never disagree. A label missing in this language falls back to
-    /// `VocabularyLanguage.fallback` (`VocabularyStore.label`).
+    /// The one language rule of the app (M2-T32): the first preferred language whose language
+    /// code is German or English, in any region or script (`de-CH`, `de-AT`, `de-Latn`, `en-GB`);
+    /// every other language (`fr`, `it`, ...) is skipped, and if none matches, English. This is
+    /// the language the UI text shows (the app is localised in these two only, and iOS picks
+    /// the first supported one), so labels and UI text never mix languages. The profile's
+    /// `locale` (`OnboardingRules.profileLocale`) and every vocabulary label use this function.
+    /// A label missing in this language falls back to `VocabularyLanguage.fallback`
+    /// (`VocabularyStore.label`).
     static func resolving(preferredLanguages: [String]) -> VocabularyLanguage {
-        guard let first = preferredLanguages.first else {
-            return .fallback
+        for identifier in preferredLanguages {
+            let code = Locale.Language(identifier: identifier).languageCode
+            if code == Locale.LanguageCode.german {
+                return .de
+            }
+            if code == Locale.LanguageCode.english {
+                return .en
+            }
         }
-        let code: Locale.LanguageCode? = Locale.Language(identifier: first).languageCode
-        return code == Locale.LanguageCode.german ? .de : .fallback
+        return .fallback
     }
 
     /// The language for the device's preferred languages (`Locale.preferredLanguages`, which
