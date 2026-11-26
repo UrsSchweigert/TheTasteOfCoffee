@@ -101,8 +101,10 @@ final class BrewPhotoViewerModelTests: XCTestCase {
         XCTAssertEqual(try detail(.method, in: model).title, "Methode")
         XCTAssertEqual(try detail(.dose, in: model).title, "Dosis")
         XCTAssertEqual(try detail(.ratio, in: model).value, "1:16,7", "a German decimal comma")
-        XCTAssertTrue(try detail(.dose, in: model).value.contains("18,0"), try detail(.dose, in: model).value)
-        XCTAssertTrue(try detail(.score, in: model).spokenValue.contains(" von 10"), try detail(.score, in: model).spokenValue)
+        let doseValue = try detail(.dose, in: model).value
+        XCTAssertTrue(doseValue.contains("18,0"), doseValue)
+        let scoreSpoken = try detail(.score, in: model).spokenValue
+        XCTAssertTrue(scoreSpoken.contains(" von 10"), scoreSpoken)
     }
 
     func testAnUnratedBrewHasNoScoreAndValuesThatAreNotSetAreLeftOut() throws {
