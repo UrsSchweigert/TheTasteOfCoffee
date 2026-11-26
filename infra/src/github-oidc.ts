@@ -11,7 +11,7 @@
 // The role already exists (created by hand on 2026-11-25, docs/07). The resources here
 // are written as L1 constructs with literal policy documents, so that the template matches
 // the existing role exactly and `cdk import` brings it in without any change. Every
-// property that is not in the existing role (tags) is left out in import mode.
+// property that is not in the existing role (tags) is left out in import mode. The description is the existing one.
 import { Aws, CfnDeletionPolicy, CliCredentialsStackSynthesizer, Stack } from 'aws-cdk-lib';
 import type { App, CfnResource, CfnTag } from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -92,6 +92,16 @@ export const GITHUB_DEPLOY_SUBJECTS: readonly string[] = GITHUB_DEPLOY_ENVIRONME
 
 /** The existing role's name; the IAM `Cupmark` prefix of invariant 9. */
 export const GITHUB_DEPLOY_ROLE_NAME = 'CupmarkGitHubDeploy';
+/**
+ * The existing role's description, exactly as the owner set it by hand (found by
+ * scripts/aws/check-github-deploy-role.sh on 2026-11-26, ADR 0018 addendum). The import
+ * records the role as it is, so the template must carry it, in import and committed mode
+ * alike; otherwise the import is not a no-op and drift detection would not be IN_SYNC.
+ * IAM limits: at most 1000 characters from [\t\n\r -~¡-ÿ]; this is
+ * plain ASCII, 66 characters. scripts/aws/check-github-deploy-role.sh pins the same
+ * string, and test/github-oidc.test.ts fails if either differs.
+ */
+export const GITHUB_DEPLOY_ROLE_DESCRIPTION = 'Cupmark GitHub Actions OIDC deploy role (CDK bootstrap roles only)';
 /** The existing role's one inline policy. */
 export const GITHUB_DEPLOY_POLICY_NAME = 'AssumeCdkBootstrapRoles';
 
@@ -193,6 +203,7 @@ export class CupmarkGitHubOidcStack extends Stack {
 
     this.role = new iam.CfnRole(this, DEPLOY_ROLE_LOGICAL_ID, {
       roleName: GITHUB_DEPLOY_ROLE_NAME,
+      description: GITHUB_DEPLOY_ROLE_DESCRIPTION,
       assumeRolePolicyDocument: {
         Version: '2012-10-17',
         Statement: [

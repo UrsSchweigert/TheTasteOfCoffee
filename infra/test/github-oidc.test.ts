@@ -16,6 +16,7 @@ import type { GuardName, Violation } from '../src/guards.ts';
 import {
   CupmarkGitHubOidcStack,
   DEPLOY_ROLE_LOGICAL_ID,
+  GITHUB_DEPLOY_ROLE_DESCRIPTION,
   GITHUB_DEPLOY_ROLE_NAME,
   GITHUB_DEPLOY_SUBJECTS,
   GITHUB_OIDC_IMPORT_CONTEXT_KEY,
@@ -47,6 +48,12 @@ const inAccount = (suffix: string): Json => ({ 'Fn::Join': ['', ['arn:aws:iam::'
 const bootstrapRole = (kind: string): Json => ({
   'Fn::Join': ['', ['arn:aws:iam::', { Ref: 'AWS::AccountId' }, `:role/cdk-cupmark-${kind}-`, { Ref: 'AWS::AccountId' }, '-eu-central-1']],
 });
+
+/**
+ * The description of the live, hand-made role, written out literally (found by the role
+ * check on 2026-11-26, ADR 0018 addendum). The import must record it unchanged.
+ */
+const LIVE_DESCRIPTION = 'Cupmark GitHub Actions OIDC deploy role (CDK bootstrap roles only)';
 
 /** GitHub's immutable subject prefix, written out literally so that any change to it fails a test. */
 const PREFIX = 'repo:UrsSchweigert@132881530/TheTasteOfCoffee@1470617081';
@@ -192,6 +199,7 @@ describe('reference mode (committed)', () => {
   it('defines the role exactly: name, trust, inline policy and the project tag; no boundary', () => {
     expect(template.Resources.DeployRole?.Properties).toEqual({
       RoleName: 'CupmarkGitHubDeploy',
+      Description: LIVE_DESCRIPTION,
       AssumeRolePolicyDocument: expectedTrust(EXISTING_PROVIDER),
       Policies: EXPECTED_POLICIES,
       Tags: PROJECT_TAG,
@@ -219,6 +227,7 @@ describe('import mode (-c cupmark:githubOidcImport=true)', () => {
   it('matches the hand-made role: no tags, no boundary, nothing else', () => {
     expect(template.Resources.DeployRole?.Properties).toEqual({
       RoleName: 'CupmarkGitHubDeploy',
+      Description: LIVE_DESCRIPTION,
       AssumeRolePolicyDocument: expectedTrust(EXISTING_PROVIDER),
       Policies: EXPECTED_POLICIES,
     });
@@ -234,6 +243,26 @@ describe('import mode (-c cupmark:githubOidcImport=true)', () => {
 
   it('passes every guard (the tag guard exempts only this mode)', () => {
     expect(formatViolations(checkApp(app))).toBe('');
+  });
+});
+
+describe('the role description', () => {
+  it('is exactly the live role\'s, in committed, import and create mode', () => {
+    expect(GITHUB_DEPLOY_ROLE_DESCRIPTION).toBe(LIVE_DESCRIPTION);
+    for (const opts of [{}, { importMode: true }, { providerMode: 'create' as const }]) {
+      const props = templateOf(githubOidcApp(opts).stack).Resources.DeployRole?.Properties;
+      expect(props?.Description).toBe(LIVE_DESCRIPTION);
+    }
+  });
+
+  it('is valid for IAM: at most 1000 characters from the allowed set', () => {
+    expect(LIVE_DESCRIPTION.length).toBeLessThanOrEqual(1000);
+    expect(LIVE_DESCRIPTION).toMatch(/^[\t\n\r\u0020-\u007E\u00A1-\u00FF]*$/);
+  });
+
+  it('is the one scripts/aws/check-github-deploy-role.sh expects', () => {
+    const script = readFileSync(new URL('../../scripts/aws/check-github-deploy-role.sh', import.meta.url), 'utf8');
+    expect(script).toContain(`DESCRIPTION="${LIVE_DESCRIPTION}"`);
   });
 });
 
@@ -255,6 +284,7 @@ describe('create mode (-c cupmark:githubOidcProvider=create)', () => {
   it('trusts that provider, with the same role otherwise', () => {
     expect(template.Resources.DeployRole?.Properties).toEqual({
       RoleName: 'CupmarkGitHubDeploy',
+      Description: LIVE_DESCRIPTION,
       AssumeRolePolicyDocument: expectedTrust({ 'Fn::GetAtt': [OIDC_PROVIDER_LOGICAL_ID, 'Arn'] }),
       Policies: EXPECTED_POLICIES,
       Tags: PROJECT_TAG,

@@ -55,6 +55,8 @@ interface Fixture {
   role: Json;
 }
 
+const LIVE_DESCRIPTION = 'Cupmark GitHub Actions OIDC deploy role (CDK bootstrap roles only)';
+
 function matching(): Fixture {
   return {
     providers: [`arn:aws:iam::${FAKE_ACCOUNT}:oidc-provider/token.actions.githubusercontent.com`, `arn:aws:iam::${FAKE_ACCOUNT}:oidc-provider/example.com`],
@@ -65,8 +67,8 @@ function matching(): Fixture {
     policyNames: [policies[0]?.PolicyName ?? ''],
     policy: policies[0]?.PolicyDocument,
     attached: [],
-    // No Description and no PermissionsBoundary key at all, as IAM answers for a bare role.
-    role: { RoleName: 'CupmarkGitHubDeploy', Path: '/', MaxSessionDuration: 3600, Description: null, PermissionsBoundary: null, Tags: null },
+    // The live description (hand-made role, 2026-11-26); no PermissionsBoundary, as IAM answers.
+    role: { RoleName: 'CupmarkGitHubDeploy', Path: '/', MaxSessionDuration: 3600, Description: LIVE_DESCRIPTION, PermissionsBoundary: null, Tags: null },
   };
 }
 
@@ -176,8 +178,14 @@ describe('check-github-deploy-role.sh', () => {
     ['a tag', (f) => {
       f.role = { ...f.role, Tags: [{ Key: 'project', Value: 'cupmark' }] };
     }, 'name, path, session, description, boundary, tags'],
-    ['a description', (f) => {
+    ['a different description', (f) => {
       f.role = { ...f.role, Description: 'made by hand' };
+    }, 'name, path, session, description, boundary, tags'],
+    ['no description', (f) => {
+      f.role = { ...f.role, Description: null };
+    }, 'name, path, session, description, boundary, tags'],
+    ['the live description with a changed case', (f) => {
+      f.role = { ...f.role, Description: LIVE_DESCRIPTION.toUpperCase() };
     }, 'name, path, session, description, boundary, tags'],
     ['a longer session', (f) => {
       f.role = { ...f.role, MaxSessionDuration: 7200 };
