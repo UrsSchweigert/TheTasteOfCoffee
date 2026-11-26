@@ -19,13 +19,17 @@ import os
 /// The folder name is the `AccountID` itself, 64 lowercase hex digits (checked by
 /// `AccountID(rawValue:)`), so no account id can name a path outside the root.
 ///
-/// Unlike the label photos, the folders are not excluded from backups: a brew photo is the
-/// user's own data with no other copy, so an iCloud or computer backup of the device keeps it.
+/// Whether the folders and files are in the device backup is the user's choice (M2-T45,
+/// `BrewPhotoBackupSetting`): excluded (`isExcludedFromBackup`) unless the user turned the
+/// setting on. The flag is set on a new folder and its files, again at every store open and
+/// whenever the setting changes (`applyBackupSetting`).
 struct BrewPhotoFolders: Sendable {
     let root: URL
+    let backup: BrewPhotoBackupSetting
 
-    init(root: URL) {
+    init(root: URL, backup: BrewPhotoBackupSetting = .standard) {
         self.root = root
+        self.backup = backup
     }
 
     /// `Application Support/BrewPhotos`.
@@ -35,7 +39,28 @@ struct BrewPhotoFolders: Sendable {
 
     /// The photo files of `account`.
     func files(for account: AccountID) -> BrewPhotoFileStore {
-        BrewPhotoFileStore(directory: root.appending(path: account.rawValue, directoryHint: .isDirectory))
+        let setting = backup
+        return BrewPhotoFileStore(
+            directory: root.appending(path: account.rawValue, directoryHint: .isDirectory),
+            isIncludedInBackup: { setting.isIncluded }
+        )
+    }
+
+    /// Sets the backup flag of every account's folder that is there, and of the files in them,
+    /// to the current setting (the user changed it). A folder that does not exist yet follows
+    /// the setting when it is created. Returns false if any folder or file could not be set.
+    @discardableResult
+    func applyBackupSettingToAllFolders() -> Bool {
+        let entries = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
+        let setting = backup
+        var allSet = true
+        for entry in entries {
+            let store = BrewPhotoFileStore(directory: entry, isIncludedInBackup: { setting.isIncluded })
+            if !store.applyBackupSetting() {
+                allSet = false
+            }
+        }
+        return allSet
     }
 
     /// Deletes the folder of `account` and every file in it. A folder that is not there is not
@@ -72,8 +97,9 @@ struct BrewPhotoFolders: Sendable {
 ///
 /// - A file is written to a hidden temporary file in the same folder and then moved to its
 ///   name, so a file with a photo name is always complete. The files are readable only while
-///   the device is unlocked (`.completeFileProtection`), like the label photos, and are not
-///   excluded from backups.
+///   the device is unlocked (`.completeFileProtection`), like the label photos. Folder and
+///   files are excluded from the device backup unless the user turned the setting on
+///   (`isIncludedInBackup`, M2-T45); a new file takes the setting at the moment it is written.
 /// - Only names of the form `<UUID>.jpg` are ever turned into a path (`url(of:)`), so a stored
 ///   name cannot reach outside the folder.
 /// - No file timestamp, disk space or other required-reason API is used (ADR 0033).
@@ -88,9 +114,56 @@ struct BrewPhotoFileStore: Sendable {
     private static let logger = Logger(subsystem: "Cupmark", category: "BrewPhoto")
 
     let directory: URL
+    /// Whether the user wants the photos in the device backup (`BrewPhotoBackupSetting`). Off
+    /// unless given.
+    private let isIncludedInBackup: @Sendable () -> Bool
 
-    init(directory: URL) {
+    init(directory: URL, isIncludedInBackup: @escaping @Sendable () -> Bool = { false }) {
         self.directory = directory
+        self.isIncludedInBackup = isIncludedInBackup
+    }
+
+    /// Sets `isExcludedFromBackup` of `url`. Returns false if it could not be set.
+    @discardableResult
+    private static func setExcluded(_ excluded: Bool, at url: URL) -> Bool {
+        var target = url
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = excluded
+        do {
+            try target.setResourceValues(values)
+            return true
+        } catch {
+            // A fixed message only: no path, no account id.
+            logger.error("The backup flag of a brew photo item could not be set.")
+            return false
+        }
+    }
+
+    /// Whether the item at `url` is excluded from the backup; nil when it cannot be read. Read
+    /// through a new URL: a URL object keeps the resource values it read before until a
+    /// run-loop pass, so another object's change (or the caller's own) would not show.
+    static func isExcludedFromBackup(_ url: URL) -> Bool? {
+        var fresh = URL(filePath: url.path(percentEncoded: false))
+        fresh.removeAllCachedResourceValues()
+        return try? fresh.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup
+    }
+
+    /// Sets the backup flag of the folder and of everything in it (hidden temporary files
+    /// included) to the current setting: excluded unless the user included the photos. A
+    /// folder that is not there is left alone and counts as set (it follows the setting when
+    /// it is created). Safe to repeat. Returns false if any item could not be set.
+    @discardableResult
+    func applyBackupSetting() -> Bool {
+        guard FileManager.default.fileExists(atPath: directory.path(percentEncoded: false)) else {
+            return true
+        }
+        let excluded = !isIncludedInBackup()
+        var allSet = BrewPhotoFileStore.setExcluded(excluded, at: directory)
+        let urls = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+        for url in urls where !BrewPhotoFileStore.setExcluded(excluded, at: url) {
+            allSet = false
+        }
+        return allSet
     }
 
     /// Whether `name` is the name of a photo file: an upper-case UUID and `.jpg`, as `write`
@@ -125,7 +198,13 @@ struct BrewPhotoFileStore: Sendable {
     /// the same folder first, which is then moved to the new name; on failure the temporary
     /// file is removed and nothing is left.
     func write(_ photo: EncodedBrewPhoto) throws -> String {
+        let folderExisted = FileManager.default.fileExists(atPath: directory.path(percentEncoded: false))
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let excluded = !isIncludedInBackup()
+        if !folderExisted {
+            // A new folder starts with the setting (excluded unless the user included the photos).
+            BrewPhotoFileStore.setExcluded(excluded, at: directory)
+        }
         let name = "\(UUID().uuidString).\(BrewPhotoFileStore.fileExtension)"
         let temporary = directory.appending(
             path: ".\(UUID().uuidString)\(BrewPhotoFileStore.temporarySuffix)",
@@ -135,6 +214,9 @@ struct BrewPhotoFileStore: Sendable {
         do {
             try photo.data.write(to: temporary, options: [.withoutOverwriting, .completeFileProtection])
             try FileManager.default.moveItem(at: temporary, to: target)
+            // The file follows the setting, as the folder does. A flag that cannot be set is
+            // logged and does not fail the photo.
+            BrewPhotoFileStore.setExcluded(excluded, at: target)
         } catch {
             try? FileManager.default.removeItem(at: temporary)
             // A fixed message only: no path, no account id.

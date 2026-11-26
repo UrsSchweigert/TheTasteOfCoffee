@@ -18,17 +18,24 @@ struct SettingsScreen: View {
     @State private var isConfirmingRemoval = false
 
     /// `account` is the signed-in account; without it the export and local data sections are
-    /// left out and the consent still works.
-    init(account: AccountID? = nil, store: AccountStore) {
+    /// left out and the consent still works. `backup` and `folders` are the device's brew photo
+    /// backup setting and photo folders (M2-T45); the app uses the standard ones.
+    init(
+        account: AccountID? = nil,
+        store: AccountStore,
+        backup: BrewPhotoBackupSetting = .standard,
+        folders: BrewPhotoFolders? = .standard
+    ) {
         self.account = account
         self.store = store
-        _model = State(initialValue: SettingsModel(store: store))
+        _model = State(initialValue: SettingsModel(store: store, backup: backup, folders: folders))
         _localData = State(initialValue: account.map { LocalDataModel(account: $0) })
     }
 
     var body: some View {
         List {
             privacySection
+            brewPhotoBackupSection
             exportSection
             localDataSection
             deleteAccountSection
@@ -88,6 +95,41 @@ struct SettingsScreen: View {
                 .secondaryText()
         } footer: {
             Text(L10n.settingsConsentFooter)
+                .secondaryText()
+        }
+        .surfaceRow()
+    }
+
+    /// Brew photos in the device backup (M2-T45, ADR 0033 addendum): per device, off by default,
+    /// not synced. The footer says what the current state means.
+    private var brewPhotoBackupSection: some View {
+        let footer = model.brewPhotosInBackup ? L10n.settingsPhotoBackupFooterOn : L10n.settingsPhotoBackupFooterOff
+        return Section {
+            Toggle(isOn: Binding(
+                get: { model.brewPhotosInBackup },
+                set: { value in model.setBrewPhotosInBackup(value) }
+            )) {
+                Text(L10n.settingsPhotoBackupToggle)
+            }
+            .tint(Theme.accent)
+            .minimumTapTarget()
+            .accessibilityLabel(Text(L10n.settingsPhotoBackupToggle))
+            .accessibilityHint(Text(footer))
+            .accessibilityIdentifier("settings-photo-backup")
+            if model.backupApplyFailed {
+                Label {
+                    Text(L10n.settingsPhotoBackupApplyFailed)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle")
+                        .accessibilityHidden(true)
+                }
+                .foregroundStyle(Theme.errorText)
+            }
+        } header: {
+            Text(L10n.settingsPhotosHeader)
+                .secondaryText()
+        } footer: {
+            Text(footer)
                 .secondaryText()
         }
         .surfaceRow()

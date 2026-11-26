@@ -73,7 +73,8 @@ final class UITestHarness {
                     makeEngine: { _, store in
                         SyncEngine(store: store, client: client, isCurrentAccount: { false })
                     },
-                    labelPhotos: LabelPhotoFolders(root: FileManager.default.temporaryDirectory.appending(path: "CupmarkUITestLabelPhotos"))
+                    labelPhotos: LabelPhotoFolders(root: FileManager.default.temporaryDirectory.appending(path: "CupmarkUITestLabelPhotos")),
+                    brewPhotos: nil
                 )
             }
             seeded = nil
@@ -163,7 +164,14 @@ final class UITestHarness {
             }
         case .settings:
             NavigationStack {
-                SettingsScreen(account: UITestFixtures.account, store: seeded.store)
+                // The photo backup setting is a throwaway suite, off at every launch, and the
+                // device's real photo folders are not touched.
+                SettingsScreen(
+                    account: UITestFixtures.account,
+                    store: seeded.store,
+                    backup: UITestFixtures.photoBackupSetting,
+                    folders: nil
+                )
             }
         case .signIn, .notConfigured, .onboarding, .shelf:
             EmptyView()

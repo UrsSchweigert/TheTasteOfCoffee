@@ -1892,12 +1892,21 @@ test('the app answers export compliance and ships a privacy manifest for the fil
   const manifest = readFileSync(join(iosDir, 'Cupmark', 'PrivacyInfo.xcprivacy'), 'utf8');
   assert.match(manifest, /<key>NSPrivacyTracking<\/key>\s*<false\/>/);
   assert.match(manifest, /NSPrivacyAccessedAPICategoryFileTimestamp[\s\S]*C617\.1/);
-  // Declared only if the app reads them: UserDefaults needs its own entry the day it is used.
+  // UserDefaults needs its own entry (M2-T45: the per-device brew photo backup flag, reason CA92.1,
+  // "read and write information only the app itself can access"). Only the files listed here
+  // may use UserDefaults or @AppStorage; a new use is a conscious change of this list.
+  assert.match(manifest, /<string>NSPrivacyAccessedAPICategoryUserDefaults<\/string>\s*<key>NSPrivacyAccessedAPITypeReasons<\/key>\s*<array>\s*<string>CA92\.1<\/string>\s*<\/array>/);
+  const allowedUserDefaults = new Set([
+    join('BrewPhoto', 'BrewPhotoBackupSetting.swift'),
+    join('UITestSupport', 'UITestFixtures.swift'),
+  ]);
   const sources = readdirSync(join(iosDir, 'Cupmark'), { recursive: true }).filter((f) => f.endsWith('.swift'));
   for (const f of sources) {
     const text = readFileSync(join(iosDir, 'Cupmark', f), 'utf8');
-    assert.doesNotMatch(text, /UserDefaults|@AppStorage/, `${f} uses UserDefaults: add NSPrivacyAccessedAPICategoryUserDefaults to the manifest`);
+    if (allowedUserDefaults.has(f)) continue;
+    assert.doesNotMatch(text, /UserDefaults|@AppStorage/, `${f} uses UserDefaults: add it to the allowed list with its reason (manifest CA92.1)`);
   }
+  assert.match(readFileSync(join(iosDir, 'Cupmark', 'BrewPhoto', 'BrewPhotoBackupSetting.swift'), 'utf8'), /UserDefaults/, 'the allowed list names a file that uses it');
 });
 
 // ---- Brew photos: capture and pick (M2-T42b) ----

@@ -31,6 +31,18 @@ enum UITestFixtures {
     private static let brewPhotoFolder = FileManager.default.temporaryDirectory
         .appending(path: "CupmarkUITestBrewPhotos-\(UUID().uuidString)", directoryHint: .isDirectory)
 
+    /// The brew photo backup setting of a UI-test launch: its own `UserDefaults` suite, emptied
+    /// at the first use in the process, so every launch starts with the default (off) and the
+    /// device's real setting is never read or written.
+    static let photoBackupSetting: BrewPhotoBackupSetting = {
+        let suite = "cupmark-ui-test-photo-backup"
+        UserDefaults.standard.removePersistentDomain(forName: suite)
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            preconditionFailure("The UI-test UserDefaults suite could not be made.")
+        }
+        return BrewPhotoBackupSetting(defaults: defaults)
+    }()
+
     static var account: AccountID {
         AccountID(subject: subject)
     }

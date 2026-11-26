@@ -74,6 +74,9 @@ final class SyncHost {
     @ObservationIgnored let drainPullInterval: TimeInterval
     @ObservationIgnored private let now: @Sendable () -> Date
     @ObservationIgnored private let labelPhotos: LabelPhotoFolders
+    /// The brew photo folders of every account on the device, whose backup flag is set again at
+    /// every store open (M2-T45); nil: only the open store's own folder.
+    @ObservationIgnored private let brewPhotos: BrewPhotoFolders?
     /// True while an account deletion is recorded (M2-T31): no store is opened then.
     @ObservationIgnored private let isHeld: @MainActor @Sendable () -> Bool
 
@@ -86,6 +89,7 @@ final class SyncHost {
         drainPullInterval: TimeInterval = 30,
         now: @escaping @Sendable () -> Date = { Date() },
         labelPhotos: LabelPhotoFolders = .standard,
+        brewPhotos: BrewPhotoFolders? = .standard,
         isHeld: @escaping @MainActor @Sendable () -> Bool = { false }
     ) {
         self.makeStore = makeStore
@@ -95,6 +99,7 @@ final class SyncHost {
         self.drainPullInterval = drainPullInterval
         self.now = now
         self.labelPhotos = labelPhotos
+        self.brewPhotos = brewPhotos
         self.isHeld = isHeld
     }
 
@@ -179,6 +184,15 @@ final class SyncHost {
         // Brew photos (M2-T42, ADR 0033) stay with the store across sign-outs; at every open
         // the records of removed brews and the files no record lists go.
         opened.sweepBrewPhotos()
+        // The device-backup setting (M2-T45) is applied again, after the sweep, to the photo
+        // folders of every account on the device (also a signed-out account's, which an earlier
+        // build left in the backup), or to the open store's folder when there are no shared
+        // folders.
+        if let brewPhotos {
+            opened.brewPhotoBackupApplyFailed = !brewPhotos.applyBackupSettingToAllFolders()
+        } else {
+            opened.brewPhotoBackupApplyFailed = !opened.applyBrewPhotoBackupSetting()
+        }
         let started = makeEngine(next, opened)
         started.onSignInRequired = { [weak self, weak started] in
             // Only the current engine speaks for the host; a stopped one may still finish.
