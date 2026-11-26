@@ -144,20 +144,16 @@ final class FailedWriteTests: XCTestCase {
         }
     }
 
-    /// Each restored property's key path is the one the schema has for its name (M2-T36), so a
-    /// name listed with another property's key path, which restores the wrong field, fails.
-    func testEveryRestoredPropertyHasTheSchemasKeyPathForItsName() {
+    /// No name and no key path is listed twice (M2-T36), so two entries cannot both restore one
+    /// field while another is left out. SwiftData does not make `Schema.PropertyMetadata`'s name
+    /// or key path public (the first macOS run of this test did not compile), so the key path
+    /// itself cannot be matched to the schema here; the per-site tests below restore every field
+    /// and compare the result.
+    func testEveryRestoredPropertyHasItsOwnNameAndKeyPath() {
         func check<Model: SavedValuesRestorable>(_ type: Model.Type, file: StaticString = #filePath, line: UInt = #line) {
-            let schemaKeyPaths = Dictionary(
-                Model.schemaMetadata.map { property in (property.name, property.keypath) },
-                uniquingKeysWith: { first, _ in first }
-            )
             let restored = Model.restoredProperties
             XCTAssertEqual(Set(restored.map(\.name)).count, restored.count, "\(Model.self): a name is listed twice", file: file, line: line)
             XCTAssertEqual(Set(restored.map { property in property.keyPath as AnyKeyPath }).count, restored.count, "\(Model.self): a key path is listed twice", file: file, line: line)
-            for property in restored {
-                XCTAssertEqual(schemaKeyPaths[property.name], property.keyPath as AnyKeyPath, "\(Model.self).\(property.name)", file: file, line: line)
-            }
         }
         check(StoredBean.self)
         check(StoredShelfEntry.self)
