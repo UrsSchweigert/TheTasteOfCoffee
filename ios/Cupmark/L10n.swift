@@ -299,11 +299,10 @@ enum L10n {
     static var statisticsNoKnownScores: LocalizedStringKey { "statistics.no_known_scores" }
     static var statisticsTasteProfileHeader: LocalizedStringKey { "statistics.taste_profile.header" }
     static var statisticsTasteProfileFooter: LocalizedStringKey { "statistics.taste_profile.footer" }
-    static var statisticsMethodsHeader: LocalizedStringKey { "statistics.methods.header" }
+    static var statisticsMethodPicker: LocalizedStringKey { "statistics.method.picker" }
+    static var statisticsMethodAll: LocalizedStringKey { "statistics.method.all" }
     /// Shown while no method has enough rated brews; `%@` is that number.
     static func statisticsMethodsNone(brews: String) -> String { String(localized: "statistics.methods.none \(brews)") }
-    /// A method's taste profile header; `%@` is the method's vocabulary label.
-    static func statisticsMethodProfileHeader(method: String) -> String { String(localized: "statistics.method_profile.header \(method)") }
     static var statisticsNotesHeader: LocalizedStringKey { "statistics.notes.header" }
     static var statisticsNotesFooter: LocalizedStringKey { "statistics.notes.footer" }
     static var statisticsNotesEmpty: LocalizedStringKey { "statistics.notes.empty" }
@@ -335,6 +334,9 @@ enum L10n {
     static var coffeeSummaryHint: LocalizedStringKey { "coffee_summary.hint" }
     /// `%1$@` is the mean overall score, `%2$@` the number of rated brews.
     static func coffeeSummaryOverall(mean: String, brews: String) -> String { String(localized: "coffee_summary.overall \(mean) \(brews)") }
+    /// The product line on the shelf list and a coffee's screen (M2-T49): `%1$@` is the mean
+    /// overall score over all bags of the bean, `%2$@` the number of rated brews.
+    static func shelfRowProductAverage(mean: String, brews: String) -> String { String(localized: "shelf.row.product_average \(mean) \(brews)") }
     /// `%1$@` is the number.
     static func brewListOverall(_ score: String) -> String { String(localized: "brew_list.overall \(score)") }
     static func brewListAverage(_ mean: String) -> String { String(localized: "brew_list.average \(mean)") }

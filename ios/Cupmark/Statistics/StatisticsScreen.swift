@@ -9,8 +9,11 @@ struct StatisticsRoute: Hashable {}
 /// input, writes nothing and calls no route, so it works offline.
 ///
 /// - Brews: the total, the rated ones, and brews per ISO week for the last weeks.
-/// - Taste profile: the mean per criterion over all rated brews, and per method once the
-///   method has enough rated brews.
+/// - A menu picker at the top (M2-T50) chooses "All methods" or one method that has rated
+///   brews; every section below shows the numbers of that choice only. The choice is kept
+///   as a method id or "all" (`StatisticsMethodSetting`).
+/// - Taste profile: the mean per criterion over the rated brews of the choice; a chosen
+///   method below the threshold shows an empty state.
 /// - The most-picked flavour notes, the best method and bean by mean `overall` score, and
 ///   the buy-again share among the ratings that answer it.
 ///
@@ -25,11 +28,16 @@ struct StatisticsScreen: View {
     @State private var model: StatisticsModel
     @Environment(\.scenePhase) private var scenePhase
 
-    init(store: AccountStore, vocabulary: VocabularyStore, language: VocabularyLanguage) {
+    init(
+        store: AccountStore,
+        vocabulary: VocabularyStore,
+        language: VocabularyLanguage,
+        setting: StatisticsMethodSetting = .standard
+    ) {
         self.store = store
         self.vocabulary = vocabulary
         self.language = language
-        _model = State(initialValue: StatisticsModel(store: store))
+        _model = State(initialValue: StatisticsModel(store: store, setting: setting))
     }
 
     var body: some View {
@@ -45,12 +53,12 @@ struct StatisticsScreen: View {
                 }
                 .surfaceRow()
             } else if let statistics = model.statistics {
+                methodPickerSection()
                 brewsSection(statistics)
                 if statistics.hasBrews {
                     weeksSection(statistics)
                 }
                 tasteProfileSection(statistics)
-                methodSections(statistics)
                 flavourNotesSection(statistics)
                 bestSection(statistics)
                 buyAgainSection(statistics)
@@ -88,6 +96,8 @@ struct StatisticsScreen: View {
                 } label: {
                     Text(L10n.statisticsBrewsTotal)
                 }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("statistics-brews-total")
                 LabeledContent {
                     Text(statistics.ratedBrews, format: .number)
                 } label: {
@@ -128,6 +138,10 @@ struct StatisticsScreen: View {
         Section {
             if !statistics.hasRatedBrews {
                 emptyText(L10n.statisticsNoRatings)
+            } else if model.choice.method != nil && !StatisticsRules.hasEnoughRatedBrews(statistics.ratedBrews) {
+                // A method below the threshold: the empty state, not zeros.
+                emptyText(verbatim: L10n.statisticsMethodsNone(brews: StatisticsRules.minimumRatedBrews.formatted()))
+                    .accessibilityIdentifier("statistics-method-below")
             } else if statistics.tasteProfile.isEmpty {
                 // Rated, but only on criteria a newer vocabulary has.
                 emptyText(L10n.statisticsNoKnownScores)
@@ -146,34 +160,26 @@ struct StatisticsScreen: View {
         .surfaceRow()
     }
 
-    @ViewBuilder
-    private func methodSections(_ statistics: PersonalStatistics) -> some View {
-        if statistics.hasRatedBrews {
-            if statistics.methodProfiles.isEmpty {
-                Section {
-                    emptyText(verbatim: L10n.statisticsMethodsNone(brews: StatisticsRules.minimumRatedBrews.formatted()))
-                } header: {
-                    Text(L10n.statisticsMethodsHeader)
-                        .secondaryText()
+    /// The method switcher (M2-T50): a menu picker with "All methods" and every method that has
+    /// rated brews, labelled from the vocabulary. It filters every section below.
+    private func methodPickerSection() -> some View {
+        Section {
+            Picker(selection: Binding(get: { model.choice }, set: { choice in model.select(choice) })) {
+                Text(L10n.statisticsMethodAll)
+                    .tag(StatisticsMethodChoice.all)
+                ForEach(model.availableMethods, id: \.self) { method in
+                    Text(verbatim: label(method))
+                        .tag(StatisticsMethodChoice.method(method))
+                        .accessibilityIdentifier("statistics-method-option")
                 }
-                .surfaceRow()
-            } else {
-                ForEach(statistics.methodProfiles, id: \.method) { profile in
-                    Section {
-                        LabeledContent {
-                            Text(profile.ratedBrews, format: .number)
-                        } label: {
-                            Text(L10n.statisticsBrewsRated)
-                        }
-                        criterionRows(profile.means)
-                    } header: {
-                        Text(verbatim: L10n.statisticsMethodProfileHeader(method: label(profile.method)))
-                            .secondaryText()
-                    }
-                    .surfaceRow()
-                }
+            } label: {
+                Text(L10n.statisticsMethodPicker)
             }
+            .pickerStyle(.menu)
+            .frame(minHeight: 44)
+            .accessibilityIdentifier("statistics-method-picker")
         }
+        .surfaceRow()
     }
 
     private func flavourNotesSection(_ statistics: PersonalStatistics) -> some View {
@@ -209,12 +215,15 @@ struct StatisticsScreen: View {
             if !statistics.hasRatedBrews {
                 emptyText(L10n.statisticsNoRatings)
             } else {
-                bestRow(title: L10n.statisticsBestMethod, score: statistics.bestMethod.map { best in (mean: best.mean, ratedBrews: best.ratedBrews) }) {
-                    if let best = statistics.bestMethod {
-                        Text(verbatim: label(best.key))
+                // The best method compares methods: with one chosen it has nothing to compare.
+                if model.choice.method == nil {
+                    bestRow(title: L10n.statisticsBestMethod, score: statistics.bestMethod.map { best in (mean: best.mean, ratedBrews: best.ratedBrews) }) {
+                        if let best = statistics.bestMethod {
+                            Text(verbatim: label(best.key))
+                        }
                     }
+                    .accessibilityIdentifier("statistics-best-method")
                 }
-                .accessibilityIdentifier("statistics-best-method")
                 bestRow(title: L10n.statisticsBestBean, score: statistics.bestBean.map { best in (mean: best.score.mean, ratedBrews: best.score.ratedBrews) }) {
                     if let best = statistics.bestBean {
                         BeanSummaryView(summary: best.bean.summary, vocabulary: vocabulary, language: language)

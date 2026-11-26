@@ -41,6 +41,52 @@ struct BeanSummaryView: View {
     }
 }
 
+/// The bag's and the product's mean overall score as text lines (M2-T49): "Overall 7.4, rated
+/// brews 3" and, with more than one bag of the bean, "All bags 7.1, rated brews 5". A line
+/// that has no rated brew behind it is not drawn (no zeros). The lines wrap at every Dynamic
+/// Type size; the number is formatted in the device locale with one decimal.
+struct ShelfAverageLines: View {
+    let averages: ShelfAverages
+    @Environment(\.locale) private var locale
+
+    var body: some View {
+        if averages.bag != nil || averages.product != nil {
+            VStack(alignment: .leading, spacing: 2) {
+                if let bag = averages.bag {
+                    Text(verbatim: ShelfAverageLines.bagText(bag, locale: locale))
+                        .font(.subheadline)
+                        .monospacedDigit()
+                        .accentText()
+                }
+                if let product = averages.product {
+                    Text(verbatim: ShelfAverageLines.productText(product, locale: locale))
+                        .font(.subheadline)
+                        .monospacedDigit()
+                        .secondaryText()
+                }
+            }
+        }
+    }
+
+    /// "Overall 7.4, rated brews 3" (the wording of the summary row of a coffee's screen).
+    static func bagText(_ average: OverallAverage, locale: Locale) -> String {
+        L10n.coffeeSummaryOverall(mean: mean(average, locale: locale), brews: count(average, locale: locale))
+    }
+
+    /// "All bags 7.1, rated brews 5".
+    static func productText(_ average: OverallAverage, locale: Locale) -> String {
+        L10n.shelfRowProductAverage(mean: mean(average, locale: locale), brews: count(average, locale: locale))
+    }
+
+    private static func mean(_ average: OverallAverage, locale: Locale) -> String {
+        average.mean.formatted(StatisticsRules.meanStyle().locale(locale))
+    }
+
+    private static func count(_ average: OverallAverage, locale: Locale) -> String {
+        average.ratedBrews.formatted(.number.locale(locale))
+    }
+}
+
 /// One shelf entry in the list: the bean, the roast date, days since roast and the brew count.
 struct ShelfRowView: View {
     let row: ShelfRow
@@ -50,6 +96,7 @@ struct ShelfRowView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             BeanSummaryView(summary: row.bean, vocabulary: vocabulary, language: language)
+            ShelfAverageLines(averages: row.averages)
             Group {
                 if let roastDate = row.roastDate, let date = ShelfDates.date(of: roastDate) {
                     LabeledContent {

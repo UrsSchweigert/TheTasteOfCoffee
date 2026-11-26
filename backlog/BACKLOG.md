@@ -1075,7 +1075,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job. Marked `needs-mac-verification` until it passes.
 
 ### M2-T48 Averages in context: markers on the rating sliders, a summary at the top of the coffee, averages on the brew list
-- status: needs-mac-verification (written on Linux; Swift, XCTest and the UI tests have not run)
+- status: done (#103; macOS run green, reviewer approved)
 - owner: ios-engineer
 - depends: M2-T44, M2-T20
 - implements: owner feedback of 2026-11-26 after testing the TestFlight build ("I would want the community ratings and my ratings to be visible as an indication on the slider or right next to where I look at my things, rather than having to scroll down and lose the context"); M2-T44 (the averages of one coffee), ADR 0027 addendum
@@ -1090,6 +1090,43 @@ Planning notes (planned 2026-11-25):
   - VoiceOver: the slider keeps its label and value ("Aroma, 7 of 10"); the marker is one extra element or the slider's hint, read as "Your average for this coffee, 7.5 of 10", available after the score is set; the summary row and the brew list averages have labels and values; 44-point targets, Dynamic Type (marker labels stack or move under the slider at accessibility sizes), colours only from Theme, strings through the catalogue in en and de (no plural forms), no typed text.
   - Tests: unit tests of the pure function change and of the rating model's marker state (hidden before the score is set, shown after, shown when editing, excluded brew); UI tests with the harness (M2-T33, Debug-only) for the marker after moving a slider, for the summary row, and for the brew list averages. The strengthened navigation test stays green.
   - Mac: the `ios` job. Marked `needs-mac-verification` until it passes.
+
+### M2-T49 Averages on the shelf list: per bag and per product
+- status: needs-mac-verification (written on Linux; Swift, XCTest and the UI tests have not run)
+- owner: ios-engineer
+- depends: M2-T44, M2-T48
+- implements: owner feedback of 2026-11-26 after testing the build ("I am missing the averages for a Packung"; chosen: on each bag in the shelf list, and across all bags of the product); ADR 0027 addenda
+- note: "bag" is a shelf entry (one Packung); "product" is the bean (catalogue id) across all the user's bags of it. Own numbers only; the community slot of M4 stays where it is.
+- acceptance:
+  - Each row of the shelf list (`ShelfRowView`) shows, under the bag's name, the bag's mean overall score and its number of rated brews ("Overall 7.4, 3 rated brews") when the bag has at least one rated brew; nothing (no zeros) otherwise.
+  - When the user has more than one bag of the same bean, each of those rows also shows the product's mean over all those bags ("All bags 7.1, 5 rated brews"); with one bag the product line is not shown (it would repeat the bag line). The coffee's screen (`CoffeeSummaryRow`) shows the same product line under the bag summary under the same rule.
+  - Numbers come from `StatisticsRules` (extend `coffeeAverages` or add one pure function next to it; no second implementation): removed and unrated brews are left out, brews of other beans never count, two bags of one bean combine for the product line and stay apart for the bag line.
+  - One batched read for the whole list (not one fetch per row); the list stays responsive with 200 bags.
+  - VoiceOver: each row reads name, bag average and product average; Dynamic Type (lines wrap, no truncation at accessibility sizes); colours from Theme; strings through the catalogue in en and de; no typed text.
+  - Tests: unit tests of the pure function and of the shelf model rows (none, one rated brew, two bags of one bean, a removed brew, an older vocabulary version); a UI test with the harness for the row text. Mac: the `ios` job; `needs-mac-verification` until it passes.
+
+### M2-T50 Statistics: a method drop-down instead of one long screen
+- status: needs-mac-verification
+- owner: ios-engineer
+- depends: M2-T28
+- implements: owner feedback of 2026-11-26 ("build a drop down switcher for the preparation types, the screen scrolls far too long"; chosen screen: Statistics); ADR 0027
+- acceptance:
+  - The statistics screen has a menu picker at the top (a `Picker` with the menu style) with "All methods" and every method that has rated brews, labelled from the vocabulary; the choice filters the per-method sections: the screen shows the taste profile, flavour notes, best bean and buy-again numbers of the chosen method only, and all of them for "All methods". The per-method sections that listed every method one after another are replaced by this switcher.
+  - The choice is kept while the screen is open and across launches (UserDefaults, one method id or "all"; an unknown or no-longer-present id falls back to "All methods"). Nothing is typed.
+  - The method thresholds of `StatisticsRules` (enough rated brews for a per-method profile) apply unchanged; a method below the threshold shows the empty state of that section, not zeros.
+  - The numbers for a method come from the existing `StatisticsRules` functions with a method filter, not a second implementation; tests: filter on each method, "all" equals today's output, a method without rated brews, a removed brew, an older vocabulary version, the saved choice and the fallback.
+  - VoiceOver (the picker has a label and value), Dynamic Type, Theme colours, en and de strings, 44-point target, a UI test that picks a method and sees the sections change. Mac: the `ios` job; `needs-mac-verification` until it passes.
+
+### M2-T51 Sign out moves into the settings
+- status: needs-mac-verification (written on Linux; Swift, XCTest and the UI tests have not run)
+- owner: ios-engineer
+- depends: M2-T29, M2-T31
+- implements: owner feedback of 2026-11-26 ("move the sign-out button into preferences, it does not belong on the main screen")
+- acceptance:
+  - The "Sign out" toolbar button that `AuthGate` adds to every signed-in screen is removed. The settings screen gets a "Sign out" row (in its account section, next to the account deletion) with the same confirmation dialog and the same behaviour (`auth.signOut()`), identifier `settings-sign-out`.
+  - No other screen shows a sign-out control; the navigation bars of the shelf and the other screens have only their own items.
+  - Existing tests that tap `sign-out` are moved to the settings route; a static or UI test fails if `sign-out` is back on the shelf toolbar.
+  - VoiceOver, Dynamic Type, en and de strings (existing keys reused), no typed text. Mac: the `ios` job; `needs-mac-verification` until it passes.
 
 ## M3 Aggregation
 

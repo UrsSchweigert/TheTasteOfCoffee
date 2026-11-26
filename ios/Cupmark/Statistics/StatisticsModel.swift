@@ -46,8 +46,22 @@ final class StatisticsModel {
     private(set) var statistics: PersonalStatistics?
     /// True when the last read of the store failed.
     private(set) var loadFailed = false
+    /// The methods the picker offers besides "all": those with rated brews, vocabulary order.
+    private(set) var availableMethods: [Vocabulary.Method] = []
+
+    /// The method choice (M2-T50): what is kept, resolved against `availableMethods`, so a
+    /// kept id that is unknown or has no rated brews any more gives "all methods" without
+    /// losing the kept value (the method may come back).
+    var choice: StatisticsMethodChoice {
+        StatisticsMethodChoice.resolve(requested, offering: availableMethods)
+    }
 
     let store: AccountStore
+    private let setting: StatisticsMethodSetting
+    /// The kept id or "all", as last picked or read from `setting`.
+    private var requested: String?
+    /// The brews of the last read, so a new choice needs no second read of the store.
+    private var brews: [StatisticsBrew] = []
     private let now: () -> Date
     /// Nil in the app: an ISO week calendar in the device's current time zone, made at each
     /// read, so a time zone change takes effect.
@@ -66,9 +80,12 @@ final class StatisticsModel {
         store: AccountStore,
         now: @escaping () -> Date = { Date() },
         calendar: Calendar? = nil,
-        reloadDelay: Duration = StatisticsModel.defaultReloadDelay
+        reloadDelay: Duration = StatisticsModel.defaultReloadDelay,
+        setting: StatisticsMethodSetting = .standard
     ) {
         self.store = store
+        self.setting = setting
+        self.requested = setting.storedValue
         self.now = now
         self.calendar = calendar
         self.reloadDelay = reloadDelay
@@ -94,13 +111,29 @@ final class StatisticsModel {
         pendingReload = nil
         reloadCount += 1
         do {
-            let brews = StatisticsBrew.values(of: try store.brewsNewestFirst())
-            let weekCalendar = calendar ?? PersonalStatistics.isoWeekCalendar(timeZone: TimeZone.current)
-            statistics = PersonalStatistics.compute(brews, now: now(), calendar: weekCalendar)
+            brews = StatisticsBrew.values(of: try store.brewsNewestFirst())
             loadFailed = false
+            recompute()
         } catch {
             statistics = nil
+            availableMethods = []
             loadFailed = true
         }
+    }
+
+    /// Picks `choice` (the picker's action): kept as one method id or "all", and the numbers
+    /// are made again from the brews already read.
+    func select(_ choice: StatisticsMethodChoice) {
+        requested = choice.storageValue
+        setting.storedValue = choice.storageValue
+        recompute()
+    }
+
+    /// The statistics of `brews` for the current choice, by `PersonalStatistics.compute` with
+    /// a method filter: no second implementation of any number.
+    private func recompute() {
+        let weekCalendar = calendar ?? PersonalStatistics.isoWeekCalendar(timeZone: TimeZone.current)
+        availableMethods = PersonalStatistics.ratedMethods(in: brews)
+        statistics = PersonalStatistics.compute(brews, now: now(), calendar: weekCalendar, method: choice.method)
     }
 }

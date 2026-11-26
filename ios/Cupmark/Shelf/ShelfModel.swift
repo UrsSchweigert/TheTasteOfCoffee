@@ -58,8 +58,10 @@ struct ShelfRow: Identifiable, Equatable, Sendable {
     let issue: SyncIssue?
     /// Where the bean's look-up stands while it is a pending bean (M2-T25), nil otherwise.
     let pendingBean: PendingBeanState?
+    /// The bag's and the product's mean overall score (M2-T49); `.none` without a rated brew.
+    let averages: ShelfAverages
 
-    init(_ entry: StoredShelfEntry, now: Date, calendar: Calendar, pendingBean: PendingBeanState? = nil) {
+    init(_ entry: StoredShelfEntry, now: Date, calendar: Calendar, pendingBean: PendingBeanState? = nil, averages: ShelfAverages = .none) {
         id = entry.localID
         bean = ShelfBeanSummary(entry.bean)
         purchaseDate = entry.purchaseDate
@@ -68,6 +70,7 @@ struct ShelfRow: Identifiable, Equatable, Sendable {
         brewCount = entry.liveBrewCount
         issue = entry.syncIssue
         self.pendingBean = pendingBean
+        self.averages = averages
     }
 }
 
@@ -104,8 +107,16 @@ final class ShelfModel {
         do {
             let today = now()
             let pending = try store.pendingBeanStates()
-            rows = try store.shelfEntries().map { entry in
-                ShelfRow(entry, now: today, calendar: calendar, pendingBean: entry.bean.flatMap { bean in pending[bean.localID] })
+            let entries = try store.shelfEntries()
+            let averages = try store.shelfAverages(of: entries)
+            rows = entries.map { entry in
+                ShelfRow(
+                    entry,
+                    now: today,
+                    calendar: calendar,
+                    pendingBean: entry.bean.flatMap { bean in pending[bean.localID] },
+                    averages: averages[entry.localID] ?? .none
+                )
             }
             issueCount = try store.syncIssues().count
             questionCount = try store.pendingBeanQuestions().count

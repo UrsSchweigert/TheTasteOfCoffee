@@ -1722,6 +1722,30 @@ test('account deletion: buttons only, outside Settings, the record first, no sig
   assert.match(masked('ios/Cupmark/Auth/AuthModel.swift'), /await signOut\(reason: \.signInRequired\)/);
 });
 
+test('sign-out is in Settings only, not on any toolbar (M2-T51)', () => {
+  const masked = (path) => lexSwift(readFileSync(join(repoRoot, path), 'utf8')).masked;
+  const raw = (path) => readFileSync(join(repoRoot, path), 'utf8');
+  const walk = (dir) => readdirSync(join(repoRoot, dir), { withFileTypes: true }).flatMap((e) => e.isDirectory() ? walk(`${dir}/${e.name}`) : e.name.endsWith('.swift') ? [`${dir}/${e.name}`] : []);
+  // The only use of the sign-out label is the Settings row; the old toolbar identifier is gone.
+  for (const file of walk('ios/Cupmark')) {
+    assert.doesNotMatch(raw(file), /accessibilityIdentifier\("sign-out"\)/, `${file}: no toolbar sign-out`);
+    if (!file.endsWith('Settings/SettingsScreen.swift')) {
+      assert.doesNotMatch(masked(file), /L10n\.accountSignOut\b|L10n\.accountSignOutConfirmTitle/, `${file}: the sign-out label is used only by Settings`);
+    }
+  }
+  const gate = masked('ios/Cupmark/Auth/AuthGate.swift');
+  assert.doesNotMatch(gate, /\.toolbar\b|signOut\(|confirmationDialog/, 'AuthGate adds no toolbar and no sign-out');
+  const settings = masked('ios/Cupmark/Settings/SettingsScreen.swift');
+  assert.match(settings, /@Environment\(AuthModel\.self\) private var auth: AuthModel\?/);
+  assert.match(settings, /await auth\.signOut\(\)/);
+  assert.match(raw('ios/Cupmark/Settings/SettingsScreen.swift'), /accessibilityIdentifier\("settings-sign-out"\)/);
+  assert.match(settings, /confirmationDialog\(L10n\.accountSignOutConfirmTitle/);
+  // Sign-out sits in the account section, before the account deletion.
+  const account = settings.slice(settings.indexOf('private var accountSection'));
+  assert.ok(account.includes('isConfirmingSignOut'), 'the account section holds the sign-out row');
+  assert.ok(account.indexOf('isConfirmingSignOut') < account.indexOf('AccountDeletionDestination'), 'sign-out before deletion');
+});
+
 // ---- M2-T33: the Xcode project, the UI-test start and the accessibility rules ----
 
 const xcodeProject = await import('./check-xcode-project.mjs');
@@ -1960,6 +1984,8 @@ test('the app answers export compliance and ships a privacy manifest for the fil
   assert.match(manifest, /<string>NSPrivacyAccessedAPICategoryUserDefaults<\/string>\s*<key>NSPrivacyAccessedAPITypeReasons<\/key>\s*<array>\s*<string>CA92\.1<\/string>\s*<\/array>/);
   const allowedUserDefaults = new Set([
     join('BrewPhoto', 'BrewPhotoBackupSetting.swift'),
+    // M2-T50: the kept method id of the statistics picker (reason CA92.1).
+    join('Statistics', 'StatisticsMethodChoice.swift'),
     join('UITestSupport', 'UITestFixtures.swift'),
   ]);
   const sources = readdirSync(join(iosDir, 'Cupmark'), { recursive: true }).filter((f) => f.endsWith('.swift'));
