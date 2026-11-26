@@ -89,7 +89,8 @@
       "wet_hulled": "Wet Hulled (nass geschält)",
       "anaerobic": "Anaerob",
       "carbonic_maceration": "Carbonic Maceration",
-      "other": "Andere"
+      "other": "Andere",
+      "unknown": "Unbekannt"
     },
     "roast_levels": {
       "light": "Hell",
@@ -162,6 +163,7 @@
       "liberica": "Liberica (Coffea liberica)",
       "excelsa": "Excelsa",
       "arabica_robusta_blend": "Mischung aus Arabica und Robusta",
+      "other": "Andere Art",
       "unknown": "Unbekannt"
     },
     "varieties": {

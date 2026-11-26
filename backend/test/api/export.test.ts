@@ -40,7 +40,7 @@ function parseCsv(text: string): string[][] {
  * The test's own oracle: where each column's value sits in the JSON resource
  * of each item type (the column table of the contract's exportData).
  */
-const PARAMETERS = ['method', 'dose_dg', 'water_g', 'water_temp_c', 'water_temp_special', 'brew_time_s', 'grind_normalised', 'water_type', 'milk'];
+const PARAMETERS = ['method', 'dose_dg', 'water_g', 'water_temp_c', 'water_temp_special', 'brew_time_s', 'grind_normalised', 'grinder', 'grind_setting', 'water_type', 'milk'];
 const CRITERIA = ['aroma', 'flavour', 'aftertaste', 'acidity', 'body', 'sweetness', 'balance', 'overall'];
 const ORACLE: Record<string, Record<string, string>> = {
   profile: { locale: 'locale', contribute_to_aggregates: 'consent.contribute_to_aggregates' },

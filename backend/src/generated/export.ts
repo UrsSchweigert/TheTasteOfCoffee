@@ -23,6 +23,8 @@ export const EXPORT_CSV_COLUMNS = [
   'water_temp_special',
   'brew_time_s',
   'grind_normalised',
+  'grinder',
+  'grind_setting',
   'water_type',
   'milk',
   'scores_aroma',

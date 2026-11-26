@@ -2,9 +2,16 @@
 
 A published version is immutable. Every change to a list goes into the next `v<N>/` directory and is recorded here. Removing or renaming an id is a breaking change and needs an ADR in `docs/decisions/`.
 
-## v3 (draft)
+## 2026-11-26: v3 published
 
-Task M2-T2, D13, ADR 0021. Copied from v2 with `"version": 3` and `"status": "draft"` in every file. Not in the API yet: `openapi.yaml` is unchanged until v3 is published (M2-T4).
+- The owner approved the v3 draft as it stands (in chat, 2026-11-26), including the grinder list, the grinder scales (the uncertain scales below, the three grinders without a scale, the 0.5 step for `df64`, the `sage_` ids) and the method field rules. All five files went from `draft` to `published`, and `v3.lock.json` locks them. v3 is now immutable.
+- Added before publishing, by the lead (ADR 0029, ADR 0014): `unknown` at the end of `processes`, and `other` before `unknown` in `species`, labelled in en and de. `roast_levels` stays a scale without either. `processes` now has 9 ids and `species` 7.
+- The API follows (`openapi.yaml` 0.6.0): the `Grinder` enum, optional `grinder` and `grind_setting` in `BrewParameters`, the v3 method rules in its description, `VocabularyVersion.maximum: 3`, and the export columns `grinder` and `grind_setting`. `Process` and `Species` gain the new ids.
+- Not breaking: no id was removed or renamed. The flavour notes did not change.
+
+## v3 (draft, now published)
+
+Task M2-T2, D13, ADR 0021. Copied from v2 with `"version": 3` and `"status": "draft"` in every file. `openapi.yaml` followed when v3 was published (M2-T4, entry above).
 
 - New list `grinders` in `brew.json`, 21 ids, labelled in en and de: 7 hand grinders, 12 electric grinders, then `pre_ground` and `other`. Each entry may carry `scale`, the range of the numbers on its own dial or of its clicks from zero (burrs touching), in steps of 1 or 0.5. `pre_ground` and `other` have no scale. `1Zpresso` ids start with `onezpresso_`, because ids start with a letter.
 - New object `field_rules` in `brew.json`: for each `BrewParameters` field that only some methods allow, the methods that allow it. `water_temp_special` for `cold_brew` only; `water_temp_c` for every method except `cold_brew`, `moka_pot` and `cezve`; `grinder` and `grind_setting` for every method except `fully_automatic`. Every other field is allowed with every method. `grind_setting` needs a grinder with a scale and lies on it.
@@ -37,7 +44,7 @@ The grinders and their scales (minimum to maximum, step):
 | `pre_ground` | | none | | |
 | `other` | | none | | |
 
-For the owner to check before v3 is published (M2-T4, "Publishing a version" step 3):
+Checked and approved by the owner on 2026-11-26, without change (the list above stays as it was):
 
 - The uncertain scales above. Each is a wide range so that it does not reject a real setting; narrow it where the manual says otherwise. Hand grinders are counted in clicks from zero, not in the rotation and number marks some of them print (the 1Zpresso and Kingrinder dials), so a user converts "1 turn and 5" to 45 clicks on a JX-Pro.
 - `fellow_ode_gen_2`, `fellow_opus` and `eureka_mignon_specialita` have no scale: the Fellow dials step in thirds, which is neither 1 nor 0.5, and the Mignon numbering is not confirmed. Either keep them without a scale (the normalised grind still applies), or give them a scale such as 1 to 31 clicks.

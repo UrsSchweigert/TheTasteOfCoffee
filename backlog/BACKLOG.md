@@ -366,7 +366,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the script tests run on Linux, and the `ios` job runs because the generator changed.
 
 ### M2-T4 Publish vocabulary v3 and follow it in the API
-- status: blocked (waiting for the owner to approve the v3 draft; see the task)
+- status: done (merged in #68; the v3 Swift and the pbxproj folder reference compiled and passed in the macOS `ios` job)
 - owner: contract-keeper
 - needs: human (the owner approves the v3 draft, in particular the grinder list and the method field rules; contracts/README.md, Publishing a version, step 3)
 - depends: M2-T2, M2-T3
@@ -825,7 +825,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T30 CSV export
-- status: needs-mac-verification (code and unit tests written on Linux and not run; the `ios` job must pass, then the task can end `done`)
+- status: done (#67; built and tested by the macOS `ios` job. The share sheet and the temporary file are checked on a device in M2-T34)
 - owner: ios-engineer
 - depends: M2-T16
 - implements: docs/03-project-brief.md, Tiers (export own data); docs/05-system-design.md, Security (Export); ADR 0017

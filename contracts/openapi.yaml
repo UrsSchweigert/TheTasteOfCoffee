@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Cupmark API
-  version: 0.5.0
+  version: 0.6.0
   description: >-
     Free-tier API of Cupmark (tasks M0-T2, M1-T8, M1-T4d and M1-T6). No request carries free
     text: every string a client sends is an id from the closed vocabulary in
@@ -680,7 +680,7 @@ paths:
 
         item_types: profile,shelf_entry,brew,recipe,label_photo
 
-        columns: item_type,locale,contribute_to_aggregates,shelf_entry_id,vocabulary_version,bean_id,purchase_date,roast_date,bag_size,price_band,brew_id,brewed_at,method,dose_dg,water_g,water_temp_c,water_temp_special,brew_time_s,grind_normalised,water_type,milk,scores_aroma,scores_flavour,scores_aftertaste,scores_acidity,scores_body,scores_sweetness,scores_balance,scores_overall,intensities_acidity,intensities_body,intensities_bitterness,flavour_notes,buy_again,recipe_id,photo_id
+        columns: item_type,locale,contribute_to_aggregates,shelf_entry_id,vocabulary_version,bean_id,purchase_date,roast_date,bag_size,price_band,brew_id,brewed_at,method,dose_dg,water_g,water_temp_c,water_temp_special,brew_time_s,grind_normalised,grinder,grind_setting,water_type,milk,scores_aroma,scores_flavour,scores_aftertaste,scores_acidity,scores_body,scores_sweetness,scores_balance,scores_overall,intensities_acidity,intensities_body,intensities_bitterness,flavour_notes,buy_again,recipe_id,photo_id
 
         Item types:
 
@@ -716,6 +716,8 @@ paths:
         | `water_temp_special` | brew, recipe | WaterTempSpecial |
         | `brew_time_s` | brew, recipe | BrewTimeS |
         | `grind_normalised` | brew, recipe | GrindNormalised |
+        | `grinder` | brew, recipe | Grinder |
+        | `grind_setting` | brew, recipe | GrindSetting |
         | `water_type` | brew, recipe | WaterType |
         | `milk` | brew, recipe | MilkType |
         | `scores_aroma` | brew | Score |
@@ -768,6 +770,8 @@ paths:
                 - water_temp_special
                 - brew_time_s
                 - grind_normalised
+                - grinder
+                - grind_setting
                 - water_type
                 - milk
                 - scores_aroma
@@ -949,7 +953,7 @@ components:
       description: Published vocabulary version the values were picked from. Maximum is the latest published version.
       type: integer
       minimum: 1
-      maximum: 2
+      maximum: 3
       x-vocabulary-version: true
 
     HealthStatus:
@@ -990,9 +994,15 @@ components:
       enum: [cold]
       x-vocabulary: water_temp_special
 
+    Grinder:
+      description: Home grinder, from vocabulary v3 (ADR 0021).
+      type: string
+      enum: [comandante_c40, onezpresso_jx_pro, onezpresso_k_ultra, timemore_chestnut_c3, kingrinder_k6, hario_skerton_pro, porlex_mini_ii, baratza_encore, baratza_encore_esp, baratza_virtuoso_plus, fellow_ode_gen_2, fellow_opus, wilfa_uniform, graef_cm_800, sage_smart_grinder_pro, sage_dose_control_pro, niche_zero, df64, eureka_mignon_specialita, pre_ground, other]
+      x-vocabulary: grinders
+
     Process:
       type: string
-      enum: [washed, natural, honey, pulped_natural, wet_hulled, anaerobic, carbonic_maceration, other]
+      enum: [washed, natural, honey, pulped_natural, wet_hulled, anaerobic, carbonic_maceration, other, unknown]
       x-vocabulary: processes
 
     RoastLevel:
@@ -1009,9 +1019,9 @@ components:
       x-vocabulary: origins
 
     Species:
-      description: Coffee species, from vocabulary v2 (ADR 0011).
+      description: Coffee species, from vocabulary v2 (ADR 0011); other is from v3 (ADR 0029).
       type: string
-      enum: [arabica, robusta, liberica, excelsa, arabica_robusta_blend, unknown]
+      enum: [arabica, robusta, liberica, excelsa, arabica_robusta_blend, unknown, other]
       x-vocabulary: species
 
     Variety:
@@ -1159,6 +1169,17 @@ components:
       maximum: 10
       multipleOf: 0.5
       x-vocabulary-range: brew.ranges.grind_normalised
+
+    GrindSetting:
+      description: >-
+        The number on the grinder's own dial, or its clicks from zero
+        (vocabulary v3, ADR 0021). The bounds are those of the widest grinder
+        scale and the step is 0.5, which every scale step divides; the server
+        checks the value against the scale of the grinder sent (M2-T5).
+      type: number
+      minimum: 0
+      maximum: 240
+      multipleOf: 0.5
 
     Score:
       type: number
@@ -1428,7 +1449,19 @@ components:
       description: >-
         Everything but the method is optional (F2). water_temp_c and
         water_temp_special exclude each other. Which fields apply to which
-        method is not defined in vocabulary v1 yet.
+        method is defined from vocabulary v3 on (ADR 0021); the server answers
+        400 for a field the method does not allow, and a request that sends
+        grinder or grind_setting must say vocabulary_version 3 or later.
+
+        - water_temp_special: cold_brew only.
+        - water_temp_c: every method except cold_brew, moka_pot and cezve.
+        - grinder and grind_setting: every method except fully_automatic.
+        - grind_setting needs a grinder whose vocabulary entry has a scale,
+          and lies on that scale. With pre_ground, other, or a grinder
+          without a scale, it is absent; grind_normalised still records the
+          coarseness. The bounds here are those of the widest scale.
+        - dose_dg, water_g, brew_time_s, grind_normalised, water_type and
+          milk: every method.
       type: object
       additionalProperties: false
       required: [method]
@@ -1451,8 +1484,14 @@ components:
           $ref: '#/components/schemas/WaterType'
         milk:
           $ref: '#/components/schemas/MilkType'
+        grinder:
+          $ref: '#/components/schemas/Grinder'
+        grind_setting:
+          $ref: '#/components/schemas/GrindSetting'
       not:
         required: [water_temp_c, water_temp_special]
+      dependentRequired:
+        grind_setting: [grinder]
 
     Scores:
       description: One score per criterion; a rating scores all eight (F3).

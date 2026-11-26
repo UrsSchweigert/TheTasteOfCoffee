@@ -25,7 +25,7 @@ Not defined yet: roasters (they come from the Open Food Facts brand, ADR 0006), 
 
 ## Vocabulary v2
 
-Published on 2026-11-25 after the owner approved it with the amendments of ADR 0011, and locked by `vocabulary/v2.lock.json`. Do not edit any file in `vocabulary/v2/`. It is the latest published version: the API allows `vocabulary_version` 1 and 2, the backend loads both, and the iOS app bundles v2.
+Published on 2026-11-25 after the owner approved it with the amendments of ADR 0011, and locked by `vocabulary/v2.lock.json`. Do not edit any file in `vocabulary/v2/`. The API allows `vocabulary_version` 1 to 3, the backend loads all three, and the iOS app bundles v3.
 
 v2 is v1 with three lists added to `bean.json` (ADR 0006, ADR 0011). Every other file is v1 byte for byte except `version` and `status`.
 
@@ -37,11 +37,11 @@ v2 is v1 with three lists added to `bean.json` (ADR 0006, ADR 0011). Every other
 
 `java` is both an origin (the island) and a variety (the cultivar). Namespaces are separate, so that is allowed; the generated Swift types are `Vocabulary.Origin.java` and `Vocabulary.Variety.java`.
 
-## Vocabulary v3 (draft)
+## Vocabulary v3
 
-Task M2-T2, D13, ADR 0021. Not published and not in the API: `openapi.yaml` does not change, `vocabulary_version` stays at most 2, and the app keeps bundling v2 until M2-T4. While it is a draft, it may be edited in place.
+Tasks M2-T2 and M2-T4, D13, ADR 0021 and ADR 0029. Published on 2026-11-26 after the owner approved the draft as it stood (the grinder list and scales, the three grinders without a scale, the 0.5 step for `df64`, the `sage_` ids and the method field rules), and locked by `vocabulary/v3.lock.json`. Do not edit any file in `vocabulary/v3/`. It is the latest published version: the API allows `vocabulary_version` 1 to 3 (`openapi.yaml` 0.6.0), the backend loads all three, and the iOS app bundles v3.
 
-v3 is v2 with two additions to `brew.json`. Every other file is v2 byte for byte except `version` and `status`.
+v3 is v2 with two additions to `brew.json`, and two ids in `bean.json`: `processes` gains `unknown` and `species` gains `other` (ADR 0029); `roast_levels` stays a scale without either. Every other file is v2 byte for byte except `version` and `status`.
 
 | Key | Holds |
 | --- | --- |
@@ -56,7 +56,7 @@ The rules in v3 (the D13 decision):
 - `grind_setting` needs a `grinder` whose entry has a `scale`, and lies on that scale (`SCALED_FIELDS` in `lib/vocabulary.mjs`). With `pre_ground`, `other` or another grinder without a scale, it is absent; `grind_normalised` still records the coarseness.
 - `dose_dg`, `water_g`, `brew_time_s`, `grind_normalised`, `water_type` and `milk`: every method.
 
-A field that a method does not allow must be absent; the server answers 400 (M2-T5). `grinder` and `grind_setting` are new `BrewParameters` fields that M2-T4 adds to the API.
+A field that a method does not allow must be absent; the server answers 400 (M2-T5). `grinder` and `grind_setting` are new `BrewParameters` fields (`Grinder`, `GrindSetting`). `grind_setting` is a number from 0 to 240 in steps of 0.5, the widest scale, with `dependentRequired: { grind_setting: [grinder] }`; the server checks it against the scale of the grinder sent (M2-T5). A request that sends `grinder` must say `vocabulary_version` 3 or later. Both are export columns, after `grind_normalised`.
 
 ## File shapes
 
@@ -80,8 +80,9 @@ Generators and tests rely on these rules.
 - Ranges sit on their step, and price bands cover the axis from 0 upward without gap or overlap.
 - Every parent reference (`country` on a region) names an entry of the same list that has no parent itself, and the attribute appears in no other list.
 - Every entry range (`scale` on a grinder) is a range on its own step, the step is exact in binary, `pre_ground` and `other` have none, and the attribute appears in no other list.
-- Every method field rule names a method of its version and a `BrewParameters` field (plus `grinder` and `grind_setting`, which v3 adds when it is published), never `method`; `grind_setting` is allowed only where `grinder` is.
+- Every method field rule names a method of its version and a `BrewParameters` field (including `grinder` and `grind_setting` from v3), never `method`; `grind_setting` is allowed only where `grinder` is.
 - A version directory holds nothing but vocabulary files, and every array is an id list.
+- `checkFieldRules` runs for every version from 3 on, and `lib/openapi.mjs` shares `isExactStep` with `lib/vocabulary.mjs`.
 - A version marked `published` has a lock, and every file in it matches the lock byte for byte (CRLF is read as LF, so line endings cannot break it; `.gitattributes` also keeps `contracts/vocabulary/**` at LF). A changed, added or removed file fails, and so does a lock whose version directory is gone.
 
 ## Publishing a version
@@ -95,7 +96,7 @@ A published version is never edited. To change any list, value or range:
 5. Follow the version in the API, in the same pull request (`npm test` fails until you do): add the new ids to their enums, bind every new list (`vocabulary list <name> is not used by any schema` names the ones missing), and raise `VocabularyVersion.maximum` to the new version. Then run `npm run generate` in `backend/`, and `node scripts/generate-ios-vocabulary.mjs` with the Xcode project's folder reference moved to the new `vocabulary/v<N>` (its `--check` fails until both match).
 6. Run `npm test` here, and the checks of `backend/` and `scripts/`.
 
-For v2, step 5 was: the `Origin` (`x-vocabulary: origins`), `Species` (`x-vocabulary: species`) and `Variety` (`x-vocabulary: varieties`) enums in `components.schemas`, optional `origin`, `species` and `variety` in `BeanAttributes`, and `VocabularyVersion.maximum: 2`. A request that sends any of them must say `vocabulary_version: 2` (or later); the server checks each value against the version sent (ADR 0004), so the same attributes with version 1 are rejected. The tests that use an unpublished version now send 3.
+For v2, step 5 was: the `Origin` (`x-vocabulary: origins`), `Species` (`x-vocabulary: species`) and `Variety` (`x-vocabulary: varieties`) enums in `components.schemas`, optional `origin`, `species` and `variety` in `BeanAttributes`, and `VocabularyVersion.maximum: 2`. A request that sends any of them must say `vocabulary_version: 2` (or later); the server checks each value against the version sent (ADR 0004), so the same attributes with version 1 are rejected. The tests that use an unpublished version now send 4 (3 until v3 was published).
 
 Never regenerate, edit or delete an existing lock file. If a test reports `changed in a published version`, undo the edit and make it in a new version instead.
 

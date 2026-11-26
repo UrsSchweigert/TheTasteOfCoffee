@@ -527,6 +527,344 @@ export const publishedVocabularies: Readonly<Record<number, PublishedVocabulary>
     "values": {
       "flavour_notes.max_picks": 5
     }
+  },
+  "3": {
+    "lists": {
+      "bag_sizes": [
+        "g_250",
+        "g_500",
+        "g_1000"
+      ],
+      "criteria": [
+        "aroma",
+        "flavour",
+        "aftertaste",
+        "acidity",
+        "body",
+        "sweetness",
+        "balance",
+        "overall"
+      ],
+      "flavour_notes": [
+        "berry",
+        "cherry",
+        "plum",
+        "peach",
+        "apricot",
+        "apple",
+        "pear",
+        "grape",
+        "lemon",
+        "lime",
+        "orange",
+        "grapefruit",
+        "mandarin",
+        "bergamot",
+        "pineapple",
+        "mango",
+        "passion_fruit",
+        "banana",
+        "coconut",
+        "lychee",
+        "raisin",
+        "prune",
+        "date",
+        "fig",
+        "jasmine",
+        "rose",
+        "lavender",
+        "orange_blossom",
+        "elderflower",
+        "chamomile",
+        "hibiscus",
+        "black_tea",
+        "green_tea",
+        "mint",
+        "fresh_herbs",
+        "grass",
+        "honey",
+        "caramel",
+        "toffee",
+        "brown_sugar",
+        "maple_syrup",
+        "molasses",
+        "vanilla",
+        "milk_chocolate",
+        "dark_chocolate",
+        "cocoa",
+        "nougat",
+        "hazelnut",
+        "almond",
+        "walnut",
+        "peanut",
+        "pecan",
+        "marzipan",
+        "cinnamon",
+        "clove",
+        "nutmeg",
+        "cardamom",
+        "black_pepper",
+        "anise",
+        "ginger",
+        "liquorice",
+        "toasted_bread",
+        "biscuit",
+        "malt",
+        "cereal",
+        "smoke",
+        "tobacco",
+        "burnt",
+        "red_wine",
+        "white_wine",
+        "rum",
+        "whisky",
+        "overripe_fruit",
+        "forest_floor",
+        "wood",
+        "cedar",
+        "leather",
+        "mushroom",
+        "musty",
+        "cardboard",
+        "rubber"
+      ],
+      "grinders": [
+        "comandante_c40",
+        "onezpresso_jx_pro",
+        "onezpresso_k_ultra",
+        "timemore_chestnut_c3",
+        "kingrinder_k6",
+        "hario_skerton_pro",
+        "porlex_mini_ii",
+        "baratza_encore",
+        "baratza_encore_esp",
+        "baratza_virtuoso_plus",
+        "fellow_ode_gen_2",
+        "fellow_opus",
+        "wilfa_uniform",
+        "graef_cm_800",
+        "sage_smart_grinder_pro",
+        "sage_dose_control_pro",
+        "niche_zero",
+        "df64",
+        "eureka_mignon_specialita",
+        "pre_ground",
+        "other"
+      ],
+      "intensity_dimensions": [
+        "acidity",
+        "body",
+        "bitterness"
+      ],
+      "intensity_levels": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "methods": [
+        "espresso",
+        "moka_pot",
+        "v60",
+        "chemex",
+        "kalita",
+        "batch_filter",
+        "aeropress",
+        "french_press",
+        "cold_brew",
+        "cezve",
+        "siphon",
+        "fully_automatic"
+      ],
+      "milk_types": [
+        "none",
+        "dairy",
+        "oat",
+        "soy",
+        "almond",
+        "cashew",
+        "hazelnut",
+        "macadamia",
+        "coconut",
+        "rice",
+        "pea",
+        "other_plant"
+      ],
+      "origins": [
+        "ethiopia",
+        "kenya",
+        "rwanda",
+        "burundi",
+        "tanzania",
+        "uganda",
+        "democratic_republic_of_the_congo",
+        "malawi",
+        "zambia",
+        "zimbabwe",
+        "madagascar",
+        "cameroon",
+        "cote_d_ivoire",
+        "togo",
+        "yemen",
+        "brazil",
+        "colombia",
+        "peru",
+        "ecuador",
+        "bolivia",
+        "venezuela",
+        "guatemala",
+        "honduras",
+        "el_salvador",
+        "nicaragua",
+        "costa_rica",
+        "panama",
+        "mexico",
+        "jamaica",
+        "dominican_republic",
+        "cuba",
+        "haiti",
+        "puerto_rico",
+        "usa",
+        "hawaii",
+        "india",
+        "indonesia",
+        "sumatra",
+        "java",
+        "sulawesi",
+        "bali",
+        "flores",
+        "papua_new_guinea",
+        "vietnam",
+        "laos",
+        "thailand",
+        "myanmar",
+        "china",
+        "timor_leste",
+        "philippines",
+        "nepal",
+        "taiwan",
+        "australia",
+        "blend",
+        "other",
+        "unknown"
+      ],
+      "price_bands": [
+        "under_15",
+        "from_15_to_30",
+        "from_30_to_45",
+        "from_45_to_60",
+        "from_60_to_80",
+        "from_80"
+      ],
+      "processes": [
+        "washed",
+        "natural",
+        "honey",
+        "pulped_natural",
+        "wet_hulled",
+        "anaerobic",
+        "carbonic_maceration",
+        "other",
+        "unknown"
+      ],
+      "roast_levels": [
+        "light",
+        "medium_light",
+        "medium",
+        "medium_dark",
+        "dark"
+      ],
+      "species": [
+        "arabica",
+        "robusta",
+        "liberica",
+        "excelsa",
+        "arabica_robusta_blend",
+        "other",
+        "unknown"
+      ],
+      "varieties": [
+        "typica",
+        "bourbon",
+        "red_bourbon",
+        "yellow_bourbon",
+        "pink_bourbon",
+        "caturra",
+        "catuai",
+        "catucai",
+        "mundo_novo",
+        "pacas",
+        "villa_sarchi",
+        "maragogipe",
+        "pacamara",
+        "geisha",
+        "java",
+        "sl14",
+        "sl28",
+        "sl34",
+        "ruiru_11",
+        "batian",
+        "castillo",
+        "catimor",
+        "sarchimor",
+        "parainema",
+        "obata",
+        "marsellesa",
+        "heirloom",
+        "ethiopia_74110",
+        "ethiopia_74112",
+        "s795",
+        "wush_wush",
+        "sidra",
+        "laurina",
+        "mixed",
+        "other",
+        "unknown"
+      ],
+      "water_temp_special": [
+        "cold"
+      ],
+      "water_types": [
+        "tap",
+        "filtered",
+        "bottled",
+        "remineralised"
+      ]
+    },
+    "ranges": {
+      "brew.ranges.brew_time_s@1": {
+        "minimum": 1,
+        "maximum": 172800,
+        "multipleOf": 1
+      },
+      "brew.ranges.dose_g@10": {
+        "minimum": 50,
+        "maximum": 1000,
+        "multipleOf": 1
+      },
+      "brew.ranges.grind_normalised@1": {
+        "minimum": 1,
+        "maximum": 10,
+        "multipleOf": 0.5
+      },
+      "brew.ranges.water_g@1": {
+        "minimum": 10,
+        "maximum": 1500,
+        "multipleOf": 1
+      },
+      "brew.ranges.water_temp_c@1": {
+        "minimum": 80,
+        "maximum": 100,
+        "multipleOf": 1
+      },
+      "criteria.scale@1": {
+        "minimum": 1,
+        "maximum": 10,
+        "multipleOf": 0.5
+      }
+    },
+    "values": {
+      "flavour_notes.max_picks": 5
+    }
   }
 };
 
@@ -557,6 +895,9 @@ export const vocabularyBindings: Readonly<Record<string, VocabularyBinding>> = {
   },
   "WaterTempSpecial": {
     "list": "water_temp_special"
+  },
+  "Grinder": {
+    "list": "grinders"
   },
   "Process": {
     "list": "processes"
@@ -600,6 +941,7 @@ export const vocabularyBindings: Readonly<Record<string, VocabularyBinding>> = {
   "GrindNormalised": {
     "range": "brew.ranges.grind_normalised@1"
   },
+  "GrindSetting": {},
   "Score": {
     "range": "criteria.scale@1"
   },
@@ -776,6 +1118,12 @@ export const vocabularyBindings: Readonly<Record<string, VocabularyBinding>> = {
       },
       "milk": {
         "ref": "MilkType"
+      },
+      "grinder": {
+        "ref": "Grinder"
+      },
+      "grind_setting": {
+        "ref": "GrindSetting"
       }
     }
   },
