@@ -196,10 +196,10 @@ struct RatingScreen: View {
                     spokenValueText: model.spokenScoreText(for: criterion, locale: locale),
                     markers: model.markers(for: criterion),
                     markerIdentifier: "rating-marker-\(criterion.rawValue)",
+                    sliderIdentifier: "rating-score-\(criterion.rawValue)",
                     value: scoreBinding(for: criterion),
                     onBegin: { model.beginSliding(criterion) }
                 )
-                .accessibilityIdentifier("rating-score-\(criterion.rawValue)")
             }
             if !model.draft.isComplete {
                 LabeledContent {
@@ -345,6 +345,8 @@ struct RatingScoreRow: View {
     var markers: SliderMarkers? = nil
     /// The accessibility identifier of the marker's label.
     var markerIdentifier = "rating-marker"
+    /// On the slider only: an identifier on the whole row would also replace the markers' own.
+    var sliderIdentifier = "rating-score"
     @Binding var value: Double
     /// Called when the slider is touched, before it moves.
     let onBegin: @MainActor () -> Void
@@ -412,6 +414,7 @@ struct RatingScoreRow: View {
             .accessibilityLabel(Text(verbatim: title))
             .accessibilityValue(accessibilityValue)
             .accessibilityHint(Text(verbatim: question ?? title))
+            .accessibilityIdentifier(sliderIdentifier)
             if let markers {
                 markerLabels(markers)
             }
