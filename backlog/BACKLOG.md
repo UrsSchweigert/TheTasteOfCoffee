@@ -1049,6 +1049,31 @@ Planning notes (planned 2026-11-25):
   - Tests: unit tests of the setting and its application; a UI test with the harness (M2-T33) that opens Settings and flips the toggle, seeing its value change.
   - Mac: the `ios` job. Marked `needs-mac-verification` until it passes.
 
+### M2-T46 Reference recipes: the dataset from the owner's table
+- status: done (the set and its converter are in the repo; tests run in CI)
+- owner: lead
+- depends: M2-T4 (vocabulary v3)
+- implements: owner request of 2026-11-26 (a table of recipes as the basis for the community section); ADR 0034
+- acceptance:
+  - `scripts/reference-recipes/convert.mjs` reads the owner's table (not in the repo) and writes `contracts/reference/recipes.v1.json`: method ids and the numeric v3 parameters, `inferred` lists, typical ranges per method; no name, link, text, bean, flavour or rating.
+  - Rules as in ADR 0034: only the methods the vocabulary has, unclear water bases and out-of-range rows dropped, duplicates collapsed, missing numbers from the method's median and marked inferred, grind words mapped, no jitter, no ratings.
+  - `scripts/reference-recipes.test.mjs` (in CI) tests the rules on synthetic rows and the committed set against vocabulary v3.
+
+### M2-T47 Starting-point recipes in the recipe list
+- status: todo
+- owner: ios-engineer
+- depends: M2-T46, M2-T27
+- implements: ADR 0034 (reference recipes), ADR 0028 (recipes); owner request of 2026-11-26
+- needs: human before a release: the owner confirms the rights to the compiled table (ADR 0034, point 3). Development and TestFlight builds can use the set.
+- acceptance:
+  - The recipe list gets a "Starting points" section (reference recipes, bundled as a resource from `contracts/reference/recipes.v1.json`, no network, no cost), by method, labelled as reference recipes from published sources, never as community data and never counted as raters. The wording is in the catalogue (en and de).
+  - Tapping a starting point shows its numbers (dose, water, ratio, temperature, time, grind) with the inferred ones marked; one action copies it into the user's own recipes (the existing save path of M2-T27, no name, one tap to brew from it). A copied recipe is an ordinary recipe and syncs like one.
+  - Only starting points of methods the user can brew are offered, and a recipe whose fields the method's rules do not allow is not shown (the same field rules as the brew form).
+  - Typical ranges per method are available to the app for the paid Explore screens (M4) with the label "reference"; not shown to free users in this task.
+  - The bundled set is checked in CI against vocabulary v3 (the Node test of M2-T46) and by a unit test that decodes it in the app; a newer vocabulary version needs a regenerated set.
+  - VoiceOver labels and values, 44-point targets, Dynamic Type, theme colours, no free text.
+  - Mac: the `ios` job. Marked `needs-mac-verification` until it passes.
+
 ## M3 Aggregation
 
 Goal: aggregates per bean and per method stay correct under create, edit, delete and replay. Not yet planned.

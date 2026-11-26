@@ -59,3 +59,4 @@ What this costs, what it rules out, when to revisit.
 - [0031 Account deletion on the device: a Keychain record, no sign-out before the 204, and another account only after a tap](0031-account-deletion-on-the-device-and-a-new-sign-in-finishes-it.md)
 - [0032 The coffee look: espresso accent, cream and dark-roast backgrounds, named colours](0032-the-coffee-look-espresso-and-cream.md)
 - [0033 Brew photos stay on the device: local schema version 4, one folder per account, and their deletion](0033-brew-photos-on-the-device-schema-version-4.md)
+- [0034 Reference recipes: published brew numbers, kept apart from community data](0034-reference-recipes-published-numbers-not-community-data.md)

@@ -1,0 +1,28 @@
+# 0034 Reference recipes: published brew numbers, kept apart from community data
+
+- Status: accepted
+- Date: 2026-11-26
+- Decided by: lead (ADR 0014), on the owner's request of 2026-11-26 to start the community section from a table of recipes the owner compiled; no cloud cost (a static file bundled with the app)
+
+## Context
+
+The owner compiled 1,061 brew recipes from public sources into one table (method, brewer, dose, water, temperature, time, grind word, bean notes, source names and links). The table has no ratings at all: its 1 to 5 columns are empty. The owner wants it as the basis for the community section, which is empty until real people rate.
+
+Community data in this app means aggregates of real raters: an aggregate is returned only when at least five distinct users contributed (invariant 4, docs/04 F4), and a deleted account's brews are subtracted (D2). Scores for invented raters, or a default 5 on every dimension, would be fabricated reviews shown as real, would pull every bean's average to the middle, and would contaminate the first real ratings. The owner's further ideas (jitter every value inside a 97% Gaussian band; fill every empty field by a search) were not taken either, for the reasons below.
+
+## Decision
+
+1. **The table becomes "reference recipes": brew numbers, never ratings.** A reference recipe is a method id from the closed vocabulary and the numeric parameters of vocabulary v3 (`dose_dg`, `water_g`, `water_temp_c` or `water_temp_special`, `brew_time_s`, `grind_normalised`), plus the list of fields that were inferred. It has no name, author, link, text, bean, flavour or score (invariant 1: the data holds ids and numbers only). Its id (`ref0001` and on) is a counter in a stable order, so it does not point back to a row of the source.
+2. **They are not community data and are never counted as raters.** Every place that shows them says "reference". They sit beside the community numbers and never inside an aggregate. When real aggregates exist for a method or bean, those are shown as the community figures; the reference set stays visibly separate.
+3. **The source table is not in the repository.** It carries names, links and the text of other people's pages. `scripts/reference-recipes/convert.mjs` reads it from a path and writes `contracts/reference/recipes.v1.json`. The owner states that the table was copied together by hand from various public places; the numbers of a recipe are facts, and only they are kept. The lead cannot verify the rights to the compilation: the owner keeps the table and confirms them before the set ships in a release (a human step in M2-T47).
+4. **What maps and what drops.** Methods map from the source's method and brewer: V60 (also "Hario V60", "V60 01/02/03") to `v60`, Kalita to `kalita`, Chemex to `chemex`, and AeroPress, French press, cold brew, ibrik, moka pot and siphon to their ids. Brewers for which the vocabulary has no method (Orea, Cafec, Origami, Clever, Switch, Pulsar, cloth and ceramic filters, phin, and others) are dropped, not forced onto the nearest method, because a wrong method gives wrong numbers. Rows whose water amount is flagged as unclear (bypass or dilution), without dose or water, or outside the vocabulary ranges are dropped. Identical parameter sets collapse to one recipe.
+5. **Inference is limited and marked.** Grind words map to `grind_normalised` (extra fine 1.5, fine 3, medium-fine 4.5, medium 5.5, medium-coarse 7, coarse 8.5, extra coarse 9.5); this mapping is an inference and is stated here. A missing temperature, time or grind takes the median of the same method and is listed in the recipe's `inferred`. Nothing else is invented, and no web search fills gaps (a bulk search of the same sites for a handful of values would repeat the rights question and add guesses). Moka pot and cezve carry no temperature and cold brew carries `water_temp_special: cold`, as the field rules say.
+6. **No random jitter.** Moving each value by chance makes recipes less accurate, which the owner values ("proper recipes"), and does not change who the numbers came from. The same purpose (not presenting a source's recipe as an original) is served by the dataset keeping numbers only, collapsing duplicates and publishing typical ranges.
+7. **Typical ranges per method** (`typical_ranges`: recipes, and p10, median and p90 of dose, water, ratio, temperature, time and grind) are computed from the set. They describe published recipes, not what people rate highly.
+8. **Where it is used.** M2-T47 offers the recipes as "Starting points" in the recipe list (a user copies one into their own recipes, which then behave like any recipe, ADR 0028). The paid Explore screens (M4) may show the typical ranges, labelled reference, until real aggregates take over. The set is versioned (`recipes.v1.json`; a new set is a new file) and uses vocabulary v3; a later vocabulary version needs a regenerated set.
+
+## Consequences
+
+- The community section has useful content on day one without a single invented rating or rater.
+- The set is small (about a quarter of the source maps to our methods) but accurate; more methods in the vocabulary would bring more of the source in.
+- `scripts/reference-recipes.test.mjs` runs in CI: the converter's rules on synthetic rows, and the committed set against vocabulary v3 (ranges, field rules, no text, no link, no rating).
