@@ -122,7 +122,8 @@ struct VocabularyStore: Sendable {
     }
 
     /// The display label of `id` in `namespace`. Throws if the id is not in
-    /// the bundled vocabulary or its label is missing or empty.
+    /// the bundled vocabulary or its label is missing or empty in English too (a label missing
+    /// or empty in another language falls back to English).
     func label(namespace: Vocabulary.Namespace, id: String, language: VocabularyLanguage) throws -> String {
         try text(in: labels, namespace: namespace, id: id, language: language, isQuestion: false)
     }
@@ -148,7 +149,34 @@ struct VocabularyStore: Sendable {
         return current
     }
 
+    /// The text in `language`; when this language has none (missing or empty), the text in
+    /// `VocabularyLanguage.fallback` (M2-T32). Unknown ids and namespaces still throw, and so
+    /// does a text missing in the fallback language too (the error names that language).
     private func text(
+        in table: [VocabularyLanguage: [String: [String: String]]],
+        namespace: Vocabulary.Namespace,
+        id: String,
+        language: VocabularyLanguage,
+        isQuestion: Bool
+    ) throws -> String {
+        do {
+            return try exactText(in: table, namespace: namespace, id: id, language: language, isQuestion: isQuestion)
+        } catch let error as VocabularyError {
+            switch error {
+            case .missingLabel, .emptyLabel, .missingQuestion, .emptyQuestion:
+                guard language != VocabularyLanguage.fallback else {
+                    throw error
+                }
+                return try exactText(
+                    in: table, namespace: namespace, id: id, language: VocabularyLanguage.fallback, isQuestion: isQuestion
+                )
+            default:
+                throw error
+            }
+        }
+    }
+
+    private func exactText(
         in table: [VocabularyLanguage: [String: [String: String]]],
         namespace: Vocabulary.Namespace,
         id: String,

@@ -252,7 +252,7 @@ final class OnboardingTests: XCTestCase {
 
     // MARK: - Locale
 
-    func testTheLocaleIsGermanOnlyWhenThePreferredLanguageIsGerman() {
+    func testTheLocaleIsTheFirstPreferredLanguageThatIsGermanOrEnglish() {
         XCTAssertEqual(OnboardingRules.profileLocale(preferredLanguages: ["de-DE"]), .de)
         XCTAssertEqual(OnboardingRules.profileLocale(preferredLanguages: ["de"]), .de)
         XCTAssertEqual(OnboardingRules.profileLocale(preferredLanguages: ["de-CH", "en-US"]), .de)
@@ -260,6 +260,7 @@ final class OnboardingTests: XCTestCase {
         XCTAssertEqual(OnboardingRules.profileLocale(preferredLanguages: ["en-US"]), .en)
         XCTAssertEqual(OnboardingRules.profileLocale(preferredLanguages: ["en-GB", "de-DE"]), .en, "the first preferred language counts")
         XCTAssertEqual(OnboardingRules.profileLocale(preferredLanguages: ["fr-FR"]), .en)
+        XCTAssertEqual(OnboardingRules.profileLocale(preferredLanguages: ["fr-FR", "de-DE"]), .de, "an unsupported language is skipped")
         XCTAssertEqual(OnboardingRules.profileLocale(preferredLanguages: []), .en)
     }
 

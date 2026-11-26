@@ -862,7 +862,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T32 Localisation pass (en, de)
-- status: todo
+- status: needs-mac-verification (the timer readout is m:ss, h:mm:ss from an hour: decided and pinned)
 - owner: ios-engineer
 - depends: M2-T25, M2-T26, M2-T27, M2-T28, M2-T29, M2-T30, M2-T31
 - implements: docs/04-specification.md, Non-functional (Localisation); docs/03-project-brief.md, In scope (German and English)

@@ -86,7 +86,7 @@ struct BrewListRowView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(row.brewedAt, format: .dateTime.day().month().year().hour().minute())
+            Text(row.brewedAt, format: DisplayDate.dayAndTime)
                 .font(.headline)
             if let method = row.method {
                 Text(verbatim: VocabularyLabels.label(for: method, in: vocabulary, language: language))

@@ -189,6 +189,9 @@ enum L10n {
     static var brewRatio: LocalizedStringKey { "brew.ratio" }
     static var brewRatioAccessibility: LocalizedStringKey { "brew.ratio.accessibility" }
     static var brewRatioMissing: LocalizedStringKey { "brew.ratio.missing" }
+    /// The ratio as shown ("1:16.2"); the catalog value places `%@`, the number in the device locale.
+    /// `bundle` is the app bundle; tests pass a language's `.lproj` bundle.
+    static func brewRatioValue(_ number: String, bundle: Bundle = .main) -> String { String(localized: "brew.ratio.value \(number)", bundle: bundle) }
     static var brewWaterHeader: LocalizedStringKey { "brew.water_header" }
     static var brewTemperature: LocalizedStringKey { "brew.temperature" }
     static var brewTemperatureHeated: LocalizedStringKey { "brew.temperature.heated" }

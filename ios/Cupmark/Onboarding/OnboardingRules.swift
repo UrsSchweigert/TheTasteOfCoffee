@@ -61,14 +61,12 @@ enum OnboardingRules {
         }
     }
 
-    /// The profile's `locale`: German when the first preferred language is German, else
-    /// English (`Locale.preferredLanguages`, for example `de-CH` or `de` give German).
+    /// The profile's `locale`, exactly `de` or `en`: the first preferred language that is German
+    /// or English (`Locale.preferredLanguages`; `de-CH` gives German, `fr` then `de` gives
+    /// German, `fr` alone gives English). The rule is `VocabularyLanguage.resolving`, shared
+    /// with the vocabulary labels (M2-T32).
     static func profileLocale(preferredLanguages: [String]) -> VocabularyLanguage {
-        guard let first = preferredLanguages.first else {
-            return .en
-        }
-        let code: Locale.LanguageCode? = Locale.Language(identifier: first).languageCode
-        return code == Locale.LanguageCode.german ? .de : .en
+        VocabularyLanguage.resolving(preferredLanguages: preferredLanguages)
     }
 
     /// The profile onboarding sends. Not agreeing is the default (D1): `agreed` is true only
