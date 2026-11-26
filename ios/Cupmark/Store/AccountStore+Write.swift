@@ -160,6 +160,15 @@ struct RestoredProperty<Model: PersistentModel> {
     }
 }
 
+/// What `discardUnsavedChanges()` still does, after the rollback, for one model the store has.
+struct SavedValuesRestore {
+    /// Puts the relationships of one kind back again and says what that did.
+    let restoreAgain: (RestoredPropertyKind) -> Set<RestoreOutcome>
+    /// Whether the fetch the app uses (by `localID`, operations by `sequence`) finds the model
+    /// in the live context: true or false, nil when the fetch failed.
+    let isFoundAgain: () -> Bool?
+}
+
 extension SavedValuesRestorable {
     /// Puts the values the store holds back on this model. A model the store does not have,
     /// or cannot read, is left to `rollback()`.
@@ -168,9 +177,9 @@ extension SavedValuesRestorable {
     /// the write). If it does, the model is left to the bare `rollback()`, which may keep a
     /// changed attribute in memory; that is said, in debug by an assertion, always in the log.
     ///
-    /// Returns what puts the relationships of one kind back again after the rollback (with the
-    /// outcomes it had), nil when there is nothing to put back.
-    func restoreSavedValues(from saved: ModelContext, in store: AccountStore) -> ((RestoredPropertyKind) -> Set<RestoreOutcome>)? {
+    /// Returns what is still done for the model after the rollback, nil when the store does
+    /// not have it (nothing to put back).
+    func restoreSavedValues(from saved: ModelContext, in store: AccountStore) -> SavedValuesRestore? {
         let copy: Self?
         do {
             copy = try Self.savedCopy(of: self, in: saved)
@@ -189,13 +198,24 @@ extension SavedValuesRestorable {
                 _ = property.restore(self, copy, store)
             }
         }
-        return { kind in
-            var outcomes = Set<RestoreOutcome>()
-            for property in Self.restoredProperties where property.kind == kind {
-                outcomes.insert(property.restore(self, copy, store))
+        return SavedValuesRestore(
+            restoreAgain: { kind in
+                var outcomes = Set<RestoreOutcome>()
+                for property in Self.restoredProperties where property.kind == kind {
+                    outcomes.insert(property.restore(self, copy, store))
+                }
+                return outcomes
+            },
+            isFoundAgain: {
+                // The same fetch as `savedCopy`, through the live context: what the screens
+                // and the engine do when they read the model again by its key.
+                do {
+                    return try Self.savedCopy(of: self, in: store.context) != nil
+                } catch {
+                    return nil
+                }
             }
-            return outcomes
-        }
+        )
     }
 }
 
@@ -260,6 +280,14 @@ extension AccountStore {
     /// appends), the to-one relationships are set first and the to-many ones after, and the
     /// pass repeats until nothing changes. A relationship set again here holds the store's
     /// value, so a later save stores nothing of the failed write.
+    ///
+    /// Why the pending changes are processed and every model is fetched again (ADR 0025
+    /// Addendum M2-T36): after a real failed save and that repair, the first fetch of the
+    /// pending bean by its `localID` found nothing, although the store has it, the held
+    /// instances were right and the same fetch a moment later found it. So the context is not
+    /// handed back until its pending changes are processed and every model the store has is
+    /// found again by the fetch the app uses (a model the first round misses is fetched a
+    /// second time, after that round, before the miss counts).
     func discardUnsavedChanges() {
         let touched = context.changedModelsArray + context.deletedModelsArray
         guard !touched.isEmpty else {
@@ -268,11 +296,11 @@ extension AccountStore {
         }
         let saved = ModelContext(container)
         saved.autosaveEnabled = false
-        var restoreAgain: [(RestoredPropertyKind) -> Set<RestoreOutcome>] = []
+        var restores: [SavedValuesRestore] = []
         for model in touched {
             if let restorable = model as? any SavedValuesRestorable,
-               let again = restorable.restoreSavedValues(from: saved, in: self) {
-                restoreAgain.append(again)
+               let restore = restorable.restoreSavedValues(from: saved, in: self) {
+                restores.append(restore)
             }
         }
         context.rollback()
@@ -284,10 +312,13 @@ extension AccountStore {
             for _ in 0..<AccountStore.relationshipPasses where !settled {
                 var outcomes = Set<RestoreOutcome>()
                 for kind in [RestoredPropertyKind.toOne, .toMany] {
-                    for restore in restoreAgain {
-                        outcomes.formUnion(restore(kind))
+                    for restore in restores {
+                        outcomes.formUnion(restore.restoreAgain(kind))
                     }
                 }
+                // Inverses and the context's own bookkeeping follow the sets now, not at the
+                // next fetch, so the next pass and the checks below see the settled state.
+                context.processPendingChanges()
                 let changed = outcomes.contains(.changed)
                 unresolved = outcomes.contains(.unresolved)
                 repaired = repaired || changed
@@ -301,7 +332,28 @@ extension AccountStore {
             } else if repaired {
                 writeLogger.notice("A failed write put relationships back after the rollback.")
             }
+            confirmFoundAgain(restores)
         }
+    }
+
+    /// Fetches every restored model again through the live context. The models the first
+    /// round misses are fetched again after it (the CI log suggests a later fetch finds them; the cause is not known)
+    /// a model still missed, or a fetch that fails, would hide a model the store has
+    /// from the screens and the engine. Should not happen; said loudly in debug, always in
+    /// the log.
+    private func confirmFoundAgain(_ restores: [SavedValuesRestore]) {
+        let missed = restores.filter { restore in restore.isFoundAgain() != true }
+        guard !missed.isEmpty else {
+            return
+        }
+        context.processPendingChanges()
+        let stillMissed = missed.filter { restore in restore.isFoundAgain() != true }
+        guard stillMissed.isEmpty else {
+            writeLogger.fault("A failed write left a saved model that a fetch does not find.")
+            assertionFailure("A failed write left a saved model that a fetch does not find.")
+            return
+        }
+        writeLogger.notice("A failed write's saved models were found on a second fetch.")
     }
 
     /// How often the relationships are checked after a rollback before giving up: one pass

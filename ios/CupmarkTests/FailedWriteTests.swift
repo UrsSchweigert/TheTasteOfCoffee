@@ -504,6 +504,10 @@ final class FailedWriteTests: XCTestCase {
         // list (the first macOS run, while the files were still shared with the writable store).
         // The pass after the rollback sets them to the store's values, which may leave them as
         // changes of the context, equal to the disk; nothing inserted or deleted is left.
+        // The first fetch of the pending bean after that repair once found nothing (only here,
+        // the same fetch a moment later found it); the discard now processes the pending
+        // changes and fetches every saved model again before it returns, so the first fetch
+        // here must find it.
         XCTAssertTrue(store.context.insertedModelsArray.isEmpty)
         XCTAssertTrue(store.context.deletedModelsArray.isEmpty)
         XCTAssertEqual(try store.bean(localID: pendingBeanID)?.localID, pendingBeanID)
