@@ -45,14 +45,23 @@ actor AuthSession: TokenProvider {
     private var tokens: SessionTokens?
     private var refreshTask: Task<SessionTokens, any Error>?
     private var statusHandler: (@Sendable (AuthStatus) -> Void)?
+    /// True while an account deletion is recorded (M2-T31, `AccountDeletionStore.holdsSending`):
+    /// `maySend(as:)` is then false for every account.
+    private let isSendingHeld: @Sendable () -> Bool
     /// Callers waiting on the running refresh without having started it. Read by the tests to
     /// know a second caller has joined; never used for a decision.
     private(set) var refreshJoinerCount = 0
 
-    init(endpoint: any TokenEndpoint, store: any CredentialStore, now: @escaping @Sendable () -> Date = { Date() }) {
+    init(
+        endpoint: any TokenEndpoint,
+        store: any CredentialStore,
+        now: @escaping @Sendable () -> Date = { Date() },
+        isSendingHeld: @escaping @Sendable () -> Bool = { false }
+    ) {
         self.endpoint = endpoint
         self.store = store
         self.now = now
+        self.isSendingHeld = isSendingHeld
     }
 
     /// Called with every change of status made by the session itself: sign-in, sign-out and
@@ -126,6 +135,49 @@ actor AuthSession: TokenProvider {
         loadedCredential()?.accountID == account
     }
 
+    /// Whether the outbox, the pull and the label photo uploads may send for `account` now:
+    /// it is the signed-in account and no account deletion is recorded (M2-T31). Once a
+    /// deletion has started nothing more is sent, also after a token refresh, a return to the
+    /// foreground or a restart, until the deletion is done; `DELETE /account` itself does not
+    /// ask. Reads the Keychain, never the network.
+    func maySend(as account: AccountID) -> Bool {
+        !isSendingHeld() && isSignedIn(as: account)
+    }
+
+    /// The account of the saved sign-in, nil when nobody is signed in. Reads the Keychain,
+    /// never the network.
+    func signedInAccount() -> AccountID? {
+        loadedCredential()?.accountID
+    }
+
+    // MARK: - Tokens of one account (M2-T31)
+
+    /// The access token, only while `account` is the signed-in one, checked before and after
+    /// the token is had (also after a refresh in between): a sign-in of another account that
+    /// lands meanwhile makes it throw `AuthError.accountMismatch` instead of returning that
+    /// account's token. Account deletion sends `DELETE /account` only with this.
+    func accessToken(for account: AccountID) async throws -> String {
+        guard isSignedIn(as: account) else {
+            throw AuthError.accountMismatch
+        }
+        let token = try await currentAccessToken()
+        guard isSignedIn(as: account) else {
+            throw AuthError.accountMismatch
+        }
+        return token
+    }
+
+    /// `refresh()`, only for `account`, checked before and after like `accessToken(for:)`.
+    func refresh(for account: AccountID) async throws {
+        guard isSignedIn(as: account) else {
+            throw AuthError.accountMismatch
+        }
+        try await refresh()
+        guard isSignedIn(as: account) else {
+            throw AuthError.accountMismatch
+        }
+    }
+
     // MARK: - Refresh
 
     /// The running refresh, or a new one.
@@ -197,5 +249,20 @@ actor AuthSession: TokenProvider {
         tokens = nil
         credential = nil
         try? store.delete()
+    }
+}
+
+/// A `TokenProvider` pinned to one account (M2-T31): `APIClient` gets that account's token or
+/// an error, never another account's, even when a sign-in lands during the request.
+struct AccountTokenProvider: TokenProvider {
+    let session: AuthSession
+    let account: AccountID
+
+    func currentAccessToken() async throws -> String {
+        try await session.accessToken(for: account)
+    }
+
+    func refresh() async throws {
+        try await session.refresh(for: account)
     }
 }

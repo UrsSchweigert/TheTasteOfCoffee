@@ -33,6 +33,9 @@ enum L10n {
     static var signInFailed: LocalizedStringKey { "sign_in.failed" }
     static var signInOffline: LocalizedStringKey { "sign_in.offline" }
     static var signInSessionExpired: LocalizedStringKey { "sign_in.session_expired" }
+    static var signInRequiredByServer: LocalizedStringKey { "sign_in.required_by_server" }
+    static var signInAccountDeleted: LocalizedStringKey { "sign_in.account_deleted" }
+    static var signInOtherAccountDeleted: LocalizedStringKey { "sign_in.other_account_deleted" }
     static var authRestoring: LocalizedStringKey { "auth.restoring" }
     static var accountSignOut: LocalizedStringKey { "account.sign_out" }
     static var accountSignOutConfirmTitle: LocalizedStringKey { "account.sign_out.confirm_title" }
@@ -354,7 +357,7 @@ enum L10n {
     static var onboardingSkip: LocalizedStringKey { "onboarding.skip" }
     static var onboardingSkipHint: LocalizedStringKey { "onboarding.skip.hint" }
     static var onboardingSaveFailed: LocalizedStringKey { "onboarding.save_failed" }
-    // Settings (M2-T29; account deletion M2-T31 adds its own).
+    // Settings (M2-T29).
     static var settingsTitle: LocalizedStringKey { "settings.title" }
     static var settingsLoadFailed: LocalizedStringKey { "settings.load_failed" }
     static var settingsPrivacyHeader: LocalizedStringKey { "settings.privacy.header" }
@@ -385,4 +388,33 @@ enum L10n {
     static var localDataNone: LocalizedStringKey { "local_data.none" }
     static var localDataRemoved: LocalizedStringKey { "local_data.removed" }
     static var localDataFailed: LocalizedStringKey { "local_data.failed" }
+    // Account deletion (M2-T31).
+    static var accountDeletionTitle: LocalizedStringKey { "account_deletion.title" }
+    static var accountDeletionSettingsFooter: LocalizedStringKey { "account_deletion.settings_footer" }
+    static var accountDeletionWhatHeader: LocalizedStringKey { "account_deletion.what.header" }
+    static var accountDeletionWhatData: LocalizedStringKey { "account_deletion.what.data" }
+    static var accountDeletionWhatPhotos: LocalizedStringKey { "account_deletion.what.photos" }
+    static var accountDeletionWhatSignIn: LocalizedStringKey { "account_deletion.what.sign_in" }
+    static var accountDeletionWhatFooter: LocalizedStringKey { "account_deletion.what.footer" }
+    static var accountDeletionContinue: LocalizedStringKey { "account_deletion.continue" }
+    static var accountDeletionContinueHint: LocalizedStringKey { "account_deletion.continue.hint" }
+    static var accountDeletionExportHint: LocalizedStringKey { "account_deletion.export_hint" }
+    static var accountDeletionCouldNotStart: LocalizedStringKey { "account_deletion.could_not_start" }
+    static var accountDeletionConfirmTitle: LocalizedStringKey { "account_deletion.confirm.title" }
+    static var accountDeletionConfirmMessage: LocalizedStringKey { "account_deletion.confirm.message" }
+    static var accountDeletionConfirm: LocalizedStringKey { "account_deletion.confirm" }
+    static var accountDeletionProgressTitle: LocalizedStringKey { "account_deletion.progress.title" }
+    static var accountDeletionProgressMessage: LocalizedStringKey { "account_deletion.progress.message" }
+    static var accountDeletionRetrying: LocalizedStringKey { "account_deletion.retrying" }
+    static var accountDeletionRetryNow: LocalizedStringKey { "account_deletion.retry_now" }
+    static var accountDeletionSignInRequired: LocalizedStringKey { "account_deletion.sign_in_required" }
+    static var accountDeletionSignInAgain: LocalizedStringKey { "account_deletion.sign_in_again" }
+    static var accountDeletionCleanupFailed: LocalizedStringKey { "account_deletion.cleanup_failed" }
+    static var accountDeletionSignInNote: LocalizedStringKey { "account_deletion.sign_in_note" }
+    static var accountDeletionDifferentAccountMessage: LocalizedStringKey { "account_deletion.different_account.message" }
+    static var accountDeletionUnreadableRecordMessage: LocalizedStringKey { "account_deletion.unreadable_record.message" }
+    static var accountDeletionDeleteThisAccount: LocalizedStringKey { "account_deletion.delete_this_account" }
+    static var accountDeletionDeleteThisAccountHint: LocalizedStringKey { "account_deletion.delete_this_account.hint" }
+    static var accountDeletionSignOutInstead: LocalizedStringKey { "account_deletion.sign_out_instead" }
+    static var accountDeletionSignOutInsteadHint: LocalizedStringKey { "account_deletion.sign_out_instead.hint" }
 }

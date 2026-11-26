@@ -139,6 +139,96 @@ final class AuthModelTests: XCTestCase {
         XCTAssertEqual(model.failure, .sessionExpired)
     }
 
+    // MARK: - Sign-in required by the server, and signing in again (M2-T31)
+
+    func testASignOutAfterTheServerRefusedTheSessionSaysTheAccountWasDeletedOrItsSessionEnded() async throws {
+        let endpoint = FakeTokenEndpoint()
+        let store = FakeCredentialStore(StoredCredential(refreshToken: "refresh-1", accountID: account))
+        let (model, _) = try makeModel(endpoint: endpoint, store: store)
+        await model.start()
+
+        await model.signOutAfterServerRefusal(of: account)
+        await settle()
+
+        XCTAssertEqual(model.phase, .signedOut)
+        XCTAssertEqual(model.failure, .signInRequired)
+        XCTAssertEqual(model.failure?.isProblem, true)
+        XCTAssertNil(store.credential)
+
+        await model.signIn()
+        XCTAssertEqual(model.phase, .signedIn(account))
+        XCTAssertNil(model.failure, "a new sign-in clears the note")
+    }
+
+    func testAServerRefusalForAnotherAccountOrAnEndedSessionChangesNothing() async throws {
+        let endpoint = FakeTokenEndpoint()
+        let store = FakeCredentialStore(StoredCredential(refreshToken: "refresh-1", accountID: account))
+        let (model, _) = try makeModel(endpoint: endpoint, store: store)
+        await model.start()
+
+        await model.signOutAfterServerRefusal(of: AccountID(subject: AuthFixtures.otherSubject))
+        XCTAssertEqual(model.phase, .signedIn(account))
+        XCTAssertNil(model.failure)
+        let calls = await endpoint.calls
+        XCTAssertTrue(calls.isEmpty)
+    }
+
+    func testAPlainSignOutShowsNoNoteAndTheDeletionNoteIsNotAProblem() async throws {
+        let (model, _) = try makeModel(store: FakeCredentialStore(StoredCredential(refreshToken: "refresh-1", accountID: account)))
+        await model.start()
+        await model.signOut(reason: .accountDeleted)
+        XCTAssertEqual(model.failure, .accountDeleted)
+        XCTAssertEqual(model.failure?.isProblem, false)
+        await model.signIn()
+        await model.signOut()
+        XCTAssertNil(model.failure)
+    }
+
+    func testSigningInAgainKeepsTheSavedSignInUntilTheNewOneSucceeded() async throws {
+        let endpoint = FakeTokenEndpoint(exchange: { try AuthFixtures.tokenResponse(access: "access-9", refresh: "refresh-9") })
+        let store = FakeCredentialStore(StoredCredential(refreshToken: "refresh-1", accountID: account))
+        let (model, authenticator) = try makeModel(respond: { _ in throw AuthError.cancelled }, endpoint: endpoint, store: store)
+        await model.start()
+
+        let cancelled = await model.signInAgain()
+        XCTAssertEqual(cancelled, .cancelled)
+        XCTAssertEqual(model.phase, .signedIn(account), "never signed out")
+        XCTAssertEqual(store.credential?.refreshToken, "refresh-1")
+        XCTAssertFalse(model.isSigningInAgain)
+
+        authenticator.respond = FakeWebAuthenticator.returningCode("code-9")
+        let renewed = await model.signInAgain()
+        XCTAssertEqual(renewed, .succeeded)
+        XCTAssertEqual(model.phase, .signedIn(account))
+        XCTAssertEqual(store.credential?.refreshToken, "refresh-9", "the new sign-in replaced the saved one")
+        let calls = await endpoint.calls
+        XCTAssertFalse(calls.contains(.revoke("refresh-1")), "nothing was revoked")
+    }
+
+    func testAFailedSignInAgainSaysWhyAndKeepsTheSession() async throws {
+        let store = FakeCredentialStore(StoredCredential(refreshToken: "refresh-1", accountID: account))
+        let (model, _) = try makeModel(respond: { _ in throw APIError.transport(.notConnectedToInternet) }, store: store)
+        await model.start()
+        let result = await model.signInAgain()
+        XCTAssertEqual(result, .failed(.offline))
+        XCTAssertEqual(model.phase, .signedIn(account))
+        XCTAssertEqual(store.credential?.refreshToken, "refresh-1")
+    }
+
+    func testTheOtherAccountNoteIsNotAProblem() {
+        XCTAssertFalse(AuthModel.Failure.otherAccountDeleted.isProblem)
+        XCTAssertTrue(AuthModel.Failure.signInRequired.isProblem)
+    }
+
+    func testSigningInAgainNeedsASignedInSession() async throws {
+        let (model, authenticator) = try makeModel()
+        await model.start()
+        let result = await model.signInAgain()
+        XCTAssertEqual(result, .notAvailable)
+        XCTAssertTrue(authenticator.urls.isEmpty)
+        XCTAssertEqual(model.phase, .signedOut)
+    }
+
     func testFailuresMapToTheirNotes() {
         XCTAssertEqual(AuthModel.failure(for: APIError.transport(.timedOut)), .offline)
         XCTAssertEqual(AuthModel.failure(for: AuthError.invalidGrant), .signInFailed)

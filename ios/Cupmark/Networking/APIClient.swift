@@ -261,9 +261,11 @@ final class APIClient: Sendable {
         try await send(.exportData)
     }
 
-    /// `DELETE /account`. Safe to repeat until it answers 204 (ADR 0017).
-    func deleteAccount() async throws {
-        _ = try await send(.deleteAccount)
+    /// `DELETE /account`. Safe to repeat until it answers 204 (ADR 0017). `tokens` replaces the
+    /// client's token provider for this request; account deletion passes an
+    /// `AccountTokenProvider`, so the request never carries another account's token (M2-T31).
+    func deleteAccount(tokens: (any TokenProvider)? = nil) async throws {
+        _ = try await send(.deleteAccount, tokens: tokens)
     }
 
     // MARK: - Paging
@@ -364,13 +366,15 @@ final class APIClient: Sendable {
         _ endpoint: API.Endpoint,
         path: [String: any APIPathValue] = [:],
         query: [URLQueryItem] = [],
-        body: Data? = nil
+        body: Data? = nil,
+        tokens: (any TokenProvider)? = nil
     ) async throws -> Data {
+        let provider = tokens ?? tokenProvider
         let url = try makeURL(for: endpoint, path: path, query: query)
-        var response = try await perform(endpoint, url: url, body: body, token: accessToken())
+        var response = try await perform(endpoint, url: url, body: body, token: accessToken(from: provider))
         if response.status == 401 {
             do {
-                try await tokenProvider.refresh()
+                try await provider.refresh()
             } catch {
                 if Task.isCancelled || error is CancellationError {
                     throw CancellationError()
@@ -378,7 +382,7 @@ final class APIClient: Sendable {
                 throw APIClient.tokenFailure(error)
             }
             try Task.checkCancellation()
-            response = try await perform(endpoint, url: url, body: body, token: accessToken())
+            response = try await perform(endpoint, url: url, body: body, token: accessToken(from: provider))
         }
         guard response.status == endpoint.successStatus else {
             throw APIError(status: response.status)
@@ -388,9 +392,9 @@ final class APIClient: Sendable {
 
     /// The provider's token; `unauthorized` when it has none, `transport` when it could not be
     /// refreshed for lack of a network.
-    private func accessToken() async throws -> String {
+    private func accessToken(from provider: any TokenProvider) async throws -> String {
         do {
-            return try await tokenProvider.currentAccessToken()
+            return try await provider.currentAccessToken()
         } catch {
             if Task.isCancelled || error is CancellationError {
                 throw CancellationError()

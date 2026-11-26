@@ -5,8 +5,14 @@ import SwiftUI
 /// signed-in `AccountID` to `content`, for the local store (M2-T15).
 ///
 /// Until the account screen exists, sign-out is a toolbar button with a confirmation.
+///
+/// While an account deletion runs (M2-T31, `AccountDeletionModel.isActive`), the signed-in
+/// content and the sign-out button are replaced by the deletion's progress, so nothing can be
+/// changed and nobody signs out before the 204; signed out, the sign-in screen says that
+/// signing in finishes the deletion.
 struct AuthGate<Content: View>: View {
     @Environment(AuthModel.self) private var auth: AuthModel?
+    @Environment(AccountDeletionModel.self) private var deletion: AccountDeletionModel?
     @State private var confirmingSignOut = false
     private let content: (AccountID) -> Content
 
@@ -23,7 +29,12 @@ struct AuthGate<Content: View>: View {
             }
         }
         .task {
+            // The deletion record first, so a deletion that was running is shown, not the shelf.
+            deletion?.load()
             await auth?.start()
+            // A cold start signed out with a record (the server answered 204, the cleanup did
+            // not finish) changes no account, so the modifier's resume would not run again.
+            deletion?.resume()
         }
     }
 
@@ -34,32 +45,44 @@ struct AuthGate<Content: View>: View {
             ProgressView()
                 .accessibilityLabel(Text(L10n.authRestoring))
         case .signedOut, .signingIn:
-            SignInView(isSigningIn: auth.phase == .signingIn, failure: auth.failure) {
+            SignInView(
+                isSigningIn: auth.phase == .signingIn,
+                failure: auth.failure,
+                finishesDeletion: deletion?.awaitsServerDeletion ?? false
+            ) {
                 Task {
                     await auth.signIn()
                 }
             }
         case .signedIn(let account):
-            content(account)
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            confirmingSignOut = true
-                        } label: {
-                            Text(L10n.accountSignOut)
-                        }
-                        .accessibilityIdentifier("sign-out")
-                    }
-                }
-                .confirmationDialog(L10n.accountSignOutConfirmTitle, isPresented: $confirmingSignOut, titleVisibility: .visible) {
-                    Button(role: .destructive) {
-                        Task {
-                            await auth.signOut()
-                        }
+            if let deletion, deletion.isActive {
+                AccountDeletionProgressView(model: deletion)
+            } else {
+                signedIn(account, auth: auth)
+            }
+        }
+    }
+
+    private func signedIn(_ account: AccountID, auth: AuthModel) -> some View {
+        content(account)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        confirmingSignOut = true
                     } label: {
                         Text(L10n.accountSignOut)
                     }
+                    .accessibilityIdentifier("sign-out")
                 }
-        }
+            }
+            .confirmationDialog(L10n.accountSignOutConfirmTitle, isPresented: $confirmingSignOut, titleVisibility: .visible) {
+                Button(role: .destructive) {
+                    Task {
+                        await auth.signOut()
+                    }
+                } label: {
+                    Text(L10n.accountSignOut)
+                }
+            }
     }
 }

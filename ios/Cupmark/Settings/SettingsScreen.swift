@@ -6,8 +6,9 @@ struct SettingsRoute: Hashable {}
 
 /// Settings, one tap from the shelf. Each topic is its own section, built by its own
 /// function: Privacy (the consent, M2-T29), Export (M2-T30), the removal of other accounts'
-/// data on this device (M2-T30); account deletion (M2-T31) adds a section below. No control
-/// takes typed text.
+/// data on this device (M2-T30), and Delete Account (M2-T31). No control takes typed text.
+/// Export and account deletion are pushed screens outside `Settings/`, which read what they
+/// need from the environment, so no settings file touches the API client.
 struct SettingsScreen: View {
     let account: AccountID?
     let store: AccountStore
@@ -30,6 +31,7 @@ struct SettingsScreen: View {
             privacySection
             exportSection
             localDataSection
+            deleteAccountSection
         }
         .navigationTitle(Text(L10n.settingsTitle))
         .accessibilityIdentifier("settings")
@@ -100,6 +102,26 @@ struct SettingsScreen: View {
                 }
             }
             .accessibilityIdentifier("settings-export")
+        }
+    }
+
+    /// Account deletion (M2-T31): pushes the two confirmation steps (`AccountDeletionDestination`).
+    private var deleteAccountSection: some View {
+        Section {
+            NavigationLink {
+                AccountDeletionDestination()
+            } label: {
+                Label {
+                    Text(L10n.accountDeletionTitle)
+                } icon: {
+                    Image(systemName: "person.crop.circle.badge.xmark")
+                        .accessibilityHidden(true)
+                }
+                .foregroundStyle(.red)
+            }
+            .accessibilityIdentifier("settings-delete-account")
+        } footer: {
+            Text(L10n.accountDeletionSettingsFooter)
         }
     }
 

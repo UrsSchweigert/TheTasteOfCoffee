@@ -3,7 +3,8 @@ import SwiftUI
 /// Shown in the scan flow when the server refused the token, also after a refresh
 /// (`APIError.unauthorized`, M2-T18): a sign-in message instead of a retry that would fail the
 /// same way. "Sign In" signs out, like a sign-in-required stop of the sync engine
-/// (`SyncHostModifier`), so `AuthGate` shows the sign-in screen. Nothing local is lost: the
+/// (`SyncHostModifier`), so `AuthGate` shows the sign-in screen with the note that the account
+/// was deleted or its session ended (`AuthModel.Failure.signInRequired`). Nothing local is lost: the
 /// account's store and outbox stay on the device (ADR 0025).
 struct SignInAgainView: View {
     var body: some View {
@@ -30,7 +31,7 @@ struct SignInAgainButton: View {
     var body: some View {
         Button {
             Task {
-                await auth?.signOut()
+                await auth?.signOut(reason: .signInRequired)
             }
         } label: {
             Text(L10n.signInAgainButton)

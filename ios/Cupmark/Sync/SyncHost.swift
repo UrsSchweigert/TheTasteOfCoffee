@@ -22,6 +22,10 @@ import SwiftUI
 ///   so they stay with it and upload when the account signs in again.
 /// - The label photo queue (M2-T25, `LabelPhotoQueue`) runs in the engine's idle slot before
 ///   the pull, so the beans the drain created have their server ids.
+/// - While an account deletion is recorded (M2-T31, `isHeld`), no store is open and no engine
+///   runs, for any account: `holdForAccountDeletion()` closes the current one, and
+///   `switchTo(_:)` opens none until the record is gone. A token refresh, a return to the
+///   foreground or a restart cannot start one, so nothing more is sent.
 @MainActor
 @Observable
 final class SyncHost {
@@ -66,6 +70,8 @@ final class SyncHost {
     @ObservationIgnored let drainPullInterval: TimeInterval
     @ObservationIgnored private let now: @Sendable () -> Date
     @ObservationIgnored private let labelPhotos: LabelPhotoFolders
+    /// True while an account deletion is recorded (M2-T31): no store is opened then.
+    @ObservationIgnored private let isHeld: @MainActor @Sendable () -> Bool
 
     /// Nonisolated, so `CupmarkApp.init` can build it whatever its isolation.
     nonisolated init(
@@ -75,7 +81,8 @@ final class SyncHost {
         makeLabelPhotoQueue: @escaping @MainActor @Sendable (AccountID, AccountStore, LabelPhotoFileStore) -> LabelPhotoQueue? = { _, _, _ in nil },
         drainPullInterval: TimeInterval = 30,
         now: @escaping @Sendable () -> Date = { Date() },
-        labelPhotos: LabelPhotoFolders = .standard
+        labelPhotos: LabelPhotoFolders = .standard,
+        isHeld: @escaping @MainActor @Sendable () -> Bool = { false }
     ) {
         self.makeStore = makeStore
         self.makeEngine = makeEngine
@@ -84,20 +91,23 @@ final class SyncHost {
         self.drainPullInterval = drainPullInterval
         self.now = now
         self.labelPhotos = labelPhotos
+        self.isHeld = isHeld
     }
 
-    /// The host of the app: the account's file store, the app's client, the session's check.
-    nonisolated static func live(client: APIClient, session: AuthSession) -> SyncHost {
+    /// The host of the app: the account's file store, the app's client, the session's check
+    /// (`maySend(as:)`, which is also false while an account deletion is recorded), and the
+    /// deletion record (M2-T31).
+    nonisolated static func live(client: APIClient, session: AuthSession, deletions: any AccountDeletionStore) -> SyncHost {
         SyncHost(
             makeStore: { account in try AccountStore.open(for: account) },
             makeEngine: { account, store in
                 SyncEngine(store: store, client: client, isCurrentAccount: {
-                    await session.isSignedIn(as: account)
+                    await session.maySend(as: account)
                 })
             },
             makePuller: { account, store in
                 Puller(store: store, client: client, isCurrentAccount: {
-                    await session.isSignedIn(as: account)
+                    await session.maySend(as: account)
                 })
             },
             makeLabelPhotoQueue: { account, store, files in
@@ -106,20 +116,27 @@ final class SyncHost {
                     account: account,
                     files: files,
                     uploader: LabelPhotoUploader(api: client, files: files, isCurrentAccount: { candidate in
-                        await session.isSignedIn(as: candidate)
+                        await session.maySend(as: candidate)
                     })
                 )
-            }
+            },
+            isHeld: { deletions.holdsSending }
         )
     }
 
     /// Stops the current account's engine and, for a new account, opens its store and starts
-    /// its engine. The same account again changes nothing.
-    func switchTo(_ next: AccountID?) {
+    /// its engine. The same account again changes nothing. While an account deletion is
+    /// recorded (`isHeld`) every account counts as nil: the current store is closed and none is
+    /// opened (M2-T31).
+    func switchTo(_ requested: AccountID?) {
+        let held = isHeld()
+        let next = held ? nil : requested
         guard next != account else {
             return
         }
-        if let previous = account {
+        // While held nothing local is deleted before the deletion's 204 (ADR 0031): the screen
+        // photos stay until the deletion removes the whole folder.
+        if let previous = account, !held {
             // The screen's photos end with the session; queued ones stay with the store, as
             // far as the store lists them (nil: it could not be read, so nothing is dropped).
             let queued = try? store?.queuedLabelPhotoFileNames()
@@ -188,6 +205,14 @@ final class SyncHost {
         puller = makePuller(next, opened)
         labelPhotoQueue = makeLabelPhotoQueue(next, opened, labelPhotos.queue(for: next))
         started.start()
+    }
+
+    /// An account deletion started or resumed (M2-T31): stops the engine, so the request on its
+    /// way is cancelled and nothing more is sent, and closes the store, whose files the deletion
+    /// removes after its 204. No label photo is deleted here. The record of the deletion is saved before this is called, so
+    /// `switchTo(_:)` opens no store until the deletion is done.
+    func holdForAccountDeletion() {
+        switchTo(nil)
     }
 
     /// Asks the engine to look at the outbox now (for example when the app comes back to the
@@ -272,16 +297,13 @@ struct SyncHostModifier: ViewModifier {
             }
             .onChange(of: host?.signInRequired ?? false) { _, required in
                 // Only for the account the host syncs, and only while its session is still
-                // saved: a session that ended itself already shows "session expired", and a
-                // sign-out now would replace that note.
+                // saved (`signOutAfterServerRefusal(of:)`): the sign-in screen then says that
+                // the account was deleted or its session ended (M2-T31).
                 guard required, let auth, let host, let account = host.account, auth.accountID == account else {
                     return
                 }
                 Task {
-                    guard auth.accountID == account, await auth.session.isSignedIn(as: account) else {
-                        return
-                    }
-                    await auth.signOut()
+                    await auth.signOutAfterServerRefusal(of: account)
                 }
             }
     }
