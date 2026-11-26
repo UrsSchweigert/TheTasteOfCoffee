@@ -48,13 +48,15 @@ final class AccountDeletionTests: XCTestCase {
         records: FakeAccountDeletionStore,
         endpoint: FakeTokenEndpoint = FakeTokenEndpoint(),
         respond: @escaping (URL) throws -> URL = FakeWebAuthenticator.returningCode("code-2"),
+        authenticator: (any WebAuthenticator)? = nil,
+        makeRequests: ((APIClient, AuthSession) -> AccountDeletionRequests)? = nil,
         sleep: @escaping @Sendable (TimeInterval) async throws -> Void = { _ in }
     ) async throws -> Launch {
         let session = AuthSession(endpoint: endpoint, store: credentials, isSendingHeld: { records.holdsSending })
         let auth = AuthModel(
             hostedUI: try AuthFixtures.devHostedUI(),
             session: session,
-            authenticator: FakeWebAuthenticator(respond: respond)
+            authenticator: authenticator ?? FakeWebAuthenticator(respond: respond)
         )
         let client = APIClient(baseURL: server.baseURL, tokenProvider: session, session: server.makeSession(), imageCache: nil)
         let stores = self.stores
@@ -74,7 +76,7 @@ final class AccountDeletionTests: XCTestCase {
         )
         let deletion = AccountDeletionModel(
             records: records,
-            requests: .live(client: client, session: session),
+            requests: makeRequests?(client, session) ?? .live(client: client, session: session),
             auth: auth,
             sync: host,
             localData: localData,
@@ -363,7 +365,7 @@ final class AccountDeletionTests: XCTestCase {
 
     // MARK: - A different or unknown account (ADR 0031)
 
-    func testSignOutInsteadOfDeletingADifferentAccountKeepsTheRecordAndSendsNothing() async throws {
+    func testSignOutInsteadOfDeletingADifferentAccountDeletesNothingAndSendsNoAccountRequest() async throws {
         let script = DeleteScript([204])
         let server = try StubServer { request in try script.respond(to: request) }
         let records = FakeAccountDeletionStore(AccountDeletionRecord(phase: .requested, account: account, localAccounts: [account]))
@@ -379,9 +381,10 @@ final class AccountDeletionTests: XCTestCase {
         await app.deletion.running?.value
         await settle()
 
-        XCTAssertTrue(server.requests.isEmpty)
-        let refreshes = await endpoint.refreshCount
-        XCTAssertEqual(refreshes, 0, "nothing is sent for the other account")
+        XCTAssertTrue(server.requests.isEmpty, "no account request: no DELETE /account, nothing else")
+        let calls = await endpoint.calls
+        XCTAssertEqual(calls, [.revoke("refresh-new")], "the sign-out revokes the new session's token, and nothing else goes to Cognito")
+        XCTAssertNil(app.deletion.signInAgainFailure)
         XCTAssertEqual(app.auth.phase, .signedOut)
         XCTAssertNil(credentials.credential)
         XCTAssertEqual(records.record, AccountDeletionRecord(phase: .requested, account: account, localAccounts: [account]), "the record stays as it was")
@@ -502,6 +505,140 @@ final class AccountDeletionTests: XCTestCase {
         XCTAssertEqual(refreshes.count, 2, "the first run's refresh failed; the run that followed refreshed again")
         XCTAssertEqual(server.requests.map { $0.header("Authorization") }, ["Bearer access-later"])
         XCTAssertEqual(app.auth.phase, .signedOut)
+    }
+
+    // MARK: - A session that changes during an attempt
+
+    /// The live requests, with another account's sign-in landing at `when`.
+    private func requestsWithASignInLanding(_ when: SignInLanding) -> (APIClient, AuthSession) -> AccountDeletionRequests {
+        { client, session in
+            let live = AccountDeletionRequests.live(client: client, session: session)
+            return AccountDeletionRequests(
+                refreshToken: { account in
+                    try await live.refreshToken(account)
+                    if when == .afterTheRefresh {
+                        try await session.signIn(code: "code-b", verifier: "verifier-b")
+                    }
+                },
+                deleteAccount: { account in
+                    if when == .beforeTheDeleteTakesItsToken {
+                        try await session.signIn(code: "code-b", verifier: "verifier-b")
+                    }
+                    try await live.deleteAccount(account)
+                },
+                signedInAccount: live.signedInAccount
+            )
+        }
+    }
+
+    private enum SignInLanding: Sendable {
+        case afterTheRefresh
+        case beforeTheDeleteTakesItsToken
+    }
+
+    private func assertALandingSignInSendsNothing(_ when: SignInLanding, file: StaticString = #filePath, line: UInt = #line) async throws {
+        let script = DeleteScript([204])
+        let server = try StubServer { request in try script.respond(to: request) }
+        let records = FakeAccountDeletionStore()
+        let endpoint = FakeTokenEndpoint(exchange: { try AuthFixtures.tokenResponse(access: "access-b", subject: AuthFixtures.otherSubject, refresh: "refresh-b") })
+        let app = try await launch(
+            server: server,
+            credentials: signedIn(account),
+            records: records,
+            endpoint: endpoint,
+            makeRequests: requestsWithASignInLanding(when)
+        )
+
+        app.deletion.start()
+        await app.deletion.running?.value
+        await settle()
+
+        XCTAssertTrue(server.requests.isEmpty, "no DELETE /account with the other account's token", file: file, line: line)
+        XCTAssertEqual(app.deletion.state, .confirmDifferentAccount, file: file, line: line)
+        XCTAssertNil(app.deletion.confirmationAccount, "worked out again before a tap can delete", file: file, line: line)
+        XCTAssertEqual(records.record?.account, account, "the record is unchanged", file: file, line: line)
+        let revoked = await revokes(endpoint)
+        XCTAssertTrue(revoked.isEmpty, file: file, line: line)
+
+        // A tap on the prompt shown with an unknown account only works it out again.
+        app.deletion.deleteSignedInAccount()
+        await app.deletion.running?.value
+        XCTAssertTrue(server.requests.isEmpty, "still nothing sent without a tap for the account now known", file: file, line: line)
+        XCTAssertEqual(app.deletion.state, .confirmDifferentAccount, file: file, line: line)
+        XCTAssertEqual(app.deletion.confirmationAccount, newAccount, file: file, line: line)
+        XCTAssertEqual(records.record?.account, account, file: file, line: line)
+    }
+
+    func testAnotherSessionLandingBetweenTheRefreshAndTheDeleteSendsNothingAndShowsThePrompt() async throws {
+        try await assertALandingSignInSendsNothing(.afterTheRefresh)
+    }
+
+    func testAnotherSessionLandingJustBeforeTheDeleteTakesItsTokenSendsNothing() async throws {
+        try await assertALandingSignInSendsNothing(.beforeTheDeleteTakesItsToken)
+    }
+
+    func testAResumeDuringSignInAgainStartsNoRun() async throws {
+        let script = DeleteScript([204])
+        let server = try StubServer { request in try script.respond(to: request) }
+        let records = FakeAccountDeletionStore()
+        let refreshes = DeletionCounter()
+        let endpoint = FakeTokenEndpoint(refresh: {
+            refreshes.increment()
+            if refreshes.count == 1 {
+                throw AuthError.server(status: 400)
+            }
+            return try AuthFixtures.tokenResponse(access: "access-after", refresh: nil)
+        })
+        let sheet = GatedWebAuthenticator()
+        let app = try await launch(server: server, credentials: signedIn(account), records: records, endpoint: endpoint, authenticator: sheet)
+        app.deletion.start()
+        await app.deletion.running?.value
+        XCTAssertEqual(app.deletion.state, .signInRequired)
+
+        let signingIn = Task { await app.deletion.signInAgain() }
+        try await waitUntil("the web sheet is open") { sheet.isOpen }
+        XCTAssertTrue(app.auth.isSigningInAgain)
+        // The scene becomes active again while the sheet is open.
+        app.deletion.resume()
+        XCTAssertNil(app.deletion.running, "no run while the sign-in may still replace the session")
+        XCTAssertEqual(refreshes.count, 1)
+
+        try sheet.finish()
+        await signingIn.value
+        await app.deletion.running?.value
+        await settle()
+
+        XCTAssertFalse(app.auth.isSigningInAgain)
+        XCTAssertEqual(server.requests.map { $0.header("Authorization") }, ["Bearer access-after"])
+        XCTAssertEqual(app.auth.phase, .signedOut)
+        XCTAssertNil(records.record)
+    }
+
+    func testDeleteThisAccountRefusesWhenTheSessionChangedSinceThePrompt() async throws {
+        let script = DeleteScript([204])
+        let server = try StubServer { request in try script.respond(to: request) }
+        let records = FakeAccountDeletionStore(AccountDeletionRecord(phase: .requested, account: account, localAccounts: [account]))
+        let third = AccountID(subject: "a-third-account")
+        let endpoint = FakeTokenEndpoint(exchange: { try AuthFixtures.tokenResponse(access: "access-third", subject: "a-third-account", refresh: "refresh-third") })
+        let app = try await launch(server: server, credentials: signedIn(newAccount, refreshToken: "refresh-new"), records: records, endpoint: endpoint)
+        app.deletion.resume()
+        await app.deletion.running?.value
+        XCTAssertEqual(app.deletion.state, .confirmDifferentAccount)
+        XCTAssertEqual(app.deletion.confirmationAccount, newAccount)
+
+        // Another sign-in replaces the session behind the prompt.
+        let renewed = await app.auth.signInAgain()
+        XCTAssertEqual(renewed, .succeeded)
+        XCTAssertEqual(app.auth.phase, .signedIn(third))
+
+        app.deletion.deleteSignedInAccount()
+        await app.deletion.running?.value
+        await settle()
+
+        XCTAssertTrue(server.requests.isEmpty, "nothing is sent for an account nobody confirmed")
+        XCTAssertEqual(app.deletion.state, .confirmDifferentAccount, "the prompt is shown again")
+        XCTAssertEqual(app.deletion.confirmationAccount, third, "now for the account signed in")
+        XCTAssertEqual(records.record?.account, account, "the record is not moved")
     }
 
     func testAnUndecodableRecordHoldsSyncAndAsksBeforeDeletingTheSignedInAccount() async throws {
@@ -916,5 +1053,33 @@ final class DeletionFlag: @unchecked Sendable {
     var value: Bool {
         get { lock.withLock { current } }
         set { lock.withLock { current = newValue } }
+    }
+}
+
+/// A web sheet that stays open until the test finishes it, answering like Cognito with the
+/// request's `state`.
+@MainActor
+final class GatedWebAuthenticator: WebAuthenticator {
+    private var pending: CheckedContinuation<URL, any Error>?
+    private var openedURL: URL?
+
+    nonisolated init() {}
+
+    var isOpen: Bool {
+        pending != nil
+    }
+
+    func authenticate(url: URL, callbackScheme: String) async throws -> URL {
+        openedURL = url
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, any Error>) in
+            pending = continuation
+        }
+    }
+
+    func finish() throws {
+        let continuation = try XCTUnwrap(pending)
+        let url = try XCTUnwrap(openedURL)
+        pending = nil
+        continuation.resume(returning: try FakeWebAuthenticator.returningCode("code-gated")(url))
     }
 }

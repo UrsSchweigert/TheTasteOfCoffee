@@ -1443,7 +1443,16 @@ test('account deletion: buttons only, outside Settings, the record first, no sig
   // The record is saved before the sync is held and before anything is sent.
   inOrder(body('start'), ['try records.save(started)', 'sync?.holdForAccountDeletion()', 'launch()'], 'start');
   // The token is refreshed, then DELETE /account is sent.
-  inOrder(body('attempt'), ['requests.refreshToken()', 'requests.deleteAccount()'], 'attempt');
+  // Right before the request the saved sign-in is checked against the target again, and the
+  // request takes only the target's token (review of PR #79).
+  inOrder(body('attempt'), ['requests.refreshToken(target)', 'await accountChange(from: target)', 'requests.deleteAccount(target)'], 'attempt');
+  assert.match(model, /client\.deleteAccount\(tokens: AccountTokenProvider\(session: session, account: account\)\)/);
+  assert.match(model, /refreshToken: \{ account in try await session\.refresh\(for: account\) \}/);
+  // No run while a sign-in is under way, and a resume during one starts none.
+  assert.match(body('proceed'), /if auth\.isSigningInAgain \{\s*return\s*\}/);
+  assert.match(body('resume'), /if auth\.isSigningInAgain \|\| auth\.phase == \.signingIn \{\s*return\s*\}[^]*launch\(\)/);
+  // "Delete This Account" only for the account the prompt was worked out for.
+  assert.match(body('deleteSignedInAccount'), /guard signedIn == confirmationAccount else/);
   // Two sign-outs only: the cleanup after the 204 (local data, sign-out, then the record), and
   // the explicit "Sign Out" of a different account's session, which deletes nothing (ADR 0031).
   assert.equal((model.match(/\bauth\.signOut\(/g) ?? []).length, 2, 'two sign-outs in the deletion model');
@@ -1453,7 +1462,7 @@ test('account deletion: buttons only, outside Settings, the record first, no sig
   assert.doesNotMatch(otherSignOut, /records\.(save|delete)|localData|requests\./, 'signing out of another account keeps the record and deletes nothing');
   // A different account is never deleted without the tap: proceed stops before any attempt, and
   // only deleteSignedInAccount() moves the record.
-  inOrder(body('proceed'), ['case .serverDeleted:', 'await finish(current)', 'case .requested:', 'guard signedIn == current.account else', 'state = .confirmDifferentAccount', 'switch await attempt()'], 'proceed');
+  inOrder(body('proceed'), ['case .serverDeleted:', 'await finish(current)', 'case .requested:', 'guard signedIn == current.account else', 'state = .confirmDifferentAccount', 'switch await attempt(for: current.account)'], 'proceed');
   assert.doesNotMatch(body('proceed'), /records\.save\(next\)|account: signedIn/, 'proceed never moves the record');
   assert.match(body('deleteSignedInAccount'), /guard state == \.confirmDifferentAccount \|\| state == \.confirmUnreadableRecord/);
   // Every run refreshes first.

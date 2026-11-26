@@ -1,18 +1,25 @@
 import Foundation
 import Observation
 
-/// The two requests account deletion makes (M2-T31). `live` uses the app's `AuthSession` and
-/// `APIClient`; tests can use the same with stubs.
+/// The two requests account deletion makes (M2-T31), each for one account, and the check of
+/// the saved sign-in. `live` uses the app's `AuthSession` and `APIClient`; tests can use the
+/// same with stubs.
 struct AccountDeletionRequests: Sendable {
-    /// Gets a new access token (`TokenProvider.refresh()`).
-    var refreshToken: @Sendable () async throws -> Void
-    /// `DELETE /account` (contracts `deleteAccount`): 204, or an `APIError`.
-    var deleteAccount: @Sendable () async throws -> Void
+    /// Gets a new access token for this account (`AuthSession.refresh(for:)`); throws when
+    /// another account is signed in before or after.
+    var refreshToken: @Sendable (AccountID) async throws -> Void
+    /// `DELETE /account` (contracts `deleteAccount`) with this account's token only
+    /// (`AccountTokenProvider`): 204, or an `APIError` (`unauthorized` when another account
+    /// signed in meanwhile).
+    var deleteAccount: @Sendable (AccountID) async throws -> Void
+    /// The account of the saved sign-in, nil when nobody is signed in.
+    var signedInAccount: @Sendable () async -> AccountID?
 
     static func live(client: APIClient, session: AuthSession) -> AccountDeletionRequests {
         AccountDeletionRequests(
-            refreshToken: { try await session.refresh() },
-            deleteAccount: { try await client.deleteAccount() }
+            refreshToken: { account in try await session.refresh(for: account) },
+            deleteAccount: { account in try await client.deleteAccount(tokens: AccountTokenProvider(session: session, account: account)) },
+            signedInAccount: { await session.signedInAccount() }
         )
     }
 }
@@ -82,6 +89,10 @@ final class AccountDeletionModel {
     private(set) var recordUnreadable = false
     /// Why the last "Sign In Again" failed, nil after a success or a new try.
     private(set) var signInAgainFailure: AuthModel.Failure?
+    /// The signed-in account the confirmation (`confirmDifferentAccount`,
+    /// `confirmUnreadableRecord`) was worked out for. "Delete This Account" deletes only that
+    /// account.
+    private(set) var confirmationAccount: AccountID?
 
     /// True while a deletion runs: the app shows its progress instead of the shelf, and no
     /// sign-out button.
@@ -192,6 +203,11 @@ final class AccountDeletionModel {
             return
         }
         sync?.holdForAccountDeletion()
+        // A sign-in under way (also "Sign In Again" while signed in) may still replace the
+        // session; `signInAgain()` resumes when it succeeded, an account change resumes too.
+        if auth.isSigningInAgain || auth.phase == .signingIn {
+            return
+        }
         if running != nil {
             runAgain = true
             nap?.cancel()
@@ -221,7 +237,13 @@ final class AccountDeletionModel {
     /// replaces that one. Only now may `DELETE /account` be sent for this account.
     func deleteSignedInAccount() {
         guard state == .confirmDifferentAccount || state == .confirmUnreadableRecord,
-              case .signedIn(let signedIn) = auth.phase else {
+              case .signedIn(let signedIn) = auth.phase, !auth.isSigningInAgain else {
+            return
+        }
+        guard signedIn == confirmationAccount else {
+            // The session changed since the prompt was shown: work it out again for the
+            // account signed in now, and wait for a new tap.
+            resume()
             return
         }
         let next: AccountDeletionRecord
@@ -235,6 +257,7 @@ final class AccountDeletionModel {
         try? records.save(next)
         record = next
         recordUnreadable = false
+        confirmationAccount = nil
         state = .deleting
         failedAttempts = 0
         resume()
@@ -248,6 +271,8 @@ final class AccountDeletionModel {
             return
         }
         await auth.signOut()
+        signInAgainFailure = nil
+        confirmationAccount = nil
         state = .signInRequired
     }
 
@@ -267,6 +292,8 @@ final class AccountDeletionModel {
         case deleted
         case retry
         case signInRequired
+        /// Another account's session was saved during the attempt: nothing was sent for it.
+        case accountChanged
         case cancelled
     }
 
@@ -290,9 +317,14 @@ final class AccountDeletionModel {
     private func proceed() async {
         // Every run refreshes the token before its first request (ADR 0031, point 3).
         tokenRefreshed = false
+        // A sign-in under way may still replace the session: no run until it ends.
+        if auth.isSigningInAgain {
+            return
+        }
         if recordUnreadable {
             switch auth.phase {
-            case .signedIn:
+            case .signedIn(let signedIn):
+                confirmationAccount = signedIn
                 state = .confirmUnreadableRecord
             case .signedOut:
                 state = .signInRequired
@@ -304,7 +336,7 @@ final class AccountDeletionModel {
         while !Task.isCancelled, let current = record {
             // Restoring the sign-in at launch, or a sign-in under way: `resume()` is called again
             // when the account changes.
-            if auth.phase == .restoring || auth.phase == .signingIn {
+            if auth.phase == .restoring || auth.phase == .signingIn || auth.isSigningInAgain {
                 return
             }
             switch current.phase {
@@ -320,11 +352,12 @@ final class AccountDeletionModel {
                 }
                 guard signedIn == current.account else {
                     // Another account: never deleted without the user's tap.
+                    confirmationAccount = signedIn
                     state = .confirmDifferentAccount
                     return
                 }
                 state = .deleting
-                switch await attempt() {
+                switch await attempt(for: current.account) {
                 case .deleted:
                     var done = current
                     done.phase = .serverDeleted
@@ -343,6 +376,14 @@ final class AccountDeletionModel {
                 case .signInRequired:
                     state = .signInRequired
                     return
+                case .accountChanged:
+                    // A sign-in landed during the attempt. Nothing was sent for that account.
+                    // The prompt is shown, but its account is not known for sure yet (the
+                    // model may not have seen the new session), so "Delete This Account" only
+                    // works it out again (`confirmationAccount` nil) and needs another tap.
+                    confirmationAccount = nil
+                    state = .confirmDifferentAccount
+                    return
                 case .cancelled:
                     return
                 }
@@ -350,14 +391,20 @@ final class AccountDeletionModel {
         }
     }
 
-    /// One attempt: the token is refreshed first once per run, then `DELETE /account`.
-    private func attempt() async -> AttemptOutcome {
+    /// One attempt for `target` (the record's account): the token is refreshed first once per
+    /// run, then `DELETE /account`. Right before the request the saved sign-in is checked again,
+    /// and the request itself only takes `target`'s token (`AccountTokenProvider`), so a sign-in
+    /// of another account that lands during the attempt never gets its account deleted.
+    private func attempt(for target: AccountID) async -> AttemptOutcome {
         do {
             if !tokenRefreshed {
-                try await requests.refreshToken()
+                try await requests.refreshToken(target)
                 tokenRefreshed = true
             }
-            try await requests.deleteAccount()
+            if let changed = await accountChange(from: target) {
+                return changed
+            }
+            try await requests.deleteAccount(target)
             return .deleted
         } catch {
             if Task.isCancelled || error is CancellationError {
@@ -366,8 +413,20 @@ final class AccountDeletionModel {
             // A failed refresh is `unauthorized` only when the user must sign in again; a
             // network failure, a Cognito 5xx or 429 is retried (`APIClient.tokenFailure`).
             let failure = (error as? APIError) ?? APIClient.tokenFailure(error)
-            return failure == .unauthorized ? .signInRequired : .retry
+            guard failure == .unauthorized else {
+                return .retry
+            }
+            return await accountChange(from: target) ?? .signInRequired
         }
+    }
+
+    /// `accountChanged` when another account's sign-in is saved now, `signInRequired` when none
+    /// is, nil while `target` is still the signed-in account.
+    private func accountChange(from target: AccountID) async -> AttemptOutcome? {
+        guard let current = await requests.signedInAccount() else {
+            return .signInRequired
+        }
+        return current == target ? nil : .accountChanged
     }
 
     /// Waits `seconds`, or until `resume()` or `stop()` ends the wait.

@@ -144,6 +144,40 @@ actor AuthSession: TokenProvider {
         !isSendingHeld() && isSignedIn(as: account)
     }
 
+    /// The account of the saved sign-in, nil when nobody is signed in. Reads the Keychain,
+    /// never the network.
+    func signedInAccount() -> AccountID? {
+        loadedCredential()?.accountID
+    }
+
+    // MARK: - Tokens of one account (M2-T31)
+
+    /// The access token, only while `account` is the signed-in one, checked before and after
+    /// the token is had (also after a refresh in between): a sign-in of another account that
+    /// lands meanwhile makes it throw `AuthError.accountMismatch` instead of returning that
+    /// account's token. Account deletion sends `DELETE /account` only with this.
+    func accessToken(for account: AccountID) async throws -> String {
+        guard isSignedIn(as: account) else {
+            throw AuthError.accountMismatch
+        }
+        let token = try await currentAccessToken()
+        guard isSignedIn(as: account) else {
+            throw AuthError.accountMismatch
+        }
+        return token
+    }
+
+    /// `refresh()`, only for `account`, checked before and after like `accessToken(for:)`.
+    func refresh(for account: AccountID) async throws {
+        guard isSignedIn(as: account) else {
+            throw AuthError.accountMismatch
+        }
+        try await refresh()
+        guard isSignedIn(as: account) else {
+            throw AuthError.accountMismatch
+        }
+    }
+
     // MARK: - Refresh
 
     /// The running refresh, or a new one.
@@ -215,5 +249,20 @@ actor AuthSession: TokenProvider {
         tokens = nil
         credential = nil
         try? store.delete()
+    }
+}
+
+/// A `TokenProvider` pinned to one account (M2-T31): `APIClient` gets that account's token or
+/// an error, never another account's, even when a sign-in lands during the request.
+struct AccountTokenProvider: TokenProvider {
+    let session: AuthSession
+    let account: AccountID
+
+    func currentAccessToken() async throws -> String {
+        try await session.accessToken(for: account)
+    }
+
+    func refresh() async throws {
+        try await session.refresh(for: account)
     }
 }

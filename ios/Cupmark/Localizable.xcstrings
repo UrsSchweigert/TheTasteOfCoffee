@@ -38,19 +38,19 @@
       }
     },
     "account_deletion.cleanup_failed" : {
-      "comment" : "Shown when the account was deleted on the server but local data could not all be removed yet.",
+      "comment" : "Shown when the account was deleted on the server but local data could not all be removed yet. Says \"the account\", not \"your account\": it may be a different account the user chose to delete.",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dein Konto wurde auf dem Server gelöscht, aber einige Daten auf diesem iPhone konnten noch nicht entfernt werden."
+            "value" : "Das Konto wurde auf dem Server gelöscht, aber einige Daten auf diesem iPhone konnten noch nicht entfernt werden."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Your account was deleted on the server, but some data on this iPhone could not be removed yet."
+            "value" : "The account was deleted on the server, but some data on this iPhone could not be removed yet."
           }
         }
       }
