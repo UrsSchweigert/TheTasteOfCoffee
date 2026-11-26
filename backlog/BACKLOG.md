@@ -763,7 +763,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T26 Brew form: method fields and grinder (vocabulary v3)
-- status: todo
+- status: in-progress
 - owner: ios-engineer
 - depends: M2-T4, M2-T5, M2-T19
 - implements: docs/04-specification.md, F2; the D13 decision (M2-T2)
