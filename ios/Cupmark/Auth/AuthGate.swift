@@ -4,16 +4,15 @@ import SwiftUI
 /// sign-in screen otherwise. Reads the `AuthModel` from the environment and passes the
 /// signed-in `AccountID` to `content`, for the local store (M2-T15).
 ///
-/// Until the account screen exists, sign-out is a toolbar button with a confirmation.
+/// Sign-out is in Settings (`SettingsScreen`, M2-T51), not on any screen's toolbar.
 ///
 /// While an account deletion runs (M2-T31, `AccountDeletionModel.isActive`), the signed-in
-/// content and the sign-out button are replaced by the deletion's progress, so nothing can be
+/// content is replaced by the deletion's progress, so nothing can be
 /// changed and nobody signs out before the 204; signed out, the sign-in screen says that
 /// signing in finishes the deletion.
 struct AuthGate<Content: View>: View {
     @Environment(AuthModel.self) private var auth: AuthModel?
     @Environment(AccountDeletionModel.self) private var deletion: AccountDeletionModel?
-    @State private var confirmingSignOut = false
     private let content: (AccountID) -> Content
 
     init(@ViewBuilder content: @escaping (AccountID) -> Content) {
@@ -63,26 +62,9 @@ struct AuthGate<Content: View>: View {
         }
     }
 
+    /// No sign-out control here (M2-T51): it lives in Settings, in the account section, so no
+    /// screen's navigation bar carries one.
     private func signedIn(_ account: AccountID, auth: AuthModel) -> some View {
         content(account)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        confirmingSignOut = true
-                    } label: {
-                        Text(L10n.accountSignOut)
-                    }
-                    .accessibilityIdentifier("sign-out")
-                }
-            }
-            .confirmationDialog(L10n.accountSignOutConfirmTitle, isPresented: $confirmingSignOut, titleVisibility: .visible) {
-                Button(role: .destructive) {
-                    Task {
-                        await auth.signOut()
-                    }
-                } label: {
-                    Text(L10n.accountSignOut)
-                }
-            }
     }
 }

@@ -1118,7 +1118,7 @@ Planning notes (planned 2026-11-25):
   - VoiceOver (the picker has a label and value), Dynamic Type, Theme colours, en and de strings, 44-point target, a UI test that picks a method and sees the sections change. Mac: the `ios` job; `needs-mac-verification` until it passes.
 
 ### M2-T51 Sign out moves into the settings
-- status: todo
+- status: needs-mac-verification
 - owner: ios-engineer
 - depends: M2-T29, M2-T31
 - implements: owner feedback of 2026-11-26 ("move the sign-out button into preferences, it does not belong on the main screen")
