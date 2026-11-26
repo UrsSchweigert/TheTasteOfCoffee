@@ -10,7 +10,8 @@ import XCTest
 /// `FakeSyncServer`, which is held for the whole test.
 @MainActor
 final class PendingBeanSyncTests: XCTestCase {
-    private static let barcode = "4006381333931"
+    /// Not `StoreFixtures`' bean barcode, so a scan here never matches the synced fixture bean.
+    private static let barcode = "5901234123457"
 
     private struct Harness {
         let store: AccountStore
