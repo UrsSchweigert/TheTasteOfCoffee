@@ -7,6 +7,7 @@ import XCTest
 /// output, a method below the threshold has an empty taste profile, the picker offers only
 /// methods with rated brews, and the choice is kept as one method id or "all" and falls back
 /// to "all". Vocabulary values come from the generated enums, never a typed list.
+@MainActor
 final class StatisticsMethodPickerTests: XCTestCase {
     private let suiteName = "cupmark-tests-statistics-method"
 
