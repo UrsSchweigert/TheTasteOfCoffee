@@ -14,6 +14,9 @@ import SwiftUI
 ///   sign-in (`switchTo(_:)`), after the app came to the foreground (`sceneBecameActive()`),
 ///   and after a drain that finished an operation. A failed pull is tried again at the next
 ///   of these.
+/// - The label photo folders follow the account too (M2-T24, `LabelPhotoFolders`): leaving an
+///   account deletes its folder; a sign-in (also at app start) deletes every other account's
+///   folder and the account's own stale files.
 @MainActor
 @Observable
 final class SyncHost {
@@ -42,6 +45,7 @@ final class SyncHost {
     /// the drain's own answers are already stored. Sign-in and foreground always pull.
     @ObservationIgnored let drainPullInterval: TimeInterval
     @ObservationIgnored private let now: @Sendable () -> Date
+    @ObservationIgnored private let labelPhotos: LabelPhotoFolders
 
     /// Nonisolated, so `CupmarkApp.init` can build it whatever its isolation.
     nonisolated init(
@@ -49,13 +53,15 @@ final class SyncHost {
         makeEngine: @escaping @MainActor @Sendable (AccountID, AccountStore) -> SyncEngine,
         makePuller: @escaping @MainActor @Sendable (AccountID, AccountStore) -> Puller? = { _, _ in nil },
         drainPullInterval: TimeInterval = 30,
-        now: @escaping @Sendable () -> Date = { Date() }
+        now: @escaping @Sendable () -> Date = { Date() },
+        labelPhotos: LabelPhotoFolders = .standard
     ) {
         self.makeStore = makeStore
         self.makeEngine = makeEngine
         self.makePuller = makePuller
         self.drainPullInterval = drainPullInterval
         self.now = now
+        self.labelPhotos = labelPhotos
     }
 
     /// The host of the app: the account's file store, the app's client, the session's check.
@@ -81,6 +87,11 @@ final class SyncHost {
         guard next != account else {
             return
         }
+        if let previous = account {
+            // Nothing is queued for label photos yet (M2-T25), so an account's photos end
+            // with its session.
+            labelPhotos.removeFolder(of: previous)
+        }
         engine?.stop()
         engine?.onIdle = nil
         store?.onSave = nil
@@ -97,6 +108,7 @@ final class SyncHost {
         guard let next else {
             return
         }
+        labelPhotos.signedIn(as: next)
         let opened: AccountStore
         do {
             opened = try makeStore(next)

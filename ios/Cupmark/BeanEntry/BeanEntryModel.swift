@@ -55,25 +55,32 @@ final class BeanEntryModel {
     private(set) var labelPhotoUploads: LabelPhotoUploadModel?
 
     private let client: APIClient
-    private let photoUploader: any LabelPhotoUploading
-    private let photoFiles: LabelPhotoFileStore
+    /// Whose label photos these are; nil while nobody is signed in, and then none is uploaded.
+    private let photoAccount: LabelPhotoAccount?
+    private let photoUploader: (any LabelPhotoUploading)?
 
     init(
         barcode: CanonicalBarcode?,
         client: APIClient,
         picks: API.BeanAttributes = API.BeanAttributes(),
-        photoUploader: (any LabelPhotoUploading)? = nil,
-        photoFiles: LabelPhotoFileStore = .standard()
+        labelPhotos: LabelPhotoAccount? = nil,
+        photoUploader: (any LabelPhotoUploading)? = nil
     ) {
         self.barcode = barcode
         self.client = client
         self.picks = picks
+        self.photoAccount = labelPhotos
         if let photoUploader {
             self.photoUploader = photoUploader
+        } else if let labelPhotos {
+            self.photoUploader = LabelPhotoUploader(
+                api: client,
+                files: labelPhotos.files,
+                isCurrentAccount: labelPhotos.isSignedIn
+            )
         } else {
-            self.photoUploader = LabelPhotoUploader(api: client, files: photoFiles)
+            self.photoUploader = nil
         }
-        self.photoFiles = photoFiles
     }
 
     /// The `POST /beans` body for the current picks: the bundled vocabulary version, the
@@ -109,7 +116,8 @@ final class BeanEntryModel {
         let body = self.request
         state = .saving
         do {
-            didSave(try await client.createBean(body))
+            let saved = try await client.createBean(body)
+            await didSave(saved)
         } catch APIError.badRequest {
             rejectedRequest = body
             state = .failed(.rejected)
@@ -137,7 +145,8 @@ final class BeanEntryModel {
             return
         }
         do {
-            didSave(try await client.lookupBarcode(path))
+            let existing = try await client.lookupBarcode(path)
+            await didSave(existing)
         } catch {
             // A 404 after a 409 contradicts it; "Try again" starts over with `POST /beans`.
             state = BeanEntryModel.failureState(after: error)
@@ -146,18 +155,28 @@ final class BeanEntryModel {
 
     /// Shows the saved bean. For an unverified bean the label photos start (M2-T24), and the
     /// photo of the form, if any, uploads at once. A verified bean takes no label photos
-    /// (ADR 0016), so the form's photo is dropped.
-    private func didSave(_ bean: API.Bean) {
-        if !bean.verified, let beanID = ResourceID(bean.beanId) {
-            photoFiles.removeStale()
-            let uploads = LabelPhotoUploadModel(beanID: beanID, uploader: photoUploader, files: photoFiles)
-            if case .attached(let prepared) = labelPhoto.state {
-                uploads.add(prepared)
-            }
-            labelPhotoUploads = uploads
+    /// (ADR 0016), so the form's photo is dropped, as it is while nobody is signed in.
+    private func didSave(_ bean: API.Bean) async {
+        var formPhoto: PreparedLabelPhoto?
+        if case .attached(let prepared) = labelPhoto.state {
+            formPhoto = prepared
         }
         labelPhoto.remove()
+        var uploads: LabelPhotoUploadModel?
+        if !bean.verified, let beanID = ResourceID(bean.beanId), let photoAccount, let photoUploader {
+            uploads = LabelPhotoUploadModel(beanID: beanID, account: photoAccount, uploader: photoUploader)
+        }
+        labelPhotoUploads = uploads
         state = .saved(bean)
+        if let uploads, let formPhoto {
+            await uploads.add(formPhoto)
+        }
+    }
+
+    /// The saved-bean screen is gone: the photos that are not uploading lose their files, and
+    /// the others once their upload ends (`LabelPhotoUploadModel.releaseFiles()`).
+    func releaseLabelPhotos() {
+        labelPhotoUploads?.releaseFiles()
     }
 
     /// The state after a failed call that is not a 400 or 409 from `POST /beans`. A cancelled

@@ -2,16 +2,51 @@ import CoreGraphics
 import Foundation
 import Observation
 
+/// The files of the jobs that are kept for "Try again" but not running, so they can be
+/// deleted from the model's `deinit` (which cannot reach its main-actor state).
+final class LabelPhotoIdleFiles: @unchecked Sendable {
+    private let lock = NSLock()
+    private var urls: Set<URL> = []
+    private let store: LabelPhotoFileStore
+
+    init(store: LabelPhotoFileStore) {
+        self.store = store
+    }
+
+    func insert(_ url: URL) {
+        lock.withLock { _ = urls.insert(url) }
+    }
+
+    func remove(_ url: URL) {
+        lock.withLock { _ = urls.remove(url) }
+    }
+
+    /// Deletes every file still listed.
+    func deleteAll() {
+        let all = lock.withLock {
+            let current = urls
+            urls = []
+            return current
+        }
+        for url in all {
+            store.delete(url)
+        }
+    }
+}
+
 /// The label photos of one saved, unverified bean (M2-T24, F1 step 4, ADR 0016): up to
-/// `maxPhotos`, each written to a file of `LabelPhotoFileStore` and uploaded at once by
-/// `LabelPhotoUploader`. The network is needed; nothing is queued yet (M2-T25).
+/// `maxPhotos`, each written (off the main actor) to a file of the account's
+/// `LabelPhotoFileStore` and uploaded at once by `LabelPhotoUploader`. The network is needed;
+/// nothing is queued yet (M2-T25).
 ///
 /// - Uploads run in unstructured tasks, so leaving the screen does not cancel one the server
 ///   may already be acting on.
 /// - What each outcome does to a photo: see `Status`. A rejected photo offers a retake, a
 ///   failed one "Try again" (which resumes its job), and 409 or 429 stop new photos.
-/// - A photo's file is deleted when the upload completes (by the uploader), and when the photo
-///   is rejected, refused or removed (here).
+/// - A photo's file is deleted when the upload completes (by the uploader); when the photo is
+///   rejected, refused or removed; when the screen goes away (`releaseFiles()`), for files
+///   that are not uploading then, and for the others once their upload ends; and when the
+///   model is freed (`deinit`, and a task that finds the model gone deletes its own file).
 @MainActor
 @Observable
 final class LabelPhotoUploadModel {
@@ -19,9 +54,9 @@ final class LabelPhotoUploadModel {
     static let maxPhotos = 3
 
     enum Status: Equatable, Sendable {
-        /// A capture is being encoded.
+        /// A capture is being encoded, or its file written.
         case preparing
-        /// The capture could not be encoded. Retake.
+        /// The capture could not be encoded or written. Retake.
         case encodingFailed
         /// The upload is running.
         case uploading
@@ -33,7 +68,7 @@ final class LabelPhotoUploadModel {
         case notAccepted
         /// 429: try again tomorrow. Not uploaded.
         case dailyLimitReached
-        /// 401: sign in again, then try again.
+        /// 401, or another account is signed in now: sign in again, then try again.
         case signInRequired
         /// Any other failure: try again.
         case failed
@@ -51,6 +86,7 @@ final class LabelPhotoUploadModel {
     }
 
     let beanID: ResourceID
+    let account: AccountID
     private(set) var photos: [Photo] = []
     /// Set by a 409: no new photo is offered.
     private(set) var noMorePhotos = false
@@ -59,23 +95,34 @@ final class LabelPhotoUploadModel {
 
     @ObservationIgnored private var jobs: [UUID: LabelPhotoUploadJob] = [:]
     @ObservationIgnored private var tasks: [UUID: Task<Void, Never>] = [:]
-    /// Raised per photo by every capture, so a slow encoding of a replaced capture is dropped.
+    /// Raised per photo by every capture and removal, so a slow encoding or write of a
+    /// replaced or removed capture is dropped.
     @ObservationIgnored private var generations: [UUID: Int] = [:]
+    /// Set by `releaseFiles()`: the screen is gone, so no file is kept any more.
+    @ObservationIgnored private var released = false
 
     private let uploader: any LabelPhotoUploading
     private let files: LabelPhotoFileStore
     private let prepare: LabelPhotoDraft.Prepare
+    /// The files of kept jobs that are not running; `deinit` deletes them.
+    private let idleFiles: LabelPhotoIdleFiles
 
     init(
         beanID: ResourceID,
+        account: LabelPhotoAccount,
         uploader: any LabelPhotoUploading,
-        files: LabelPhotoFileStore = .standard(),
         prepare: @escaping LabelPhotoDraft.Prepare = { try await PreparedLabelPhoto.prepare($0) }
     ) {
         self.beanID = beanID
+        self.account = account.account
         self.uploader = uploader
-        self.files = files
+        self.files = account.files
         self.prepare = prepare
+        self.idleFiles = LabelPhotoIdleFiles(store: account.files)
+    }
+
+    deinit {
+        idleFiles.deleteAll()
     }
 
     /// Whether another photo can be taken: fewer than `maxPhotos`, and no 409 or 429 yet.
@@ -95,13 +142,13 @@ final class LabelPhotoUploadModel {
     // MARK: - Actions
 
     /// Adds an already encoded photo (the one taken in the entry form) and uploads it.
-    func add(_ prepared: PreparedLabelPhoto) {
+    func add(_ prepared: PreparedLabelPhoto) async {
         guard canAddPhoto else {
             return
         }
         let id = UUID()
         photos.append(Photo(id: id, status: .preparing, preview: prepared.preview))
-        store(prepared, for: id)
+        await store(prepared, for: id, generation: nextGeneration(id))
     }
 
     /// Encodes `capture`, adds it and uploads it.
@@ -145,6 +192,17 @@ final class LabelPhotoUploadModel {
         photos.removeAll { $0.id == id }
     }
 
+    /// The screen is gone: deletes the files of every photo that is not uploading now, and of
+    /// the others once their upload ends. Nothing can retry them any more.
+    func releaseFiles() {
+        released = true
+        for (id, job) in jobs where tasks[id] == nil {
+            idleFiles.remove(job.file)
+            files.delete(job.file)
+            jobs[id] = nil
+        }
+    }
+
     /// Waits for every upload under way. For tests.
     func waitForUploads() async {
         while let task = tasks.values.first {
@@ -169,50 +227,81 @@ final class LabelPhotoUploadModel {
 
     // MARK: - Steps
 
-    private func encode(_ capture: LabelPhotoCapture, for id: UUID) async {
+    private func nextGeneration(_ id: UUID) -> Int {
         generations[id, default: 0] += 1
-        let generation = generations[id, default: 0]
+        return generations[id, default: 0]
+    }
+
+    private func isCurrent(_ id: UUID, _ generation: Int) -> Bool {
+        generations[id, default: 0] == generation && photo(id) != nil
+    }
+
+    private func encode(_ capture: LabelPhotoCapture, for id: UUID) async {
+        let generation = nextGeneration(id)
         do {
             let prepared = try await prepare(capture)
-            guard generations[id, default: 0] == generation, photo(id) != nil else {
+            guard isCurrent(id, generation) else {
                 return
             }
             update(id) { $0.preview = prepared.preview }
-            store(prepared, for: id)
+            await store(prepared, for: id, generation: generation)
         } catch {
-            guard generations[id, default: 0] == generation else {
+            guard isCurrent(id, generation) else {
                 return
             }
             update(id) { $0.status = .encodingFailed }
         }
     }
 
-    /// Writes the JPEG to a file and starts its upload. A file that cannot be written counts
-    /// as a failed encoding: retake.
-    private func store(_ prepared: PreparedLabelPhoto, for id: UUID) {
+    /// Writes the JPEG to a file on a background task (up to 8 MiB) and starts its upload. A
+    /// file that cannot be written counts as a failed encoding: retake.
+    private func store(_ prepared: PreparedLabelPhoto, for id: UUID, generation: Int) async {
+        let files = self.files
+        let data = prepared.photo.data
+        let file: URL
         do {
-            let file = try files.write(prepared.photo.data)
-            start(id, job: LabelPhotoUploadJob(beanID: beanID, file: file))
+            file = try await Task.detached(priority: .userInitiated) {
+                try files.write(data)
+            }.value
         } catch {
-            update(id) { $0.status = .encodingFailed }
+            if isCurrent(id, generation) {
+                update(id) { $0.status = .encodingFailed }
+            }
+            return
         }
+        guard isCurrent(id, generation), !released else {
+            files.delete(file)
+            return
+        }
+        start(id, job: LabelPhotoUploadJob(account: account, beanID: beanID, file: file))
     }
 
     private func start(_ id: UUID, job: LabelPhotoUploadJob) {
         jobs[id] = job
+        idleFiles.remove(job.file)
         update(id) { $0.status = .uploading }
         let uploader = self.uploader
+        let files = self.files
         tasks[id] = Task { [weak self] in
             let result = await uploader.run(job)
-            self?.finish(id, with: result)
+            guard let self else {
+                // The model is gone: nothing can retry this photo. (After `.completed` the
+                // uploader has deleted the file already.)
+                files.delete(result.job.file)
+                return
+            }
+            self.finish(id, with: result)
         }
     }
 
     private func finish(_ id: UUID, with result: LabelPhotoUploadResult) {
         tasks[id] = nil
-        guard photo(id) != nil, jobs[id]?.file == result.job.file else {
-            // Removed or retaken meanwhile.
+        guard !released, photo(id) != nil, jobs[id]?.file == result.job.file else {
+            // The screen is gone, or the photo was removed or retaken meanwhile.
             files.delete(result.job.file)
+            if jobs[id]?.file == result.job.file {
+                jobs[id] = nil
+            }
             return
         }
         switch result.outcome {
@@ -232,16 +321,23 @@ final class LabelPhotoUploadModel {
             dailyLimitReached = true
             update(id) { $0.status = .dailyLimitReached }
         case .signInRequired:
-            jobs[id] = result.job
+            keep(result.job, for: id)
             update(id) { $0.status = .signInRequired }
         case .failed:
-            jobs[id] = result.job
+            keep(result.job, for: id)
             update(id) { $0.status = .failed }
         }
     }
 
+    /// Keeps a job for "Try again"; its file is idle until then.
+    private func keep(_ job: LabelPhotoUploadJob, for id: UUID) {
+        jobs[id] = job
+        idleFiles.insert(job.file)
+    }
+
     private func discardJob(_ id: UUID) {
         if let job = jobs.removeValue(forKey: id) {
+            idleFiles.remove(job.file)
             files.delete(job.file)
         }
     }

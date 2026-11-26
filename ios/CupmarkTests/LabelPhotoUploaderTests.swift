@@ -15,19 +15,25 @@ final class LabelPhotoUploaderTests: XCTestCase {
     private func makeUploader(
         api: FakeLabelPhotoAPI,
         transport: StubPresignedPostTransport,
-        now: Date = LabelPhotoFixtures.now
+        now: Date = LabelPhotoFixtures.now,
+        session: FakeLabelPhotoSession = FakeLabelPhotoSession()
     ) -> LabelPhotoUploader {
         LabelPhotoUploader(
             api: api,
             transport: transport,
             files: store,
+            isCurrentAccount: { account in session.isSignedIn(as: account) },
             now: { now },
             makeBoundary: { "CupmarkFormBoundaryTEST" }
         )
     }
 
     private func makeJob() throws -> LabelPhotoUploadJob {
-        LabelPhotoUploadJob(beanID: try LabelPhotoFixtures.bean(), file: try store.write(LabelPhotoFixtures.jpeg))
+        LabelPhotoUploadJob(
+            account: LabelPhotoFixtures.account,
+            beanID: try LabelPhotoFixtures.bean(),
+            file: try store.write(LabelPhotoFixtures.jpeg)
+        )
     }
 
     private func photo(_ n: Int) throws -> ResourceID {
@@ -109,7 +115,13 @@ final class LabelPhotoUploaderTests: XCTestCase {
             imageCache: nil
         )
         let transport = StubPresignedPostTransport()
-        let uploader = LabelPhotoUploader(api: client, transport: transport, files: store, now: { LabelPhotoFixtures.now })
+        let uploader = LabelPhotoUploader(
+            api: client,
+            transport: transport,
+            files: store,
+            isCurrentAccount: { $0 == LabelPhotoFixtures.account },
+            now: { LabelPhotoFixtures.now }
+        )
 
         let result = await uploader.run(try makeJob())
 
@@ -224,7 +236,7 @@ final class LabelPhotoUploaderTests: XCTestCase {
         XCTAssertFalse(LabelPhotoFixtures.fileExists(job.file))
     }
 
-    func testNewUploadsAreBoundedPerRun() async throws {
+    func testA404OnCompletionStartsAtMostOneNewUploadPerRun() async throws {
         let api = FakeLabelPhotoAPI(
             create: try (1...5).map { n in Result<API.LabelPhotoUpload, APIError>.success(try LabelPhotoFixtures.upload(n)) },
             complete: Array(repeating: .failure(.notFound), count: 5)
@@ -234,9 +246,130 @@ final class LabelPhotoUploaderTests: XCTestCase {
         let result = await makeUploader(api: api, transport: StubPresignedPostTransport()).run(job)
 
         XCTAssertEqual(result.outcome, .failed)
+        XCTAssertEqual(result.job.stage, .notStarted)
         let createCalls = await api.createCalls
-        XCTAssertEqual(createCalls.count, LabelPhotoUploader.maxUploadsPerRun)
+        XCTAssertEqual(createCalls.count, 2)
         XCTAssertTrue(LabelPhotoFixtures.fileExists(job.file))
+    }
+
+    func testTheDeviceClockStartsAtMostOneNewUploadThenS3Decides() async throws {
+        // A device clock far ahead: every presigned POST looks expired.
+        let api = FakeLabelPhotoAPI(
+            create: try (1...5).map { n in Result<API.LabelPhotoUpload, APIError>.success(try LabelPhotoFixtures.upload(n, expiresIn: -60)) },
+            complete: [.success(())]
+        )
+        let transport = StubPresignedPostTransport()
+
+        let result = await makeUploader(api: api, transport: transport).run(try makeJob())
+
+        XCTAssertEqual(result.outcome, .completed)
+        let createCalls = await api.createCalls
+        XCTAssertEqual(createCalls.count, 2)
+        let sentAll = await transport.sent
+        XCTAssertEqual(sentAll.count, 1)
+        let completeCalls = await api.completeCalls
+        XCTAssertEqual(completeCalls, [try photo(2)])
+    }
+
+    func testASecondS3403EndsTheRun() async throws {
+        let api = FakeLabelPhotoAPI(
+            create: try (1...5).map { n in Result<API.LabelPhotoUpload, APIError>.success(try LabelPhotoFixtures.upload(n)) }
+        )
+        let transport = StubPresignedPostTransport(Array(repeating: .success(403), count: 5))
+
+        let result = await makeUploader(api: api, transport: transport).run(try makeJob())
+
+        XCTAssertEqual(result.outcome, .failed)
+        let createCalls = await api.createCalls
+        XCTAssertEqual(createCalls.count, 2)
+        let sentAll = await transport.sent
+        XCTAssertEqual(sentAll.count, 2)
+    }
+
+    func testAClockExpiryAndThenAnS3403EndTheRun() async throws {
+        let api = FakeLabelPhotoAPI(
+            create: [.success(try LabelPhotoFixtures.upload(1, expiresIn: -1)), .success(try LabelPhotoFixtures.upload(2)), .success(try LabelPhotoFixtures.upload(3))]
+        )
+        let transport = StubPresignedPostTransport([.success(403)])
+
+        let result = await makeUploader(api: api, transport: transport).run(try makeJob())
+
+        XCTAssertEqual(result.outcome, .failed)
+        let createCalls = await api.createCalls
+        XCTAssertEqual(createCalls.count, 2)
+    }
+
+    // MARK: - Account
+
+    func testNothingIsSentWhenAnotherAccountIsSignedIn() async throws {
+        let api = FakeLabelPhotoAPI(create: [.success(try LabelPhotoFixtures.upload(1))], complete: [.success(())])
+        let transport = StubPresignedPostTransport()
+        let session = FakeLabelPhotoSession(signedIn: LabelPhotoFixtures.otherAccount)
+        let job = try makeJob()
+
+        let result = await makeUploader(api: api, transport: transport, session: session).run(job)
+
+        XCTAssertEqual(result.outcome, .signInRequired)
+        XCTAssertEqual(result.job, job)
+        let createCalls = await api.createCalls
+        XCTAssertTrue(createCalls.isEmpty)
+        let sentAll = await transport.sent
+        XCTAssertTrue(sentAll.isEmpty)
+        XCTAssertEqual(session.checks, [LabelPhotoFixtures.account])
+    }
+
+    func testTheAccountIsCheckedBeforeEveryStep() async throws {
+        let api = FakeLabelPhotoAPI(create: [.success(try LabelPhotoFixtures.upload(1))], complete: [.success(())])
+        let transport = StubPresignedPostTransport()
+        let session = FakeLabelPhotoSession()
+
+        let result = await makeUploader(api: api, transport: transport, session: session).run(try makeJob())
+
+        XCTAssertEqual(result.outcome, .completed)
+        // Before the start, the S3 POST and the completion.
+        XCTAssertEqual(session.checks.count, 3)
+    }
+
+    func testASignOutDuringTheRunStopsBeforeTheNextStep() async throws {
+        let api = FakeLabelPhotoAPI(create: [.success(try LabelPhotoFixtures.upload(1))], complete: [.success(())])
+        let transport = StubPresignedPostTransport()
+        let session = FakeLabelPhotoSession(signedInChecks: 1)
+
+        let result = await makeUploader(api: api, transport: transport, session: session).run(try makeJob())
+
+        XCTAssertEqual(result.outcome, .signInRequired)
+        XCTAssertEqual(result.job.stage, .issued(try LabelPhotoFixtures.upload(1)))
+        let sentAll = await transport.sent
+        XCTAssertTrue(sentAll.isEmpty)
+        let completeCalls = await api.completeCalls
+        XCTAssertTrue(completeCalls.isEmpty)
+    }
+
+    // MARK: - Redirects
+
+    func testTheS3SessionRefusesRedirects() async throws {
+        let session = URLSessionPresignedPostTransport.makeSession()
+        defer { session.invalidateAndCancel() }
+        let delegate = try XCTUnwrap(session.delegate as? RefuseRedirectsDelegate)
+        let url = try XCTUnwrap(URL(string: LabelPhotoFixtures.url))
+        let elsewhere = try XCTUnwrap(URL(string: "https://elsewhere.example.com/"))
+        let response = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 307, httpVersion: "HTTP/1.1", headerFields: ["Location": elsewhere.absoluteString]))
+        let task = session.dataTask(with: url)
+
+        let next = await delegate.urlSession(session, task: task, willPerformHTTPRedirection: response, newRequest: URLRequest(url: elsewhere))
+
+        XCTAssertNil(next)
+    }
+
+    func testARedirectFromS3IsAFailure() async throws {
+        let api = FakeLabelPhotoAPI(create: [.success(try LabelPhotoFixtures.upload(1))])
+        let transport = StubPresignedPostTransport([.success(307)])
+
+        let result = await makeUploader(api: api, transport: transport).run(try makeJob())
+
+        XCTAssertEqual(result.outcome, .failed)
+        let completeCalls = await api.completeCalls
+        XCTAssertTrue(completeCalls.isEmpty)
     }
 
     // MARK: - Completion statuses

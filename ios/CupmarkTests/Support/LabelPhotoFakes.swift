@@ -7,6 +7,9 @@ import XCTest
 /// here is a made-up placeholder, not a credential.
 enum LabelPhotoFixtures {
     static let beanID = "01JDQ6Y8Z5W4V3T2S1R0P9N8M0"
+    /// The signed-in account of the tests, and another one.
+    static let account = AccountID(subject: "label-photo-tests-account")
+    static let otherAccount = AccountID(subject: "label-photo-tests-other-account")
     static let bucket = "cupmark-dev-photos-123456789012"
     static let url = "https://cupmark-dev-photos-123456789012.s3.eu-central-1.amazonaws.com/"
     static let policy = "eyJleHBpcmF0aW9uIjoiMjAyNi0xMS0yNVQxMDoxMDowMC4wMDBaIn0="
@@ -64,16 +67,58 @@ enum LabelPhotoFixtures {
 
     /// A store in a new temporary directory.
     static func fileStore() -> LabelPhotoFileStore {
-        LabelPhotoFileStore(
-            directory: FileManager.default.temporaryDirectory.appending(
-                path: "LabelPhotoTests-\(UUID().uuidString)",
-                directoryHint: .isDirectory
-            )
+        LabelPhotoFileStore(directory: temporaryDirectory())
+    }
+
+    /// A new temporary directory (not created yet).
+    static func temporaryDirectory() -> URL {
+        FileManager.default.temporaryDirectory.appending(
+            path: "LabelPhotoTests-\(UUID().uuidString)",
+            directoryHint: .isDirectory
         )
+    }
+
+    /// `account`, with its photos in `files`, checked against `session`.
+    static func photoAccount(
+        files: LabelPhotoFileStore,
+        session: FakeLabelPhotoSession = FakeLabelPhotoSession()
+    ) -> LabelPhotoAccount {
+        LabelPhotoAccount(account: account, files: files) { candidate in
+            session.isSignedIn(as: candidate)
+        }
     }
 
     static func fileExists(_ url: URL) -> Bool {
         FileManager.default.fileExists(atPath: url.path(percentEncoded: false))
+    }
+}
+
+/// Who is signed in, for the account check before each upload step (ADR 0025). Records the
+/// accounts asked about. With `signedInChecks`, only that many checks answer for the
+/// signed-in account; later ones find nobody (a sign-out during the run).
+final class FakeLabelPhotoSession: @unchecked Sendable {
+    private let lock = NSLock()
+    private let signedIn: AccountID
+    private let signedInChecks: Int?
+    private var asked: [AccountID] = []
+
+    init(signedIn: AccountID = LabelPhotoFixtures.account, signedInChecks: Int? = nil) {
+        self.signedIn = signedIn
+        self.signedInChecks = signedInChecks
+    }
+
+    var checks: [AccountID] {
+        lock.withLock { asked }
+    }
+
+    func isSignedIn(as account: AccountID) -> Bool {
+        lock.withLock {
+            asked.append(account)
+            if let signedInChecks, asked.count > signedInChecks {
+                return false
+            }
+            return account == signedIn
+        }
     }
 }
 

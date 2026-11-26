@@ -18,8 +18,23 @@ protocol PresignedPostTransport: Sendable {
     func send(_ request: URLRequest, body: Data) async throws -> Int
 }
 
+/// Refuses every HTTP redirect, so the photo is never sent on to a URL that was not checked
+/// against the contract. A 3xx is then the final response, which the uploader treats as a
+/// failure.
+final class RefuseRedirectsDelegate: NSObject, URLSessionTaskDelegate, Sendable {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest
+    ) async -> URLRequest? {
+        nil
+    }
+}
+
 /// The live transport: its own ephemeral session, so nothing of the API's session (and no
-/// bearer token, which `APIClient` sets per request anyway) can reach S3. No cache, no cookies.
+/// bearer token, which `APIClient` sets per request anyway) can reach S3. No cache, no
+/// cookies, no redirects.
 struct URLSessionPresignedPostTransport: PresignedPostTransport {
     /// One session for every upload of the app.
     static let shared = URLSessionPresignedPostTransport(session: URLSessionPresignedPostTransport.makeSession())
@@ -33,7 +48,7 @@ struct URLSessionPresignedPostTransport: PresignedPostTransport {
         configuration.httpCookieStorage = nil
         configuration.httpShouldSetCookies = false
         configuration.timeoutIntervalForRequest = 60
-        return URLSession(configuration: configuration)
+        return URLSession(configuration: configuration, delegate: RefuseRedirectsDelegate(), delegateQueue: nil)
     }
 
     func send(_ request: URLRequest, body: Data) async throws -> Int {
@@ -70,12 +85,16 @@ struct LabelPhotoUploadJob: Sendable, Equatable {
         case uploaded(photoID: ResourceID, completionUnconfirmed: Bool)
     }
 
+    /// The account the photo was taken under. Every step first checks that it is still the
+    /// one signed in (ADR 0025), so a photo is never sent with another account's token.
+    let account: AccountID
     let beanID: ResourceID
-    /// A file of `LabelPhotoFileStore`.
+    /// A file of the account's `LabelPhotoFileStore`.
     let file: URL
     var stage: Stage
 
-    init(beanID: ResourceID, file: URL, stage: Stage = .notStarted) {
+    init(account: AccountID, beanID: ResourceID, file: URL, stage: Stage = .notStarted) {
+        self.account = account
         self.beanID = beanID
         self.file = file
         self.stage = stage
@@ -94,7 +113,8 @@ enum LabelPhotoUploadOutcome: Equatable, Sendable {
     case noMorePhotos
     /// 429: the daily cap of new uploads is used up, or the API throttles. Try again tomorrow.
     case dailyLimitReached
-    /// 401 after the client's refresh: sign in again.
+    /// 401 after the client's refresh, or the job's account is no longer the one signed in:
+    /// sign in again.
     case signInRequired
     /// Anything else (no network, 5xx, an upload URL outside the contract, ...). The job is
     /// kept and can be run again.
@@ -122,10 +142,18 @@ protocol LabelPhotoUploading: Sendable {
 ///    last. It goes through `transport`, never through `APIClient`, so it carries no token.
 /// 3. `POST /label_photos/{photo_id}/complete`. After its 204 the file is deleted.
 ///
-/// A presigned POST whose `expires_at` has passed (or will within `expiryMargin`), an S3 403
-/// (the policy expired), and a 404 on completion start a new upload, at most
-/// `maxUploadsPerRun` per run, so a faulty server cannot keep it going. Every other status
-/// ends the run with an outcome; see `LabelPhotoUploadOutcome`.
+/// Before each step the job's account must still be the one signed in (`isCurrentAccount`,
+/// ADR 0025); otherwise the run stops with `signInRequired`.
+///
+/// New uploads, each of which counts against the daily cap of 20:
+/// - An expiry, at most once per run: either `expires_at` has passed (or will within
+///   `expiryMargin`) by the device clock, or S3 answers 403 (the policy expired). After that
+///   one restart the device clock is not trusted again (it may be wrong): the POST is sent and
+///   S3 decides, and a second 403 ends the run with `failed`.
+/// - A 404 on completion, at most once per run.
+/// So a run asks for at most 3 presigned POSTs (`maxUploadsPerRun`), and a skewed clock or a
+/// policy S3 always refuses costs at most 2. Every other status ends the run with an outcome;
+/// see `LabelPhotoUploadOutcome`.
 struct LabelPhotoUploader: LabelPhotoUploading {
     /// New presigned POSTs one run may ask for; each counts against the daily cap.
     static let maxUploadsPerRun = 3
@@ -137,19 +165,22 @@ struct LabelPhotoUploader: LabelPhotoUploading {
     let api: any LabelPhotoAPI
     let transport: any PresignedPostTransport
     let files: LabelPhotoFileStore
+    let isCurrentAccount: @Sendable (AccountID) async -> Bool
     let now: @Sendable () -> Date
     let makeBoundary: @Sendable () -> String
 
     init(
         api: any LabelPhotoAPI,
         transport: any PresignedPostTransport = URLSessionPresignedPostTransport.shared,
-        files: LabelPhotoFileStore = .standard(),
+        files: LabelPhotoFileStore,
+        isCurrentAccount: @escaping @Sendable (AccountID) async -> Bool,
         now: @escaping @Sendable () -> Date = { Date() },
         makeBoundary: @escaping @Sendable () -> String = { MultipartFormBody.makeBoundary() }
     ) {
         self.api = api
         self.transport = transport
         self.files = files
+        self.isCurrentAccount = isCurrentAccount
         self.now = now
         self.makeBoundary = makeBoundary
     }
@@ -157,7 +188,12 @@ struct LabelPhotoUploader: LabelPhotoUploading {
     func run(_ initial: LabelPhotoUploadJob) async -> LabelPhotoUploadResult {
         var job = initial
         var newUploads = 0
+        var expiryRestarted = false
+        var notFoundRestarted = false
         while true {
+            guard await isCurrentAccount(job.account) else {
+                return LabelPhotoUploadResult(outcome: .signInRequired, job: job)
+            }
             switch job.stage {
             case .notStarted:
                 guard newUploads < LabelPhotoUploader.maxUploadsPerRun else {
@@ -171,7 +207,9 @@ struct LabelPhotoUploader: LabelPhotoUploading {
                 }
 
             case .issued(let upload):
-                guard now() < upload.expiresAt.date.addingTimeInterval(-LabelPhotoUploader.expiryMargin) else {
+                let expiredByClock = now() >= upload.expiresAt.date.addingTimeInterval(-LabelPhotoUploader.expiryMargin)
+                if expiredByClock, !expiryRestarted {
+                    expiryRestarted = true
                     job.stage = .notStarted
                     continue
                 }
@@ -188,6 +226,10 @@ struct LabelPhotoUploader: LabelPhotoUploading {
                     job.stage = .uploaded(photoID: post.photoID, completionUnconfirmed: false)
                 case .expired:
                     job.stage = .notStarted
+                    guard !expiryRestarted else {
+                        return LabelPhotoUploadResult(outcome: .failed, job: job)
+                    }
+                    expiryRestarted = true
                 case .refused:
                     job.stage = .notStarted
                     return LabelPhotoUploadResult(outcome: .rejected, job: job)
@@ -206,9 +248,15 @@ struct LabelPhotoUploader: LabelPhotoUploading {
                 } catch APIError.notFound {
                     // Nothing pending under this id (the staging copy expired, for example).
                     job.stage = .notStarted
+                    guard !notFoundRestarted else {
+                        return LabelPhotoUploadResult(outcome: .failed, job: job)
+                    }
+                    notFoundRestarted = true
                 } catch APIError.conflict {
                     if unconfirmed {
                         // The last completion most likely went through: 409 "already completed".
+                        // If it never reached the server, this 409 may instead be the 3-photo
+                        // cap, and the photo is shown as sent although it was not stored.
                         files.delete(job.file)
                         return LabelPhotoUploadResult(outcome: .completed, job: job)
                     }

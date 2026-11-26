@@ -182,6 +182,8 @@ struct ScanFlowView: View {
     var shelf: ShelfAddContext? = nil
     @State private var lookup: LookupModel? = nil
     @State private var entry: BeanEntryModel? = nil
+    /// The signed-in account, whose folder holds the entry's label photos (M2-T24).
+    @Environment(AuthModel.self) private var auth: AuthModel?
 
     var body: some View {
         flow
@@ -216,6 +218,8 @@ struct ScanFlowView: View {
             get: { entry != nil },
             set: { isShown in
                 if !isShown {
+                    // The saved-bean screen is gone: its label photos keep no files.
+                    entry?.releaseLabelPhotos()
                     entry = nil
                 }
             }
@@ -223,7 +227,10 @@ struct ScanFlowView: View {
     }
 
     private func openEntry(barcode: CanonicalBarcode?) {
-        entry = BeanEntryModel(barcode: barcode, client: client)
+        let labelPhotos = auth.flatMap { auth in
+            auth.accountID.map { LabelPhotoAccount.live(account: $0, session: auth.session) }
+        }
+        entry = BeanEntryModel(barcode: barcode, client: client, labelPhotos: labelPhotos)
         onPickListEntry()
     }
 }

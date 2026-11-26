@@ -35,6 +35,52 @@ private actor ScriptedUploader: LabelPhotoUploading {
 
 private struct StubEncodingFailure: Error {}
 
+/// Holds every run until `open()`, then answers `outcome`. Counts the runs that started.
+private final class GatedUploader: LabelPhotoUploading, @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuations: [CheckedContinuation<Void, Never>] = []
+    private var isOpen = false
+    private var startedRuns = 0
+    private let outcome: LabelPhotoUploadOutcome
+
+    init(outcome: LabelPhotoUploadOutcome) {
+        self.outcome = outcome
+    }
+
+    var started: Int {
+        lock.withLock { startedRuns }
+    }
+
+    func run(_ job: LabelPhotoUploadJob) async -> LabelPhotoUploadResult {
+        lock.withLock { startedRuns += 1 }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let resumeNow = lock.withLock {
+                if isOpen {
+                    return true
+                }
+                continuations.append(continuation)
+                return false
+            }
+            if resumeNow {
+                continuation.resume()
+            }
+        }
+        return LabelPhotoUploadResult(outcome: outcome, job: job)
+    }
+
+    func open() {
+        let waiting = lock.withLock {
+            isOpen = true
+            let all = continuations
+            continuations = []
+            return all
+        }
+        for continuation in waiting {
+            continuation.resume()
+        }
+    }
+}
+
 /// `LabelPhotoUploadModel` (M2-T24): up to 3 photos per bean, what each upload outcome does to
 /// a photo and its file, retry and retake; and `BeanEntryModel` handing the form's photo over
 /// once an unverified bean is saved.
@@ -63,15 +109,21 @@ final class LabelPhotoUploadModelTests: XCTestCase {
         prepare: LabelPhotoDraft.Prepare? = nil
     ) throws -> (LabelPhotoUploadModel, ScriptedUploader) {
         let uploader = ScriptedUploader(script, files: store)
+        return (try makeModel(uploader: uploader, prepare: prepare), uploader)
+    }
+
+    private func makeModel(
+        uploader: any LabelPhotoUploading,
+        prepare: LabelPhotoDraft.Prepare? = nil
+    ) throws -> LabelPhotoUploadModel {
         let result = prepared()
         let prepareStep: LabelPhotoDraft.Prepare = prepare ?? { _ in result }
-        let model = LabelPhotoUploadModel(
+        return LabelPhotoUploadModel(
             beanID: try LabelPhotoFixtures.bean(),
+            account: LabelPhotoFixtures.photoAccount(files: store),
             uploader: uploader,
-            files: store,
             prepare: prepareStep
         )
-        return (model, uploader)
     }
 
     private func statuses(_ model: LabelPhotoUploadModel) -> [LabelPhotoUploadModel.Status] {
@@ -83,8 +135,7 @@ final class LabelPhotoUploadModelTests: XCTestCase {
     func testAPhotoIsUploadedAndItsFileDeleted() async throws {
         let (model, uploader) = try makeModel()
 
-        model.add(prepared())
-        XCTAssertEqual(statuses(model), [.uploading])
+        await model.add(prepared())
         await model.waitForUploads()
 
         XCTAssertEqual(statuses(model), [.uploaded])
@@ -122,7 +173,7 @@ final class LabelPhotoUploadModelTests: XCTestCase {
         let (model, uploader) = try makeModel()
 
         for _ in 0..<4 {
-            model.add(prepared())
+            await model.add(prepared())
         }
         await model.waitForUploads()
 
@@ -138,7 +189,7 @@ final class LabelPhotoUploadModelTests: XCTestCase {
     func testARejectedPhotoOffersARetakeAndDropsItsFile() async throws {
         let (model, uploader) = try makeModel([.rejected, .completed])
 
-        model.add(prepared())
+        await model.add(prepared())
         await model.waitForUploads()
 
         XCTAssertEqual(statuses(model), [.rejected])
@@ -159,7 +210,7 @@ final class LabelPhotoUploadModelTests: XCTestCase {
     func testA409StopsNewPhotos() async throws {
         let (model, _) = try makeModel([.noMorePhotos])
 
-        model.add(prepared())
+        await model.add(prepared())
         await model.waitForUploads()
 
         XCTAssertEqual(statuses(model), [.notAccepted])
@@ -167,14 +218,14 @@ final class LabelPhotoUploadModelTests: XCTestCase {
         XCTAssertFalse(model.canAddPhoto)
         XCTAssertTrue(store.files().isEmpty)
 
-        model.add(prepared())
+        await model.add(prepared())
         XCTAssertEqual(model.photos.count, 1)
     }
 
     func testA429SaysTryAgainTomorrowAndStopsNewPhotos() async throws {
         let (model, _) = try makeModel([.dailyLimitReached])
 
-        model.add(prepared())
+        await model.add(prepared())
         await model.waitForUploads()
 
         XCTAssertEqual(statuses(model), [.dailyLimitReached])
@@ -186,7 +237,7 @@ final class LabelPhotoUploadModelTests: XCTestCase {
     func testAFailedUploadKeepsItsFileAndRetriesFromWhereItStopped() async throws {
         let (model, uploader) = try makeModel([.failed, .completed])
 
-        model.add(prepared())
+        await model.add(prepared())
         await model.waitForUploads()
 
         XCTAssertEqual(statuses(model), [.failed])
@@ -207,7 +258,7 @@ final class LabelPhotoUploadModelTests: XCTestCase {
     func testSignInRequiredCanBeRetried() async throws {
         let (model, uploader) = try makeModel([.signInRequired, .completed])
 
-        model.add(prepared())
+        await model.add(prepared())
         await model.waitForUploads()
         XCTAssertEqual(statuses(model), [.signInRequired])
 
@@ -222,7 +273,7 @@ final class LabelPhotoUploadModelTests: XCTestCase {
     func testRemovingAFailedPhotoDeletesItsFileAndFreesItsPlace() async throws {
         let (model, _) = try makeModel([.failed, .failed, .failed])
         for _ in 0..<3 {
-            model.add(prepared())
+            await model.add(prepared())
         }
         await model.waitForUploads()
         XCTAssertFalse(model.canAddPhoto)
@@ -237,7 +288,7 @@ final class LabelPhotoUploadModelTests: XCTestCase {
 
     func testAnUploadedPhotoCannotBeRemovedOrRetried() async throws {
         let (model, uploader) = try makeModel()
-        model.add(prepared())
+        await model.add(prepared())
         await model.waitForUploads()
         let id = try XCTUnwrap(model.photos.first?.id)
 
@@ -267,7 +318,12 @@ final class LabelPhotoUploadModelTests: XCTestCase {
         let body = try JSONEncoder().encode(bean)
         let server = try StubServer { _ in StubResponse(status: 201, body: body, headers: ["Content-Type": "application/json"]) }
         let client = APIClient(baseURL: server.baseURL, tokenProvider: FakeTokenProvider(), session: server.makeSession(), imageCache: nil)
-        let model = BeanEntryModel(barcode: nil, client: client, photoUploader: uploader, photoFiles: store)
+        let model = BeanEntryModel(
+            barcode: nil,
+            client: client,
+            labelPhotos: LabelPhotoFixtures.photoAccount(files: store),
+            photoUploader: uploader
+        )
         return (model, server)
     }
 
@@ -314,5 +370,102 @@ final class LabelPhotoUploadModelTests: XCTestCase {
         XCTAssertEqual(entry.labelPhoto.state, .empty)
         let runs = await uploader.runs
         XCTAssertTrue(runs.isEmpty)
+    }
+
+    // MARK: - Files that outlive the screen
+
+    /// Lets queued main-actor work run until `condition` holds, for at most about 2 s.
+    private func eventually(_ condition: () -> Bool) async throws {
+        for _ in 0..<200 where !condition() {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+    }
+
+    private func waitUntilStarted(_ uploader: GatedUploader) async throws {
+        for _ in 0..<200 where uploader.started == 0 {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(uploader.started, 1)
+    }
+
+    func testReleasingDeletesTheFilesOfPhotosThatAreNotUploading() async throws {
+        let (model, _) = try makeModel([.failed, .signInRequired])
+        await model.add(prepared())
+        await model.add(prepared())
+        await model.waitForUploads()
+        XCTAssertEqual(store.files().count, 2)
+
+        model.releaseFiles()
+
+        XCTAssertTrue(store.files().isEmpty)
+    }
+
+    func testARunningUploadDeletesItsFileWhenItEndsAfterTheRelease() async throws {
+        let uploader = GatedUploader(outcome: .failed)
+        let model = try makeModel(uploader: uploader)
+        await model.add(prepared())
+        try await waitUntilStarted(uploader)
+
+        model.releaseFiles()
+        XCTAssertEqual(store.files().count, 1, "a running upload keeps its file")
+
+        uploader.open()
+        await model.waitForUploads()
+
+        XCTAssertTrue(store.files().isEmpty)
+    }
+
+    func testTheFilesOfAFreedModelAreDeleted() async throws {
+        let uploader = ScriptedUploader([.failed], files: store)
+        var model: LabelPhotoUploadModel? = try makeModel(uploader: uploader)
+        await model?.add(prepared())
+        await model?.waitForUploads()
+        XCTAssertEqual(store.files().count, 1)
+
+        model = nil
+
+        XCTAssertNil(model)
+        XCTAssertTrue(store.files().isEmpty)
+    }
+
+    func testAnUploadThatOutlivesItsModelDeletesItsFile() async throws {
+        let uploader = GatedUploader(outcome: .failed)
+        var model: LabelPhotoUploadModel? = try makeModel(uploader: uploader)
+        await model?.add(prepared())
+        try await waitUntilStarted(uploader)
+
+        model = nil
+        XCTAssertNil(model)
+        XCTAssertEqual(store.files().count, 1)
+        uploader.open()
+
+        try await eventually { store.files().isEmpty }
+        XCTAssertTrue(store.files().isEmpty)
+    }
+
+    func testLeavingTheEntryReleasesItsPhotos() async throws {
+        let uploader = ScriptedUploader([.failed], files: store)
+        let (entry, _) = try makeEntry(saving: bean(verified: false), uploader: uploader)
+        await entry.labelPhoto.attach(try capture())
+        await entry.save()
+        await entry.labelPhotoUploads?.waitForUploads()
+        XCTAssertEqual(store.files().count, 1)
+
+        entry.releaseLabelPhotos()
+
+        XCTAssertTrue(store.files().isEmpty)
+    }
+
+    func testNobodySignedInMeansNoLabelPhotos() async throws {
+        let body = try JSONEncoder().encode(bean(verified: false))
+        let server = try StubServer { _ in StubResponse(status: 201, body: body, headers: ["Content-Type": "application/json"]) }
+        let client = APIClient(baseURL: server.baseURL, tokenProvider: FakeTokenProvider(), session: server.makeSession(), imageCache: nil)
+        let entry = BeanEntryModel(barcode: nil, client: client)
+        await entry.labelPhoto.attach(try capture())
+
+        await entry.save()
+
+        XCTAssertNil(entry.labelPhotoUploads)
+        XCTAssertEqual(entry.labelPhoto.state, .empty)
     }
 }
