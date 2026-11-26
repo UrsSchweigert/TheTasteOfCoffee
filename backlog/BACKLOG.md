@@ -843,6 +843,7 @@ Planning notes (planned 2026-11-25):
 - owner: ios-engineer
 - depends: M2-T16
 - implements: docs/04-specification.md, Non-functional (account deletion in the app); ADR 0017 and its Addendum; contracts `deleteAccount`
+- note: from the M2-T24 review, account deletion must also remove the account's `Application Support/LabelPhotos/<account>` folder of pending label photos.
 - acceptance:
   - From the M2-T16 review: a 401 from the ADR 0017 tombstone signs the user out without a reason. Give `AuthModel` a way to show "this account was deleted or its session ended" when sync asks for sign-in.
   - Settings, then Delete account. Two steps confirm with buttons only, and they say what is deleted: the data, the label photos of unverified beans, and the sign-in.
