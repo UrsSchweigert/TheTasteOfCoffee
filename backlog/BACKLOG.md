@@ -998,7 +998,7 @@ Scope: App Store listing, screenshots, privacy nutrition labels, privacy policy 
   - Mac: the `ios` job.
 
 ### M2-T37 Failed-write repair: the remaining review notes
-- status: todo
+- status: in-progress
 - owner: ios-engineer
 - depends: M2-T36
 - implements: ADR 0025 (addenda M2-T35 and M2-T36)
