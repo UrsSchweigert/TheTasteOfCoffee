@@ -39,7 +39,8 @@ private struct AppleSignInButtonStyle: ButtonStyle {
         return configuration.label
             .labelStyle(.titleAndIcon)
             .font(.title3.weight(.medium))
-            .lineLimit(2)
+            // No line limit: at the largest text sizes the title wraps instead of being cut
+            // off (M2-T33); the button grows with it.
             .multilineTextAlignment(.center)
             .foregroundStyle(colorScheme == .dark ? Color.black : Color.white)
             .padding(.horizontal, 16)

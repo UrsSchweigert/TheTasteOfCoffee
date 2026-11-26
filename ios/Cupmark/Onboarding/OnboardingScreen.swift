@@ -115,14 +115,19 @@ struct OnboardingScreen: View {
             Button {
                 model.skip()
             } label: {
+                // A borderless button: at least 44 points high to tap (M2-T33).
                 Text(L10n.onboardingSkip)
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(Rectangle())
+                    // The accent colour on the bar's material fails the contrast audit.
+                    .foregroundStyle(.primary)
             }
             .accessibilityHint(Text(L10n.onboardingSkipHint))
             .accessibilityIdentifier("onboarding-skip")
         }
         .padding()
-        .background(.bar)
+        // A solid colour: the contrast audit measures against what shows through a material.
+        .background(Color(.systemBackground))
     }
 
     private func title(for page: OnboardingPage) -> LocalizedStringKey {

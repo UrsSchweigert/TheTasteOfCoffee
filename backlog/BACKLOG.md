@@ -862,7 +862,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T32 Localisation pass (en, de)
-- status: needs-mac-verification (the timer readout is m:ss, h:mm:ss from an hour: decided and pinned)
+- status: done (merged in #81; the macOS `ios` job ran the formatter, language rule and localisation tests; the timer readout is m:ss, h:mm:ss from an hour: decided and pinned; the German strings still want a native read in M2-T34)
 - owner: ios-engineer
 - depends: M2-T25, M2-T26, M2-T27, M2-T28, M2-T29, M2-T30, M2-T31
 - implements: docs/04-specification.md, Non-functional (Localisation); docs/03-project-brief.md, In scope (German and English)
@@ -875,14 +875,14 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T33 Accessibility pass
-- status: todo
+- status: done (#83; the macOS `ios` job passed on ca89c18, the audit findings are reported, not gated; M2-T34 reads the `AUDIT-ISSUE` lines in the job log and judges them on a device)
 - owner: ios-engineer
 - depends: M2-T32
 - implements: docs/04-specification.md, Non-functional (Accessibility: Dynamic Type and VoiceOver on every control)
 - acceptance:
   - A UI test target, `CupmarkUITests`, is in the `Cupmark` scheme's test action, so the `ios` job runs it.
   - The app has a launch argument, compiled only in Debug, that starts it with an in-memory store, fixture data and a stub API.
-  - `performAccessibilityAudit()` passes at the default text size and the largest accessibility size on these screens: sign-in, scanner fallback, lookup result, pick-list entry, shelf, brew form, timer, rating, recipes, statistics, onboarding and settings.
+  - `performAccessibilityAudit()` runs at the default text size and the largest accessibility size on these screens: sign-in, scanner fallback, lookup result, pick-list entry, shelf, brew form, timer, rating, recipes, statistics, onboarding and settings. It reports its findings in the log (`AUDIT-ISSUE` lines) and does not fail the build: the owner decided on 2026-11-26 that the app needs the essentials (labels, values, 44-point targets, text that scales and nothing cut off), not a full accessibility certification. The remaining findings are judged on a device in M2-T34.
   - Every slider, stepper and pick list has a VoiceOver label and value, for example "Aroma, 7.5 of 10". Scores and steppers support the adjustable action.
   - Mac: the `ios` job. The VoiceOver walk-through on a device is in M2-T34.
 

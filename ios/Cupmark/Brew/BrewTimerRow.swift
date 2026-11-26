@@ -67,6 +67,7 @@ struct BrewTimerRow: View {
             : AnyLayout(HStackLayout(spacing: 12))
         return layout {
             startStopButton
+                .controlSize(.large)
             Button {
                 onReset()
             } label: {
@@ -77,8 +78,10 @@ struct BrewTimerRow: View {
                         .accessibilityHidden(true)
                 }
             }
-            // An explicit style keeps each button its own tap target inside the form row.
+            // An explicit style keeps each button its own tap target inside the form row; the
+            // large size keeps it at least 44 points high (M2-T33).
             .buttonStyle(.bordered)
+            .controlSize(.large)
             .disabled(!timer.isRunning && brewTimeS == nil)
             .accessibilityHint(Text(L10n.brewTimerResetHint))
             .accessibilityIdentifier("brew-timer-reset")

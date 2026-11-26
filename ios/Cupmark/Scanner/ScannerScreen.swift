@@ -56,19 +56,23 @@ struct ScannerScreen: View {
         case .scanning:
             scanning
         case .unavailable(let reason):
-            ContentUnavailableView {
-                Label {
-                    Text(Self.title(for: reason))
-                } icon: {
-                    Image(systemName: "camera.fill")
-                        .accessibilityHidden(true)
+            // Scrolls at the largest text sizes instead of cutting off the message (M2-T33).
+            FitsOrScrolls {
+                ContentUnavailableView {
+                    Label {
+                        Text(Self.title(for: reason))
+                    } icon: {
+                        Image(systemName: "camera.fill")
+                            .accessibilityHidden(true)
+                    }
+                } description: {
+                    Text(Self.message(for: reason))
+                } actions: {
+                    pickListButton
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                    settingsButton
                 }
-            } description: {
-                Text(Self.message(for: reason))
-            } actions: {
-                pickListButton
-                    .buttonStyle(.borderedProminent)
-                settingsButton
             }
         case .scanned(let barcode):
             ContentUnavailableView {
@@ -118,6 +122,7 @@ struct ScannerScreen: View {
                     .accessibilityHidden(true)
             }
         }
+        .accessibilityIdentifier("scanner-pick-list")
     }
 
     private var settingsButton: some View {
@@ -131,6 +136,7 @@ struct ScannerScreen: View {
                 Image(systemName: "gear")
                     .accessibilityHidden(true)
             }
+            .minimumTapTarget()
         }
     }
 

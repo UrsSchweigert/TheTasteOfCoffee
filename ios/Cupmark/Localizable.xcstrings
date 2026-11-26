@@ -1,6 +1,24 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "accessibility.value_of_scale %@ %@" : {
+      "comment" : "What VoiceOver reads as the value of a control on a scale without a unit, such as a rating score or the grind; the first %@ is the value, the second the top of the scale, both in the device locale, for example \"7.5 of 10\".",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ von %2$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ of %2$@"
+          }
+        }
+      }
+    },
     "account.sign_out" : {
       "comment" : "Button and confirmation action that sign the user out.",
       "extractionState" : "manual",

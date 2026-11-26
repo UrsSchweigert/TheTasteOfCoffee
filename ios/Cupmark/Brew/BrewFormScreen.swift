@@ -330,6 +330,7 @@ struct BrewFormScreen: View {
             title: L10n.brewGrindSetting,
             clearLabel: L10n.brewGrindSettingClear,
             valueText: model.grindSettingText(locale: locale),
+            spokenValueText: model.spokenGrindSettingText(locale: locale),
             onIncrement: { model.incrementGrindSetting() },
             onDecrement: { model.decrementGrindSetting() },
             onClear: { model.clearGrindSetting() }
@@ -347,6 +348,7 @@ struct BrewFormScreen: View {
             title: title,
             clearLabel: clearLabel,
             valueText: model.valueText(of: field, locale: locale),
+            spokenValueText: model.spokenValueText(of: field, locale: locale),
             onIncrement: { model.increment(field) },
             onDecrement: { model.decrement(field) },
             onClear: { model.clear(field) }
@@ -396,12 +398,16 @@ struct BrewFormScreen: View {
 
 /// One numeric field of the brew form: a stepper with the value (or "Not set"), and a button
 /// that clears a set value. The first tap on a field that is not set turns it on. VoiceOver
-/// reads the title and the value and adjusts with swipes up and down. At accessibility text
-/// sizes the title and the value stack.
+/// reads the title and the value ("Dose, 18.0 g"; a value without a unit on its scale,
+/// "Grind, 4.5 of 10", M2-T33) and adjusts with swipes up and down (the stepper's adjustable
+/// action). At accessibility text sizes the title and the value stack. The clear button is at
+/// least 44 by 44 points.
 struct BrewStepperRow: View {
     let title: LocalizedStringKey
     let clearLabel: LocalizedStringKey
     let valueText: String?
+    /// VoiceOver's value; `valueText` when nil.
+    var spokenValueText: String? = nil
     let onIncrement: @MainActor () -> Void
     let onDecrement: @MainActor () -> Void
     let onClear: @MainActor () -> Void
@@ -439,6 +445,7 @@ struct BrewStepperRow: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
+                        .minimumTapTarget()
                 }
                 .buttonStyle(.borderless)
                 .accessibilityLabel(Text(clearLabel))
@@ -447,8 +454,8 @@ struct BrewStepperRow: View {
     }
 
     private var accessibilityValue: Text {
-        if let valueText {
-            return Text(verbatim: valueText)
+        if let text = spokenValueText ?? valueText {
+            return Text(verbatim: text)
         }
         return Text(L10n.lookupPickNotSet)
     }

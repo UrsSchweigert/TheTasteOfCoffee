@@ -73,6 +73,14 @@ struct RecipeListScreen: View {
     let language: VocabularyLanguage
     @State private var brewing: BrewRoute?
 
+    /// Written out because the private state above would otherwise limit the memberwise one
+    /// (the UI tests open this screen on its own, M2-T33).
+    init(model: BrewStartModel, vocabulary: VocabularyStore, language: VocabularyLanguage) {
+        self.model = model
+        self.vocabulary = vocabulary
+        self.language = language
+    }
+
     var body: some View {
         List {
             if model.loadFailed {

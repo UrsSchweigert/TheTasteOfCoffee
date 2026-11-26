@@ -83,6 +83,8 @@ struct IndexedPickList<Item: VocabularyItem>: View {
     private func index(_ proxy: ScrollViewProxy) -> some View {
         VStack(spacing: 2) {
             ForEach(sections) { section in
+                // Tap target: the index letters stay small, like the system's section index, so
+                // A to Z fit beside the list; the rows themselves are full-height list rows.
                 Button {
                     guard let first = section.rows.first else {
                         return
@@ -132,6 +134,8 @@ struct PickListRowLabel<Content: View>: View {
 }
 
 /// A form row that opens an `IndexedPickList` and shows the current pick, or "Not set".
+/// VoiceOver reads the title as the label and the pick as the value ("Origin, Not set",
+/// M2-T33), like a `Picker`.
 struct IndexedPickListRow<Item: VocabularyItem>: View {
     let title: LocalizedStringKey
     @Binding var selection: Item?
@@ -156,6 +160,15 @@ struct IndexedPickListRow<Item: VocabularyItem>: View {
                 Text(title)
             }
         }
+        .accessibilityLabel(Text(title))
+        .accessibilityValue(accessibilityValue)
+    }
+
+    private var accessibilityValue: Text {
+        if let selection {
+            return Text(verbatim: VocabularyLabels.label(for: selection, in: vocabulary, language: language))
+        }
+        return Text(L10n.lookupPickNotSet)
     }
 }
 
@@ -187,6 +200,7 @@ struct RoastLevelPicker: View {
                             selection = nil
                         } label: {
                             Text(L10n.beanEntryClear)
+                                .minimumTapTarget()
                         }
                         .buttonStyle(.borderless)
                         .accessibilityLabel(Text(L10n.beanEntryRoastLevelClear))
@@ -202,6 +216,8 @@ struct RoastLevelPicker: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
+                // The hidden label is not read; VoiceOver names the control like the others.
+                .accessibilityLabel(Text(BeanAttributeField.roastLevel.title))
                 .accessibilityIdentifier("bean-entry-roast-level")
             }
             .padding(.vertical, 4)

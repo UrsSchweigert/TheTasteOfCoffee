@@ -1586,3 +1586,170 @@ test('account deletion: buttons only, outside Settings, the record first, no sig
   assert.match(host, /await auth\.signOutAfterServerRefusal\(of: account\)/);
   assert.match(masked('ios/Cupmark/Auth/AuthModel.swift'), /await signOut\(reason: \.signInRequired\)/);
 });
+
+// ---- M2-T33: the Xcode project, the UI-test start and the accessibility rules ----
+
+const xcodeProject = await import('./check-xcode-project.mjs');
+const accessibility = await import('./check-ios-accessibility.mjs');
+const projectText = () => readFileSync(xcodeProject.PROJECT_FILE, 'utf8');
+const schemeText = () => readFileSync(xcodeProject.SCHEME_FILE, 'utf8');
+const UI_TARGET = 'C0FFEE000000000000000062';
+
+test('check-xcode-project: the committed project and scheme are consistent', () => {
+  assert.deepEqual(xcodeProject.checkXcodeProject(projectText(), schemeText()), []);
+});
+
+test('check-xcode-project: CupmarkUITests is a UI-test target of the app, built from its own synchronized folder', () => {
+  const project = xcodeProject.parsePbxproj(projectText());
+  const { objects } = project;
+  const target = objects[UI_TARGET];
+  assert.equal(target.name, 'CupmarkUITests');
+  assert.equal(target.productType, 'com.apple.product-type.bundle.ui-testing');
+  assert.equal(objects[target.productReference].path, 'CupmarkUITests.xctest');
+  assert.deepEqual(target.fileSystemSynchronizedGroups.map((id) => objects[id].path), ['CupmarkUITests']);
+  assert.ok(existsSync(new URL('../ios/CupmarkUITests', import.meta.url)));
+  assert.deepEqual(objects[project.rootObject].targets.map((id) => objects[id].name), ['Cupmark', 'CupmarkTests', 'CupmarkUITests']);
+  assert.equal(objects[project.rootObject].attributes.TargetAttributes[UI_TARGET].TestTargetID, 'C0FFEE000000000000000010');
+  for (const id of objects[target.buildConfigurationList].buildConfigurations) {
+    const settings = objects[id].buildSettings;
+    assert.equal(settings.TEST_TARGET_NAME, 'Cupmark');
+    assert.equal(settings.TEST_HOST, undefined);
+    assert.equal(settings.PRODUCT_BUNDLE_IDENTIFIER, 'app.cupmark.CupmarkUITests');
+    // Swift version, strict concurrency and the deployment target come from the project, as for CupmarkTests.
+    assert.equal(settings.SWIFT_VERSION, undefined);
+    assert.equal(settings.IPHONEOS_DEPLOYMENT_TARGET, undefined);
+  }
+});
+
+test('check-xcode-project: the scheme tests both test targets, so the ios job runs the UI tests', () => {
+  const testables = xcodeProject.schemeReferences(schemeText()).filter((ref) => ref.testable);
+  assert.deepEqual(testables.map((ref) => ref.BlueprintName), ['CupmarkTests', 'CupmarkUITests']);
+  assert.equal(testables[1].BlueprintIdentifier, UI_TARGET);
+  // The ios job runs the scheme's whole test action: no -only-testing, -skip-testing or test plan.
+  const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  assert.match(workflow, /xcodebuild test-without-building \\\s*-project Cupmark\.xcodeproj \\\s*-scheme Cupmark/);
+  assert.doesNotMatch(workflow, /-only-testing|-skip-testing|-testPlan/);
+});
+
+test('check-xcode-project: finds a missing or doubled id, a missing list, a hosted UI test and a scheme without the UI tests', () => {
+  const project = projectText();
+  const scheme = schemeText();
+  const has = (problems, pattern) => assert.ok(problems.some((p) => pattern.test(p)), problems.join('\n'));
+  // An object that is referenced but no longer defined.
+  const withoutProxy = project.replace(/\t\tC0FFEE000000000000000066 \/\* PBXContainerItemProxy \*\/ = \{[^}]*\};\n/, '');
+  assert.notEqual(withoutProxy, project);
+  has(xcodeProject.checkXcodeProject(withoutProxy, scheme), /references C0FFEE000000000000000066, which is not defined/);
+  // The same id defined twice.
+  const doubled = project.replace(
+    '/* End PBXFrameworksBuildPhase section */',
+    '\t\tC0FFEE000000000000000064 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };\n/* End PBXFrameworksBuildPhase section */',
+  );
+  has(xcodeProject.checkXcodeProject(doubled, scheme), /C0FFEE000000000000000064 is defined twice/);
+  // A target without its configuration list.
+  const noList = project.replace(/(C0FFEE000000000000000062 \/\* CupmarkUITests \*\/ = \{\n\t\t\tisa = PBXNativeTarget;\n)\t\t\tbuildConfigurationList = [^\n]*\n/, '$1');
+  assert.notEqual(noList, project);
+  has(xcodeProject.checkXcodeProject(noList, scheme), /target CupmarkUITests has no configuration list/);
+  // A UI-test target that is hosted like a unit-test target.
+  const hosted = project.replace('TEST_TARGET_NAME = Cupmark;', 'TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Cupmark.app/Cupmark";\n\t\t\t\tTEST_TARGET_NAME = Cupmark;');
+  has(xcodeProject.checkXcodeProject(hosted, scheme), /UI-test target must not set TEST_HOST/);
+  // A target missing from the targets list.
+  const unlisted = project.replace('\t\t\t\tC0FFEE000000000000000062 /* CupmarkUITests */,\n\t\t\t);\n\t\t};\n/* End PBXProject section */', '\t\t\t);\n\t\t};\n/* End PBXProject section */');
+  assert.notEqual(unlisted, project);
+  has(xcodeProject.checkXcodeProject(unlisted, scheme), /CupmarkUITests is not in the project's targets list/);
+  // The scheme without the UI tests, or naming a target that does not exist.
+  const start = scheme.indexOf('<TestableReference', scheme.indexOf('CupmarkTests.xctest'));
+  const end = scheme.indexOf('</TestableReference>', start) + '</TestableReference>'.length;
+  has(xcodeProject.checkXcodeProject(project, scheme.slice(0, start) + scheme.slice(end)), /TestAction does not list the test target CupmarkUITests/);
+  has(xcodeProject.checkXcodeProject(project, scheme.replace(`"${UI_TARGET}"`, '"C0FFEE0000000000000000FF"')), /references C0FFEE0000000000000000FF, which is not a target/);
+  // A syntax error.
+  has(xcodeProject.checkXcodeProject(project.replace('isa = PBXGroup;', 'isa = PBXGroup'), scheme), /expected ;/);
+});
+
+test('check-xcode-project: parsePbxproj reads quoted strings, comments and nested lists', () => {
+  const parsed = xcodeProject.parsePbxproj('// !$*UTF8*$!\n{ a = "x \\"y\\""; /* c */ b = (1, "two", { c = d; },); e = ../f/g; }');
+  assert.deepEqual(parsed, { a: 'x "y"', b: ['1', 'two', { c: 'd' }], e: '../f/g' });
+  assert.throws(() => xcodeProject.parsePbxproj('{ a = 1; a = 2; }'), /a is defined twice/);
+});
+
+test('check-ios-accessibility: sliders and steppers need a label and a value, hidden picker labels a label', () => {
+  const problems = (source) => accessibility.accessibilityProblems(source).map((p) => `${p.line}: ${p.message}`);
+  assert.deepEqual(problems('Slider(value: $v, in: 1...10) { Text(t) }\n    .accessibilityLabel(Text(t))\n    .accessibilityValue(Text(v))'), []);
+  assert.deepEqual(problems('Slider(value: $v, in: 1...10)\n    .accessibilityLabel(Text(t))'), ['1: Slider has no .accessibilityValue']);
+  const stepper = 'Stepper {\n  Text(title)\n} onIncrement: {\n  up()\n} onDecrement: {\n  down()\n}\n.accessibilityLabel(Text(title))\n.accessibilityValue(value)';
+  assert.deepEqual(problems(stepper), []);
+  assert.deepEqual(problems('Stepper {\n  Text(title)\n} onIncrement: {\n  up()\n} onDecrement: {\n  down()\n}\nif x {\n  y.accessibilityValue(z)\n}'), [
+    '1: Stepper has no .accessibilityLabel',
+    '1: Stepper has no .accessibilityValue',
+  ]);
+  assert.deepEqual(problems('Picker(selection: $s) { rows } label: { Text(t) }\n.pickerStyle(.segmented)\n.labelsHidden()'), ['1: Picker hides its label but has no .accessibilityLabel']);
+  assert.deepEqual(problems('Picker(selection: $s) { rows } label: { Text(t) }\n.labelsHidden()\n.accessibilityLabel(Text(t))'), []);
+  assert.deepEqual(problems('Picker(selection: $s) { rows } label: { Text(t) }'), []);
+});
+
+test('check-ios-accessibility: symbols are hidden, labelled, a Label icon, or a labelled button\'s label', () => {
+  const problems = (source) => accessibility.accessibilityProblems(source).map((p) => p.message);
+  assert.deepEqual(problems('Image(systemName: "a")\n  .font(.title)\n  .accessibilityHidden(true)'), []);
+  assert.deepEqual(problems('Label {\n  Text(t)\n} icon: {\n      Image(systemName: "a")\n}'), []);
+  assert.deepEqual(problems('Button {\n  go()\n} label: {\n  Image(systemName: "x")\n    .minimumTapTarget()\n}\n.accessibilityLabel(Text(clear))'), []);
+  assert.deepEqual(problems('Button {\n  go()\n} label: {\n  Image(systemName: "x")\n}'), ['Image(systemName:) is neither hidden from VoiceOver nor labelled']);
+  assert.deepEqual(problems('VStack {\n  Image(systemName: "a")\n  Text(t)\n}'), ['Image(systemName:) is neither hidden from VoiceOver nor labelled']);
+});
+
+test('check-ios-accessibility: borderless buttons are at least 44 points, or say why not', () => {
+  const problems = (source) => accessibility.accessibilityProblems(source).map((p) => `${p.line}: ${p.message}`);
+  const small = 'Button {\n  clear()\n} label: {\n  Text(L10n.clear)\n}\n.buttonStyle(.borderless)';
+  assert.deepEqual(problems(small), ['1: borderless Button without .minimumTapTarget() (44 by 44 points)']);
+  assert.deepEqual(problems(small.replace('Text(L10n.clear)', 'Text(L10n.clear)\n    .minimumTapTarget()')), []);
+  assert.deepEqual(problems(`// Tap target: the index letters stay small.\n${small}`), []);
+  const row = 'HStack {\n  Button {\n    a()\n  } label: {\n    Text(x)\n  }\n  Button {\n    b()\n  } label: {\n    Text(y)\n      .minimumTapTarget()\n  }\n}\n.buttonStyle(.borderless)';
+  assert.deepEqual(problems(row), ['2: borderless Button without .minimumTapTarget() (44 by 44 points)']);
+  assert.deepEqual(problems('Button {\n  a()\n} label: {\n  Text(x)\n}\n.buttonStyle(.bordered)'), []);
+});
+
+test('check-ios-accessibility: the UI-test start is only ever compiled in Debug', () => {
+  const problems = (source, options) => accessibility.debugOnlyProblems(source, options).map((p) => `${p.line}: ${p.message}`);
+  const app = 'init() {\n    #if DEBUG\n    if let launch = UITestLaunch(arguments: args) {\n        return\n    }\n    #endif\n    production()\n}';
+  assert.deepEqual(problems(app), []);
+  assert.deepEqual(problems('init() {\n    if let launch = UITestLaunch(arguments: args) {}\n}'), [
+    '2: mentions the UI-test start outside #if DEBUG: if let launch = UITestLaunch(arguments: args) {}',
+  ]);
+  assert.equal(problems('#if DEBUG\nlet a = 1\n#else\nlet b = "-CupmarkUITestScreen"\n#endif').length, 1, 'the #else of DEBUG is Release');
+  assert.equal(problems('#if os(iOS)\nlet b = uiTestLaunch\n#endif').length, 1, 'another condition is not Debug');
+  assert.deepEqual(problems('// A comment.\n\n#if DEBUG\nstruct UITestLaunch {}\n#endif\n', { wholeFile: true }), []);
+  assert.deepEqual(problems('import Foundation\n#if DEBUG\nstruct UITestLaunch {}\n#endif', { wholeFile: true }), ['1: the file is not one #if DEBUG ... #endif block']);
+  assert.deepEqual(problems('#if DEBUG\nstruct A {}\n#endif\nstruct B {}', { wholeFile: true }), ['1: the file is not one #if DEBUG ... #endif block']);
+  assert.equal(problems('#if DEBUG\nstruct A {}').length, 1, 'an unclosed #if');
+});
+
+test('check-ios-accessibility: the committed sources pass, and the UI-test start is under UITestSupport only', () => {
+  assert.deepEqual(accessibility.checkRepository(), []);
+  const supportFiles = readdirSync(accessibility.UI_TEST_SUPPORT_DIR).filter((name) => name.endsWith('.swift'));
+  assert.ok(supportFiles.includes('UITestLaunch.swift'), supportFiles.join(', '));
+  // The argument's name is written once in the app, in UITestLaunch, and read in CupmarkApp inside #if DEBUG.
+  const launchFile = readFileSync(join(accessibility.UI_TEST_SUPPORT_DIR, 'UITestLaunch.swift'), 'utf8');
+  assert.match(launchFile, /static let argument = "-CupmarkUITestScreen"/);
+  const appFile = readFileSync(join(accessibility.APP_DIR, 'CupmarkApp.swift'), 'utf8');
+  assert.match(appFile, /#if DEBUG\n\s*if let launch = UITestLaunch\(arguments: ProcessInfo\.processInfo\.arguments\) \{/);
+  assert.match(appFile, /#else\n\s*root\n\s*#endif/, 'Release shows the app root only');
+});
+
+test('check-ios-accessibility: the UI tests launch the screens the app knows, with the app\'s argument', () => {
+  const rawValues = (source, enumName) => {
+    const body = source.slice(source.indexOf(`enum ${enumName}`));
+    const block = body.slice(0, body.indexOf('\n    }\n'));
+    return [...block.matchAll(/^\s*case ([a-zA-Z]+)(?: = "([^"]+)")?$/gm)].map((m) => m[2] ?? m[1]);
+  };
+  const app = rawValues(readFileSync(join(accessibility.UI_TEST_SUPPORT_DIR, 'UITestLaunch.swift'), 'utf8'), 'Screen: String');
+  const uiTests = readFileSync(new URL('../ios/CupmarkUITests/AccessibilityAuditTests.swift', import.meta.url), 'utf8');
+  assert.equal(app.length, 13);
+  assert.deepEqual(rawValues(uiTests, 'Screen: String'), app);
+  assert.match(uiTests, /"-CupmarkUITestScreen", screen\.rawValue/);
+  // Every screen of the acceptance has its own test method, which audits at both sizes.
+  for (const screen of ['signIn', 'scannerFallback', 'lookupResult', 'beanEntry', 'shelf', 'brewForm', 'timer', 'rating', 'recipes', 'statistics', 'onboarding', 'settings']) {
+    assert.match(uiTests, new RegExp(`auditAtBothSizes\\(\\.${screen}\\b`), screen);
+  }
+  assert.match(uiTests, /UICTContentSizeCategoryAccessibilityXXXL/);
+  assert.match(uiTests, /try app\.performAccessibilityAudit\(for: types\) \{/);
+  // No typed text in the UI tests either (invariant 1).
+  assert.doesNotMatch(uiTests, /typeText|typeKey/);
+});

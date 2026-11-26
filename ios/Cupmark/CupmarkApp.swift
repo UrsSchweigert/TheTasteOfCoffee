@@ -13,8 +13,26 @@ struct CupmarkApp: App {
     /// Account deletion, which goes on after a restart (M2-T31). Nil when the stage is not
     /// configured.
     private let deletion: AccountDeletionModel?
+    #if DEBUG
+    /// Set when the UI tests launched the app with `-CupmarkUITestScreen` (M2-T33,
+    /// `UITestLaunch`): the window then shows `UITestRootView` instead, and nothing below runs,
+    /// so no Keychain, file or network is touched. Debug builds only; Release has no such path.
+    private let uiTestLaunch: UITestLaunch?
+    #endif
 
     init() {
+        #if DEBUG
+        if let launch = UITestLaunch(arguments: ProcessInfo.processInfo.arguments) {
+            uiTestLaunch = launch
+            stage = StageConfigLoadState.load(from: .main)
+            auth = nil
+            apiClient = nil
+            sync = nil
+            deletion = nil
+            return
+        }
+        uiTestLaunch = nil
+        #endif
         // An export file an earlier run left behind (M2-T30).
         ExportFileStore().removeAll()
         let stage = StageConfigLoadState.load(from: .main)
@@ -45,14 +63,28 @@ struct CupmarkApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView(state: vocabulary, stage: stage)
-                .environment(auth)
-                .environment(\.apiClient, apiClient)
-                .environment(sync)
-                .environment(deletion)
-                .syncHost(sync, auth: auth)
-                .accountDeletion(deletion, auth: auth)
+            #if DEBUG
+            if let uiTestLaunch {
+                UITestRootView(launch: uiTestLaunch, vocabulary: vocabulary)
+            } else {
+                root
+            }
+            #else
+            root
+            #endif
         }
+    }
+
+    /// The app's window content.
+    @MainActor
+    private var root: some View {
+        RootView(state: vocabulary, stage: stage)
+            .environment(auth)
+            .environment(\.apiClient, apiClient)
+            .environment(sync)
+            .environment(deletion)
+            .syncHost(sync, auth: auth)
+            .accountDeletion(deletion, auth: auth)
     }
 }
 

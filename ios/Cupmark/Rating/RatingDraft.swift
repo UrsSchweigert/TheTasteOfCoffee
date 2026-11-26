@@ -174,4 +174,10 @@ enum RatingFormat {
     static func score(_ value: Double, locale: Locale = .current) -> String {
         BrewFormat.number(value, fractionDigits: BrewFormat.fractionDigits(for: RatingDraft.scale), locale: locale)
     }
+
+    /// What VoiceOver reads as a score's value (M2-T33): the score on the scale, "7.5 of 10"
+    /// (German "7,5 von 10"). `bundle` is the app bundle; tests pass a language's `.lproj`.
+    static func spokenScore(_ value: Double, locale: Locale = .current, bundle: Bundle = .main) -> String {
+        AccessibilityValue.ofScale(score(value, locale: locale), maximum: RatingDraft.scale.maximum, locale: locale, bundle: bundle)
+    }
 }
