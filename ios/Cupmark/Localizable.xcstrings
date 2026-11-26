@@ -4112,13 +4112,13 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Solange eingeschaltet, fließen deine Bewertungen mit Zubereitungsart und Rezeptwerten ohne deinen Namen und ohne dein Konto in die Werte der Community für jeden Kaffee ein. Diese Werte sehen Abonnentinnen und Abonnenten sowie Personen, die denselben Kaffee bewertet haben. Die Werte eines Kaffees werden erst gezeigt, wenn ihn mindestens 5 verschiedene Personen bewertet haben. Sonst wird nichts geteilt. Wenn du das Teilen ausschaltest, werden deine Bewertungen nicht mehr gezählt; bereits gezählte bleiben gezählt. Wenn du eine Zubereitung oder dein Konto löschst, wird sie aus den Werten entfernt. Regal, Zubereitungen, Rezepte und Statistik funktionieren in beiden Fällen gleich."
+            "value" : "Solange eingeschaltet, fließen deine Bewertungen mit Zubereitungsart und Rezeptwerten ohne deinen Namen und ohne dein Konto in die Werte der Community für jeden Kaffee ein. Diese Werte sehen Abonnentinnen und Abonnenten sowie Personen, die denselben Kaffee bewertet haben. Die Werte eines Kaffees werden erst gezeigt, wenn ihn mindestens 5 verschiedene Personen bewertet haben. Sonst wird nichts geteilt. Wenn du das Teilen ausschaltest, werden deine Bewertungen nicht mehr gezählt; bereits gezählte bleiben gezählt. Wenn du eine Zubereitung oder dein Konto löschst, werden die zugehörigen Bewertungen aus den Werten entfernt. Regal, Zubereitungen, Rezepte und Statistik funktionieren in beiden Fällen gleich."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "While on, your ratings, with their brew method and recipe values, are counted without your name or account into community figures for each coffee. Subscribers, and people who rated the same coffee, see these figures. A coffee's figures are shown only once at least 5 different people have rated it. Nothing else is shared. Turning sharing off stops your ratings from being counted; ratings already counted stay counted. Deleting a brew, or your account, removes it from the figures. Your shelf, brews, recipes and statistics work the same either way."
+            "value" : "While on, your ratings, with their brew method and recipe values, are counted without your name or account into community figures for each coffee. Subscribers, and people who rated the same coffee, see these figures. A coffee's figures are shown only once at least 5 different people have rated it. Nothing else is shared. Turning sharing off stops your ratings from being counted; ratings already counted stay counted. Deleting a brew, or your account, removes its ratings from the figures. Your shelf, brews, recipes and statistics work the same either way."
           }
         }
       }
