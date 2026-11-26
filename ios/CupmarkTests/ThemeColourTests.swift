@@ -177,7 +177,8 @@ final class ThemeColourTests: XCTestCase {
         var sets = try Self.loadAll()
         // Secondary text turned into a pale tan on cream, and an accent as dark as its background.
         sets["TextSecondary"]?[.light] = RGB(red: 0.75, green: 0.70, blue: 0.65)
-        sets["AccentColor"]?[.dark] = sets["FormBackground"]?[.dark]
+        let formBackgroundDark = sets["FormBackground"]?[.dark]
+        sets["AccentColor"]?[.dark] = formBackgroundDark
         let failures = Self.failures(in: sets)
         XCTAssertTrue(failures.contains { $0.hasPrefix("TextSecondary on FormBackground (light)") }, "\(failures)")
         XCTAssertTrue(failures.contains { $0.hasPrefix("AccentColor on FormBackground (dark)") }, "\(failures)")
