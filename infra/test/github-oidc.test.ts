@@ -21,7 +21,10 @@ import {
   GITHUB_OIDC_IMPORT_CONTEXT_KEY,
   GITHUB_OIDC_PROVIDER_CONTEXT_KEY,
   GITHUB_OIDC_STACK_NAME,
+  GITHUB_OWNER_ID,
   GITHUB_REPOSITORY,
+  GITHUB_REPOSITORY_ID,
+  GITHUB_SUBJECT_PREFIX,
   OIDC_PROVIDER_LOGICAL_ID,
 } from '../src/github-oidc.ts';
 import { githubOidcApp, githubOidcViolationsAfter, readCdkJson, testApp } from './helpers.ts';
@@ -45,6 +48,9 @@ const bootstrapRole = (kind: string): Json => ({
   'Fn::Join': ['', ['arn:aws:iam::', { Ref: 'AWS::AccountId' }, `:role/cdk-cupmark-${kind}-`, { Ref: 'AWS::AccountId' }, '-eu-central-1']],
 });
 
+/** GitHub's immutable subject prefix, written out literally so that any change to it fails a test. */
+const PREFIX = 'repo:UrsSchweigert@132881530/TheTasteOfCoffee@1470617081';
+
 /**
  * The trust the owner sets on the hand-made role before the import (ADR 0018, issue #46),
  * with the provider given as `federated`.
@@ -61,8 +67,8 @@ function expectedTrust(federated: unknown): Json {
           StringEquals: {
             'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com',
             'token.actions.githubusercontent.com:sub': [
-              'repo:UrsSchweigert/TheTasteOfCoffee:environment:dev',
-              'repo:UrsSchweigert/TheTasteOfCoffee:environment:prod',
+              `${PREFIX}:environment:dev`,
+              `${PREFIX}:environment:prod`,
             ],
           },
         },
@@ -141,12 +147,35 @@ describe('the repository and subjects', () => {
     expect(GITHUB_REPOSITORY).toBe('UrsSchweigert/TheTasteOfCoffee');
   });
 
-  it('trusts exactly the dev and prod environments, and no ref (claude.yml runs on main without one)', () => {
+  it('trusts exactly the dev and prod environments, in GitHub\'s immutable form, and no ref (claude.yml runs on main without one)', () => {
     expect(GITHUB_DEPLOY_SUBJECTS).toEqual([
-      'repo:UrsSchweigert/TheTasteOfCoffee:environment:dev',
-      'repo:UrsSchweigert/TheTasteOfCoffee:environment:prod',
+      'repo:UrsSchweigert@132881530/TheTasteOfCoffee@1470617081:environment:dev',
+      'repo:UrsSchweigert@132881530/TheTasteOfCoffee@1470617081:environment:prod',
     ]);
-    expect(GITHUB_DEPLOY_SUBJECTS.some((sub) => sub.includes(':ref:'))).toBe(false);
+  });
+
+  it('pins the owner id and repository id, and builds every subject from the one prefix', () => {
+    expect(GITHUB_OWNER_ID).toBe('132881530');
+    expect(GITHUB_REPOSITORY_ID).toBe('1470617081');
+    expect(GITHUB_SUBJECT_PREFIX).toBe(PREFIX);
+    for (const sub of GITHUB_DEPLOY_SUBJECTS) {
+      expect(sub.startsWith(`${PREFIX}:environment:`)).toBe(true);
+      // Fails if a subject loses the owner id or repository id (the plain form), gains a
+      // wildcard, or becomes a ref/pull_request subject.
+      expect(sub).toMatch(/^repo:UrsSchweigert@132881530\/TheTasteOfCoffee@1470617081:environment:(dev|prod)$/);
+      expect(sub).not.toMatch(/[*?]/);
+      expect(sub).not.toContain(':ref:');
+    }
+    expect(GITHUB_DEPLOY_SUBJECTS).toHaveLength(2);
+  });
+
+  it('renders exactly those subjects into the trust, with StringEquals and no StringLike', () => {
+    for (const importMode of [true, false]) {
+      const props = templateOf(githubOidcApp({ importMode }).stack).Resources.DeployRole?.Properties;
+      const statement = (props?.AssumeRolePolicyDocument as { Statement: { Condition: Record<string, Json> }[] }).Statement[0];
+      expect(Object.keys(statement?.Condition ?? {})).toEqual(['StringEquals']);
+      expect(statement?.Condition.StringEquals?.['token.actions.githubusercontent.com:sub']).toEqual([`${PREFIX}:environment:dev`, `${PREFIX}:environment:prod`]);
+    }
   });
 });
 
@@ -326,13 +355,16 @@ describe('guards on cupmark-github-oidc', () => {
 
   const trust = 'AssumeRolePolicyDocument.Statement.0';
   it.each([
-    ['StringLike subjects', `${trust}.Condition`, { StringLike: { 'token.actions.githubusercontent.com:sub': 'repo:UrsSchweigert/TheTasteOfCoffee:*' } }, /StringEquals only/],
-    ['a wildcard subject', `${trust}.Condition.StringEquals.token\\.actions\\.githubusercontent\\.com:sub`, ['repo:UrsSchweigert/TheTasteOfCoffee:*'], /must be one of repo:UrsSchweigert\/TheTasteOfCoffee:environment:dev, repo:UrsSchweigert\/TheTasteOfCoffee:environment:prod/],
-    ['another repository', `${trust}.Condition.StringEquals.token\\.actions\\.githubusercontent\\.com:sub`, ['repo:UrsSchweigert/Other:ref:refs/heads/main'], /must be one of repo:UrsSchweigert\/TheTasteOfCoffee:environment:dev, repo:UrsSchweigert\/TheTasteOfCoffee:environment:prod/],
-    ['a different case', `${trust}.Condition.StringEquals.token\\.actions\\.githubusercontent\\.com:sub`, ['repo:ursschweigert/thetasteofcoffee:environment:dev'], /must be one of repo:UrsSchweigert\/TheTasteOfCoffee:environment:dev, repo:UrsSchweigert\/TheTasteOfCoffee:environment:prod/],
-    ['the main branch ref (claude.yml\'s issue_comment job has that sub)', `${trust}.Condition.StringEquals.token\\.actions\\.githubusercontent\\.com:sub`, ['repo:UrsSchweigert/TheTasteOfCoffee:ref:refs/heads/main'], /environment subjects of repo:UrsSchweigert\/TheTasteOfCoffee only/],
-    ['a pull request subject', `${trust}.Condition.StringEquals.token\\.actions\\.githubusercontent\\.com:sub`, ['repo:UrsSchweigert/TheTasteOfCoffee:pull_request'], /environment subjects/],
-    ['another environment', `${trust}.Condition.StringEquals.token\\.actions\\.githubusercontent\\.com:sub`, ['repo:UrsSchweigert/TheTasteOfCoffee:environment:staging'], /environment subjects/],
+    ['StringLike subjects', `${trust}.Condition`, { StringLike: { 'token.actions.githubusercontent.com:sub': 'repo:UrsSchweigert@132881530/TheTasteOfCoffee@1470617081:*' } }, /StringEquals only/],
+    ['a wildcard subject', `${trust}.Condition.StringEquals.token\\.actions\\.githubusercontent\\.com:sub`, ['repo:UrsSchweigert@132881530/TheTasteOfCoffee@1470617081:*'], /must be one of repo:UrsSchweigert@132881530\/TheTasteOfCoffee@1470617081:environment:dev, repo:UrsSchweigert@132881530\/TheTasteOfCoffee@1470617081:environment:prod/],
+    ['another repository', `${trust}.Condition.StringEquals.token\\.actions\\.githubusercontent\\.com:sub`, ['repo:UrsSchweigert/Other:ref:refs/heads/main'], /must be one of repo:UrsSchweigert@132881530\/TheTasteOfCoffee@1470617081:environment:dev, repo:UrsSchweigert@132881530\/TheTasteOfCoffee@1470617081:environment:prod/],
+    ['a different case', `${trust}.Condition.StringEquals.token\\.actions\\.githubusercontent\\.com:sub`, ['repo:ursschweigert/thetasteofcoffee:environment:dev'], /must be one of repo:UrsSchweigert@132881530\/TheTasteOfCoffee@1470617081:environment:dev, repo:UrsSchweigert@132881530\/TheTasteOfCoffee@1470617081:environment:prod/],
+    ['the main branch ref (claude.yml\'s issue_comment job has that sub)', `${trust}.Condition.StringEquals.token\\.actions\\.githubusercontent\\.com:sub`, ['repo:UrsSchweigert@132881530/TheTasteOfCoffee@1470617081:ref:refs/heads/main'], /environment subjects of repo:UrsSchweigert@132881530\/TheTasteOfCoffee@1470617081 only/],
+    ['a pull request subject', `${trust}.Condition.StringEquals.token\\.actions\\.githubusercontent\\.com:sub`, ['repo:UrsSchweigert@132881530/TheTasteOfCoffee@1470617081:pull_request'], /environment subjects/],
+    ['another environment', `${trust}.Condition.StringEquals.token\\.actions\\.githubusercontent\\.com:sub`, ['repo:UrsSchweigert@132881530/TheTasteOfCoffee@1470617081:environment:staging'], /environment subjects/],
+    ['the plain subject form without the ids', `${trust}.Condition.StringEquals.token\\.actions\\.githubusercontent\\.com:sub`, ['repo:UrsSchweigert/TheTasteOfCoffee:environment:dev'], /environment subjects of repo:UrsSchweigert@132881530/],
+    ['a subject without the repository id', `${trust}.Condition.StringEquals.token\\.actions\\.githubusercontent\\.com:sub`, ['repo:UrsSchweigert@132881530/TheTasteOfCoffee:environment:dev'], /environment subjects of repo:UrsSchweigert@132881530/],
+    ['a subject with another repository id', `${trust}.Condition.StringEquals.token\\.actions\\.githubusercontent\\.com:sub`, ['repo:UrsSchweigert@132881530/TheTasteOfCoffee@1:environment:dev'], /environment subjects of repo:UrsSchweigert@132881530/],
     ['another audience', `${trust}.Condition.StringEquals.token\\.actions\\.githubusercontent\\.com:aud`, 'example.com', /aud must be exactly sts.amazonaws.com/],
     ['another provider', `${trust}.Principal.Federated`, 'arn:aws:iam::123456789012:oidc-provider/example.com', /Federated must be the GitHub provider/],
     ['an AWS principal', `${trust}.Principal.AWS`, 'arn:aws:iam::999999999999:root', /AWS principals are not allowed/],

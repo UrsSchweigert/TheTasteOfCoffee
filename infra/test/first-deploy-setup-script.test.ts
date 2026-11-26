@@ -37,7 +37,9 @@ function render(value: unknown): unknown {
 const ROLE = (render(IMPORT_TEMPLATE) as { Resources: { DeployRole: { Properties: Json } } }).Resources.DeployRole.Properties;
 const TARGET_TRUST = ROLE.AssumeRolePolicyDocument as Json;
 const SUB = 'token.actions.githubusercontent.com:sub';
-const REPO = 'repo:UrsSchweigert/TheTasteOfCoffee';
+// GitHub's immutable subject prefix (written out literally) and the plain form the role had first.
+const REPO = 'repo:UrsSchweigert@132881530/TheTasteOfCoffee@1470617081';
+const PLAIN_REPO = 'repo:UrsSchweigert/TheTasteOfCoffee';
 
 function trustWith(subs: string[], operator = 'StringEquals'): Json {
   const doc = JSON.parse(JSON.stringify(TARGET_TRUST)) as { Statement: { Condition: Record<string, Json> }[] };
@@ -47,8 +49,22 @@ function trustWith(subs: string[], operator = 'StringEquals'): Json {
   statement.Condition = { [operator]: condition };
   return doc;
 }
-/** The trust docs/07 describes: the old subjects, in the order the owner wrote them. */
-const OLD_TRUST = trustWith([`${REPO}:environment:dev`, `${REPO}:ref:refs/heads/main`]);
+/** The role's live trust (ADR 0018, addendum): aud in StringEquals, the immutable subjects in StringLike. */
+function liveTrustWith(subs: string[], aud = 'sts.amazonaws.com'): Json {
+  const doc = trustWith(subs);
+  const statement = (doc as { Statement: { Condition: Record<string, Record<string, unknown>> }[] }).Statement[0];
+  if (statement === undefined) throw new Error('no statement');
+  statement.Condition = {
+    StringEquals: { 'token.actions.githubusercontent.com:aud': aud },
+    StringLike: { [SUB]: subs },
+  };
+  return doc;
+}
+const LIVE_SUBS = [`${REPO}:environment:dev`, `${REPO}:ref:refs/heads/main`];
+/** The trust the owner has live, in the order the owner wrote it. */
+const OLD_TRUST = liveTrustWith(LIVE_SUBS);
+/** The original document of docs/07: plain subjects, StringEquals. */
+const OLD_PLAIN_TRUST = trustWith([`${PLAIN_REPO}:environment:dev`, `${PLAIN_REPO}:ref:refs/heads/main`]);
 
 interface State {
   arn: string;
@@ -214,8 +230,9 @@ describe('first-deploy-setup.sh', () => {
     expect(r.stdout).toContain('npx cdk import cupmark-github-oidc -c cupmark:githubOidcImport=true --resource-mapping import/cupmark-github-oidc.json --toolkit-stack-name CDKToolkit-cupmark');
     expect(r.stdout).toContain('Dry run only: nothing was changed.');
     // The diff shows only the sub list changing.
-    expect(r.stdout).toMatch(/-\s+"repo:UrsSchweigert\/TheTasteOfCoffee:ref:refs\/heads\/main"/);
-    expect(r.stdout).toMatch(/\+\s+"repo:UrsSchweigert\/TheTasteOfCoffee:environment:prod"/);
+    expect(r.stdout).toContain('StringLike');
+    expect(r.stdout).toMatch(/-\s+"repo:UrsSchweigert@132881530\/TheTasteOfCoffee@1470617081:ref:refs\/heads\/main"/);
+    expect(r.stdout).toMatch(/\+\s+"repo:UrsSchweigert@132881530\/TheTasteOfCoffee@1470617081:environment:prod"/);
   });
 
   it('apply: updates the expected old trust, imports, checks drift, deploys the tag and verifies', () => {
@@ -249,6 +266,25 @@ describe('first-deploy-setup.sh', () => {
     expect(r.calls.some((c) => c.startsWith('npx cdk import'))).toBe(false);
   });
 
+  it('apply: also rewrites the original plain-form trust, changing only the sub condition', () => {
+    const r = runScript(['--apply'], (s) => {
+      s.trust = OLD_PLAIN_TRUST;
+    });
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    expect(r.state.trust).toEqual(trustWith([`${REPO}:environment:dev`, `${REPO}:environment:prod`]));
+    expect(r.calls.filter((c) => c.startsWith('aws iam update-assume-role-policy'))).toHaveLength(1);
+  });
+
+  it('apply: rewrites the live trust (immutable subjects, StringLike) to the target and nothing else', () => {
+    const r = runScript(['--apply']);
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    expect(r.stdout).toContain('The trust is a known old document');
+    // StringEquals only, no StringLike left; aud, principal and action untouched.
+    expect(r.state.trust).toEqual(TARGET_TRUST);
+    expect(JSON.stringify(r.state.trust)).not.toContain('StringLike');
+    expect(r.calls.filter((c) => c.startsWith('aws iam update-assume-role-policy'))).toHaveLength(1);
+  });
+
   it('skips the trust step when the trust is already right (subjects in any order)', () => {
     const r = runScript([], (s) => {
       s.trust = trustWith([`${REPO}:environment:prod`, `${REPO}:environment:dev`]);
@@ -261,9 +297,15 @@ describe('first-deploy-setup.sh', () => {
   });
 
   it.each<[string, unknown]>([
-    ['StringLike', trustWith([`${REPO}:environment:dev`, `${REPO}:ref:refs/heads/main`], 'StringLike')],
+    ['StringLike only (aud inside it too)', trustWith(LIVE_SUBS, 'StringLike')],
+    ['the live trust with an extra subject', liveTrustWith([...LIVE_SUBS, `${REPO}:environment:prod`])],
+    ['the live trust with a subject of another repository id', liveTrustWith([`${REPO}:environment:dev`, `repo:UrsSchweigert@132881530/TheTasteOfCoffee@1:ref:refs/heads/main`])],
+    ['the live trust with a changed aud', liveTrustWith(LIVE_SUBS, 'example.com')],
+    ['the live trust with a wildcard subject', liveTrustWith([`${REPO}:*`, `${REPO}:ref:refs/heads/main`])],
+    ['the plain trust with an extra subject', trustWith([`${PLAIN_REPO}:environment:dev`, `${PLAIN_REPO}:ref:refs/heads/main`, `${PLAIN_REPO}:pull_request`])],
+    ['plain subjects with StringLike', liveTrustWith([`${PLAIN_REPO}:environment:dev`, `${PLAIN_REPO}:ref:refs/heads/main`])],
     ['another subject', trustWith([`${REPO}:environment:dev`, `${REPO}:pull_request`])],
-    ['an extra subject', trustWith([`${REPO}:environment:dev`, `${REPO}:ref:refs/heads/main`, 'repo:x/y:ref:refs/heads/main'])],
+    ['an extra subject', trustWith([...LIVE_SUBS, 'repo:x/y:ref:refs/heads/main'])],
     ['an extra statement', { ...OLD_TRUST, Statement: [...(OLD_TRUST.Statement as unknown[]), { Effect: 'Allow', Principal: { AWS: '*' }, Action: 'sts:AssumeRole' }] }],
   ])('stops on an unexpected trust (%s) and never overwrites it', (_label, trust) => {
     const r = runScript(['--apply'], (s) => {

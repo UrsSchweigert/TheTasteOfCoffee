@@ -48,14 +48,32 @@ export const GITHUB_OIDC_AUDIENCE = 'sts.amazonaws.com';
  */
 export const GITHUB_REPOSITORY = 'UrsSchweigert/TheTasteOfCoffee';
 
+/**
+ * GitHub's numeric ids of the owner account and of this repository (public, not secret;
+ * `GET /repos/UrsSchweigert/TheTasteOfCoffee` returns `owner.id` and `id`). GitHub now
+ * issues the immutable subject form `repo:<owner>@<owner_id>/<repo>@<repo_id>:...` for
+ * this repository (ADR 0018, addendum 2026-11-26). A different owner or repository that
+ * reuses the name has other ids and never matches.
+ */
+export const GITHUB_OWNER_ID = '132881530';
+export const GITHUB_REPOSITORY_ID = '1470617081';
+
+/** The one prefix every trusted subject starts with: `repo:<owner>@<id>/<repo>@<id>`. */
+export const GITHUB_SUBJECT_PREFIX = (() => {
+  const [owner, repo] = GITHUB_REPOSITORY.split('/');
+  return `repo:${owner ?? ''}@${GITHUB_OWNER_ID}/${repo ?? ''}@${GITHUB_REPOSITORY_ID}`;
+})();
+
 /** The GitHub environments the role trusts; both are limited to `main` in GitHub. */
 export const GITHUB_DEPLOY_ENVIRONMENTS = ['dev', 'prod'] as const;
 
 /**
  * The `sub` values the role trusts (ADR 0018): only jobs that declare the GitHub
- * environment `dev` or `prod`. GitHub writes `sub` as `repo:<owner>/<repo>:environment:<name>`
- * for such a job. The owner sets the same list on the existing role by hand before the
- * import, so the import template still matches it exactly (docs/07, issue #46).
+ * environment `dev` or `prod`. GitHub writes `sub` as
+ * `repo:<owner>@<owner_id>/<repo>@<repo_id>:environment:<name>` for such a job. The
+ * setup script (scripts/aws/first-deploy-setup.sh, step 2) sets the same list on the
+ * existing role before the import, so the import template still matches it exactly
+ * (docs/07, issue #46).
  *
  * Not `ref:refs/heads/main`: `.github/workflows/claude.yml` runs on `issue_comment` with
  * `id-token: write`, and for that event GitHub sets the ref to the default branch, so
@@ -68,7 +86,7 @@ export const GITHUB_DEPLOY_ENVIRONMENTS = ['dev', 'prod'] as const;
  * separated in IAM either: one role, one bootstrap.
  */
 export const GITHUB_DEPLOY_SUBJECTS: readonly string[] = GITHUB_DEPLOY_ENVIRONMENTS.map(
-  (env) => `repo:${GITHUB_REPOSITORY}:environment:${env}`,
+  (env) => `${GITHUB_SUBJECT_PREFIX}:environment:${env}`,
 );
 
 /** The existing role's name; the IAM `Cupmark` prefix of invariant 9. */

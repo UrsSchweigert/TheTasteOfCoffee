@@ -9,8 +9,11 @@
 # Steps, each stopping at the first mismatch:
 #   0. preflight: identity, region, Node, clean main checkout, backend build, infra install;
 #   1. issue #45: scripts/aws/apply-guardrails.sh (CupmarkBoundary, CupmarkCfnExecution);
-#   2. issue #46, trust part: the `sub` list of CupmarkGitHubDeploy's trust becomes exactly
-#      the two environment subjects of the import template; any other difference stops;
+#   2. issue #46, trust part: the `sub` condition of CupmarkGitHubDeploy's trust becomes
+#      exactly the two environment subjects of the import template (immutable form
+#      repo:<owner>@<id>/<repo>@<id>:environment:dev|prod, StringEquals). Only two known
+#      old documents are rewritten (plain subjects with StringEquals; immutable subjects
+#      with StringLike); any other difference stops and overwrites nothing;
 #   3. issue #48: check the role, `cdk import` it into cupmark-github-oidc, drift detection
 #      (IN_SYNC), `cdk diff`, `cdk deploy` (the tag), then tags and termination protection;
 #   4. a summary to paste into the issues.
@@ -134,22 +137,34 @@ NEW_SUBS="$(jq -c --arg k "$SUB_KEY" '.Statement[0].Condition.StringEquals[$k] |
 REPO_SUBJECT="$(jq -r --arg k "$SUB_KEY" '.Statement[0].Condition.StringEquals[$k][0] | sub(":environment:[a-z]+$"; "")' "$tmp/trust.target")"
 [[ "$NEW_SUBS" == "[\"$REPO_SUBJECT:environment:dev\",\"$REPO_SUBJECT:environment:prod\"]" ]] \
   || die "the import template does not hold exactly the two environment subjects: $NEW_SUBS"
-OLD_SUBS="$(jq -cn --arg r "$REPO_SUBJECT" '[$r + ":environment:dev", $r + ":ref:refs/heads/main"] | sort')"
+[[ "$REPO_SUBJECT" =~ ^repo:[^@/:]+@[0-9]+/[^@/:]+@[0-9]+$ ]] \
+  || die "the import template's subjects are not in the immutable form repo:<owner>@<id>/<repo>@<id>: $REPO_SUBJECT"
+# The same prefix without the numeric ids: the plain form the role had first.
+PLAIN_SUBJECT="$(sed -E 's/@[0-9]+//g' <<<"$REPO_SUBJECT")"
+OLD_SUBS_IMMUTABLE="$(jq -cn --arg r "$REPO_SUBJECT" '[$r + ":environment:dev", $r + ":ref:refs/heads/main"] | sort')"
+OLD_SUBS_PLAIN="$(jq -cn --arg r "$PLAIN_SUBJECT" '[$r + ":environment:dev", $r + ":ref:refs/heads/main"] | sort')"
 
 aws iam get-role --role-name "$ROLE" --query 'Role.AssumeRolePolicyDocument' --output json >"$tmp/trust.raw" \
   || die "could not read the role $ROLE"
 jq -S "$NORM" "$tmp/trust.raw" >"$tmp/trust.current"
-# The document docs/07 describes: the target, with the old subject list.
-jq -S --arg k "$SUB_KEY" --argjson subs "$OLD_SUBS" '.Statement[0].Condition.StringEquals[$k] = $subs' "$tmp/trust.target" >"$tmp/trust.expected-old"
+# The documents this script knows as "old": the target with only the sub condition different.
+#   plain:     the original, StringEquals with the plain subjects (docs/07);
+#   immutable: the role as GitHub's immutable subject form made it live (ADR 0018, addendum):
+#              aud in StringEquals, the two immutable subjects (environment:dev and
+#              ref:refs/heads/main) in StringLike.
+jq -S --arg k "$SUB_KEY" --argjson subs "$OLD_SUBS_PLAIN" '.Statement[0].Condition.StringEquals[$k] = $subs' "$tmp/trust.target" >"$tmp/trust.expected-old-plain"
+jq -S --arg k "$SUB_KEY" --argjson subs "$OLD_SUBS_IMMUTABLE" \
+  'del(.Statement[0].Condition.StringEquals[$k]) | .Statement[0].Condition.StringLike = {($k): $subs}' "$tmp/trust.target" >"$tmp/trust.expected-old-immutable"
 
 TRUST_PENDING=0
 if cmp -s "$tmp/trust.current" "$tmp/trust.target"; then
   note "#46: the trust already lists exactly environment:dev and environment:prod; skipped"
-elif cmp -s "$tmp/trust.current" "$tmp/trust.expected-old"; then
-  # Identical to the current document except the sub list.
-  jq --arg k "$SUB_KEY" --argjson subs "$NEW_SUBS" '.Statement[0].Condition.StringEquals[$k] = $subs' "$tmp/trust.raw" >"$tmp/trust.new"
+elif cmp -s "$tmp/trust.current" "$tmp/trust.expected-old-plain" || cmp -s "$tmp/trust.current" "$tmp/trust.expected-old-immutable"; then
+  # Identical to the current document except the sub condition, which becomes StringEquals
+  # with the two environment subjects (a StringLike block, if any, is dropped).
+  jq --arg k "$SUB_KEY" --argjson subs "$NEW_SUBS" 'del(.Statement[0].Condition.StringLike) | .Statement[0].Condition.StringEquals[$k] = $subs' "$tmp/trust.raw" >"$tmp/trust.new"
   jq -S "$NORM" "$tmp/trust.new" | cmp -s - "$tmp/trust.target" || die "internal: the new trust would not match the import template"
-  echo "  The trust is the one docs/07 describes. The change (only the sub list):"
+  echo "  The trust is a known old document (docs/07, ADR 0018). The change (only the sub condition):"
   diff -u --label "current trust" --label "new trust" "$tmp/trust.current" "$tmp/trust.target" | mask || true
   change aws iam update-assume-role-policy --role-name "$ROLE" --policy-document "file://$tmp/trust.new" || die "update-assume-role-policy failed"
   if [[ $APPLY -eq 1 ]]; then
@@ -158,11 +173,13 @@ elif cmp -s "$tmp/trust.current" "$tmp/trust.expected-old"; then
     note "#46: trust updated: sub is now exactly environment:dev and environment:prod"
   else
     TRUST_PENDING=1
-    note "#46: dry run: the trust would be updated (sub list only)"
+    note "#46: dry run: the trust would be updated (sub condition only)"
   fi
 else
-  echo "  The trust is neither the expected old document nor the target. Difference to the expected old one:" >&2
-  diff -u --label "expected (docs/07)" --label "actual" "$tmp/trust.expected-old" "$tmp/trust.current" | mask >&2 || true
+  echo "  The trust is neither a known old document nor the target. Difference to the known old one in the immutable form:" >&2
+  diff -u --label "expected old (docs/07, ADR 0018)" --label "actual" "$tmp/trust.expected-old-immutable" "$tmp/trust.current" | mask >&2 || true
+  echo "  Difference to the original plain form:" >&2
+  diff -u --label "expected old, plain" --label "actual" "$tmp/trust.expected-old-plain" "$tmp/trust.current" | mask >&2 || true
   die "unexpected trust on $ROLE; it is not overwritten. Report this difference."
 fi
 
