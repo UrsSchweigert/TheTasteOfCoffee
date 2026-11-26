@@ -50,7 +50,7 @@ struct ShelfEntryEditorScreen: View {
             // The very top of a stored entry: "Overall 7.4, rated brews 3" (M2-T48); a tap
             // scrolls to the dimension section below.
             if brewRoute != nil {
-                CoffeeSummaryRow(averages: model.averages) {
+                CoffeeSummaryRow(averages: model.averages, product: model.productAverage) {
                     withAnimation {
                         proxy.scrollTo(CoffeeAveragesSection.anchor, anchor: .top)
                     }

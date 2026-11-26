@@ -330,6 +330,15 @@ final class AccountStore {
         return try context.fetch(descriptor)
     }
 
+    /// The mean overall score of each of `entries` and of each bean with more than one of them
+    /// (`StatisticsRules.shelfAverages`, M2-T49). One read of the brews for the whole list, not
+    /// one per row; reads only.
+    func shelfAverages(of entries: [StoredShelfEntry]) throws -> [UUID: ShelfAverages] {
+        let brews = try brewsNewestFirst().map { brew in StatisticsBrew(brew, bean: nil) }
+        let bags = entries.map { entry in ShelfBag(entryID: entry.localID, beanID: entry.bean?.localID) }
+        return StatisticsRules.shelfAverages(of: brews, bags: bags)
+    }
+
     /// Every recipe, newest first.
     func recipes() throws -> [StoredRecipe] {
         let removed = SyncState.pendingDelete.rawValue

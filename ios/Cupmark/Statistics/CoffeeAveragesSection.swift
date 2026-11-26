@@ -91,38 +91,56 @@ struct CoffeeAveragesSection: View {
 /// coffee", the text as the value and the hint says where the tap goes.
 struct CoffeeSummaryRow: View {
     let averages: CoffeeAverages
+    /// The mean over all the user's bags of this bean (M2-T49), nil with one bag of it or no
+    /// rated brew: the line is then not shown.
+    var product: OverallAverage?
     let onSelect: () -> Void
     @Environment(\.locale) private var locale
 
     var body: some View {
-        if let mean = averages.summaryOverall {
-            let text = L10n.coffeeSummaryOverall(
-                mean: mean.formatted(StatisticsRules.meanStyle().locale(locale)),
-                brews: averages.ratedBrews.formatted(.number.locale(locale))
-            )
+        if averages.summaryOverall != nil || product != nil {
             Section {
-                Button(action: onSelect) {
-                    HStack(spacing: 8) {
-                        Text(verbatim: text)
-                            .font(.headline)
-                            .monospacedDigit()
-                            .accentText()
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        Image(systemName: "chevron.down")
-                            .font(.footnote)
-                            .secondaryText()
-                            .accessibilityHidden(true)
-                    }
-                    .frame(minHeight: 44)
-                    .contentShape(Rectangle())
+                if let mean = averages.summaryOverall {
+                    bagButton(mean: mean)
                 }
-                .accessibilityLabel(Text(L10n.coffeeSummaryLabel))
-                .accessibilityValue(Text(verbatim: text))
-                .accessibilityHint(Text(L10n.coffeeSummaryHint))
-                .accessibilityIdentifier("coffee-summary")
+                // The product line under the bag summary (M2-T49), the wording of the shelf list.
+                if let product {
+                    Text(verbatim: ShelfAverageLines.productText(product, locale: locale))
+                        .font(.subheadline)
+                        .monospacedDigit()
+                        .secondaryText()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityIdentifier("coffee-summary-product")
+                }
             }
             .surfaceRow()
         }
+    }
+
+    private func bagButton(mean: Double) -> some View {
+        let text = L10n.coffeeSummaryOverall(
+            mean: mean.formatted(StatisticsRules.meanStyle().locale(locale)),
+            brews: averages.ratedBrews.formatted(.number.locale(locale))
+        )
+        return Button(action: onSelect) {
+            HStack(spacing: 8) {
+                Text(verbatim: text)
+                    .font(.headline)
+                    .monospacedDigit()
+                    .accentText()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "chevron.down")
+                    .font(.footnote)
+                    .secondaryText()
+                    .accessibilityHidden(true)
+            }
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .accessibilityLabel(Text(L10n.coffeeSummaryLabel))
+        .accessibilityValue(Text(verbatim: text))
+        .accessibilityHint(Text(L10n.coffeeSummaryHint))
+        .accessibilityIdentifier("coffee-summary")
     }
 }
 

@@ -52,3 +52,13 @@ After testing the TestFlight build the owner asked to see the averages "right ne
 - **Top of the coffee's screen:** a compact summary row at the very top of a stored entry's screen, "Overall 7.4, rated brews 3": the mean overall score and the number of rated brews, no plural wording. It appears only with at least one rated brew that scores `overall` (no empty state of its own and no zeros: the section below says "Rate a brew to see your averages here"). With one rated brew it shows that brew's values, as the section does. A tap scrolls to the dimension section of the addendum above, which stays as it is.
 - **Brew list:** a rated row shows its own overall score and, next to it, the coffee's average overall ("avg 7.4"). An unrated row shows neither; with one rated brew there is no average (it would be the brew's own number). VoiceOver reads "Overall 8.0, coffee average 7.4".
 
+
+## Addendum M2-T49: averages on the shelf list, per bag and per product (lead, ADR 0014)
+
+The owner asked (2026-11-26) for the averages of a bag on each row of the shelf, and across all bags of the same product.
+
+- **Bag line:** each shelf row shows the mean overall score and the number of rated brews of its own bag ("Overall 7.4, rated brews 3"), the wording of the coffee screen. A bag without rated brews shows nothing, no zeros.
+- **Product line:** when the user has more than one bag of the same bean, each of those rows also shows "All bags 7.1, rated brews 5", the mean over the rated brews of every bag of that bean. With one bag the line is not shown (it would repeat the bag line); a bag without a bean has none. The coffee screen shows the same line under its summary.
+- **Which brews count:** as in M2-T44: not removed, rated; brews of other beans never count.
+- **Count:** the shelf counts brews that scored `overall`; the coffee screen's summary counts rated brews. Every vocabulary version defines `overall` and a rating cannot be saved without it, so the two are equal today.
+- **Where:** one pure function, `StatisticsRules.shelfAverages(of:bags:)`, with tests; one batched read for the whole list.
