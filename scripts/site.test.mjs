@@ -94,3 +94,11 @@ test('site: the facts of the policy match the decisions it states', () => {
   assert.match(pages.en, /at least five different people/);
   assert.match(pages.de, /mindestens fünf verschiedene Personen/);
 });
+
+test('site: the privacy text says brew photos stay on the device and are never uploaded, in both languages (M2-T42b)', () => {
+  assert.match(pages.en, /Brew photos stay on the device and are never uploaded\./);
+  assert.match(pages.de, /Fotos von Zubereitungen bleiben auf dem Gerät und werden nie hochgeladen\./);
+  // The camera section also says the camera photographs a brew, as the permission prompt does.
+  assert.match(pages.en, /to photograph a label or a brew/);
+  assert.match(pages.de, /um ein Etikett oder eine Zubereitung zu fotografieren/);
+});

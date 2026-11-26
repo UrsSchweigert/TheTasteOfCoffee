@@ -42,7 +42,10 @@ enum UITestFixtures {
     /// app's screens use.
     @MainActor
     static func seed(withProfile: Bool, now: Date = Date(), calendar: Calendar = .current) throws -> Seeded {
-        let store = try AccountStore.inMemory()
+        // The brew photos of a launch go to a folder of their own in the temporary directory.
+        let photoFolder = FileManager.default.temporaryDirectory
+            .appending(path: "CupmarkUITestBrewPhotos-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let store = try AccountStore.inMemory(brewPhotoFiles: BrewPhotoFileStore(directory: photoFolder))
         if withProfile {
             let profile = StoredProfile(API.Profile(locale: VocabularyLanguage.current, consent: API.Consent(contributeToAggregates: false)))
             profile.syncState = .synced

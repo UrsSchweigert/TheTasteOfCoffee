@@ -423,4 +423,26 @@ enum L10n {
     static var accountDeletionDeleteThisAccountHint: LocalizedStringKey { "account_deletion.delete_this_account.hint" }
     static var accountDeletionSignOutInstead: LocalizedStringKey { "account_deletion.sign_out_instead" }
     static var accountDeletionSignOutInsteadHint: LocalizedStringKey { "account_deletion.sign_out_instead.hint" }
+    static var brewPhotosHeader: LocalizedStringKey { "brew_photos.header" }
+    static var brewPhotosFooter: LocalizedStringKey { "brew_photos.footer" }
+    static func brewPhotosCount(_ count: String, of limit: String, bundle: Bundle = .main) -> String { String(localized: "brew_photos.count \(count) \(limit)", bundle: bundle) }
+    static func brewPhotosSummary(_ count: String, of limit: String, bundle: Bundle = .main) -> String { String(localized: "brew_photos.summary \(count) \(limit)", bundle: bundle) }
+    static var brewPhotosEmpty: LocalizedStringKey { "brew_photos.empty" }
+    static var brewPhotosTake: LocalizedStringKey { "brew_photos.take" }
+    static var brewPhotosPick: LocalizedStringKey { "brew_photos.pick" }
+    static var brewPhotosAdding: LocalizedStringKey { "brew_photos.adding" }
+    static func brewPhotosLimitReached(_ limit: String) -> String { String(localized: "brew_photos.limit_reached \(limit)") }
+    static var brewPhotosPermissionDenied: LocalizedStringKey { "brew_photos.permission_denied" }
+    static func brewPhotosItem(_ position: String, of count: String, bundle: Bundle = .main) -> String { String(localized: "brew_photos.item \(position) \(count)", bundle: bundle) }
+    static func brewPhotosDelete(_ position: String, of count: String, bundle: Bundle = .main) -> String { String(localized: "brew_photos.delete \(position) \(count)", bundle: bundle) }
+    static var brewPhotosDeleteShort: LocalizedStringKey { "brew_photos.delete.short" }
+    static var brewPhotosFileMissing: LocalizedStringKey { "brew_photos.file_missing" }
+    static var brewPhotosDeleteTitle: LocalizedStringKey { "brew_photos.delete.title" }
+    static var brewPhotosDeleteMessage: LocalizedStringKey { "brew_photos.delete.message" }
+    static var brewPhotosDeleteConfirm: LocalizedStringKey { "brew_photos.delete.confirm" }
+    static var brewPhotosFailedUnreadable: LocalizedStringKey { "brew_photos.failed.unreadable" }
+    static var brewPhotosFailedTooLarge: LocalizedStringKey { "brew_photos.failed.too_large" }
+    static var brewPhotosFailedLimit: LocalizedStringKey { "brew_photos.failed.limit" }
+    static var brewPhotosFailedBrewNotFound: LocalizedStringKey { "brew_photos.failed.brew_not_found" }
+    static var brewPhotosFailedSave: LocalizedStringKey { "brew_photos.failed.save" }
 }

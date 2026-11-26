@@ -2269,6 +2269,402 @@
         }
       }
     },
+    "brew_photos.adding" : {
+      "comment" : "Shown while a photo is prepared and saved.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Foto wird hinzugefügt"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adding photo"
+          }
+        }
+      }
+    },
+    "brew_photos.count %@ %@" : {
+      "comment" : "Visible count; first %@ the number of photos, second the most a brew can hold.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ von %2$@ Fotos"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ of %2$@ photos"
+          }
+        }
+      }
+    },
+    "brew_photos.delete %@ %@" : {
+      "comment" : "VoiceOver label of the delete button of one photo.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Foto %1$@ von %2$@ löschen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete photo %1$@ of %2$@"
+          }
+        }
+      }
+    },
+    "brew_photos.delete.confirm" : {
+      "comment" : "Destructive button of the delete confirmation.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Foto löschen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete Photo"
+          }
+        }
+      }
+    },
+    "brew_photos.delete.message" : {
+      "comment" : "Message of the delete confirmation.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Foto wird von diesem iPhone entfernt und kann nicht wiederhergestellt werden."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The photo is removed from this iPhone and cannot be recovered."
+          }
+        }
+      }
+    },
+    "brew_photos.delete.short" : {
+      "comment" : "Visible text of the delete button of a photo.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Löschen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete"
+          }
+        }
+      }
+    },
+    "brew_photos.delete.title" : {
+      "comment" : "Title of the delete confirmation.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieses Foto löschen?"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete this photo?"
+          }
+        }
+      }
+    },
+    "brew_photos.empty" : {
+      "comment" : "Shown when the brew has no photo.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch keine Fotos."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No photos yet."
+          }
+        }
+      }
+    },
+    "brew_photos.failed.brew_not_found" : {
+      "comment" : "Failure message.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Zubereitung ist nicht mehr auf diesem iPhone, das Foto wurde nicht hinzugefügt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This brew is no longer on this iPhone, so the photo was not added."
+          }
+        }
+      }
+    },
+    "brew_photos.failed.limit" : {
+      "comment" : "Failure message.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Zubereitung hat schon die höchste Zahl an Fotos. Lösche zuerst eins."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This brew already has the most photos it can hold. Delete one first."
+          }
+        }
+      }
+    },
+    "brew_photos.failed.save" : {
+      "comment" : "Failure message.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Foto konnte nicht gespeichert werden. Es wurde nichts geändert."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The photo could not be saved. Nothing was changed."
+          }
+        }
+      }
+    },
+    "brew_photos.failed.too_large" : {
+      "comment" : "Failure message.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Foto ist zu groß, um es zu speichern. Versuche ein anderes."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The photo is too large to keep. Try another one."
+          }
+        }
+      }
+    },
+    "brew_photos.failed.unreadable" : {
+      "comment" : "Failure message.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Foto konnte nicht gelesen werden. Versuche ein anderes."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The photo could not be read. Try another one."
+          }
+        }
+      }
+    },
+    "brew_photos.file_missing" : {
+      "comment" : "Shown for a photo record whose file is gone.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Fotodatei fehlt. Du kannst diesen Eintrag löschen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The photo file is missing. You can delete this entry."
+          }
+        }
+      }
+    },
+    "brew_photos.footer" : {
+      "comment" : "Footer of the photos section.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fotos bleiben auf diesem iPhone. Sie werden nie hochgeladen oder exportiert."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Photos stay on this iPhone. They are never uploaded or exported."
+          }
+        }
+      }
+    },
+    "brew_photos.header" : {
+      "comment" : "Header of the photos section on a brew.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fotos"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Photos"
+          }
+        }
+      }
+    },
+    "brew_photos.item %@ %@" : {
+      "comment" : "VoiceOver label of one photo; its value is the date.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Foto %1$@ von %2$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Photo %1$@ of %2$@"
+          }
+        }
+      }
+    },
+    "brew_photos.limit_reached %@" : {
+      "comment" : "Why the add buttons are disabled; %@ is the limit.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Zubereitung hat %@ Fotos, mehr geht nicht. Lösche eins, um ein weiteres hinzuzufügen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This brew has %@ photos, the most it can hold. Delete one to add another."
+          }
+        }
+      }
+    },
+    "brew_photos.permission_denied" : {
+      "comment" : "Shown with a Settings button when camera access was denied.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Kamerazugriff ist aus. Erlaube ihn in den Einstellungen, um eine Zubereitung zu fotografieren."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Camera access is off. Allow it in Settings to photograph a brew."
+          }
+        }
+      }
+    },
+    "brew_photos.pick" : {
+      "comment" : "Button that opens the system photo picker.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aus der Mediathek wählen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose from Library"
+          }
+        }
+      }
+    },
+    "brew_photos.summary %@ %@" : {
+      "comment" : "VoiceOver label of the count row, for example \"Brew photos, 2 of 6\".",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fotos der Zubereitung, %1$@ von %2$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brew photos, %1$@ of %2$@"
+          }
+        }
+      }
+    },
+    "brew_photos.take" : {
+      "comment" : "Button that opens the camera to photograph the brew.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Foto aufnehmen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Take a Photo"
+          }
+        }
+      }
+    },
     "export.done" : {
       "comment" : "Button that deletes the temporary export file.",
       "extractionState" : "manual",

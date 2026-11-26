@@ -2,19 +2,19 @@
   "sourceLanguage" : "en",
   "strings" : {
     "NSCameraUsageDescription" : {
-      "comment" : "Camera permission prompt. The camera reads the barcode on a coffee bag (M2-T13) and photographs its label (M2-T23); the English value must match INFOPLIST_KEY_NSCameraUsageDescription in project.pbxproj.",
+      "comment" : "Camera permission prompt. The camera reads the barcode on a coffee bag (M2-T13) and photographs its label (M2-T23) and a brew (M2-T42b); the English value must match INFOPLIST_KEY_NSCameraUsageDescription in project.pbxproj.",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cupmark verwendet die Kamera, um den Barcode auf einer Kaffeepackung zu lesen und das Etikett zu fotografieren."
+            "value" : "Cupmark verwendet die Kamera, um den Barcode auf einer Kaffeepackung zu lesen und das Etikett oder eine Zubereitung zu fotografieren."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cupmark uses the camera to read the barcode on a coffee bag and to photograph its label."
+            "value" : "Cupmark uses the camera to read the barcode on a coffee bag and to photograph its label or a brew."
           }
         }
       }

@@ -46,6 +46,8 @@ A brew references a bean on the shelf and a method. Fields depend on the method;
 
 The app computes ratio and days since roast. A brew can be saved as a recipe and repeated with one tap, which is how the 30-second target is met.
 
+A brew can have up to 6 photos, taken with the camera or picked from the photo library. They are kept on the device only: never uploaded, never exported, with no caption (ADR 0033).
+
 ## F3 Rating
 
 Each brew is scored on eight criteria, 1 to 10 in half steps. They follow the attribute set used in professional cupping, reduced to what a home drinker can judge.
@@ -96,7 +98,7 @@ Means have one decimal in the device locale. Without rated brews a section shows
 | --- | --- |
 | Offline | Scan, brew and rate work offline and sync later; the device holds a full copy of the user's own data |
 | Speed | API responses under 300 ms at the 95th percentile, cold starts excluded |
-| Privacy | EU data residency; no advertising SDKs; no third-party analytics; account deletion in the app |
+| Privacy | EU data residency; no advertising SDKs; no third-party analytics; account deletion in the app (it also deletes the brew photos on the device) |
 | Durability | No loss of a confirmed write; recovery to any point in the last 35 days |
 | Accessibility | Dynamic Type and VoiceOver on every control |
 | Localisation | All labels are keys; German and English at launch |

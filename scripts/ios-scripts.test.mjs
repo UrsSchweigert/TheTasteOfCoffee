@@ -1813,3 +1813,35 @@ test('the app answers export compliance and ships a privacy manifest for the fil
     assert.doesNotMatch(text, /UserDefaults|@AppStorage/, `${f} uses UserDefaults: add NSPrivacyAccessedAPICategoryUserDefaults to the manifest`);
   }
 });
+
+// ---- Brew photos: capture and pick (M2-T42b) ----
+
+test('brew photos: the camera prompt says a brew too, and the photo picker needs no permission key (M2-T42b)', () => {
+  const catalog = JSON.parse(readFileSync(new URL('../ios/Cupmark/InfoPlist.xcstrings', import.meta.url), 'utf8'));
+  const pbxproj = readFileSync(new URL('../ios/Cupmark.xcodeproj/project.pbxproj', import.meta.url), 'utf8');
+  const units = catalog.strings.NSCameraUsageDescription.localizations;
+  assert.match(units.en.stringUnit.value, /photograph its label or a brew/);
+  assert.match(units.de.stringUnit.value, /Etikett oder eine Zubereitung/);
+  // The system picker runs out of process: no photo library permission is asked for or declared.
+  assert.deepEqual([...usageDescriptionSettings(pbxproj).keys()], ['NSCameraUsageDescription']);
+  assert.doesNotMatch(pbxproj, /NSPhotoLibrary/);
+  const section = readFileSync(new URL('../ios/Cupmark/BrewPhoto/BrewPhotosSection.swift', import.meta.url), 'utf8');
+  assert.match(section, /PhotosPicker\(selection:/);
+  // `photoLibrary:` would make the picker return asset identifiers and ask for access.
+  assert.doesNotMatch(section.replace(/\/\/.*$/gm, ''), /photoLibrary\s*:|PHPhotoLibrary|PHAsset/);
+  // No text anywhere in the section (invariant 1) and no navigation destination of its own.
+  assert.doesNotMatch(section, /TextField|TextEditor|SecureField|navigationDestination/);
+});
+
+test('brew photos: the stand-in for the picker is Debug-only and the section reads it only inside #if DEBUG (M2-T42b)', () => {
+  const support = readFileSync(new URL('../ios/Cupmark/UITestSupport/UITestBrewPhotoPicker.swift', import.meta.url), 'utf8');
+  assert.match(support, /^#if DEBUG\n/);
+  assert.match(support.trimEnd(), /#endif$/);
+  const section = readFileSync(new URL('../ios/Cupmark/BrewPhoto/BrewPhotosSection.swift', import.meta.url), 'utf8');
+  for (const match of section.matchAll(/uiTestBrewPhotoPicker|uiTestPicker/g)) {
+    const before = section.slice(0, match.index);
+    const opens = (before.match(/^#if DEBUG$/gm) ?? []).length;
+    const closes = (before.match(/^#(?:endif|else)$/gm) ?? []).length;
+    assert.ok(opens > closes, `${match[0]} at ${match.index} is outside #if DEBUG`);
+  }
+});

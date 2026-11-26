@@ -974,7 +974,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job. Marked `needs-mac-verification` until it passes.
 
 ### M2-T42b Brew photos: take or pick a photo on a brew
-- status: in-progress
+- status: needs-mac-verification (written on Linux; the ios job and a device check of the camera and the real picker in M2-T34 have not run)
 - owner: ios-engineer
 - depends: M2-T42
 - implements: owner decision of 2026-11-26 (brew photos); docs/04-specification.md, F2 (brew log); invariants 1 and 7

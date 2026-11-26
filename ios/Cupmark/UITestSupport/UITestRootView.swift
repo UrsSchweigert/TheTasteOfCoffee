@@ -114,6 +114,8 @@ final class UITestHarness {
             if case .loaded(let store, let language) = vocabulary, let seeded, let client {
                 screen(seeded: seeded, client: client, vocabulary: store, language: language)
                     .environment(\.apiClient, client)
+                    // The system photo picker cannot be driven here: a fixture photo stands in (M2-T42b).
+                    .environment(\.uiTestBrewPhotoPicker, UITestBrewPhotoPicker())
             } else {
                 RootView(state: vocabulary, stage: .notConfigured(.missing(.stage)))
             }
