@@ -678,7 +678,8 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T21 Brew timer
-- status: todo
+- status: needs-mac-verification (reviewed; marked done once the macOS `ios` job passes in its pull request)
+- note: from the review, the start instant lives only in memory, so a long timing (cold brew) is lost if iOS ends the app or the phone restarts. Persisting a wall-clock start is a possible follow-up after the M6 TestFlight round.
 - owner: ios-engineer
 - depends: M2-T19
 - implements: docs/04-specification.md, Input model (Timer), F2 (brew time)
