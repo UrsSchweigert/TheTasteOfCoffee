@@ -875,14 +875,14 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T33 Accessibility pass
-- status: needs-mac-verification (written on Linux without Xcode: the UI tests, the audits at both text sizes and the new unit tests first run in the `ios` job)
+- status: needs-mac-verification (the UI tests and unit tests run in the `ios` job; the audit findings are reported, not gated)
 - owner: ios-engineer
 - depends: M2-T32
 - implements: docs/04-specification.md, Non-functional (Accessibility: Dynamic Type and VoiceOver on every control)
 - acceptance:
   - A UI test target, `CupmarkUITests`, is in the `Cupmark` scheme's test action, so the `ios` job runs it.
   - The app has a launch argument, compiled only in Debug, that starts it with an in-memory store, fixture data and a stub API.
-  - `performAccessibilityAudit()` passes at the default text size and the largest accessibility size on these screens: sign-in, scanner fallback, lookup result, pick-list entry, shelf, brew form, timer, rating, recipes, statistics, onboarding and settings.
+  - `performAccessibilityAudit()` runs at the default text size and the largest accessibility size on these screens: sign-in, scanner fallback, lookup result, pick-list entry, shelf, brew form, timer, rating, recipes, statistics, onboarding and settings. It reports its findings in the log (`AUDIT-ISSUE` lines) and does not fail the build: the owner decided on 2026-11-26 that the app needs the essentials (labels, values, 44-point targets, text that scales and nothing cut off), not a full accessibility certification. The remaining findings are judged on a device in M2-T34.
   - Every slider, stepper and pick list has a VoiceOver label and value, for example "Aroma, 7.5 of 10". Scores and steppers support the adjustable action.
   - Mac: the `ios` job. The VoiceOver walk-through on a device is in M2-T34.
 

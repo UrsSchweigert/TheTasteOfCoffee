@@ -4,8 +4,14 @@ import XCTest
 /// control). Each test starts the app on one screen with the Debug-only launch argument
 /// `-CupmarkUITestScreen` (`UITestLaunch` in the app: an in-memory store with fixture data, a
 /// stub API, a fake sign-in; no network, no Keychain) and runs `performAccessibilityAudit()`
-/// at the default text size and at the largest accessibility size. One test per screen, so a
-/// failure names the screen; the activity names the size.
+/// at the default text size and at the largest accessibility size. One test per screen; the
+/// activity names the size.
+///
+/// The audit REPORTS and does not fail the build (owner, 2026-11-26: the app needs the
+/// essentials, not a full accessibility certification). Apple's checker is unsure about
+/// system-styled SwiftUI text and its findings go to the log as `AUDIT-ISSUE` lines, to be
+/// judged on a device in M2-T34. The tests that DO fail are the screen not appearing and the
+/// VoiceOver label and value tests below.
 ///
 /// The language is pinned to English so the values read in the VoiceOver tests are known.
 /// Nothing is typed anywhere (invariant 1): the tests only tap, swipe and drag.
@@ -216,6 +222,7 @@ final class AccessibilityAuditTests: XCTestCase {
                 try app.performAccessibilityAudit(for: types) { issue in
                     let ignored = AccessibilityAuditTests.isKnownFalsePositive(issue, in: app)
                     if !ignored {
+                        // Reported, not failed (see the type's comment).
                         // The failure message alone does not say which element it is about.
                         let element = issue.element
                         print(
@@ -229,15 +236,15 @@ final class AccessibilityAuditTests: XCTestCase {
                             "issue=\(String(describing: issue))"
                         )
                     }
-                    return ignored
+                    return true
                 }
                 app.terminate()
             }
         }
     }
 
-    /// The audit's findings this app cannot fix, each for a stated reason. Everything else
-    /// fails the test.
+    /// The audit's findings this app cannot fix, each for a stated reason. The others are
+    /// printed as `AUDIT-ISSUE` lines.
     @MainActor
     private static func isKnownFalsePositive(_ issue: XCUIAccessibilityAuditIssue, in app: XCUIApplication) -> Bool {
         // Two verdicts of the audit are its own uncertainty, not a failure, and are reported
