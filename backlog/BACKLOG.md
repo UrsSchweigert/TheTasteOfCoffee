@@ -952,7 +952,13 @@ Scope: App Store listing, screenshots, privacy nutrition labels, privacy policy 
   - Mac: the `ios` job.
 
 ### M2-T36 Harden the failed-write mechanism
-- status: done (built and tested by the macOS `ios` job in #66; ADR 0025 addendum M2-T36)
+- status: in-progress (#66; one test still fails on the macOS `ios` job, see the handover note)
+- handover (2026-11-26, lead): `FailedWriteTests.testASaveThatFailsInTheStoreUndoesADeletionWithRelationships` fails at line 509, every run since `d7df43e`.
+  - The setup is now deterministic. The store is written, the writable container is released, the store is copied, its WAL is checkpointed with `sqlite3_wal_checkpoint_v2`, and the copy is opened with `allowsSave: false`. Part 1 passes: a deleted brew is restored.
+  - Part 2 deletes a scanned bag's shelf entry and, with it, its pending bean. The real `ModelContext.save()` fails (Code 513). After `discardUnsavedChanges()`, `store.bean(localID: pendingBeanID)` returns nil, although no inserted or deleted models are left and the following assertions pass.
+  - So SwiftData's rollback after a real failed save does not bring back a deleted model whose inverse relationship was also deleted. The repair pass (`AccountStore+Write.swift`) cannot resurrect it.
+  - Only a real store write failure (disk full, read-only store) triggers it. The `willSave` path and every other test pass (712 of 713).
+  - Next step, an iOS store task (run `ios-engineer` on Opus): for such a write, either re-insert a deleted model from its saved copy when it is gone after the rollback, or reload the context from disk after a failed `save()`, e.g. throw the context away and open a new `ModelContext` on the container. Then rerun the job at least twice.
 - owner: ios-engineer
 - depends: M2-T35
 - implements: ADR 0025 (addendum M2-T35)
