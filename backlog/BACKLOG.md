@@ -1004,7 +1004,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job. Marked `needs-mac-verification` until it passes.
 
 ### M2-T43b Brew photo viewer: details, links back and delete
-- status: needs-mac-verification (Swift written and checked with the repo scripts on Linux; the ios job has not run)
+- status: done (#98; the macOS `ios` job passed on 79f7e05, including the viewer unit and UI tests)
 - owner: ios-engineer
 - depends: M2-T43
 - implements: owner decision of 2026-11-26 (photo browsing); docs/04-specification.md, F2; M2-T20 (the rating screen), M2-T27 (recipes and `AccountStore.recipe(matching:)`)
@@ -1020,7 +1020,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job. Marked `needs-mac-verification` until it passes.
 
 ### M2-T44 My averages for one coffee: the dimensions over all my brews of it
-- status: todo
+- status: in-progress
 - owner: ios-engineer
 - depends: M2-T28, M2-T40
 - implements: owner request of 2026-11-26 ("if I click on a coffee, I want to see the averages of all my brews, the dimensions, for that coffee, and later also the community ones"); docs/04-specification.md, F2 and F3; ADR 0027 (personal statistics, computed on the device)
