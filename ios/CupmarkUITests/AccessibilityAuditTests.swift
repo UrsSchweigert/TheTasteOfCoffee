@@ -176,10 +176,14 @@ final class AccessibilityAuditTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = [
             "-CupmarkUITestScreen", screen.rawValue,
-            "-UIPreferredContentSizeCategoryName", size.rawValue,
             "-AppleLanguages", "(en)",
             "-AppleLocale", "en_US",
         ]
+        // The default size is the simulator's own. Pinning any size, even the default one, makes
+        // the audit report every text as unable to change its size.
+        if size != .standard {
+            app.launchArguments += ["-UIPreferredContentSizeCategoryName", size.rawValue]
+        }
         app.launch()
         return app
     }
@@ -197,7 +201,13 @@ final class AccessibilityAuditTests: XCTestCase {
                 let app = launch(screen, size: size)
                 XCTAssertTrue(ready(app).waitForExistence(timeout: timeout), "\(screen.rawValue) did not appear")
                 try prepare(app)
-                try app.performAccessibilityAudit { issue in
+                // At the pinned largest size the Dynamic Type check cannot work: the size no longer
+                // changes. The other checks (clipping, hit regions, contrast) still run.
+                var types = XCUIAccessibilityAuditType.all
+                if size == .largestAccessibility {
+                    types.remove(.dynamicType)
+                }
+                try app.performAccessibilityAudit(for: types) { issue in
                     let ignored = AccessibilityAuditTests.isKnownFalsePositive(issue, in: app)
                     if !ignored {
                         // The failure message alone does not say which element it is about.
