@@ -34,7 +34,7 @@ final class OnboardingTests: XCTestCase {
         }
     }
 
-    private func engine(_ store: AccountStore, _ server: FakeSyncServer, clock: TestClock = TestClock()) -> SyncEngine {
+    private func makeEngine(_ store: AccountStore, _ server: FakeSyncServer, clock: TestClock = TestClock()) -> SyncEngine {
         SyncEngine(store: store, client: server.client(), now: { clock.now }, jitter: { 1 }, sleep: { _ in })
     }
 
@@ -269,7 +269,7 @@ final class OnboardingTests: XCTestCase {
         let model = OnboardingModel(store: store, preferredLanguages: { ["de-CH"] })
         model.skip()
 
-        let result = await engine(store, server).drain()
+        let result = await makeEngine(store, server).drain()
 
         XCTAssertEqual(result, .idle)
         withExtendedLifetime(server) {
@@ -286,7 +286,7 @@ final class OnboardingTests: XCTestCase {
         server.backend.setOverride { _ in throw URLError(.notConnectedToInternet) }
         let store = try AccountStore.inMemory()
         let clock = TestClock()
-        let engine = engine(store, server, clock: clock)
+        let engine = makeEngine(store, server, clock: clock)
         let model = OnboardingModel(store: store, preferredLanguages: { ["en-US"] })
         while model.page != .consent {
             model.next()
@@ -324,7 +324,7 @@ final class OnboardingTests: XCTestCase {
         let model = OnboardingModel(store: store, preferredLanguages: { ["en-US"] })
         model.skip()
 
-        let result = await engine(store, server).drain()
+        let result = await makeEngine(store, server).drain()
 
         XCTAssertEqual(result, .idle)
         withExtendedLifetime(server) {
@@ -352,7 +352,7 @@ final class OnboardingTests: XCTestCase {
         }
         let settings = SettingsModel(store: store, preferredLanguages: { ["en-US"] })
         XCTAssertFalse(settings.contributesToAggregates)
-        let engine = engine(store, server)
+        let engine = makeEngine(store, server)
 
         settings.setContributesToAggregates(true)
         XCTAssertEqual(try queue(store), ["update profile"])
@@ -395,7 +395,7 @@ final class OnboardingTests: XCTestCase {
         try store.addRecipe(StoredRecipe(API.RecipeInput(vocabularyVersion: Vocabulary.version, parameters: try StoreFixtures.parameters())))
         XCTAssertEqual(try queue(store), ["update profile", "create brew", "create recipe"])
 
-        let result = await engine(store, server).drain()
+        let result = await makeEngine(store, server).drain()
 
         XCTAssertEqual(result, .idle)
         XCTAssertTrue(try store.outboxOperations().isEmpty)
