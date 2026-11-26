@@ -29,6 +29,9 @@ final class BrewStartModel {
 
     let shelfEntryLocalID: UUID
     let store: AccountStore
+    /// The reference recipes the recipe list offers as starting points (M2-T47, ADR 0034): the
+    /// bundled set, which is empty when the resource cannot be used.
+    let startingPoints: ReferenceRecipeSet
     /// What "Repeat Last Brew" copies, nil while the device has no brew (or the entry is gone).
     private(set) var lastBrew: BrewSummary?
     private(set) var recipes: [RecipeRow] = []
@@ -37,9 +40,10 @@ final class BrewStartModel {
     /// True when the last removal failed; nothing was changed.
     private(set) var deleteFailed = false
 
-    init(shelfEntry localID: UUID, store: AccountStore) {
+    init(shelfEntry localID: UUID, store: AccountStore, startingPoints: ReferenceRecipeSet = .bundled) {
         shelfEntryLocalID = localID
         self.store = store
+        self.startingPoints = startingPoints
     }
 
     /// The recipes the entry's screen lists itself.
@@ -50,6 +54,12 @@ final class BrewStartModel {
     /// Whether there are more recipes than the entry's screen lists.
     var hasMoreRecipes: Bool {
         recipes.count > BrewStartModel.inlineRecipeLimit
+    }
+
+    /// Whether the recipe list has anything to show beyond what the entry's screen lists: more
+    /// recipes, or starting points (reference recipes). It decides if the screen links to it.
+    var offersRecipeList: Bool {
+        hasMoreRecipes || !startingPoints.isEmpty
     }
 
     /// The brew sheet's route for a new brew of the entry from `start`.

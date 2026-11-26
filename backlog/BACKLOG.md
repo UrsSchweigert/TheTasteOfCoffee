@@ -1060,7 +1060,7 @@ Planning notes (planned 2026-11-25):
   - `scripts/reference-recipes.test.mjs` (in CI) tests the rules on synthetic rows and the committed set against vocabulary v3.
 
 ### M2-T47 Starting-point recipes in the recipe list
-- status: in-progress
+- status: needs-mac-verification (Swift written and unverified on Linux; the `ios` job must build and run the unit and UI tests)
 - owner: ios-engineer
 - depends: M2-T46, M2-T27
 - implements: ADR 0034 (reference recipes), ADR 0028 (recipes); owner request of 2026-11-26

@@ -131,6 +131,22 @@ struct BrewDraft: Equatable, Sendable {
         conformToMethod()
     }
 
+    /// The values of `parameters` as they are, for showing them (a reference recipe, M2-T47).
+    /// A field the method does not allow is left out, as in `init(_:)` of a stored value.
+    init(_ parameters: API.BrewParameters) {
+        self.init(method: parameters.method)
+        doseDg = parameters.doseDg
+        waterG = parameters.waterG
+        waterTemperature = parameters.waterTemperature
+        brewTimeS = parameters.brewTimeS
+        grindNormalised = parameters.grindNormalised
+        waterType = parameters.waterType
+        milk = parameters.milk
+        grinder = parameters.grinder
+        grindSetting = parameters.grindSetting
+        conformToMethod()
+    }
+
     /// Sets `brew_time_s` to `seconds`, moved into its vocabulary range and onto its step
     /// (`BrewDraft.brewTimeRange`), or clears it for nil. A value already in the range is
     /// kept as it is.

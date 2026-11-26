@@ -46,6 +46,8 @@ A brew references a bean on the shelf and a method. Fields depend on the method;
 
 The app computes ratio and days since roast. A brew can be saved as a recipe and repeated with one tap, which is how the 30-second target is met.
 
+The recipe list also offers starting points: reference recipes from published sources (ADR 0034), bundled with the app, shown by method. They are numbers only (method, dose, water, temperature or cold, time, grind), labelled as reference recipes and never as community data, ratings or raters. Opening one shows its numbers, with the ones that were not published marked as estimated; one action copies it into the user's own recipes, where it is an ordinary recipe (no name, synced, repeated with one tap). A recipe the user already has with the same numbers is not copied again; the screen says it is already there. Only recipes of methods the app knows and whose fields the method allows are shown. Starting points need no network and cost nothing.
+
 A brew can have up to 6 photos, taken with the camera or picked from the photo library. They are kept on the device only: never uploaded, never exported, with no caption (ADR 0033). By default they are not in the device backup either; a Settings toggle ("Include brew photos in the device backup", off by default, per device, not synced) puts them in the backup of that phone that the user already has with Apple (ADR 0033, addendum M2-T45).
 
 ## F3 Rating

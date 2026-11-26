@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		C0FFEE00000000000000000A /* v3 in Resources */ = {isa = PBXBuildFile; fileRef = C0FFEE000000000000000008 /* v3 */; };
 		C0FFEE00000000000000000B /* i18n in Resources */ = {isa = PBXBuildFile; fileRef = C0FFEE000000000000000009 /* i18n */; };
+		C0FFEE00000000000000000E /* recipes.v1.json in Resources */ = {isa = PBXBuildFile; fileRef = C0FFEE00000000000000000D /* recipes.v1.json */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -34,6 +35,7 @@
 		C0FFEE000000000000000061 /* CupmarkUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CupmarkUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C0FFEE000000000000000008 /* v3 */ = {isa = PBXFileReference; lastKnownFileType = folder; name = v3; path = ../contracts/vocabulary/v3; sourceTree = SOURCE_ROOT; };
 		C0FFEE000000000000000009 /* i18n */ = {isa = PBXFileReference; lastKnownFileType = folder; name = i18n; path = ../contracts/i18n; sourceTree = SOURCE_ROOT; };
+		C0FFEE00000000000000000D /* recipes.v1.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = recipes.v1.json; path = ../contracts/reference/recipes.v1.json; sourceTree = SOURCE_ROOT; };
 		C0FFEE000000000000000051 /* Dev.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Dev.xcconfig; path = Config/Dev.xcconfig; sourceTree = SOURCE_ROOT; };
 		C0FFEE000000000000000052 /* Prod.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Prod.xcconfig; path = Config/Prod.xcconfig; sourceTree = SOURCE_ROOT; };
 		C0FFEE000000000000000053 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = Info.plist; path = Config/Info.plist; sourceTree = SOURCE_ROOT; };
@@ -109,6 +111,7 @@
 			children = (
 				C0FFEE000000000000000008 /* v3 */,
 				C0FFEE000000000000000009 /* i18n */,
+				C0FFEE00000000000000000D /* recipes.v1.json */,
 			);
 			name = Contracts;
 			sourceTree = "<group>";
@@ -246,6 +249,7 @@
 			files = (
 				C0FFEE00000000000000000A /* v3 in Resources */,
 				C0FFEE00000000000000000B /* i18n in Resources */,
+				C0FFEE00000000000000000E /* recipes.v1.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

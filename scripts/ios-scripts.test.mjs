@@ -1708,6 +1708,42 @@ test('check-xcode-project: the committed project and scheme are consistent', () 
   assert.deepEqual(xcodeProject.checkXcodeProject(projectText(), schemeText()), []);
 });
 
+// M2-T47: the reference recipes are a bundled resource (option (a): the JSON itself, decoded in the app).
+test('the app bundles the reference recipes and they are made for the vocabulary the app is generated from', () => {
+  const project = xcodeProject.parsePbxproj(projectText());
+  const objects = project.objects;
+  const ref = Object.entries(objects).find(([, o]) => o.isa === 'PBXFileReference' && o.path === '../contracts/reference/recipes.v1.json');
+  assert.ok(ref, 'a file reference to contracts/reference/recipes.v1.json');
+  assert.equal(ref[1].sourceTree, 'SOURCE_ROOT');
+  assert.equal(ref[1].name, 'recipes.v1.json', 'bundled by its name, at the top of the bundle');
+  assert.ok(existsSync(new URL('../contracts/reference/recipes.v1.json', import.meta.url)));
+  const app = Object.values(objects).find((o) => o.isa === 'PBXNativeTarget' && o.name === 'Cupmark');
+  const phase = app.buildPhases.map((id) => objects[id]).find((o) => o.isa === 'PBXResourcesBuildPhase');
+  const bundled = phase.files.map((id) => objects[id].fileRef);
+  assert.ok(bundled.includes(ref[0]), 'the app target copies it in its Resources phase');
+  for (const name of ['CupmarkTests', 'CupmarkUITests']) {
+    const target = Object.values(objects).find((o) => o.isa === 'PBXNativeTarget' && o.name === name);
+    const files = target.buildPhases.map((id) => objects[id]).filter((o) => o.isa === 'PBXResourcesBuildPhase').flatMap((o) => o.files.map((id) => objects[id].fileRef));
+    assert.ok(!files.includes(ref[0]), `${name} does not carry its own copy`);
+  }
+  // The set is on the vocabulary the Swift types are generated from; a newer vocabulary needs a regenerated set.
+  const set = JSON.parse(readFileSync(new URL('../contracts/reference/recipes.v1.json', import.meta.url), 'utf8'));
+  assert.equal(set.vocabulary_version, latestPublishedVersion());
+  const decoder = readFileSync(new URL('../ios/Cupmark/Brew/ReferenceRecipes.swift', import.meta.url), 'utf8');
+  assert.match(decoder, /static let resourceName = "recipes\.v1"/);
+  assert.match(decoder, new RegExp(`static let formatVersion = ${set.version}\\b`));
+});
+
+test('the starting points read no network and take no typed text', () => {
+  for (const name of ['ReferenceRecipes', 'StartingPointModel', 'StartingPointViews']) {
+    const source = readFileSync(new URL(`../ios/Cupmark/Brew/${name}.swift`, import.meta.url), 'utf8');
+    assert.doesNotMatch(source, /URLSession|URLRequest|APIClient|TextField|TextEditor|SecureField|searchable/, name);
+  }
+  // Debug-only harness: the recipes screen is the app's own list, so the launch screens are unchanged.
+  const launch = readFileSync(new URL('../ios/Cupmark/UITestSupport/UITestLaunch.swift', import.meta.url), 'utf8');
+  assert.match(launch, /case recipes\n/);
+});
+
 test('check-xcode-project: CupmarkUITests is a UI-test target of the app, built from its own synchronized folder', () => {
   const project = xcodeProject.parsePbxproj(projectText());
   const { objects } = project;
