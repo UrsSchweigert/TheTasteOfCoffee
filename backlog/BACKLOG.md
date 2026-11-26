@@ -1019,6 +1019,36 @@ Planning notes (planned 2026-11-25):
   - Tests: unit tests of the viewer model (details, the three links present and absent, the recipe match by parameters and no match, delete); UI tests with the harness for each link (brew, bag, recipe) landing on the right screen, and for delete with its confirmation.
   - Mac: the `ios` job. Marked `needs-mac-verification` until it passes.
 
+### M2-T44 My averages for one coffee: the dimensions over all my brews of it
+- status: todo
+- owner: ios-engineer
+- depends: M2-T28, M2-T40
+- implements: owner request of 2026-11-26 ("if I click on a coffee, I want to see the averages of all my brews, the dimensions, for that coffee, and later also the community ones"); docs/04-specification.md, F2 and F3; ADR 0027 (personal statistics, computed on the device)
+- note: ADR 0027 gives the taste profile overall and per method, but not per shelf entry. This task adds that view. "A coffee" is a line item on the user's shelf (a shelf entry, one bag), as the owner clarified on 2026-11-26, so the averages cover the brews of that one entry, not every bag of the same bean. The screen says how many rated brews it rests on. No cloud cost: computed on the device from the local store, offline, like the other statistics. The community numbers come with M4 and are not part of this task, but the screen is laid out so they can sit next to the user's own. Note for M4: community aggregates are per bean, so they sit next to the user's averages as "this bean, all raters" while the user's own numbers are for this bag. A view of all of the user's bags of one bean can be added later if wanted (not part of this task).
+- acceptance:
+  - Tapping a line item on the shelf opens its screen (the shelf entry screen, as today, with Brews, the bean and the bag); it gains a "My brews of this coffee" section: the mean of each rating criterion (the dimensions from the vocabulary, in their vocabulary order) over the rated, not removed brews of that shelf entry, plus the mean overall score and the number of rated brews. One decimal, device locale. An optional breakdown by method, shown once a method has at least 2 rated brews (the same threshold as ADR 0027).
+  - The rule set is added to ADR 0027 as an addendum (lead, ADR 0014) and to docs/04 and ios/README.md: which brews count (rated, not removed, of this shelf entry), the threshold, the rounding, the empty state ("Rate a brew to see your averages here", no zeros), and what a single rated brew shows (the values, labelled as one brew, no "average").
+  - The averages come from one function in the statistics code (`StatisticsRules`), with tests on fixtures: brews of two shelf entries of the same bean (each entry counts only its own brews); a removed brew; an unrated brew excluded; a brew rated with an older vocabulary version (read-only, still counted); one rated brew; none; the order of the dimensions; the method breakdown threshold.
+  - The view shows the dimensions as rows with the value and a simple bar (no chart library; SwiftUI shapes in the theme's accent colour). VoiceOver reads "Aroma, 7.5 of 10" through the existing value formatting; 44-point targets and Dynamic Type hold; strings through the catalogue (en and de).
+  - The layout leaves room for a second value per dimension (the community mean and its number of raters, M4): the row's model has an optional community value and the view hides it while it is nil. No server call and no contract change here.
+  - Tests: unit tests of the rules and the row model; a UI test with the harness (M2-T33) that opens a shelf entry with brews and sees the dimension rows and the count.
+  - Mac: the `ios` job. Marked `needs-mac-verification` until it passes.
+
+### M2-T45 A setting: include brew photos in the device backup
+- status: todo
+- owner: ios-engineer
+- depends: M2-T42, M2-T42b
+- implements: owner decision of 2026-11-26 ("the iCloud backup should include the photos if the user wishes, to be toggled in the options"); ADR 0033 (brew photos on the device; its first version left them in the backup, as iOS does by default); invariant 6 and the privacy policy (nothing leaves the device on our initiative)
+- decision (lead, ADR 0014, no cloud cost; the owner can flip the default in one line): the default is OFF. The app's promise is that brew photos stay on the device, and an iCloud device backup copies them to Apple. The user turns it on in Settings, with a footer that says what each state means. The setting is per device and is not synced to the server (it is not part of the profile, so no contract change).
+- acceptance:
+  - Settings gets a toggle "Include brew photos in the device backup" (en and de, through the catalogue) with a footer: off, brew photos stay on this phone only and are not restored from a backup when the phone is replaced; on, they are included in the backup of this phone that the user already has with Apple (iCloud or a computer). Default off. 44-point target, a VoiceOver label and value (on, off), the theme's accent tint on the toggle.
+  - The setting is applied by `isExcludedFromBackup` on the per-account `BrewPhotos/<account>/` folder (and every file inside, so a photo that moved or was written earlier follows), set again whenever a folder is created, when the setting changes, and at store open (so a restored install or an older folder that was backed up before the setting existed is corrected). Excluded is the default state for a new folder. A test with a temporary folder checks the resource value for both states, for a new photo written after the change, and that the sweep and the account deletion are unaffected.
+  - Where the setting is stored: the simplest robust choice for a per-device flag (for example `UserDefaults` with its required-reason entry `CA92.1` added to `PrivacyInfo.xcprivacy`, with the privacy manifest test of #84 extended, or a field in the local store if that is cleaner; say which in the ADR addendum). Not in the profile and not sent to the server.
+  - ADR 0033 gets an addendum: the default off, what the backup contains in each state, and that nothing changes for the other app data (the store and label photos keep their current backup behaviour, unchanged by this task).
+  - The companion page (`site/index.html` and `site/de/index.html`) says in the privacy text: brew photos stay on the device and are not uploaded; if the user turns on the backup setting, Apple includes them in the backup of that phone (iCloud or a computer), which is Apple's service under Apple's terms. `scripts/site.test.mjs` requires the sentence in both languages. docs/04 gets a line.
+  - Tests: unit tests of the setting and its application; a UI test with the harness (M2-T33) that opens Settings and flips the toggle, seeing its value change.
+  - Mac: the `ios` job. Marked `needs-mac-verification` until it passes.
+
 ## M3 Aggregation
 
 Goal: aggregates per bean and per method stay correct under create, edit, delete and replay. Not yet planned.
@@ -1029,7 +1059,7 @@ Scope: stream aggregator, rater markers, recipe histogram buckets, nightly ranki
 
 Goal: subscribers see Explore; free users see the give-to-get teaser. Not yet planned.
 
-Scope: StoreKit 2 purchase and restore, transaction verification, App Store Server Notifications route, entitlement on the profile, paid API routes, Explore screens (bean page, method breakdown, top recipes, rankings), paywall, paywall; the privacy manifest gains a purchase-history entry when StoreKit 2 lands (from the review of #84).
+Scope: StoreKit 2 purchase and restore, transaction verification, App Store Server Notifications route, entitlement on the profile, paid API routes, Explore screens (bean page, method breakdown, top recipes, rankings), paywall; the community mean and number of raters per dimension appear next to the user's own averages on the shelf entry screen of M2-T44, labelled as the bean's community numbers (free users see the community overall only for beans they rated, the rest is paid); the privacy manifest gains a purchase-history entry when StoreKit 2 lands (from the review of #84).
 
 ## M5 Hardening
 
@@ -1130,4 +1160,9 @@ Owner ideas of 2026-11-26 for after launch or between M4 and M6. Each is planned
   - **Community data (invariants 4 and 6).** Decide whether cup ratings feed aggregates, and per place (a place's page would be a new aggregate: five distinct raters, subtract on delete, EU only) or not at all. A place is also personal data of where a person drinks coffee: the policy, the deletion cascade and the export have to cover it.
   - **Cost (invariant 5).** A server-side place table and any aggregates per place add DynamoDB items; estimate against docs/06 before deciding (pay-per-use only). Ask the owner if it adds cost.
   - **Photos.** A photo of the cup could reuse the brew photo store (M2-T42) with the same local-only rule.
+- **Artfulness (owner, 2026-11-26).** The owner wants an "artfulness" score for a cup (latte art, presentation) that OTHER people can see, but at the level of the place, not the coffee:
+  - It is not one of the eight bean criteria (those are about how a bean tastes and stay as they are in vocabulary v3). No vocabulary change for beans, no ninth bean criterion. It belongs to the cup-at-a-place rating of this idea, as a score of its own with the same 1 to 10 scale in half steps (a new published vocabulary version when this is built, never an edit of v3; contract-keeper first).
+  - It is shown per place as an aggregate, never as one person's rating: at least five distinct raters before it is returned (invariant 4), subtracted when an account is deleted, EU only (invariant 6). The photo of the cup stays on the device (M2-T42 and ADR 0033); only the score would be shared, so the privacy text, the App Privacy answers and the manifest need the update this idea already lists.
+  - It needs the place to exist first: identifying a place without typing, the location question and the cost are the same open points as above, and artfulness cannot ship before them. Until then, brew photos (M2-T42 and the gallery) stay personal and carry no score.
+  - Who sees place averages (free or paid) is a product decision for the owner when the idea is planned; it affects the business model.
 - first step when it is planned: a design note (ADR) answering the points above, with the owner's decision on location and invariant 1, before any contract or code.
