@@ -143,7 +143,7 @@ struct BrewPhotoFileStore: Sendable {
     /// through a new URL: a URL object keeps the resource values it read before until a
     /// run-loop pass, so another object's change (or the caller's own) would not show.
     static func isExcludedFromBackup(_ url: URL) -> Bool? {
-        let fresh = URL(filePath: url.path(percentEncoded: false))
+        var fresh = URL(filePath: url.path(percentEncoded: false))
         fresh.removeAllCachedResourceValues()
         return try? fresh.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup
     }
