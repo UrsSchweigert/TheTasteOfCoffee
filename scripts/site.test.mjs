@@ -57,6 +57,8 @@ const functions = readFileSync(join(site, '..', 'infra', 'src', 'functions.ts'),
 
 test('site: the retention figures match infra/src', () => {
   assert.equal(constant('DELETION_LOG_EXPIRE_AFTER_DAYS'), 400);
+  assert.equal(constant('DELETION_LOG_EXPIRE_AFTER_DAYS') + constant('DELETION_LOG_NONCURRENT_DAYS'), 430);
+  assert.equal(constant('VERIFIED_PHOTO_EXPIRE_AFTER_DAYS') + constant('PHOTO_NONCURRENT_DAYS'), 120);
   assert.equal(constant('VERIFIED_PHOTO_EXPIRE_AFTER_DAYS'), 90);
   assert.equal(constant('UPLOAD_EXPIRE_AFTER_DAYS') + constant('UPLOAD_NONCURRENT_DAYS'), 2);
   assert.equal(constant('BACKUP_EXPIRE_AFTER_DAYS') + constant('BACKUP_NONCURRENT_DAYS'), 395);
@@ -66,6 +68,10 @@ test('site: the retention figures match infra/src', () => {
     assert.match(html, /\b90\b/, 'verified photo days');
     assert.match(html, /35/, 'point-in-time recovery days');
   }
+  assert.match(pages.en, /about 14 months/);
+  assert.match(pages.en, /about four months/);
+  assert.match(pages.de, /etwa vier Monate/);
+  assert.match(pages.de, /etwa 14 Monate/);
   assert.match(pages.en, /two weeks/);
   assert.match(pages.de, /zwei Wochen/);
   assert.match(pages.en, /within about two days/);
