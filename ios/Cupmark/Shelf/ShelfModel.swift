@@ -17,10 +17,13 @@ struct ShelfBeanSummary: Equatable, Sendable {
         self.attributes = attributes
     }
 
+    /// A stored bean. An Open Food Facts hit of a pending bean that waits for the user's
+    /// confirmation (M2-T25) is not its name yet (`StoredBean.showsOpenFoodFactsText`).
     init(_ bean: StoredBean?) {
+        let shown = bean?.showsOpenFoodFactsText == true
         self.init(
-            name: bean?.openFoodFactsName,
-            brand: bean?.openFoodFactsBrand,
+            name: shown ? bean?.openFoodFactsName : nil,
+            brand: shown ? bean?.openFoodFactsBrand : nil,
             attributes: bean.map { bean in
                 BeanAttributeRow.rows(operatorAttributes: bean.operatorAttributes, pickedAttributes: bean.pickedAttributes)
             } ?? []
@@ -53,8 +56,10 @@ struct ShelfRow: Identifiable, Equatable, Sendable {
     /// The brews on the device that reference the entry, not those removed on the device.
     let brewCount: Int
     let issue: SyncIssue?
+    /// Where the bean's look-up stands while it is a pending bean (M2-T25), nil otherwise.
+    let pendingBean: PendingBeanState?
 
-    init(_ entry: StoredShelfEntry, now: Date, calendar: Calendar) {
+    init(_ entry: StoredShelfEntry, now: Date, calendar: Calendar, pendingBean: PendingBeanState? = nil) {
         id = entry.localID
         bean = ShelfBeanSummary(entry.bean)
         purchaseDate = entry.purchaseDate
@@ -62,6 +67,7 @@ struct ShelfRow: Identifiable, Equatable, Sendable {
         daysSinceRoast = entry.daysSinceRoast(on: now, calendar: calendar)
         brewCount = entry.liveBrewCount
         issue = entry.syncIssue
+        self.pendingBean = pendingBean
     }
 }
 
@@ -75,6 +81,8 @@ final class ShelfModel {
     private(set) var rows: [ShelfRow] = []
     /// How many items have a sync issue (`AccountStore.syncIssues()`).
     private(set) var issueCount = 0
+    /// How many pending beans have an Open Food Facts hit waiting for the user (M2-T25).
+    private(set) var confirmationCount = 0
     /// True when the last read of the store failed.
     private(set) var loadFailed = false
 
@@ -91,8 +99,12 @@ final class ShelfModel {
     func reload() {
         do {
             let today = now()
-            rows = try store.shelfEntries().map { entry in ShelfRow(entry, now: today, calendar: calendar) }
+            let pending = try store.pendingBeanStates()
+            rows = try store.shelfEntries().map { entry in
+                ShelfRow(entry, now: today, calendar: calendar, pendingBean: entry.bean.flatMap { bean in pending[bean.localID] })
+            }
             issueCount = try store.syncIssues().count
+            confirmationCount = pending.values.filter { state in state == .awaitingConfirmation }.count
             loadFailed = false
         } catch {
             loadFailed = true

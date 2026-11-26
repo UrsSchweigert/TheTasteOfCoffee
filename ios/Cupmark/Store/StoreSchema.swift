@@ -17,7 +17,8 @@ import SwiftData
 //
 // `OutboxOperation` (M2-T16, ADR 0025) joined version 1 before any release: no store with
 // the shorter model list exists outside development, so no migration stage is needed.
-// Later versions add a `CupmarkSchemaV<N>` and a stage in `CupmarkMigrationPlan`.
+// Later versions add a `CupmarkSchemaV<N>` and a stage in `CupmarkMigrationPlan`; version 2
+// (M2-T25) adds `QueuedLabelPhoto` and changes no model of version 1.
 
 /// Version 1 of the local schema.
 enum CupmarkSchemaV1: VersionedSchema {
@@ -341,17 +342,69 @@ enum CupmarkSchemaV1: VersionedSchema {
     }
 }
 
-/// Migrations between local schema versions. Version 1 has no stages; a new version adds
-/// its schema to `schemas` and a `MigrationStage` here.
-enum CupmarkMigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [CupmarkSchemaV1.self] }
-    static var stages: [MigrationStage] { [] }
+/// Version 2 of the local schema (M2-T25): version 1's models, unchanged, and
+/// `QueuedLabelPhoto`, a label photo waiting for its bean's server id or for the network.
+///
+/// The models of version 1 are listed as they are, so their entities keep the hashes of
+/// version 1 and a store written by version 1 migrates with one lightweight stage that only
+/// adds the new entity. Stores of version 1 may exist on development devices, so
+/// the new model is a new version rather than an edit of version 1.
+enum CupmarkSchemaV2: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(2, 0, 0) }
+
+    static var models: [any PersistentModel.Type] {
+        CupmarkSchemaV1.models + [QueuedLabelPhoto.self]
+    }
+
+    /// A label photo taken for a bean, kept in the account's store until it is uploaded
+    /// (M2-T25, ADR 0016). The JPEG is a file of the account's queue folder
+    /// (`LabelPhotoFolders`); `fileName` names it, so a moved app container does not matter.
+    /// The upload runs once the bean has a server id, and resumes from `jobData`.
+    @Model
+    final class QueuedLabelPhoto {
+        @Attribute(.unique) var localID: UUID = UUID()
+        /// The `localID` of the `StoredBean` the photo is for.
+        var beanLocalID: UUID = UUID()
+        /// The JPEG's file name in the account's queue folder.
+        var fileName: String = ""
+        var createdAt: Date = Date.now
+        /// The encoded `LabelPhotoUploadJob` of the last run, nil before the first. A retry
+        /// resumes from its stage, so a successful S3 POST is not repeated.
+        var jobData: Data?
+        /// Runs so far; the backoff after a failed run grows with it.
+        var attemptCount: Int = 0
+        /// Not run again before this moment.
+        var nextAttemptAt: Date = Date.distantPast
+
+        init(localID: UUID = UUID(), beanLocalID: UUID, fileName: String, createdAt: Date = Date.now) {
+            self.localID = localID
+            self.beanLocalID = beanLocalID
+            self.fileName = fileName
+            self.createdAt = createdAt
+            self.jobData = nil
+            self.attemptCount = 0
+            self.nextAttemptAt = Date.distantPast
+        }
+    }
 }
 
-// The current models. A new schema version moves these aliases.
+/// Migrations between local schema versions. A new version adds its schema to `schemas` and
+/// a `MigrationStage` here.
+enum CupmarkMigrationPlan: SchemaMigrationPlan {
+    static var schemas: [any VersionedSchema.Type] { [CupmarkSchemaV1.self, CupmarkSchemaV2.self] }
+
+    /// Version 1 to 2 adds an entity and changes none: lightweight.
+    static var stages: [MigrationStage] {
+        [MigrationStage.lightweight(fromVersion: CupmarkSchemaV1.self, toVersion: CupmarkSchemaV2.self)]
+    }
+}
+
+// The current models. A new schema version moves these aliases; version 2 kept every
+// model of version 1 as it was.
 typealias StoredBean = CupmarkSchemaV1.StoredBean
 typealias StoredShelfEntry = CupmarkSchemaV1.StoredShelfEntry
 typealias StoredBrew = CupmarkSchemaV1.StoredBrew
 typealias StoredRecipe = CupmarkSchemaV1.StoredRecipe
 typealias StoredProfile = CupmarkSchemaV1.StoredProfile
 typealias OutboxOperation = CupmarkSchemaV1.OutboxOperation
+typealias QueuedLabelPhoto = CupmarkSchemaV2.QueuedLabelPhoto

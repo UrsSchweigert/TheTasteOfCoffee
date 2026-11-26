@@ -1027,6 +1027,78 @@
         }
       }
     },
+    "brew_list.empty" : {
+      "comment" : "Shown in the brew list when no brew of the bag has been logged.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch keine Zubereitung aus dieser Packung."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No brews of this bag yet."
+          }
+        }
+      }
+    },
+    "brew_list.not_rated" : {
+      "comment" : "Status of a brew in the brew list that has no rating yet.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch nicht bewertet"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not rated yet"
+          }
+        }
+      }
+    },
+    "brew_list.rated" : {
+      "comment" : "Status of a brew in the brew list that has a rating.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bewertet"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rated"
+          }
+        }
+      }
+    },
+    "brew_list.title" : {
+      "comment" : "Title of the list of brews of a bag, and the row on the bag that opens it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zubereitungen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brews"
+          }
+        }
+      }
+    },
     "label_photo.add_another" : {
       "comment" : "Button that opens the camera for one more label photo.",
       "extractionState" : "manual",
@@ -1959,6 +2031,474 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Name"
+          }
+        }
+      }
+    },
+    "rating.brew_header" : {
+      "comment" : "Header of the section that shows which brew is rated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zubereitung"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brew"
+          }
+        }
+      }
+    },
+    "rating.brewed_at" : {
+      "comment" : "Label of the time a brew was made.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zubereitet"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brewed"
+          }
+        }
+      }
+    },
+    "rating.buy_again" : {
+      "comment" : "Label of the optional buy-again answer: whether the user would buy this bean again.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Bohne wieder kaufen?"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buy This Bean Again?"
+          }
+        }
+      }
+    },
+    "rating.buy_again.clear" : {
+      "comment" : "VoiceOver label of the button that sets the buy-again answer back to not set.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiederkauf zurücksetzen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear buy again"
+          }
+        }
+      }
+    },
+    "rating.buy_again.no" : {
+      "comment" : "Answer no to whether the user would buy this bean again.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nein"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No"
+          }
+        }
+      }
+    },
+    "rating.buy_again.yes" : {
+      "comment" : "Answer yes to whether the user would buy this bean again.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ja"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yes"
+          }
+        }
+      }
+    },
+    "rating.incomplete" : {
+      "comment" : "Shown when a rating is saved before every criterion has a score.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gib zuerst jedem Kriterium Punkte."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Give every criterion a score first."
+          }
+        }
+      }
+    },
+    "rating.intensity.clear" : {
+      "comment" : "VoiceOver label of the button that clears an intensity; the dimension is read after it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Intensität zurücksetzen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear intensity"
+          }
+        }
+      }
+    },
+    "rating.intensity.footer" : {
+      "comment" : "Explains the intensities: how much, not how good.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Optional. Wie stark es ausgeprägt ist, nicht wie gut."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Optional. How much of it there is, not how good it is."
+          }
+        }
+      }
+    },
+    "rating.intensity.header" : {
+      "comment" : "Header of the section with the optional intensities of acidity, body and bitterness.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Intensität"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Intensity"
+          }
+        }
+      }
+    },
+    "rating.later" : {
+      "comment" : "Closes the rating offered right after a brew was saved, leaving the brew unrated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Später"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Later"
+          }
+        }
+      }
+    },
+    "rating.not_found" : {
+      "comment" : "Shown when the brew being rated is no longer on the device.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Zubereitung ist nicht mehr auf diesem iPhone."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This brew is no longer on this iPhone."
+          }
+        }
+      }
+    },
+    "rating.note.remove_hint" : {
+      "comment" : "VoiceOver hint of a picked flavour note in the rating.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entfernt dieses Aroma."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Removes this flavour note."
+          }
+        }
+      }
+    },
+    "rating.notes.choose" : {
+      "comment" : "Row that opens the flavour categories; the number of picked notes is shown next to it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aromen auswählen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick Flavour Notes"
+          }
+        }
+      }
+    },
+    "rating.notes.footer" : {
+      "comment" : "Explains the flavour notes.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Optional. Wähle eine Kategorie, dann die Aromen, die du schmeckst."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Optional. Pick a category, then the notes you taste."
+          }
+        }
+      }
+    },
+    "rating.notes.full" : {
+      "comment" : "Shown when the most flavour notes are picked.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mehr Aromen sind nicht möglich. Entferne eines, um ein anderes zu wählen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No more notes can be picked. Remove one to pick another."
+          }
+        }
+      }
+    },
+    "rating.notes.header" : {
+      "comment" : "Header of the flavour notes section, and title of the list of flavour categories.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aromen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Flavour Notes"
+          }
+        }
+      }
+    },
+    "rating.notes.max" : {
+      "comment" : "Label of the most flavour notes that can be picked.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Höchstens"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Most you can pick"
+          }
+        }
+      }
+    },
+    "rating.notes.picked" : {
+      "comment" : "Label of the number of flavour notes picked.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ausgewählt"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Picked"
+          }
+        }
+      }
+    },
+    "rating.save" : {
+      "comment" : "Saves the rating.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sichern"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save"
+          }
+        }
+      }
+    },
+    "rating.scores.footer" : {
+      "comment" : "Explains the score sliders.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tippe oder schiebe jeden Regler, um Punkte zu geben. Die Bewertung lässt sich sichern, sobald jedes Kriterium Punkte hat."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Touch or slide each slider to give a score. The rating can be saved once every criterion has one."
+          }
+        }
+      }
+    },
+    "rating.scores.header" : {
+      "comment" : "Header of the section with one slider per rating criterion.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Punkte"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scores"
+          }
+        }
+      }
+    },
+    "rating.scores.missing" : {
+      "comment" : "Label of the number of criteria that have no score yet.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch ohne Punkte"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Still to score"
+          }
+        }
+      }
+    },
+    "rating.title" : {
+      "comment" : "Title of the screen that rates a brew.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bewertung"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rating"
+          }
+        }
+      }
+    },
+    "rating.use_last" : {
+      "comment" : "Button that fills the rating with the latest rating of an earlier brew of the same bag.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mit der letzten Bewertung dieser Packung beginnen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start from the Last Rating of This Bag"
+          }
+        }
+      }
+    },
+    "rating.use_last.footer" : {
+      "comment" : "Explains the button that copies the last rating of the bag.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Übernimmt Punkte, Intensitäten, Aromen und Wiederkauf der zuletzt bewerteten Zubereitung aus dieser Packung. Danach änderst du, was anders war."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copies the scores, intensities, flavour notes and buy again of the latest rated brew of this bag. Then change what was different."
           }
         }
       }

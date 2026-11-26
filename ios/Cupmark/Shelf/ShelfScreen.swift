@@ -133,9 +133,8 @@ struct ShelfScreen: View {
             }
         }
         .sheet(item: $brewing) { route in
-            NavigationStack {
-                BrewFormScreen(store: store, shelfEntry: route.shelfEntryLocalID, vocabulary: vocabulary, language: language)
-            }
+            // The brew form, then the rating of the new brew (M2-T20).
+            BrewSheet(store: store, route: route, vocabulary: vocabulary, language: language)
         }
         .navigationDestination(for: ShelfEntryRoute.self) { route in
             ShelfEntryEditorScreen(store: store, mode: .edit(route.localID), vocabulary: vocabulary, language: language)

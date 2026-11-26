@@ -1158,11 +1158,57 @@ test('the brew form has no typed text, takes its ranges from the vocabulary and 
   const literals = [...screen.matchAll(/(?<![\w.])\d+(?:\.\d+)?(?![\w.])/g)].map((match) => Number(match[0]));
   assert.deepEqual(literals.filter((value) => rangeNumbers.has(value)), [], 'no range bound or step in the view');
 
-  // The brew starts from a shelf entry.
+  // The brew starts from a shelf entry, in the sheet that then offers its rating (M2-T20).
   const shelf = lexSwift(readFileSync(join(repoRoot, 'ios/Cupmark/Shelf/ShelfScreen.swift'), 'utf8')).masked;
-  assert.match(shelf, /BrewFormScreen\(store: store, shelfEntry: route\.shelfEntryLocalID/);
+  assert.match(shelf, /BrewSheet\(store: store, route: route/);
   const editor = lexSwift(readFileSync(join(repoRoot, 'ios/Cupmark/Shelf/ShelfEntryEditorScreen.swift'), 'utf8')).masked;
-  assert.match(editor, /BrewFormScreen\(store: model\.store, shelfEntry: route\.shelfEntryLocalID/);
+  assert.match(editor, /BrewSheet\(store: model\.store, route: route/);
+  const sheet = lexSwift(readFileSync(join(repoRoot, 'ios/Cupmark/Brew/BrewSheet.swift'), 'utf8')).masked;
+  assert.match(sheet, /BrewFormScreen\(\s*store: store,\s*shelfEntry: route\.shelfEntryLocalID/);
+});
+
+// ---- Rating (M2-T20, docs/04 F3, ADR 0025) ----
+
+test('the rating has no typed text, takes its lists, scale and limit from the vocabulary and writes only through AccountStore (M2-T20)', () => {
+  const files = m2t14Files('ios/Cupmark/Rating').filter((file) => file.endsWith('.swift'));
+  assert.ok(files.some((file) => file.endsWith('RatingScreen.swift')), 'the rating sources are scanned');
+  const read = (file) => lexSwift(readFileSync(join(repoRoot, file), 'utf8')).masked;
+  for (const file of files) {
+    const code = read(file);
+    assert.doesNotMatch(code, /\.searchable\b|\bTextField\b|\bTextEditor\b|\bSecureField\b/, `${file}: no typed text (invariant 1)`);
+    assert.doesNotMatch(code, /\.rawValue\s*==|rawValue:\s*"/, `${file}: no vocabulary id as a string`);
+    assert.doesNotMatch(code, /\bcontext\s*\.\s*(insert|save|delete)\(/, `${file}: no direct insert, save or delete on the context`);
+  }
+  // The scale and the limit are read in one place, the draft; the views go through it.
+  const draft = read('ios/Cupmark/Rating/RatingDraft.swift');
+  assert.match(draft, /static var scale: VocabularyRange \{ Vocabulary\.Ranges\.scale \}/);
+  assert.match(draft, /static var maxFlavourNotes: Int \{ Vocabulary\.Constants\.maxPicks \}/);
+  for (const file of files.filter((name) => !name.endsWith('RatingDraft.swift'))) {
+    assert.doesNotMatch(read(file), /Vocabulary\.(Ranges|Constants)/, `${file}: reads the scale and the limit through RatingDraft`);
+  }
+  // Every list is the generated one, in vocabulary order.
+  const screen = read('ios/Cupmark/Rating/RatingScreen.swift');
+  assert.match(screen, /ForEach\(Vocabulary\.Criterion\.allCases\)/);
+  assert.match(screen, /ForEach\(Vocabulary\.IntensityDimension\.allCases\)/);
+  assert.match(screen, /ForEach\(Vocabulary\.IntensityLevel\.allCases\)/);
+  assert.match(screen, /Slider\(\s*value: \$value,\s*in: bounds,\s*step: RatingDraft\.scale\.multipleOf/s);
+  assert.match(screen, /vocabulary\.question\(namespace: Vocabulary\.Criterion\.namespace/, 'each criterion shows its question from contracts/i18n');
+  const lists = read('ios/Cupmark/Rating/FlavourNoteLists.swift');
+  assert.match(lists, /ForEach\(Vocabulary\.FlavourCategory\.allCases\)/);
+  assert.match(lists, /ForEach\(category\.flavourNotes\)/);
+  assert.match(lists, /\.disabled\(!model\.draft\.canToggle\(note\)\)/, 'further picks are disabled at the limit');
+  // The write goes through AccountStore and queues the brew's update.
+  const model = read('ios/Cupmark/Rating/RatingFormModel.swift');
+  assert.match(model, /store\.rateBrew\(brew, rating: rating\)/);
+  const store = read('ios/Cupmark/Store/AccountStore+Rating.swift');
+  assert.match(store, /try markUpdated\(brew\)/);
+  // Rated right after the brew, or later from the shelf entry's brew list.
+  const sheet = read('ios/Cupmark/Brew/BrewSheet.swift');
+  assert.match(sheet, /RatingScreen\(store: store, brew: savedBrewID, mode: \.afterBrew/);
+  const list = read('ios/Cupmark/Brew/BrewListScreen.swift');
+  assert.match(list, /RatingScreen\(store: model\.store, brew: row\.id, mode: \.later/);
+  const editor = read('ios/Cupmark/Shelf/ShelfEntryEditorScreen.swift');
+  assert.match(editor, /BrewListScreen\(store: model\.store, shelfEntry: route\.shelfEntryLocalID/);
 });
 
 test('label photo upload: the Swift patterns equal the contract, and the S3 POST never goes through APIClient (M2-T24)', () => {

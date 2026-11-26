@@ -38,6 +38,24 @@ enum OutboxAction: String, CaseIterable, Sendable {
     case create = "create"
     case update = "update"
     case delete = "delete"
+    /// A bean scanned while the lookup could not answer (M2-T25): `GET /barcodes/{barcode}`,
+    /// then Open Food Facts through the backend. A known bean is used; an Open Food Facts
+    /// miss becomes a `create`; a hit becomes `awaitConfirmation`. While it waits for its next
+    /// attempt it does not hold the queue: only the operations that depend on its bean wait.
+    case lookUp = "look_up"
+    /// A bean with an Open Food Facts hit, waiting for the user's confirmation (M2-T25). Never
+    /// sent: the user's confirm or reject turns it into a `create`. The operations that depend
+    /// on the bean wait; every other one goes out.
+    case awaitConfirmation = "await_confirmation"
+
+    /// Whether the operation brings its item to the server for the first time: a create, or
+    /// the look-up of a pending bean that ends in one.
+    var createsItem: Bool {
+        switch self {
+        case .create, .lookUp, .awaitConfirmation: return true
+        case .update, .delete: return false
+        }
+    }
 }
 
 /// Why an operation was parked. A parked operation is never sent again.
@@ -94,14 +112,76 @@ extension AccountStore {
         try context.fetch(FetchDescriptor<OutboxOperation>(sortBy: [SortDescriptor(\OutboxOperation.sequence)]))
     }
 
-    /// The operation to send next: the lowest sequence that is not parked.
-    func nextOutboxOperation() throws -> OutboxOperation? {
-        var descriptor = FetchDescriptor<OutboxOperation>(
+    /// The operation to send next: the lowest sequence that is not parked and does not wait
+    /// for a pending bean (M2-T25). A bean's look-up that waits for its next attempt, or for the
+    /// user's confirmation, is skipped together with every operation whose item names that
+    /// bean (a shelf entry on it, a brew on such an entry); everything else keeps its order.
+    func nextOutboxOperation(at now: Date = Date()) throws -> OutboxOperation? {
+        let descriptor = FetchDescriptor<OutboxOperation>(
             predicate: #Predicate<OutboxOperation> { operation in operation.parked == false },
             sortBy: [SortDescriptor(\OutboxOperation.sequence)]
         )
-        descriptor.fetchLimit = 1
-        return try context.fetch(descriptor).first
+        let candidates = try context.fetch(descriptor)
+        let waiting = AccountStore.waitingBeanIDs(in: candidates, at: now)
+        if waiting.isEmpty {
+            return candidates.first
+        }
+        for operation in candidates {
+            if try !dependsOnWaitingBean(operation, waiting: waiting) {
+                return operation
+            }
+        }
+        return nil
+    }
+
+    /// The local ids of the beans whose look-up waits at `now`: for the user's confirmation,
+    /// or until its `nextAttemptAt` (M2-T25).
+    static func waitingBeanIDs(in operations: [OutboxOperation], at now: Date) -> Set<UUID> {
+        var waiting = Set<UUID>()
+        for operation in operations where !operation.parked && operation.resource == .bean {
+            switch operation.action {
+            case .awaitConfirmation?:
+                waiting.insert(operation.localID)
+            case .lookUp? where operation.nextAttemptAt > now:
+                waiting.insert(operation.localID)
+            default:
+                break
+            }
+        }
+        return waiting
+    }
+
+    /// Whether the operation is a waiting bean's own, or its item names a waiting bean.
+    private func dependsOnWaitingBean(_ operation: OutboxOperation, waiting: Set<UUID>) throws -> Bool {
+        switch operation.resource {
+        case .bean?:
+            return waiting.contains(operation.localID)
+        case .shelfEntry?:
+            guard let bean = try shelfEntry(localID: operation.localID)?.bean else {
+                return false
+            }
+            return waiting.contains(bean.localID)
+        case .brew?:
+            guard let bean = try brew(localID: operation.localID)?.shelfEntry?.bean else {
+                return false
+            }
+            return waiting.contains(bean.localID)
+        case .recipe?, .profile?, nil:
+            return false
+        }
+    }
+
+    /// The earliest moment after `now` at which a waiting bean look-up may be tried again, nil
+    /// when none waits for a moment. The engine rests no longer than that.
+    func nextLookUpAttempt(after now: Date) throws -> Date? {
+        let lookUpRaw = OutboxAction.lookUp.rawValue
+        let beanRaw = OutboxResource.bean.rawValue
+        let descriptor = FetchDescriptor<OutboxOperation>(
+            predicate: #Predicate<OutboxOperation> { operation in
+                operation.parked == false && operation.actionRaw == lookUpRaw && operation.resourceRaw == beanRaw
+            }
+        )
+        return try context.fetch(descriptor).map(\.nextAttemptAt).filter { date in date > now }.min()
     }
 
     /// The operation with this sequence number, if it is still queued.

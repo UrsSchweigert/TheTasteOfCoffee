@@ -20,7 +20,9 @@ Cupmark/                  app target sources and resources
   BeanEntry/              pick-list bean entry (M2-T22): BeanEntryModel, pick lists, A to Z sections
   LabelPhoto/             label photo (M2-T23, M2-T24): encoder, camera, draft, presigned upload
   Shelf/                  shelf list, shelf entry form and sync issues (M2-T18)
-  Brew/                   brew form of a shelf entry (M2-T19): BrewDraft, BrewFormModel, BrewFormScreen
+  Brew/                   brew form of a shelf entry (M2-T19): BrewDraft, BrewFormModel, BrewFormScreen;
+                          BrewSheet and the brew list (M2-T20)
+  Rating/                 rating of a brew (M2-T20): RatingDraft, RatingFormModel, RatingScreen, flavour note lists
   L10n.swift              keys of the String Catalog
   Localizable.xcstrings   String Catalog, English (source) and German
 CupmarkTests/             XCTest unit tests (hosted in the app)
@@ -214,6 +216,20 @@ node scripts/generate-ios-api.mjs
 - **Derived values.** The ratio (`1:16.2`, through `BrewDerivedValues.ratio`, in the device locale) and days since roast (to today, the day the brew is recorded) follow the values as they change.
 - **Save.** `BrewFormModel.save()` records `brewed_at` from the device clock, makes a `StoredBrew` with `vocabulary_version` = `Vocabulary.version` and adds it with `AccountStore.addBrew`, which queues `create brew` in the same save, so it works offline. The request names the shelf entry by the server id it has when the operation is sent, so a brew on an entry that is still waiting for its own create goes out after it. A saved form saves nothing more; a failed save rolls back and can be tried again.
 - Tests: `BrewFormTests` (the mapping to `BrewInput`, 18.5 g as 185, the ranges equal to the bundled ones, clamping and steps, the exclusive temperature, the ratio text in English and German, `vocabulary_version` equal to the bundled `brew.json`, the offline save with one queued create, the order after an unsent entry, the method and stepper starts from the latest brew, a removed entry and a failed save).
+
+## Rating
+
+`Rating/` (M2-T20) implements docs/04 F3: a brew is rated on the criteria of the bundled vocabulary, with optional intensities, flavour notes and buy again.
+
+- **When.** Right after a brew: `BrewSheet` (opened by both "Log a Brew" entry points) shows `BrewFormScreen` until the brew is saved, then `RatingScreen` for it in its place; "Later" closes the sheet and leaves the brew unrated. Later: the shelf entry's screen has "Brews", `BrewListScreen`, the entry's brews newest first with rated or not, each opening its rating. A rated brew opens with its rating, so the rating can be changed.
+- **Scores.** One slider per `Vocabulary.Criterion`, on `Vocabulary.Ranges.scale` (1 to 10) in its step (0.5), with the criterion's label and its question from contracts/i18n (`VocabularyStore.question`). A criterion without a score shows "Not set" with the slider dimmed in the middle; touching the slider sets it, also without a move. `RatingDraft.setScore(_:for:)` clamps and snaps every value onto the scale's half steps. Save is enabled only when every criterion has a score: `Scores` requires all of them. VoiceOver reads the label and the score, adjusts by one step, and gives the question as the hint.
+- **Intensity.** One segmented control per `intensity_dimensions` entry with the `intensity_levels`, nothing selected until a level is picked, and "Clear"; a pushed list with "Not set" at accessibility text sizes. Optional: no level, no `intensities`.
+- **Flavour notes.** Two levels: "Pick Flavour Notes" opens the `flavour_categories` in file order, each with its picked count, then the notes of a category. Up to `RatingDraft.maxFlavourNotes` (`Vocabulary.Constants.maxPicks`, `flavour_notes.max_picks`) can be picked, in the order picked and never twice; at the limit every note that is not picked is disabled, with a note. Picked notes are listed on the rating, and a tap removes one.
+- **Buy again.** Optional, three states: not set, Yes, No. A segmented Yes and No with "Clear" (a pushed list with "Not set" at accessibility text sizes). Not set is nil and is not sent, so an untouched control never counts as "no" in the bean's buy-again share (F4). A stored nil opens as not set, a stored yes or no as that answer.
+- **Repeat brews.** An unrated brew offers "Start from the Last Rating of This Bag": the newest rating of an earlier brew of the same shelf entry, copied into the draft only on that tap, then changed where the cup was different.
+- **Save.** `RatingFormModel.save()` writes through `AccountStore.rateBrew`, which checks the rating (`RatingValues.apiRating()`: complete, known ids), stores it, raises the brew's `vocabulary_version` to the bundled one if it was older, and calls `markUpdated`, all in one save. A brew the server has gets `pendingUpdate` and one `update brew` (`PUT /brews/{brew_id}`), shared by later changes until it is sent; a brew whose create has not been sent keeps its one create, which then carries the rating. It works offline; a failed save rolls back.
+- Nothing is typed, and no list, scale or limit is written in Swift: the views read them through `RatingDraft` and the generated enums (`scripts/ios-scripts.test.mjs` checks it).
+- Tests: `RatingTests` (the mapping to `Rating` and its JSON, optional parts left out, buy again omitted when not set and sent as true or false, a round trip of a stored rating, unknown ids dropped, the scale equal to the bundled one, half-step snapping and clamping, the slider touch, every criterion's question in every language, the limit equal to the bundled `max_picks`, further picks refused and allowed again after a removal, an incomplete set of scores not saved by the model or the store, one queued update for a synced brew and its coalescing, the rating riding on an unsent create, an offline rating sent as `PUT` once online, the last rating of the bag, a removed brew, a failed save, and the brew list).
 
 ## Sign-in
 

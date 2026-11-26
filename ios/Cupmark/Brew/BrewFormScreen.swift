@@ -17,13 +17,16 @@ struct BrewRoute: Identifiable, Hashable {
 ///   Nothing is typed (invariant 1), and everything but the method is optional.
 /// - The ratio and days since roast follow the values as they change.
 /// - Save writes through `BrewFormModel` to `AccountStore`, which queues the create in the
-///   outbox, so it works offline.
+///   outbox, so it works offline. In `BrewSheet` the rating of the new brew follows (M2-T20).
 struct BrewFormScreen: View {
     @State private var model: BrewFormModel
     let vocabulary: VocabularyStore
     let language: VocabularyLanguage
     /// Called after a save with the brew's local id, just before the sheet closes.
     let onSaved: @MainActor (UUID) -> Void
+    /// Whether the screen closes itself after a save. `BrewSheet` keeps it open and shows the
+    /// rating in its place instead (M2-T20).
+    let dismissesOnSave: Bool
     @Environment(\.dismiss) private var dismiss
     @Environment(\.locale) private var locale
 
@@ -32,11 +35,13 @@ struct BrewFormScreen: View {
         shelfEntry localID: UUID,
         vocabulary: VocabularyStore,
         language: VocabularyLanguage,
+        dismissesOnSave: Bool = true,
         onSaved: @escaping @MainActor (UUID) -> Void = { _ in }
     ) {
         _model = State(initialValue: BrewFormModel(shelfEntry: localID, store: store))
         self.vocabulary = vocabulary
         self.language = language
+        self.dismissesOnSave = dismissesOnSave
         self.onSaved = onSaved
     }
 
@@ -226,7 +231,9 @@ struct BrewFormScreen: View {
             return
         }
         onSaved(localID)
-        dismiss()
+        if dismissesOnSave {
+            dismiss()
+        }
     }
 
     static func message(for failure: BrewFormModel.Failure) -> LocalizedStringKey {

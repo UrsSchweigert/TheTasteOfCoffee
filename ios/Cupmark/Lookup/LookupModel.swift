@@ -29,6 +29,15 @@ final class LookupModel {
         /// Any other failure, for example an answer the app cannot read.
         case failed
 
+        /// Whether the scanned barcode can be kept as a pending bean (M2-T25): the lookup could
+        /// not answer now, but will once online or tomorrow. The outbox looks it up later.
+        var allowsKeepingForLater: Bool {
+            switch self {
+            case .unavailable, .limitReached: true
+            case .rejected, .noProduct, .failed: false
+            }
+        }
+
         /// Whether "Try again" makes sense. A rejection, a missing product or the daily limit
         /// would only give the same answer.
         var allowsRetry: Bool {
@@ -52,6 +61,9 @@ final class LookupModel {
         case confirming(API.OpenFoodFactsProduct)
         /// No bean: the pick-list entry is offered.
         case pickList(PickListReason)
+        /// The barcode is kept as a pending bean in the local store (M2-T25), with this local
+        /// id. It can go on the shelf now; the outbox looks it up once online.
+        case pending(UUID)
         /// The server refused the token, also after a refresh (401, `APIError.unauthorized`):
         /// the user has to sign in again. No retry and no pick-list entry, which would be
         /// refused the same way.
@@ -84,8 +96,35 @@ final class LookupModel {
             true
         case .pickList(let reason):
             reason.allowsRetry
-        case .lookingUp, .bean, .openFoodFacts, .confirming, .signInRequired:
+        case .lookingUp, .bean, .openFoodFacts, .confirming, .signInRequired, .pending:
             false
+        }
+    }
+
+    /// Whether `keepForLater(in:)` would keep the barcode now.
+    var canKeepForLater: Bool {
+        if case .pickList(let reason) = state {
+            return reason.allowsKeepingForLater
+        }
+        return false
+    }
+
+    /// The lookup could not answer now (no network, unavailable, the daily cap): keeps the
+    /// barcode as a pending bean in `store` (`AccountStore.pendingBean(barcode:)`), so it can go
+    /// on the shelf and have brews at once. Nothing is sent now; the outbox looks the barcode up
+    /// once online (M2-T25). Returns the bean's local id, nil when nothing was kept.
+    @discardableResult
+    func keepForLater(in store: AccountStore) -> UUID? {
+        guard canKeepForLater else {
+            return nil
+        }
+        do {
+            let bean = try store.pendingBean(barcode: barcode)
+            state = .pending(bean.localID)
+            return bean.localID
+        } catch {
+            // The store could not save: nothing was kept, and the choice is offered again.
+            return nil
         }
     }
 

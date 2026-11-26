@@ -7,14 +7,19 @@ import XCTest
 final class AccountStoreTests: XCTestCase {
     // MARK: - Schema
 
-    func testTheSchemaStartsAtVersion1AndThePlanHasNoStagesYet() {
+    func testTheSchemaIsAtVersion2WithOneLightweightStageFromVersion1() {
         XCTAssertEqual(CupmarkSchemaV1.versionIdentifier, Schema.Version(1, 0, 0))
-        XCTAssertEqual(CupmarkMigrationPlan.schemas.count, 1)
+        XCTAssertEqual(CupmarkSchemaV2.versionIdentifier, Schema.Version(2, 0, 0))
+        XCTAssertEqual(CupmarkMigrationPlan.schemas.count, 2)
         XCTAssertTrue(CupmarkMigrationPlan.schemas.first == CupmarkSchemaV1.self)
-        XCTAssertTrue(CupmarkMigrationPlan.stages.isEmpty)
+        XCTAssertTrue(CupmarkMigrationPlan.schemas.last == CupmarkSchemaV2.self)
+        XCTAssertEqual(CupmarkMigrationPlan.stages.count, 1)
         let names = Set(CupmarkSchemaV1.models.map { model in String(describing: model) })
         // `OutboxOperation` joined version 1 before any release (M2-T16, ADR 0025).
         XCTAssertEqual(names, ["StoredBean", "StoredShelfEntry", "StoredBrew", "StoredRecipe", "StoredProfile", "OutboxOperation"])
+        // Version 2 (M2-T25) keeps every model of version 1 and adds the label photo queue.
+        let current = Set(CupmarkSchemaV2.models.map { model in String(describing: model) })
+        XCTAssertEqual(current, names.union(["QueuedLabelPhoto"]))
     }
 
     // MARK: - Create

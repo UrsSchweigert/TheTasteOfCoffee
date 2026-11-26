@@ -72,9 +72,10 @@ struct URLSessionPresignedPostTransport: PresignedPostTransport {
 /// One label photo on its way to the server: the bean, the JPEG file, and how far it got.
 /// `LabelPhotoUploader.run` takes a job and returns it updated, so a retry resumes where the
 /// last attempt stopped (the S3 POST is not repeated after it succeeded, and an uncertain
-/// completion is asked again). M2-T25 can keep jobs in the outbox to run them once online.
-struct LabelPhotoUploadJob: Sendable, Equatable {
-    enum Stage: Sendable, Equatable {
+/// completion is asked again). It is `Codable`, so the label photo queue (M2-T25,
+/// `LabelPhotoQueue`) keeps it in the account's store between runs.
+struct LabelPhotoUploadJob: Sendable, Equatable, Codable {
+    enum Stage: Sendable, Equatable, Codable {
         /// No presigned POST yet, or the last one can no longer be used.
         case notStarted
         /// `POST /beans/{bean_id}/label_photos` answered; the S3 POST has not succeeded yet.

@@ -197,6 +197,37 @@ enum L10n {
     static var brewOfflineNote: LocalizedStringKey { "brew.offline_note" }
     static var brewNotFound: LocalizedStringKey { "brew.not_found" }
     static var brewSaveFailed: LocalizedStringKey { "brew.save_failed" }
+    // Brew list and rating (M2-T20).
+    static var brewListTitle: LocalizedStringKey { "brew_list.title" }
+    static var brewListEmpty: LocalizedStringKey { "brew_list.empty" }
+    static var brewListRated: LocalizedStringKey { "brew_list.rated" }
+    static var brewListNotRated: LocalizedStringKey { "brew_list.not_rated" }
+    static var ratingTitle: LocalizedStringKey { "rating.title" }
+    static var ratingSave: LocalizedStringKey { "rating.save" }
+    static var ratingLater: LocalizedStringKey { "rating.later" }
+    static var ratingBrewHeader: LocalizedStringKey { "rating.brew_header" }
+    static var ratingBrewedAt: LocalizedStringKey { "rating.brewed_at" }
+    static var ratingUseLast: LocalizedStringKey { "rating.use_last" }
+    static var ratingUseLastFooter: LocalizedStringKey { "rating.use_last.footer" }
+    static var ratingScoresHeader: LocalizedStringKey { "rating.scores.header" }
+    static var ratingScoresFooter: LocalizedStringKey { "rating.scores.footer" }
+    static var ratingScoresMissing: LocalizedStringKey { "rating.scores.missing" }
+    static var ratingIntensityHeader: LocalizedStringKey { "rating.intensity.header" }
+    static var ratingIntensityFooter: LocalizedStringKey { "rating.intensity.footer" }
+    static var ratingIntensityClear: LocalizedStringKey { "rating.intensity.clear" }
+    static var ratingNotesHeader: LocalizedStringKey { "rating.notes.header" }
+    static var ratingNotesChoose: LocalizedStringKey { "rating.notes.choose" }
+    static var ratingNotesFooter: LocalizedStringKey { "rating.notes.footer" }
+    static var ratingNotesPicked: LocalizedStringKey { "rating.notes.picked" }
+    static var ratingNotesMax: LocalizedStringKey { "rating.notes.max" }
+    static var ratingNotesFull: LocalizedStringKey { "rating.notes.full" }
+    static var ratingNoteRemoveHint: LocalizedStringKey { "rating.note.remove_hint" }
+    static var ratingBuyAgain: LocalizedStringKey { "rating.buy_again" }
+    static var ratingBuyAgainYes: LocalizedStringKey { "rating.buy_again.yes" }
+    static var ratingBuyAgainNo: LocalizedStringKey { "rating.buy_again.no" }
+    static var ratingBuyAgainClear: LocalizedStringKey { "rating.buy_again.clear" }
+    static var ratingNotFound: LocalizedStringKey { "rating.not_found" }
+    static var ratingIncomplete: LocalizedStringKey { "rating.incomplete" }
     static var signInAgainTitle: LocalizedStringKey { "sign_in_again.title" }
     static var signInAgainMessage: LocalizedStringKey { "sign_in_again.message" }
     static var signInAgainButton: LocalizedStringKey { "sign_in_again.button" }
