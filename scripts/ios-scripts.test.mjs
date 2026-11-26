@@ -1522,6 +1522,32 @@ test('statistics: read-only, offline, no typed text, thresholds only in Statisti
   assert.match(masked('ios/Cupmark/Shelf/ShelfEntryEditorScreen.swift'), /CoffeeAveragesSection\(averages: model\.averages/, 'the shelf entry screen shows the section');
 });
 
+// ---- Averages in context (M2-T48) ----
+
+test('averages in context: one function with an exclusion, the marker only after the score, Theme colour, no typed text (M2-T48)', () => {
+  const masked = (path) => lexSwift(readFileSync(join(repoRoot, path), 'utf8')).masked;
+  const averages = masked('ios/Cupmark/Statistics/CoffeeAverages.swift');
+  assert.equal(averages.match(/static func coffeeAverages\(/g)?.length, 1, 'one implementation');
+  assert.match(averages, /excluding excluded: UUID\?/, 'the exclusion of the brew being rated');
+  const model = masked('ios/Cupmark/Rating/RatingFormModel.swift');
+  assert.match(model, /StatisticsRules\.coffeeAverages\([\s\S]*excluding: brewLocalID/, 'the rating model uses the one function and leaves the brew out');
+  assert.match(model, /func markers\(for criterion[^)]*\)[^{]*\{\s*guard draft\.score\(for: criterion\) != nil/, 'no marker before the score is set');
+  const screen = masked('ios/Cupmark/Rating/RatingScreen.swift');
+  assert.match(screen, /SliderMarkerTrack\(markers: markers\)[\s\S]*allowsHitTesting\(false\)[\s\S]*accessibilityHidden\(true\)/, 'the overlay takes no touch and is hidden from VoiceOver');
+  assert.match(screen, /Theme\.averageMarker/, 'the marker has its own Theme colour');
+  assert.match(readFileSync(join(repoRoot, 'ios/Cupmark/Rating/RatingScreen.swift'), 'utf8'), /"rating-marker-/, 'the marker label has an identifier');
+  for (const file of ['ios/Cupmark/Rating/RatingScreen.swift', 'ios/Cupmark/Rating/RatingFormModel.swift', 'ios/Cupmark/Brew/BrewListScreen.swift', 'ios/Cupmark/Brew/BrewListModel.swift', 'ios/Cupmark/Statistics/CoffeeAveragesSection.swift']) {
+    assert.doesNotMatch(masked(file), /\.searchable\b|\bTextField\b|\bTextEditor\b|\bSecureField\b/, `${file}: no typed text (invariant 1)`);
+  }
+  assert.match(masked('ios/Cupmark/Shelf/ShelfEntryEditorScreen.swift'), /CoffeeSummaryRow\(averages: model\.averages/, 'the summary row is on the coffee screen');
+  assert.match(masked('ios/Cupmark/Brew/BrewListModel.swift'), /StatisticsRules\.coffeeAverages\(/, 'the brew list uses the one function');
+  // The UI tests of the harness launches.
+  const ui = readFileSync(join(repoRoot, 'ios/CupmarkUITests/AveragesInContextUITests.swift'), 'utf8');
+  for (const name of ['"rating"', '"shelf"', 'rating-marker-', 'coffee-summary', 'coffee-averages-count', 'brew-list-row']) {
+    assert.ok(ui.includes(name), `the UI test uses ${name}`);
+  }
+});
+
 // ---- Recipes and one-tap repeat (M2-T27, docs/04 F2) ----
 
 test('recipes: no name, no typed text, written through AccountStore, and one tap from a repeat (M2-T27)', () => {

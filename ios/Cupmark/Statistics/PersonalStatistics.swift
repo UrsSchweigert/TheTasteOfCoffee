@@ -53,6 +53,9 @@ struct StatisticsBrew: Equatable, Sendable {
     /// The local id of the brew's shelf entry (one bag), nil if it has none. The averages of
     /// one coffee (`StatisticsRules.coffeeAverages`) count only the brews of their own entry.
     let shelfEntryID: UUID?
+    /// The brew's own local id, nil when not known (a test value). `StatisticsRules.coffeeAverages`
+    /// leaves out the brew being rated by it (M2-T48).
+    let id: UUID?
 
     init(
         brewedAt: Date,
@@ -60,9 +63,11 @@ struct StatisticsBrew: Equatable, Sendable {
         bean: StatisticsBean?,
         rating: RatingValues?,
         isRemoved: Bool = false,
-        shelfEntryID: UUID? = nil
+        shelfEntryID: UUID? = nil,
+        id: UUID? = nil
     ) {
         self.shelfEntryID = shelfEntryID
+        self.id = id
         self.brewedAt = brewedAt
         self.method = method
         self.bean = bean

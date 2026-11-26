@@ -1075,7 +1075,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job. Marked `needs-mac-verification` until it passes.
 
 ### M2-T48 Averages in context: markers on the rating sliders, a summary at the top of the coffee, averages on the brew list
-- status: in-progress
+- status: needs-mac-verification (written on Linux; Swift, XCTest and the UI tests have not run)
 - owner: ios-engineer
 - depends: M2-T44, M2-T20
 - implements: owner feedback of 2026-11-26 after testing the TestFlight build ("I would want the community ratings and my ratings to be visible as an indication on the slider or right next to where I look at my things, rather than having to scroll down and lose the context"); M2-T44 (the averages of one coffee), ADR 0027 addendum

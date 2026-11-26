@@ -2143,6 +2143,60 @@
         }
       }
     },
+    "brew_list.average %@" : {
+      "comment" : "Next to a rated brew's own overall score in the brew list: the average overall score of all rated brews of the coffee (M2-T48). %1$@ is the number, one decimal. Short.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ø %1$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "avg %1$@"
+          }
+        }
+      }
+    },
+    "brew_list.average_spoken %@" : {
+      "comment" : "VoiceOver reading of the coffee's average overall score on a brew list row (M2-T48); %1$@ is the number.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Durchschnitt dieses Kaffees %1$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coffee average %1$@"
+          }
+        }
+      }
+    },
+    "brew_list.overall %@" : {
+      "comment" : "A rated brew's own overall score in the brew list (M2-T48); %1$@ is the number, one decimal.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gesamt %1$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Overall %1$@"
+          }
+        }
+      }
+    },
     "brew_list.empty" : {
       "comment" : "Shown in the brew list when no brew of the bag has been logged.",
       "extractionState" : "manual",
@@ -2787,6 +2841,60 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rated brews"
+          }
+        }
+      }
+    },
+    "coffee_summary.hint" : {
+      "comment" : "VoiceOver hint of the summary row at the top of a coffee's screen (M2-T48): it moves to the averages below.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zeigt die Durchschnitte dieses Kaffees weiter unten"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shows the averages of this coffee below"
+          }
+        }
+      }
+    },
+    "coffee_summary.label" : {
+      "comment" : "VoiceOver label of the summary row at the top of a coffee's screen (M2-T48).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Bewertungen dieses Kaffees"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your ratings of this coffee"
+          }
+        }
+      }
+    },
+    "coffee_summary.overall %@ %@" : {
+      "comment" : "Summary row at the top of a coffee's screen (M2-T48); the first %@ is the mean overall score, one decimal, the second the number of rated brews.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gesamt %1$@, bewertete Zubereitungen %2$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Overall %1$@, rated brews %2$@"
           }
         }
       }
@@ -5307,6 +5415,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No more notes can be picked. Remove one to pick another."
+          }
+        }
+      }
+    },
+    "rating.marker.own %@" : {
+      "comment" : "Under a rating slider, once its score is set (M2-T48): the user's mean of this criterion over their other rated brews of the same coffee; %1$@ is the number, one decimal.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dein Durchschnitt für diesen Kaffee %1$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your average for this coffee %1$@"
+          }
+        }
+      }
+    },
+    "rating.marker.own_spoken %@" : {
+      "comment" : "VoiceOver reading of the average marker of a rating slider (M2-T48); %1$@ is the number on the scale, for example 7.5 of 10.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dein Durchschnitt für diesen Kaffee, %1$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your average for this coffee, %1$@"
           }
         }
       }

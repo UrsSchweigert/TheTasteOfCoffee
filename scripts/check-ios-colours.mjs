@@ -111,7 +111,7 @@ function swiftFiles(dir) {
 // ---- The palette: named colour sets and their contrast (ADR 0032) ----
 
 export const ASSETS_DIR = join(APP_DIR, 'Assets.xcassets');
-export const COLOUR_NAMES = ['AccentColor', 'OnAccent', 'FormBackground', 'ListBackground', 'Surface', 'TextPrimary', 'TextSecondary', 'SwipeAction', 'SwipeActionSecondary', 'ErrorText'];
+export const COLOUR_NAMES = ['AccentColor', 'OnAccent', 'FormBackground', 'ListBackground', 'Surface', 'TextPrimary', 'TextSecondary', 'SwipeAction', 'SwipeActionSecondary', 'ErrorText', 'AverageMarker'];
 export const APPEARANCES = ['light', 'dark'];
 /** Minimum WCAG 2.x contrast ratio for normal text and for controls the ADR lists. */
 export const MIN_CONTRAST = 4.5;
@@ -136,6 +136,10 @@ export const PAIRINGS = [
   ['ErrorText', 'FormBackground', { light: 6.24, dark: 9.08 }],
   ['ErrorText', 'ListBackground', { light: 6.51, dark: 8.84 }],
   ['ErrorText', 'Surface', { light: 7.14, dark: 7.97 }],
+  // The average marker and its number (M2-T48), drawn beside the slider on the row.
+  ['AverageMarker', 'FormBackground', { light: 6.53, dark: 9.96 }],
+  ['AverageMarker', 'ListBackground', { light: 6.82, dark: 9.7 }],
+  ['AverageMarker', 'Surface', { light: 7.48, dark: 8.75 }],
 ];
 
 /** `{ light: [r, g, b], dark: [r, g, b] }` (0 to 1) of a colour set's Contents.json, or throws. */

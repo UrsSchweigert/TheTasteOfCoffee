@@ -84,6 +84,7 @@ struct BrewListRowView: View {
     let row: BrewListRow
     let vocabulary: VocabularyStore
     let language: VocabularyLanguage
+    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -101,6 +102,9 @@ struct BrewListRowView: View {
             }
             .font(.subheadline)
             .foregroundStyle(row.isRated ? Theme.accent : Theme.textSecondary)
+            if let overall = row.overall {
+                scoreLine(overall)
+            }
             if row.isRecipe {
                 Label {
                     Text(L10n.brewListIsRecipe)
@@ -125,5 +129,25 @@ struct BrewListRowView: View {
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
+    }
+
+    /// A rated brew's own overall score and, next to it, the coffee's average overall ("avg
+    /// 7.4", only with two or more rated brews), so a brew is read against the others
+    /// (M2-T48). VoiceOver reads "Overall 8.0, coffee average 7.4".
+    private func scoreLine(_ overall: Double) -> some View {
+        HStack(spacing: 12) {
+            Text(verbatim: L10n.brewListOverall(RatingFormat.score(overall, locale: locale)))
+                .font(.subheadline.weight(.semibold))
+                .monospacedDigit()
+                .accentText()
+            if let average = row.coffeeAverageOverall {
+                let mean = average.formatted(StatisticsRules.meanStyle().locale(locale))
+                Text(verbatim: L10n.brewListAverage(mean))
+                    .font(.subheadline)
+                    .monospacedDigit()
+                    .secondaryText()
+                    .accessibilityLabel(Text(verbatim: L10n.brewListAverageSpoken(mean)))
+            }
+        }
     }
 }

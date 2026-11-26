@@ -19,6 +19,12 @@ import Observation
 ///   an earlier brew of the same bag; else of the same bean on any bag; else, for a brew
 ///   started as a repeat of the last brew, that brew's rating (ADR 0026, Addendum M2-T27).
 ///   A later brew's rating is never offered.
+/// - Averages in context (M2-T48): `markers(for:)` gives a criterion's slider the mean of the
+///   user's OTHER rated, not removed brews of the same shelf entry (this brew is left out,
+///   `StatisticsRules.coffeeAverages(excluding:)`), and the optional community value (M4). It
+///   answers nil until the criterion has a score in the draft, so the average does not anchor
+///   the rating; a brew opened with a rating has its scores at once. The numbers are fixed
+///   when the screen opens (and when the store changes), not when a slider moves.
 @MainActor
 @Observable
 final class RatingFormModel {
@@ -59,6 +65,11 @@ final class RatingFormModel {
     /// The brew's `vocabulary_version` is newer than the bundled one: the rating is shown but
     /// cannot be changed.
     private(set) var isReadOnly = false
+
+    /// The community's means by criterion (M4 sets them; nothing does yet, no server call).
+    private(set) var communityValues: [Vocabulary.Criterion: CommunityValue] = [:]
+    /// The user's other rated brews of this shelf entry (M2-T48).
+    private(set) var otherBrews = CoffeeAverages(ratedBrews: 0, rows: [], methods: [])
 
     /// Stores the rating and saves (`AccountStore.rateBrew`). Tests replace it to make the
     /// write fail.
@@ -102,6 +113,21 @@ final class RatingFormModel {
             lastRatingSource = nil
             failure = .notFound
         }
+        otherBrews = RatingFormModel.averagesOfOthers(brewLocalID: localID, store: store)
+    }
+
+    /// The averages of the other rated brews of `brewLocalID`'s shelf entry; empty when the
+    /// brew or its entry is not in the store.
+    static func averagesOfOthers(brewLocalID: UUID, store: AccountStore) -> CoffeeAverages {
+        let none = CoffeeAverages(ratedBrews: 0, rows: [], methods: [])
+        guard let brew = try? store.brew(localID: brewLocalID), let entry = brew.shelfEntry else {
+            return none
+        }
+        return StatisticsRules.coffeeAverages(
+            of: StatisticsBrew.values(of: entry.brews),
+            shelfEntry: entry.localID,
+            excluding: brewLocalID
+        )
     }
 
     /// The rating of the newest other brew of the same shelf entry brewed no later than
@@ -218,6 +244,27 @@ final class RatingFormModel {
         }
     }
 
+    /// The markers of a criterion's slider (M2-T48): nil while the draft has no score for it
+    /// (hidden, so the average does not anchor the rating), and nil when there is nothing to
+    /// show, that is no other rated brew scores it and there is no community value.
+    func markers(for criterion: Vocabulary.Criterion) -> SliderMarkers? {
+        guard draft.score(for: criterion) != nil else {
+            return nil
+        }
+        let own = otherBrews.rows.first { row in row.criterion == criterion }?.mean
+        let community = communityValues[criterion]
+        guard own != nil || community != nil else {
+            return nil
+        }
+        return SliderMarkers(own: own, community: community)
+    }
+
+    /// Sets the community's values (M4). The slider then shows a second marker for each,
+    /// once its score is set.
+    func setCommunityValues(_ values: [Vocabulary.Criterion: CommunityValue]) {
+        communityValues = values
+    }
+
     func toggle(_ note: Vocabulary.FlavourNote) {
         draft.toggle(note)
     }
@@ -281,6 +328,7 @@ final class RatingFormModel {
         bean = ShelfBeanSummary(brew.shelfEntry?.bean)
         method = brew.method
         brewedAt = brew.brewedAt
+        otherBrews = RatingFormModel.averagesOfOthers(brewLocalID: brewLocalID, store: store)
         if RatingFormModel.isNewer(brew) {
             isReadOnly = true
             lastRating = nil
@@ -289,5 +337,23 @@ final class RatingFormModel {
         if failure == .notFound {
             failure = nil
         }
+    }
+}
+
+/// What a rating slider marks (M2-T48): the mean of the user's other rated brews of the
+/// coffee and, in M4, the community's value. Either may be nil, not both.
+struct SliderMarkers: Equatable, Sendable {
+    /// Unrounded; shown with `StatisticsRules.meanStyle()`.
+    let own: Double?
+    let community: CommunityValue?
+
+    /// A position on the track, 0 to 1, for a value on the scale.
+    static func fraction(of value: Double) -> Double {
+        let scale = RatingDraft.scale
+        let span = scale.maximum - scale.minimum
+        guard span > 0 else {
+            return 0
+        }
+        return min(1, max(0, (value - scale.minimum) / span))
     }
 }
