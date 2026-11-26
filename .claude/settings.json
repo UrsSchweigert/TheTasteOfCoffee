@@ -31,5 +31,18 @@
       "Read(./**/*.pem)",
       "Read(./**/*.mobileprovision)"
     ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "scripts/clean-worktrees.sh --apply --quiet",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
   }
 }
