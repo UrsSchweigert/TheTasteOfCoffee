@@ -108,7 +108,7 @@ final class AccountStore {
     /// profile the server has is `pendingUpdate`. Either is sent as `PUT /profile`.
     @discardableResult
     func setProfile(_ values: API.Profile) throws -> StoredProfile {
-        try write {
+        try write { () throws -> StoredProfile in
             if let existing = try profile() {
                 existing.apply(values)
                 existing.syncState = existing.syncState.afterLocalEdit

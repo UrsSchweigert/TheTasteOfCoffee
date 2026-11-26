@@ -678,7 +678,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T21 Brew timer
-- status: needs-mac-verification (reviewed; marked done once the macOS `ios` job passes in its pull request)
+- status: done (built and tested by the macOS `ios` job in #64)
 - note: from the review, the start instant lives only in memory, so a long timing (cold brew) is lost if iOS ends the app or the phone restarts. Persisting a wall-clock start is a possible follow-up after the M6 TestFlight round.
 - owner: ios-engineer
 - depends: M2-T19
@@ -934,7 +934,7 @@ Goal: TestFlight, then App Store. Not yet planned. Mostly human tasks.
 Scope: App Store listing, screenshots, privacy nutrition labels, privacy policy and terms, TestFlight round with the persona interviews, production deployment, launch checklist.
 
 ### M2-T35 Failed saves put edited fields back
-- status: todo
+- status: done (built and tested by the macOS `ios` job in #64; ADR 0025 addendum M2-T35)
 - owner: ios-engineer
 - depends: M2-T25
 - implements: docs/04-specification.md, Non-functional (Durability: no loss of a confirmed write, and no write sent that was not confirmed); ADR 0025

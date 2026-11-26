@@ -22,9 +22,8 @@ protocol SavedValuesRestorable: PersistentModel {
     /// container), nil when the store does not have it.
     static func savedCopy(of model: Self, in context: ModelContext) throws -> Self?
 
-    /// Every stored property but the key `savedCopy` finds the model by and the to-many
-    /// relationships, which are the inverses of restored to-one relationships. The schema
-    /// test checks that nothing else is left out.
+    /// Every stored property but the key `savedCopy` finds the model by. The schema test
+    /// checks that nothing else is left out.
     static var restoredProperties: [RestoredProperty<Self>] { get }
 }
 
@@ -105,6 +104,14 @@ extension AccountStore {
         }
         return try? shelfEntry(localID: localID)
     }
+
+    /// The live model of the brew with this local id, a deleted one included.
+    fileprivate func liveBrew(_ localID: UUID) -> StoredBrew? {
+        if let deleted = context.deletedModelsArray.lazy.compactMap({ model in model as? StoredBrew }).first(where: { brew in brew.localID == localID }) {
+            return deleted
+        }
+        return try? brew(localID: localID)
+    }
 }
 
 // MARK: - The models
@@ -144,6 +151,15 @@ extension StoredBean: SavedValuesRestorable {
             .attribute("operatorOriginID", \.operatorOriginID),
             .attribute("operatorSpeciesID", \.operatorSpeciesID),
             .attribute("operatorVarietyID", \.operatorVarietyID),
+            // The inverse of `StoredShelfEntry.bean`: an entry inserted by the failed write
+            // leaves it, one it moved away or deleted comes back.
+            RestoredProperty(name: "shelfEntries") { live, saved, store in
+                let savedEntryIDs = Set(saved.shelfEntries.map(\.localID))
+                guard Set(live.shelfEntries.map(\.localID)) != savedEntryIDs else {
+                    return
+                }
+                live.shelfEntries = savedEntryIDs.compactMap { localID in store.liveShelfEntry(localID) }
+            },
         ]
     }
 }
@@ -175,6 +191,15 @@ extension StoredShelfEntry: SavedValuesRestorable {
                     return
                 }
                 live.bean = savedBeanID.flatMap { localID in store.liveBean(localID) }
+            },
+            // The inverse of `StoredBrew.shelfEntry`: a brew inserted by the failed write leaves
+            // it, one it moved away or deleted comes back.
+            RestoredProperty(name: "brews") { live, saved, store in
+                let savedBrewIDs = Set(saved.brews.map(\.localID))
+                guard Set(live.brews.map(\.localID)) != savedBrewIDs else {
+                    return
+                }
+                live.brews = savedBrewIDs.compactMap { localID in store.liveBrew(localID) }
             },
         ]
     }

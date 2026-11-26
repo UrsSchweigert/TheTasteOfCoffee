@@ -212,7 +212,7 @@ extension AccountStore {
     /// it go out after it. False when the bean waits for no confirmation (any more).
     @discardableResult
     func confirmOpenFoodFacts(beanLocalID: UUID, picks: API.BeanAttributes) throws -> Bool {
-        try write {
+        try write { () throws -> Bool in
             guard let operation = try question(.awaitConfirmation, of: beanLocalID), let bean = try self.bean(localID: beanLocalID) else {
                 return false
             }
@@ -229,7 +229,7 @@ extension AccountStore {
     /// confirmation (any more).
     @discardableResult
     func rejectOpenFoodFacts(beanLocalID: UUID) throws -> Bool {
-        try write {
+        try write { () throws -> Bool in
             guard let operation = try question(.awaitConfirmation, of: beanLocalID), let bean = try self.bean(localID: beanLocalID) else {
                 return false
             }
@@ -246,7 +246,7 @@ extension AccountStore {
     /// when the bean waits for no description (any more).
     @discardableResult
     func describePendingBean(beanLocalID: UUID, picks: API.BeanAttributes, labelPhotoFiles: [String] = []) throws -> Bool {
-        try write {
+        try write { () throws -> Bool in
             guard let operation = try question(.awaitDescription, of: beanLocalID), let bean = try self.bean(localID: beanLocalID) else {
                 return false
             }
@@ -264,7 +264,7 @@ extension AccountStore {
     /// the bean waits for no description (any more).
     @discardableResult
     func skipDescription(beanLocalID: UUID) throws -> Bool {
-        try write {
+        try write { () throws -> Bool in
             guard let operation = try question(.awaitDescription, of: beanLocalID) else {
                 return false
             }
