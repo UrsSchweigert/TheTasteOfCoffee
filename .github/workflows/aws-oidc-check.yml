@@ -1,7 +1,8 @@
 # Manual check that GitHub Actions can assume the Cupmark deploy role through OIDC
 # and reach only the cdk-cupmark bootstrap roles. Read-only: it creates nothing.
 # The job declares the GitHub environment `dev`, so its OIDC `sub` is
-# repo:UrsSchweigert/TheTasteOfCoffee:environment:dev. The role trusts only the
+# repo:UrsSchweigert@132881530/TheTasteOfCoffee@1470617081:environment:dev (GitHub's
+# immutable subject form, ADR 0018). The role trusts only the
 # `dev` and `prod` environments (ADR 0018), and both are limited to `main` in
 # the repository settings, so this runs only from main.
 #

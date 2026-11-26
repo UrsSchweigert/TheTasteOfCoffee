@@ -102,6 +102,7 @@ compare "name, path, session, description, boundary, tags" "$tmp/role.expected" 
 
 if [[ $failed -ne 0 ]]; then
   echo "The role differs from the import template. Do not import; report the difference." >&2
+  echo "A trust that differs only in the sub condition (plain subjects, or immutable subjects with StringLike) is rewritten by scripts/aws/first-deploy-setup.sh, step 2 (ADR 0018); this check stays strict." >&2
   exit 1
 fi
 echo "The role matches the import template."
