@@ -468,7 +468,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T10 Dev stage values in the app
-- status: todo
+- status: needs-mac-verification (the owner posted the dev outputs on 2026-11-26; the values are in Config/Dev.xcconfig and the script test accepts them; the `ios` job runs the StageConfig tests)
 - owner: ios-engineer
 - needs: human (after the first dev deploy, the owner reads the outputs `AppClientId`, `ApiUrl` and `HostedDomain` of `cupmark-dev-core` and posts them on the task's issue)
 - depends: M1-T7, M2-T9

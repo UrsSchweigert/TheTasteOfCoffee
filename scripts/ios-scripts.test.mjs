@@ -831,9 +831,17 @@ test('stage config: Dev and Prod xcconfigs set every value, in eu-central-1, wit
       assert.ok(!/(us|eu|ap|ca|sa|me|af|il|mx)-[a-z]+-\d/.test(value.replaceAll('eu-central-1', '')), `${file}: ${name} names another region`);
     }
   }
-  // Until M2-T10 (dev) and M6 (prod) the ids are placeholders that StageConfig rejects:
+  // Until M6 the prod ids are placeholders that StageConfig rejects:
   // uppercase and hyphens are not valid in an app client id or an API id.
   assert.match(readXcconfig('Prod.xcconfig').CUPMARK_APP_CLIENT_ID, /^PLACEHOLDER-/);
+});
+
+test('stage config: Dev holds the real ids of cupmark-dev-core that StageConfig accepts (M2-T10)', () => {
+  const dev = readXcconfig('Dev.xcconfig');
+  // StageConfig: an app client id is letters and digits; an API id is 10 lowercase letters and digits.
+  assert.match(dev.CUPMARK_APP_CLIENT_ID, /^[A-Za-z0-9]{1,128}$/);
+  assert.doesNotMatch(dev.CUPMARK_APP_CLIENT_ID, /PLACEHOLDER/);
+  assert.match(dev.CUPMARK_API_URL, /^https:\/\/[a-z0-9]{10}\.execute-api\.eu-central-1\.amazonaws\.com$/);
 });
 
 test('stage config: the callback URLs match infra/src/identity.ts (M2-T9)', () => {
