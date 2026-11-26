@@ -334,6 +334,9 @@ enum L10n {
     static var coffeeSummaryHint: LocalizedStringKey { "coffee_summary.hint" }
     /// `%1$@` is the mean overall score, `%2$@` the number of rated brews.
     static func coffeeSummaryOverall(mean: String, brews: String) -> String { String(localized: "coffee_summary.overall \(mean) \(brews)") }
+    /// The product line on the shelf list and a coffee's screen (M2-T49): `%1$@` is the mean
+    /// overall score over all bags of the bean, `%2$@` the number of rated brews.
+    static func shelfRowProductAverage(mean: String, brews: String) -> String { String(localized: "shelf.row.product_average \(mean) \(brews)") }
     /// `%1$@` is the number.
     static func brewListOverall(_ score: String) -> String { String(localized: "brew_list.overall \(score)") }
     static func brewListAverage(_ mean: String) -> String { String(localized: "brew_list.average \(mean)") }

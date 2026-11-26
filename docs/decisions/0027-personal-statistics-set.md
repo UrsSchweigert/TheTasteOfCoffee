@@ -61,3 +61,13 @@ The owner found the statistics screen, which listed every method one after anoth
 - **Effect:** with one method chosen every section (brews, weeks, taste profile, flavour notes, best bean, buy again) shows the numbers of that method's brews only, from the same `PersonalStatistics.compute` with a method filter. "All methods" is the output as before. "Best method" compares methods and is hidden while one is chosen.
 - **Threshold:** unchanged. A chosen method with fewer than `StatisticsRules.minimumRatedBrews` rated brews shows the empty state of the taste profile, not zeros.
 - **Kept:** per device in `UserDefaults` (privacy reason CA92.1) as one method id or "all". An unknown id, or a method that has no rated brew any more, shows "All methods"; the kept value is not overwritten until the user picks again.
+
+## Addendum M2-T49: averages on the shelf list, per bag and per product (lead, ADR 0014)
+
+The owner asked (2026-11-26) for the averages of a bag on each row of the shelf, and across all bags of the same product.
+
+- **Bag line:** each shelf row shows the mean overall score and the number of rated brews of its own bag ("Overall 7.4, rated brews 3"), the wording of the coffee screen. A bag without rated brews shows nothing, no zeros.
+- **Product line:** when the user has more than one bag of the same bean, each of those rows also shows "All bags 7.1, rated brews 5", the mean over the rated brews of every bag of that bean. With one bag the line is not shown (it would repeat the bag line); a bag without a bean has none. The coffee screen shows the same line under its summary.
+- **Which brews count:** as in M2-T44: not removed, rated; brews of other beans never count.
+- **Count:** the shelf counts brews that scored `overall`; the coffee screen's summary counts rated brews. Every vocabulary version defines `overall` and a rating cannot be saved without it, so the two are equal today.
+- **Where:** one pure function, `StatisticsRules.shelfAverages(of:bags:)`, with tests; one batched read for the whole list.

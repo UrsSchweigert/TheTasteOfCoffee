@@ -6,7 +6,8 @@ struct SettingsRoute: Hashable {}
 
 /// Settings, one tap from the shelf. Each topic is its own section, built by its own
 /// function: Privacy (the consent, M2-T29), Export (M2-T30), the removal of other accounts'
-/// data on this device (M2-T30), and Delete Account (M2-T31). No control takes typed text.
+/// data on this device (M2-T30), and the account: Sign Out (M2-T51) and Delete Account (M2-T31).
+/// No control takes typed text.
 /// Export and account deletion are pushed screens outside `Settings/`, which read what they
 /// need from the environment, so no settings file touches the API client.
 struct SettingsScreen: View {
@@ -16,6 +17,9 @@ struct SettingsScreen: View {
     @State private var model: SettingsModel
     @State private var localData: LocalDataModel?
     @State private var isConfirmingRemoval = false
+    @State private var isConfirmingSignOut = false
+    /// For the sign-out row (M2-T51); nil in previews and the UI-test screen, which show no row.
+    @Environment(AuthModel.self) private var auth: AuthModel?
 
     /// `account` is the signed-in account; without it the export and local data sections are
     /// left out and the consent still works. `backup` and `folders` are the device's brew photo
@@ -38,7 +42,7 @@ struct SettingsScreen: View {
             brewPhotoBackupSection
             exportSection
             localDataSection
-            deleteAccountSection
+            accountSection
         }
         .listBackground()
         .navigationTitle(Text(L10n.settingsTitle))
@@ -153,9 +157,34 @@ struct SettingsScreen: View {
         .surfaceRow()
     }
 
-    /// Account deletion (M2-T31): pushes the two confirmation steps (`AccountDeletionDestination`).
-    private var deleteAccountSection: some View {
+    /// The account (M2-T51, M2-T31): "Sign out" with its confirmation, then account deletion,
+    /// which pushes the two confirmation steps (`AccountDeletionDestination`). The dialog sits on
+    /// the sign-out button, which stays on screen until the sign-out replaces the whole stack.
+    private var accountSection: some View {
         Section {
+            if let auth {
+                Button {
+                    isConfirmingSignOut = true
+                } label: {
+                    Label {
+                        Text(L10n.accountSignOut)
+                    } icon: {
+                        Image(systemName: "rectangle.portrait.and.arrow.right")
+                            .accessibilityHidden(true)
+                    }
+                }
+                .minimumTapTarget()
+                .accessibilityIdentifier("settings-sign-out")
+                .confirmationDialog(L10n.accountSignOutConfirmTitle, isPresented: $isConfirmingSignOut, titleVisibility: .visible) {
+                    Button(role: .destructive) {
+                        Task {
+                            await auth.signOut()
+                        }
+                    } label: {
+                        Text(L10n.accountSignOut)
+                    }
+                }
+            }
             NavigationLink {
                 AccountDeletionDestination()
             } label: {
