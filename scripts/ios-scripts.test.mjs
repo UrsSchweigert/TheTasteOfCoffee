@@ -1767,7 +1767,26 @@ test('the app has a 1024 point icon without transparency and names it in the bui
   assert.equal(png.readUInt32BE(20), 1024, 'height');
   // IHDR colour type: 2 = RGB, 6 = RGBA. App Store icons must not have an alpha channel.
   assert.equal(png[25], 2, 'colour type RGB, no alpha channel');
+  assert.equal(png.includes(Buffer.from('tRNS')), false, 'no transparency chunk');
   const project = readFileSync(join(iosDir, 'Cupmark.xcodeproj', 'project.pbxproj'), 'utf8');
   const named = project.match(/ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;/g) ?? [];
   assert.equal(named.length, 2, 'Debug and Release of the app target');
+});
+
+// The upload also needs the export-compliance answer and a privacy manifest (App Store Connect).
+test('the app answers export compliance and ships a privacy manifest for the file timestamp APIs it reads', () => {
+  const iosDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'ios');
+  const project = readFileSync(join(iosDir, 'Cupmark.xcodeproj', 'project.pbxproj'), 'utf8');
+  const keys = project.match(/INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;/g) ?? [];
+  assert.equal(keys.length, 2, 'Debug and Release of the app target');
+  assert.doesNotMatch(project, /PBXFileSystemSynchronizedBuildFileExceptionSet/, 'nothing is excluded from the synchronized app folder');
+  const manifest = readFileSync(join(iosDir, 'Cupmark', 'PrivacyInfo.xcprivacy'), 'utf8');
+  assert.match(manifest, /<key>NSPrivacyTracking<\/key>\s*<false\/>/);
+  assert.match(manifest, /NSPrivacyAccessedAPICategoryFileTimestamp[\s\S]*C617\.1/);
+  // Declared only if the app reads them: UserDefaults needs its own entry the day it is used.
+  const sources = readdirSync(join(iosDir, 'Cupmark'), { recursive: true }).filter((f) => f.endsWith('.swift'));
+  for (const f of sources) {
+    const text = readFileSync(join(iosDir, 'Cupmark', f), 'utf8');
+    assert.doesNotMatch(text, /UserDefaults|@AppStorage/, `${f} uses UserDefaults: add NSPrivacyAccessedAPICategoryUserDefaults to the manifest`);
+  }
 });

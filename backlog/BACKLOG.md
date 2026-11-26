@@ -506,7 +506,7 @@ Planning notes (planned 2026-11-25):
 
 ### M2-T12 Development team and TestFlight through Xcode Cloud
 - status: todo
-- progress (2026-11-26, lead): the first Xcode Cloud build (1) was refused with ITMS-90022 and ITMS-90713, both because the app had no icon. Done in the app-icon PR: `Assets.xcassets/AppIcon.appiconset` with one 1024-point icon (a placeholder bean, to be replaced by a real design) and `ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon`. Still to do here: the team setting, `ITSAppUsesNonExemptEncryption`, the privacy manifest, the build number, the README and the ADR.
+- progress (2026-11-26, lead): the first Xcode Cloud build (1) was refused with ITMS-90022 and ITMS-90713, both because the app had no icon. Done in the app-icon PR: `Assets.xcassets/AppIcon.appiconset` with one 1024-point icon (a placeholder bean, to be replaced by a real design) and `ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon`. Also done there: `INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO` and `PrivacyInfo.xcprivacy` (no tracking; collected data: user id, other user content, photos, all linked and for app functionality; file timestamp API, reason C617.1). Still to do here: the team setting, the build number, the README and the ADR (Release uses Dev.xcconfig on purpose: the internal TestFlight build talks to the dev stage).
 - owner: ios-engineer
 - needs: human. On the owner's Mac, in Xcode: Integrate, then Create Workflow. Grant Xcode Cloud access to the GitHub repository. Pick team `2F695PTZC6` and the App Store Connect app of `app.cupmark.Cupmark`. Create an internal TestFlight group. Start the first build and report its build number once it is installed from TestFlight.
 - depends: M2-T11
