@@ -217,11 +217,15 @@ final class StageConfigTests: XCTestCase {
         XCTAssertEqual(bundle.object(forInfoDictionaryKey: "CupmarkSignOutURL") as? String, "cupmark://signout")
     }
 
-    func testTheBuiltAppIsNotConfiguredUntilM2T10() {
-        // M2-T10 replaces this test with one that expects `.configured` with the dev values.
-        guard case .notConfigured(let error) = StageConfigLoadState.load(from: Bundle(for: AppBundleToken.self)) else {
-            return XCTFail("the placeholders were accepted")
+    func testTheBuiltAppIsConfiguredWithTheDevStackValues() {
+        // M2-T10: Config/Dev.xcconfig holds the outputs of the first dev deploy of cupmark-dev-core
+        // (2026-11-26). They are public identifiers: an app client without a secret and an API id.
+        guard case .configured(let config) = StageConfigLoadState.load(from: Bundle(for: AppBundleToken.self)) else {
+            return XCTFail("the dev values were not accepted")
         }
-        XCTAssertEqual(error, .malformed(.appClientID))
+        XCTAssertEqual(config.stage, .dev)
+        XCTAssertEqual(config.appClientID, "67utjt0aog8iigctl3q0efjn54")
+        XCTAssertEqual(config.apiBaseURL.absoluteString, "https://lars2krigg.execute-api.eu-central-1.amazonaws.com")
+        XCTAssertEqual(config.hostedDomain.absoluteString, "https://cupmark-dev.auth.eu-central-1.amazoncognito.com")
     }
 }
