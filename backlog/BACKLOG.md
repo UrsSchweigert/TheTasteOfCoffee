@@ -825,7 +825,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T30 CSV export
-- status: in-progress
+- status: needs-mac-verification (code and unit tests written on Linux and not run; the `ios` job must pass, then the task can end `done`)
 - owner: ios-engineer
 - depends: M2-T16
 - implements: docs/03-project-brief.md, Tiers (export own data); docs/05-system-design.md, Security (Export); ADR 0017

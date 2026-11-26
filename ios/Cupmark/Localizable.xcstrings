@@ -1639,6 +1639,240 @@
         }
       }
     },
+    "export.done" : {
+      "comment" : "Button that deletes the temporary export file.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fertig, Datei löschen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done, Delete the File"
+          }
+        }
+      }
+    },
+    "export.failed.file" : {
+      "comment" : "Export failed because the file could not be written.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Datei konnte auf diesem Gerät nicht gespeichert werden. Schaffe etwas Speicherplatz und versuche es erneut."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The file could not be saved on this device. Free some space and try again."
+          }
+        }
+      }
+    },
+    "export.failed.offline" : {
+      "comment" : "Export failed because there is no network.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Du bist offline. Verbinde dich mit dem Internet und versuche es erneut."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You are offline. Connect to the internet and try again."
+          }
+        }
+      }
+    },
+    "export.failed.sign_in" : {
+      "comment" : "Export failed because the session is no longer valid.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bitte melde dich erneut an, um deine Daten zu exportieren."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Please sign in again to export your data."
+          }
+        }
+      }
+    },
+    "export.failed.too_large" : {
+      "comment" : "Export failed with a server error, which is what an export over 5 MiB gives.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Export konnte nicht erstellt werden. Möglicherweise überschreitet er die Größengrenze von 5 MiB und kann noch nicht exportiert werden. Versuche es später erneut."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The export could not be created. It may be over the size limit of 5 MiB, which cannot be exported yet. Try again later."
+          }
+        }
+      }
+    },
+    "export.failed.too_many_requests" : {
+      "comment" : "Export failed because of too many requests.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zu viele Anfragen. Warte einen Moment und versuche es erneut."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Too many requests. Wait a moment and try again."
+          }
+        }
+      }
+    },
+    "export.failed.unavailable" : {
+      "comment" : "Export failed because the server is unavailable.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Server ist gerade nicht erreichbar. Versuche es später erneut."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server is not available right now. Try again later."
+          }
+        }
+      }
+    },
+    "export.footer" : {
+      "comment" : "Footer of the export screen.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Datei listet dein Profil, Regal, Zubereitungen, Rezepte und Etikettenfoto-Verknüpfungen als CSV-Datei auf. Sie entsteht aus den Daten auf dem Server, deshalb sind noch nicht gesendete Änderungen nicht enthalten."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The file lists your profile, shelf, brews, recipes and label photo links as a CSV file. It is made from what the server has, so changes that were not sent yet are not in it."
+          }
+        }
+      }
+    },
+    "export.pending_changes" : {
+      "comment" : "Shown with a finished export when changes were still waiting to be sent.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Einige Änderungen konnten noch nicht gesendet werden. Sie sind nicht in dieser Datei. Exportiere erneut, sobald sie gesendet sind."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Some changes could not be sent yet. They are not in this file. Export again once they are sent."
+          }
+        }
+      }
+    },
+    "export.preparing" : {
+      "comment" : "Shown while the app sends waiting changes and loads the export.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dein Export wird vorbereitet"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preparing your export"
+          }
+        }
+      }
+    },
+    "export.share" : {
+      "comment" : "Share button for the finished export file.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exportdatei teilen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Share Export File"
+          }
+        }
+      }
+    },
+    "export.start" : {
+      "comment" : "Button that prepares the CSV export.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export vorbereiten"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prepare Export"
+          }
+        }
+      }
+    },
+    "export.title" : {
+      "comment" : "Title of the export screen and its row in Settings.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Meine Daten exportieren"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export My Data"
+          }
+        }
+      }
+    },
     "label_photo.add_another" : {
       "comment" : "Button that opens the camera for one more label photo.",
       "extractionState" : "manual",
@@ -2067,6 +2301,168 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Label Photos"
+          }
+        }
+      }
+    },
+    "local_data.confirm.message" : {
+      "comment" : "Message of the confirmation.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das löscht alles, was auf diesem Gerät für andere Konten als das angemeldete gespeichert ist, auch Änderungen, die nie gesendet wurden. Auf dem Server wird nichts gelöscht, und deine eigenen Daten bleiben erhalten."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This deletes everything stored on this device for accounts other than the one signed in, including changes that were never sent. Nothing on the server is deleted, and your own data stays."
+          }
+        }
+      }
+    },
+    "local_data.confirm.title" : {
+      "comment" : "Title of the confirmation.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Daten anderer Konten entfernen?"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove the data of other accounts?"
+          }
+        }
+      }
+    },
+    "local_data.failed" : {
+      "comment" : "Shown when the removal failed.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Einige Daten konnten nicht entfernt werden. Versuche es erneut."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Some data could not be removed. Try again."
+          }
+        }
+      }
+    },
+    "local_data.footer" : {
+      "comment" : "Footer of the local data section when other accounts have data here.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nutze das für ein Konto, das auf einem anderen Gerät gelöscht wurde oder das du nicht mehr verwendest. Das angemeldete Konto ist nicht betroffen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use this for an account that was deleted on another device or that you no longer use. The signed-in account is not affected."
+          }
+        }
+      }
+    },
+    "local_data.header" : {
+      "comment" : "Header of the local data section in Settings.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Daten auf diesem Gerät"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Data on This Device"
+          }
+        }
+      }
+    },
+    "local_data.none" : {
+      "comment" : "Footer of the local data section when no other account has data here.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auf diesem Gerät sind keine Daten anderer Konten gespeichert."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No data of other accounts is stored on this device."
+          }
+        }
+      }
+    },
+    "local_data.remove" : {
+      "comment" : "Button that removes other accounts' data from this device.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Daten anderer Konten entfernen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove Data of Other Accounts"
+          }
+        }
+      }
+    },
+    "local_data.remove.confirm" : {
+      "comment" : "Destructive confirmation button.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entfernen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove"
+          }
+        }
+      }
+    },
+    "local_data.removed" : {
+      "comment" : "Shown after the removal.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Daten anderer Konten wurden entfernt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The data of other accounts was removed."
           }
         }
       }
@@ -3777,6 +4173,24 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Scanning not supported"
+          }
+        }
+      }
+    },
+    "settings.title" : {
+      "comment" : "Title of the settings screen.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Einstellungen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Settings"
           }
         }
       }

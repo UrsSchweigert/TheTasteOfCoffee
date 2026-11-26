@@ -81,6 +81,14 @@ struct LabelPhotoFolders: Sendable {
         store(for: account).removeStale(now: now)
     }
 
+    /// Deletes the folder of every account but `account`, queued photos included (M2-T30, the
+    /// "remove data of other accounts" setting, which also deletes those accounts' stores).
+    func removeFolders(exceptOf account: AccountID) {
+        for entry in LabelPhotoFolders.contents(of: root) where entry.lastPathComponent != account.rawValue {
+            try? FileManager.default.removeItem(at: entry)
+        }
+    }
+
     /// Deletes the queued files of `account` whose names its store does not list: files of
     /// photos whose record never reached the store (the app was ended in between).
     func removeUnqueued(of account: AccountID, keeping names: Set<String>) {

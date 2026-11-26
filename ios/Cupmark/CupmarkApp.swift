@@ -12,6 +12,8 @@ struct CupmarkApp: App {
     private let sync: SyncHost?
 
     init() {
+        // An export file an earlier run left behind (M2-T30).
+        ExportFileStore().removeAll()
         let stage = StageConfigLoadState.load(from: .main)
         self.stage = stage
         if case .configured(let config) = stage {

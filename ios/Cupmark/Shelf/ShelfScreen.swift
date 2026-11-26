@@ -66,6 +66,7 @@ struct ShelfScreen: View {
     /// up, this is the gate for the questions.
     @State private var isOnScreen = false
     @Environment(\.apiClient) private var apiClient
+    @Environment(SyncHost.self) private var sync: SyncHost?
     @Environment(\.scenePhase) private var scenePhase
 
     init(store: AccountStore, vocabulary: VocabularyStore, language: VocabularyLanguage) {
@@ -139,6 +140,16 @@ struct ShelfScreen: View {
                     }
                 }
                 .accessibilityIdentifier("shelf-statistics")
+                // Export and the local data setting (M2-T30).
+                NavigationLink(value: SettingsRoute()) {
+                    Label {
+                        Text(L10n.settingsTitle)
+                    } icon: {
+                        Image(systemName: "gearshape")
+                            .accessibilityHidden(true)
+                    }
+                }
+                .accessibilityIdentifier("shelf-settings")
             }
             Section {
                 if model.loadFailed {
@@ -196,6 +207,13 @@ struct ShelfScreen: View {
         }
         .navigationDestination(for: StatisticsRoute.self) { _ in
             StatisticsScreen(store: store, vocabulary: vocabulary, language: language)
+        }
+        .navigationDestination(for: SettingsRoute.self) { _ in
+            if let account = sync?.account {
+                SettingsScreen(account: account, store: store)
+            } else {
+                NotConfiguredView()
+            }
         }
         .navigationDestination(isPresented: $isScanning) {
             if let apiClient {

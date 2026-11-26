@@ -25,6 +25,8 @@ Cupmark/                  app target sources and resources
                           recipes and one-tap repeat (M2-T27): BrewStart, BrewFlowModel, BrewStartModel, RecipeViews
   Rating/                 rating of a brew (M2-T20): RatingDraft, RatingFormModel, RatingScreen, flavour note lists
   Statistics/             personal statistics (M2-T28): PersonalStatistics, StatisticsModel, StatisticsScreen
+  Export/                 CSV export (M2-T30): ExportModel, ExportFileStore, ExportScreen
+  Settings/               Settings (M2-T30): SettingsScreen, removal of other accounts' local data
   L10n.swift              keys of the String Catalog
   Localizable.xcstrings   String Catalog, English (source) and German
 CupmarkTests/             XCTest unit tests (hosted in the app)
@@ -233,6 +235,20 @@ M2-T25 makes docs/04, Non-functional (Offline: "Scan, brew and rate work offline
 - **Derived values.** The ratio (`1:16.2`, through `BrewDerivedValues.ratio`, in the device locale) and days since roast (to today, the day the brew is recorded) follow the values as they change.
 - **Save.** `BrewFormModel.save()` records `brewed_at` from the device clock, makes a `StoredBrew` with `vocabulary_version` = `Vocabulary.version` and adds it with `AccountStore.addBrew`, which queues `create brew` in the same save, so it works offline. The request names the shelf entry by the server id it has when the operation is sent, so a brew on an entry that is still waiting for its own create goes out after it. A saved form saves nothing more; a failed save changes nothing, the entry included (`AccountStore.write`), and can be tried again.
 - Tests: `BrewFormTests` (the mapping to `BrewInput`, 18.5 g as 185, the ranges equal to the bundled ones, clamping and steps, the exclusive temperature, the ratio text in English and German, `vocabulary_version` equal to the bundled `brew.json`, the offline save with one queued create, the order after an unsent entry, the method and stepper starts from the latest brew, a removed entry and a failed save).
+
+## Export and local data
+
+`Export/` and `Settings/` (M2-T30, ADR 0017, docs/05 Security, Export). The shelf has a "Settings" row (`SettingsRoute`, `SettingsScreen`), two taps from the shelf to Export.
+
+- **Export.** `ExportModel` (`@MainActor`, `@Observable`) runs, on the "Prepare Export" button:
+  1. `ExportOutbox.drain` (`SyncEngine.drain()`; a `.busy` answer, because the engine's own loop is draining, is asked again up to `busyRetries` times a second apart; a backing-off, stopped or sign-in-required engine is not waited for);
+  2. `GET /export` (`APIClient.exportData()`, `ExportSource`), with the token and no query or body;
+  3. the bytes, unchanged, to `<tmp>/CupmarkExport/<random>/cupmark-export-<YYYY-MM-DD>.csv` (`ExportFileStore`; the day in the device calendar; `.completeFileProtection`). `ExportScreen` offers it with `ShareLink`;
+  4. the file and its folder are deleted when the user taps "Done, Delete the File", when the screen goes away, at the next export and at app start (`CupmarkApp.init`). Building a model deletes nothing, since SwiftUI may build one more than once.
+- **Pending changes.** After the request, `ExportOutbox.pendingChanges` counts the outbox operations (parked ones too, since they are not on the server either). If any are left, or the outbox cannot be read, the file is still offered, with a note that those changes are not in it.
+- **Errors**, each a localised message and no file: a transport failure is "offline"; a 500 (an export over 5 MiB, docs/05) is the size-limit message; a 401 after the refresh asks to sign in again; a 429 and any other failure (503, other 5xx, an unexpected answer) have their own text; a file that cannot be written has one too. Cancelling ends idle.
+- **Other accounts' data on the device** (from the M2-T16 review). After an account is deleted on another device, this device keeps that account's store, outbox and queued label photos. "Remove Data of Other Accounts" in Settings (`LocalDataRemover`, `LocalDataModel`) deletes every store file `<64 hex digits>.store` (and `-wal`, `-shm`) whose name is not the signed-in account's, and the label photo folders of other accounts (`LabelPhotoFolders.removeFolders(exceptOf:)`), after a destructive confirmation that says unsent changes are lost. The signed-in account's data and files of any other name are never touched. Decision (lead, ADR 0014 rule for open decisions): there is no automatic removal on the tombstone 401. After `APIClient`'s refresh a 401 looks the same for a deleted account and for a revoked or broken session of a live one, and removing the store of a live account would lose unsent changes. M2-T31 gives `AuthModel` the reason; account deletion on this device removes its own store.
+- Tests: `ExportTests` (the request, the file name across time zones, bytes written unchanged including non-UTF-8 bytes, deletion, the order drain then request then pending count, the pending note, busy retries, the real engine sending the outbox before `GET /export`, a parked change still pending, 500, offline, 401, 429, 5xx, a file that cannot be written, a retry) and `LocalDataRemoverTests` (other accounts' files go, the own and unrelated files stay, real stores with an outbox, label photos, name shapes).
 
 ## Brew timer
 

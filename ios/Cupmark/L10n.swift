@@ -329,4 +329,28 @@ enum L10n {
     static var brewRecipeAlreadyKept: LocalizedStringKey { "brew.recipe.already_kept" }
     static var ratingUseLastSameBean: LocalizedStringKey { "rating.use_last.same_bean" }
     static var ratingUseLastRepeatedBrew: LocalizedStringKey { "rating.use_last.repeated_brew" }
+    // Settings, export and local data (M2-T30).
+    static var settingsTitle: LocalizedStringKey { "settings.title" }
+    static var exportTitle: LocalizedStringKey { "export.title" }
+    static var exportStart: LocalizedStringKey { "export.start" }
+    static var exportPreparing: LocalizedStringKey { "export.preparing" }
+    static var exportFooter: LocalizedStringKey { "export.footer" }
+    static var exportShare: LocalizedStringKey { "export.share" }
+    static var exportDone: LocalizedStringKey { "export.done" }
+    static var exportPendingChanges: LocalizedStringKey { "export.pending_changes" }
+    static var exportFailedOffline: LocalizedStringKey { "export.failed.offline" }
+    static var exportFailedTooLarge: LocalizedStringKey { "export.failed.too_large" }
+    static var exportFailedSignIn: LocalizedStringKey { "export.failed.sign_in" }
+    static var exportFailedTooManyRequests: LocalizedStringKey { "export.failed.too_many_requests" }
+    static var exportFailedUnavailable: LocalizedStringKey { "export.failed.unavailable" }
+    static var exportFailedFile: LocalizedStringKey { "export.failed.file" }
+    static var localDataHeader: LocalizedStringKey { "local_data.header" }
+    static var localDataRemove: LocalizedStringKey { "local_data.remove" }
+    static var localDataRemoveConfirm: LocalizedStringKey { "local_data.remove.confirm" }
+    static var localDataConfirmTitle: LocalizedStringKey { "local_data.confirm.title" }
+    static var localDataConfirmMessage: LocalizedStringKey { "local_data.confirm.message" }
+    static var localDataFooter: LocalizedStringKey { "local_data.footer" }
+    static var localDataNone: LocalizedStringKey { "local_data.none" }
+    static var localDataRemoved: LocalizedStringKey { "local_data.removed" }
+    static var localDataFailed: LocalizedStringKey { "local_data.failed" }
 }
