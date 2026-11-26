@@ -52,3 +52,4 @@ What this costs, what it rules out, when to revisit.
 - [0024 iOS sign-in: an ephemeral web flow, an Apple-style button of our own, and a local account key](0024-ios-sign-in-web-flow-and-token-store.md)
 - [0025 Client sync: an ordered outbox per account, and how each answer is handled](0025-client-sync-outbox-and-conflict-rules.md)
 - [0026 Rating input: no default answers, an offered last rating, and the version raised on rating](0026-rating-input-defaults.md)
+- [0027 Personal statistics: the default set, computed on the device](0027-personal-statistics-set.md)
