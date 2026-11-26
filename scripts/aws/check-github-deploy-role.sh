@@ -14,6 +14,8 @@
 set -euo pipefail
 
 ROLE="CupmarkGitHubDeploy"
+# The hand-made role's description, exactly (ADR 0018 addendum 2026-11-26); the template carries it too.
+DESCRIPTION="Cupmark GitHub Actions OIDC deploy role (CDK bootstrap roles only)"
 PROVIDER_HOST="token.actions.githubusercontent.com"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 TEMPLATE="${1:-$HERE/../../infra/cdk.out/cupmark-github-oidc.template.json}"
@@ -25,9 +27,15 @@ if [[ ! -f "$TEMPLATE" ]]; then
 fi
 # The import template holds only the role, with exactly these properties (no Tags).
 shape="$(jq -c '[(.Resources | keys), (.Resources.DeployRole.Properties | keys)]' "$TEMPLATE")"
-if [[ "$shape" != '[["DeployRole"],["AssumeRolePolicyDocument","Policies","RoleName"]]' ]]; then
+if [[ "$shape" != '[["DeployRole"],["AssumeRolePolicyDocument","Description","Policies","RoleName"]]' ]]; then
   echo "$TEMPLATE is not the import template ($shape)." >&2
   echo "Synthesise with -c cupmark:githubOidcImport=true and the committed cupmark:githubOidcProvider=reference." >&2
+  exit 2
+fi
+
+# The template's description must equal the pinned one too (strict: no other text passes).
+if [[ "$(jq -r '.Resources.DeployRole.Properties.Description' "$TEMPLATE")" != "$DESCRIPTION" ]]; then
+  echo "The template's Description is not the pinned one; rebuild the template." >&2
   exit 2
 fi
 
@@ -93,8 +101,8 @@ echo '[]' > "$tmp/attached.expected"
 aws iam list-attached-role-policies --role-name "$ROLE" --query 'AttachedPolicies' --output json | actual > "$tmp/attached.actual"
 compare "no managed policies" "$tmp/attached.expected" "$tmp/attached.actual"
 
-# Defaults of a role created without them; the template sets none of these.
-jq -n -S --arg name "$ROLE" '{RoleName: $name, Path: "/", MaxSessionDuration: 3600, Description: null, PermissionsBoundary: null, Tags: []}' > "$tmp/role.expected"
+# The template sets name and description; path, session and the rest are the defaults of a role created without them.
+jq -n -S --arg name "$ROLE" --arg desc "$DESCRIPTION" '{RoleName: $name, Path: "/", MaxSessionDuration: 3600, Description: $desc, PermissionsBoundary: null, Tags: []}' > "$tmp/role.expected"
 aws iam get-role --role-name "$ROLE" \
   --query 'Role.{RoleName:RoleName,Path:Path,MaxSessionDuration:MaxSessionDuration,Description:Description,PermissionsBoundary:PermissionsBoundary,Tags:Tags}' \
   --output json | jq -S '.Tags //= []' > "$tmp/role.actual"

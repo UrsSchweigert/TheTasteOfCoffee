@@ -100,7 +100,7 @@ else if (has('iam create-policy-version ') || has('iam delete-policy-version '))
 else if (has('iam list-open-id-connect-providers ')) out(['arn:aws:iam::' + ACCOUNT + ':oidc-provider/token.actions.githubusercontent.com']);
 else if (has('iam get-open-id-connect-provider ')) out(['sts.amazonaws.com']);
 else if (has('iam get-role ') && has('Role.AssumeRolePolicyDocument')) out(state.trust);
-else if (has('iam get-role ') && has('Role.{')) out({ RoleName: 'CupmarkGitHubDeploy', Path: '/', MaxSessionDuration: 3600, Description: null, PermissionsBoundary: null, Tags: state.tagged ? [{ Key: 'project', Value: 'cupmark' }] : null });
+else if (has('iam get-role ') && has('Role.{')) out({ RoleName: 'CupmarkGitHubDeploy', Path: '/', MaxSessionDuration: 3600, Description: 'Cupmark GitHub Actions OIDC deploy role (CDK bootstrap roles only)', PermissionsBoundary: null, Tags: state.tagged ? [{ Key: 'project', Value: 'cupmark' }] : null });
 else if (has('iam list-role-policies ')) out([fixtures.policyName]);
 else if (has('iam get-role-policy ')) out(fixtures.policy);
 else if (has('iam list-attached-role-policies ')) out([]);
