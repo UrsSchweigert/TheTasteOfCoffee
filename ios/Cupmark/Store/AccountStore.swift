@@ -33,6 +33,12 @@ final class AccountStore {
     /// (ADR 0025 Addendum M2-T37). Only `reportDiscardFault` sets it; it is never cleared: a
     /// new `AccountStore` on the same file starts without it.
     var needsReopening = false
+    /// The saved values captured before `ModelContext.save()` calls that failed, by live model,
+    /// until that model is saved (`capturePendingSave`, `finishSave`, ADR 0025 Addendum
+    /// M2-T37). Every discard uses them in place of reading the store again.
+    var failedSaveCaptures: [ObjectIdentifier: SavedValuesCapture] = [:]
+    /// What the last discard saw and did, for tests (`DiscardReport`).
+    var lastDiscardReport: DiscardReport?
 
     init(container: ModelContainer) {
         self.container = container
@@ -243,21 +249,24 @@ final class AccountStore {
     /// read again. Once a discard could not put everything back (`needsReopening`) every save
     /// is refused this way, with `DiscardError.storeNeedsReopening`.
     ///
-    /// The changed and deleted models are listed before `ModelContext.save()` runs and handed
-    /// to the discard: a save that fails in the store has already processed the changes, so
-    /// the context may no longer list them as changed (ADR 0025 Addendum M2-T37).
+    /// Right before `ModelContext.save()`, the saved values of the changed and deleted models
+    /// are captured (`capturePendingSave`); if the save fails in the store they, not a read of
+    /// the store after the failure, are what the discard puts back, now and in every later
+    /// discard until those models are saved (ADR 0025 Addendum M2-T37).
     func save() throws {
-        var pending: [any PersistentModel] = []
+        var pending = PendingSave()
         do {
             try refuseSaveAfterFailedInnerWrite()
             try refuseSaveWhileNeedsReopening()
             try willSave?()
-            pending = context.changedModelsArray + context.deletedModelsArray
+            pending = capturePendingSave()
             try context.save()
         } catch {
-            discardUnsavedChanges(alsoChecking: pending)
+            finishSave(pending, succeeded: false)
+            discardUnsavedChanges()
             throw error
         }
+        finishSave(pending, succeeded: true)
         onSave?()
         NotificationCenter.default.post(name: AccountStore.didSaveNotification, object: self)
     }

@@ -119,6 +119,12 @@ final class FailedWriteTests: XCTestCase {
         for model in store.context.changedModelsArray {
             let name = key(model)
             XCTAssertTrue(expected.contains(name), "\(name) is a change of the context but not a model of the failed write", file: file, line: line)
+            // After a failed save in the store, the values captured before it are the disk's; a
+            // fresh context is not trusted then (ADR 0025 Addendum M2-T37).
+            if let held = store.failedSaveCaptures[ObjectIdentifier(model)] {
+                XCTAssertEqual(held.differing(), [], "\(name) differs from its values captured before the failed save", file: file, line: line)
+                continue
+            }
             guard let restorable = model as? any SavedValuesRestorable else {
                 XCTFail("\(name) cannot be compared with the disk", file: file, line: line)
                 continue
@@ -257,6 +263,39 @@ final class FailedWriteTests: XCTestCase {
         XCTAssertEqual(dose.restore(brew, copy, store), .unchanged, "idempotent")
         XCTAssertEqual(try brew.propertiesDifferingFromSaved(in: saved), [])
         withExtendedLifetime(saved) {}
+    }
+
+    /// The values captured before a save that failed in the store are what every later discard
+    /// puts back, also one called without anything listed (the engine's `catch`), until the
+    /// model is saved (M2-T37). The failure is simulated by `finishSave(_:succeeded: false)`;
+    /// the real one is in `testASaveThatFailsInTheStoreUndoesADeletionWithRelationships`.
+    func testValuesCapturedBeforeAFailedSaveAreUsedUntilTheModelIsSaved() throws {
+        let store = try AccountStore.inMemory()
+        let recorder = recordFaults(store)
+        let brew = try syncedBrew(in: store)
+        let before = try brew.apiInput()
+        XCTAssertTrue(store.failedSaveCaptures.isEmpty, "a successful save holds nothing")
+        brew.doseDg = 222
+
+        let pending = store.capturePendingSave()
+        XCTAssertEqual(pending.captures.count, 1)
+        store.finishSave(pending, succeeded: false)
+        let report = store.discardUnsavedChangesReporting()
+
+        XCTAssertEqual(store.failedSaveCaptures.count, 1)
+        XCTAssertEqual(report.entries.map(\.source), [.capturedBeforeTheSave], "\(report)")
+        XCTAssertEqual(report.entries.first?.differingBefore, ["doseDg"], "\(report)")
+        XCTAssertEqual(report.entries.first?.differingAfter, [], "\(report)")
+        XCTAssertEqual(try brew.apiInput(), before)
+        XCTAssertEqual(recorder.faults, [])
+
+        // Saved: the capture is stale and goes.
+        try store.write {
+            brew.doseDg = 222
+            try store.markUpdated(brew)
+        }
+        XCTAssertTrue(store.failedSaveCaptures.isEmpty)
+        XCTAssertEqual(brew.doseDg, 222)
     }
 
     /// Relationship passes that never settle (a restore that keeps changing something, which a
@@ -676,7 +715,14 @@ final class FailedWriteTests: XCTestCase {
         try autoreleasepool {
             let store = try openStore(in: readOnly, allowsSave: false)
             readOnlyContainer = store.container
-            try checkFailedSaves(in: store, entryID: entryID, brewID: brewID, scannedEntryID: scannedEntryID, pendingBeanID: pendingBeanID)
+            try checkFailedSaves(
+                in: store,
+                storeFile: readOnly.appending(path: fileName, directoryHint: .notDirectory),
+                entryID: entryID,
+                brewID: brewID,
+                scannedEntryID: scannedEntryID,
+                pendingBeanID: pendingBeanID
+            )
         }
     }
 
@@ -698,6 +744,40 @@ final class FailedWriteTests: XCTestCase {
         XCTAssertEqual(logFrames, checkpointed, "every log frame is in the main file")
     }
 
+    /// An outbox operation's `attemptCount` and `sentWithoutAnswer` as the SQLite file holds
+    /// them, read with the SQLite C API on a read-only connection of its own, past SwiftData
+    /// and its caches; nil when the file or the row cannot be read (Core Data's table and
+    /// column names: `ZOUTBOXOPERATION`, `Z` and the upper-case attribute name).
+    private func fileValues(ofOperation sequence: Int, in url: URL) -> (attemptCount: Int64, sentWithoutAnswer: Int64)? {
+        var database: OpaquePointer?
+        guard sqlite3_open_v2(url.path(percentEncoded: false), &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let database else {
+            sqlite3_close(database)
+            return nil
+        }
+        defer { sqlite3_close(database) }
+        var statement: OpaquePointer?
+        let query = "SELECT ZATTEMPTCOUNT, ZSENTWITHOUTANSWER FROM ZOUTBOXOPERATION WHERE ZSEQUENCE = ?1"
+        guard sqlite3_prepare_v2(database, query, -1, &statement, nil) == SQLITE_OK, let statement else {
+            return nil
+        }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_int64(statement, 1, Int64(sequence))
+        guard sqlite3_step(statement) == SQLITE_ROW else {
+            return nil
+        }
+        return (sqlite3_column_int64(statement, 0), sqlite3_column_int64(statement, 1))
+    }
+
+    /// The same operation as a fresh `ModelContext` on the store's container reads it.
+    private func freshValues(ofOperation sequence: Int, in store: AccountStore) -> String {
+        let context = ModelContext(store.container)
+        let descriptor = FetchDescriptor<OutboxOperation>(predicate: #Predicate<OutboxOperation> { operation in operation.sequence == sequence })
+        guard let operation = try? context.fetch(descriptor).first else {
+            return "not found"
+        }
+        return "attemptCount \(operation.attemptCount), sentWithoutAnswer \(operation.sentWithoutAnswer)"
+    }
+
     private enum StoreCopyError: Error {
         case open
         case checkpoint
@@ -714,7 +794,7 @@ final class FailedWriteTests: XCTestCase {
 
     /// The removals of `testASaveThatFailsInTheStoreUndoesADeletionWithRelationships` on the
     /// read-only store.
-    private func checkFailedSaves(in store: AccountStore, entryID: UUID, brewID: UUID, scannedEntryID: UUID, pendingBeanID: UUID) throws {
+    private func checkFailedSaves(in store: AccountStore, storeFile: URL, entryID: UUID, brewID: UUID, scannedEntryID: UUID, pendingBeanID: UUID) throws {
         let expectedQueue = ["create brew", "look_up bean", "create shelf_entry"]
 
         XCTAssertNil(store.willSave, "the store itself fails, not the hook")
@@ -785,15 +865,34 @@ final class FailedWriteTests: XCTestCase {
         // operation's attributes are back too (the first macOS run found them left at 1 and
         // true: attributes were not checked after the rollback; ADR 0025 Addendum M2-T37).
         let lookUp = try XCTUnwrap(store.outboxOperations().first { operation in operation.localID == pendingBeanID })
+        let sequence = lookUp.sequence
         let attempts = lookUp.attemptCount
         XCTAssertFalse(lookUp.sentWithoutAnswer)
+        let fileBefore = fileValues(ofOperation: sequence, in: storeFile)
         lookUp.attemptCount += 1
         lookUp.sentWithoutAnswer = true
-        XCTAssertThrowsError(try store.save())
-        store.discardUnsavedChanges()
+        var saveError = "none"
+        XCTAssertThrowsError(try store.save()) { error in saveError = "\(error)" }
+        let saveDiscard = store.lastDiscardReport.map { report in "\(report)" } ?? "none"
+        let engineDiscard = store.discardUnsavedChangesReporting()
 
-        XCTAssertEqual(lookUp.attemptCount, attempts)
-        XCTAssertFalse(lookUp.sentWithoutAnswer)
+        // What each step saw, so that a failure on the Mac says why (M2-T37): the discard
+        // inside `save()` and the engine's, where their saved values came from and which
+        // properties differed before and after; what a fresh context and the file itself hold.
+        let facts = [
+            "save error: \(saveError)",
+            "discard in save(): \(saveDiscard)",
+            "engine discard: \(engineDiscard)",
+            "fresh context: \(freshValues(ofOperation: sequence, in: store))",
+            "file before: \(fileBefore.map { values in "\(values)" } ?? "unreadable")",
+            "file after: \(fileValues(ofOperation: sequence, in: storeFile).map { values in "\(values)" } ?? "unreadable")",
+        ].joined(separator: " | ")
+        XCTAssertEqual(lookUp.attemptCount, attempts, facts)
+        XCTAssertFalse(lookUp.sentWithoutAnswer, facts)
+        if let file = fileValues(ofOperation: sequence, in: storeFile) {
+            XCTAssertEqual(file.attemptCount, Int64(attempts), "the file keeps the saved value; \(facts)")
+            XCTAssertEqual(file.sentWithoutAnswer, 0, facts)
+        }
         try checkScannedBagIsBack("after an engine discard")
     }
 

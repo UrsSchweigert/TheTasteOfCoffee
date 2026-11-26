@@ -128,6 +128,18 @@ enum RestoreOutcome: Hashable {
     case unresolved
 }
 
+/// The saved value of one property, taken from a saved copy at one moment, and what compares
+/// and sets it on the live model later. It holds the value itself (and, for a relationship, the
+/// saved targets), so a later read of the store cannot change it (ADR 0025 Addendum M2-T37).
+struct SavedValue<Model: PersistentModel> {
+    /// Whether the live model holds the captured value: an attribute by `==`, a to-one by the
+    /// target's local id, a to-many as the exact saved set, each target once.
+    let holds: (Model) -> Bool
+    /// Sets the live model's property to the captured value where it differs, and says
+    /// whether it had to. Idempotent, so it may run before and after the rollback.
+    let restore: (Model, AccountStore) -> RestoreOutcome
+}
+
 /// One stored property that a failed write puts back.
 struct RestoredProperty<Model: PersistentModel> {
     /// The property's name in the schema.
@@ -136,33 +148,37 @@ struct RestoredProperty<Model: PersistentModel> {
     /// twice (SwiftData does not make the schema's key paths public).
     let keyPath: PartialKeyPath<Model>
     let kind: RestoredPropertyKind
-    /// Whether the live model (first) holds the saved copy's value (second). Reads only: an
-    /// attribute by `==`, a to-one by the target's local id, a to-many as the exact saved set,
-    /// each target once. `restore` answers `unchanged` exactly when this is true.
-    let holdsSavedValue: (Model, Model) -> Bool
+    /// Reads the saved copy's value now, and gives what compares and sets it later.
+    let capture: (Model) -> SavedValue<Model>
+
+    /// Whether the live model (first) holds the saved copy's value (second). Reads only.
+    func holdsSavedValue(_ live: Model, _ saved: Model) -> Bool {
+        capture(saved).holds(live)
+    }
+
     /// Sets the property of the live model (first) to the saved copy's value (second), and
-    /// says whether it had to. Setting it again once it holds the saved value changes nothing
-    /// (idempotent), so it may run before and after the rollback.
-    let restore: (Model, Model, AccountStore) -> RestoreOutcome
+    /// says whether it had to.
+    func restore(_ live: Model, _ saved: Model, _ store: AccountStore) -> RestoreOutcome {
+        capture(saved).restore(live, store)
+    }
 
     /// An attribute. It is compared with the saved value first (every stored attribute type is
     /// `Equatable`; one that is not does not compile here) and set only when it differs, so
     /// the outcome says whether anything changed (M2-T37).
     static func attribute<Value: Equatable>(_ name: String, _ keyPath: ReferenceWritableKeyPath<Model, Value>) -> RestoredProperty {
-        RestoredProperty(
-            name: name,
-            keyPath: keyPath,
-            kind: .attribute,
-            holdsSavedValue: { live, saved in live[keyPath: keyPath] == saved[keyPath: keyPath] },
-            restore: { live, saved, _ in
-                let value = saved[keyPath: keyPath]
-                guard live[keyPath: keyPath] != value else {
-                    return .unchanged
+        RestoredProperty(name: name, keyPath: keyPath, kind: .attribute) { saved in
+            let value = saved[keyPath: keyPath]
+            return SavedValue(
+                holds: { live in live[keyPath: keyPath] == value },
+                restore: { live, _ in
+                    guard live[keyPath: keyPath] != value else {
+                        return .unchanged
+                    }
+                    live[keyPath: keyPath] = value
+                    return .changed
                 }
-                live[keyPath: keyPath] = value
-                return .changed
-            }
-        )
+            )
+        }
     }
 
     /// A to-one relationship, compared by the target's local id. The saved target is resolved
@@ -174,29 +190,27 @@ struct RestoredProperty<Model: PersistentModel> {
         id: KeyPath<Target, UUID>,
         resolve: @escaping (AccountStore, Target) -> Target?
     ) -> RestoredProperty {
-        let holdsSavedValue: (Model, Model) -> Bool = { live, saved in
-            live[keyPath: keyPath]?[keyPath: id] == saved[keyPath: keyPath]?[keyPath: id]
-        }
-        return RestoredProperty(
-            name: name,
-            keyPath: keyPath,
-            kind: .toOne,
-            holdsSavedValue: holdsSavedValue,
-            restore: { live, saved, store in
-                if holdsSavedValue(live, saved) {
-                    return .unchanged
-                }
-                guard let savedTarget = saved[keyPath: keyPath] else {
-                    live[keyPath: keyPath] = nil
+        RestoredProperty(name: name, keyPath: keyPath, kind: .toOne) { saved in
+            let savedTarget = saved[keyPath: keyPath]
+            let savedID = savedTarget?[keyPath: id]
+            return SavedValue(
+                holds: { live in live[keyPath: keyPath]?[keyPath: id] == savedID },
+                restore: { live, store in
+                    if live[keyPath: keyPath]?[keyPath: id] == savedID {
+                        return .unchanged
+                    }
+                    guard let savedTarget else {
+                        live[keyPath: keyPath] = nil
+                        return .changed
+                    }
+                    guard let target = resolve(store, savedTarget) else {
+                        return .unresolved
+                    }
+                    live[keyPath: keyPath] = target
                     return .changed
                 }
-                guard let target = resolve(store, savedTarget) else {
-                    return .unresolved
-                }
-                live[keyPath: keyPath] = target
-                return .changed
-            }
-        )
+            )
+        }
     }
 
     /// A to-many relationship. It holds the saved targets exactly once each, or it is set to
@@ -209,94 +223,133 @@ struct RestoredProperty<Model: PersistentModel> {
         id: KeyPath<Target, UUID>,
         resolve: @escaping (AccountStore, Target) -> Target?
     ) -> RestoredProperty {
-        let holdsSavedValue: (Model, Model) -> Bool = { live, saved in
-            let savedIDs = Set(saved[keyPath: keyPath].map { target in target[keyPath: id] })
-            let liveIDs = live[keyPath: keyPath].map { target in target[keyPath: id] }
-            return liveIDs.count == savedIDs.count && Set(liveIDs) == savedIDs
-        }
-        return RestoredProperty(
-            name: name,
-            keyPath: keyPath,
-            kind: .toMany,
-            holdsSavedValue: holdsSavedValue,
-            restore: { live, saved, store in
-                if holdsSavedValue(live, saved) {
-                    return .unchanged
+        RestoredProperty(name: name, keyPath: keyPath, kind: .toMany) { saved in
+            let savedTargets = saved[keyPath: keyPath]
+            let savedIDs = Set(savedTargets.map { target in target[keyPath: id] })
+            var seen = Set<UUID>()
+            let uniqueTargets = savedTargets.filter { target in seen.insert(target[keyPath: id]).inserted }
+            let holds: (Model) -> Bool = { live in
+                let liveIDs = live[keyPath: keyPath].map { target in target[keyPath: id] }
+                return liveIDs.count == savedIDs.count && Set(liveIDs) == savedIDs
+            }
+            return SavedValue(
+                holds: holds,
+                restore: { live, store in
+                    if holds(live) {
+                        return .unchanged
+                    }
+                    var targets: [Target] = []
+                    for savedTarget in uniqueTargets {
+                        guard let target = resolve(store, savedTarget) else {
+                            return .unresolved
+                        }
+                        targets.append(target)
+                    }
+                    live[keyPath: keyPath] = targets
+                    return .changed
                 }
-                return RestoredProperty.restoreToMany(live, saved, store, keyPath: keyPath, id: id, resolve: resolve)
-            }
-        )
-    }
-
-    /// Sets a to-many relationship that differs from the saved one to the saved targets.
-    private static func restoreToMany<Target: PersistentModel>(
-        _ live: Model,
-        _ saved: Model,
-        _ store: AccountStore,
-        keyPath: ReferenceWritableKeyPath<Model, [Target]>,
-        id: KeyPath<Target, UUID>,
-        resolve: (AccountStore, Target) -> Target?
-    ) -> RestoreOutcome {
-        var targets: [Target] = []
-        var seen = Set<UUID>()
-        for savedTarget in saved[keyPath: keyPath] where seen.insert(savedTarget[keyPath: id]).inserted {
-            guard let target = resolve(store, savedTarget) else {
-                return .unresolved
-            }
-            targets.append(target)
+            )
         }
-        live[keyPath: keyPath] = targets
-        return .changed
     }
 }
 
 /// What `discardUnsavedChanges()` still does, after the rollback, for one model the store has.
 struct SavedValuesRestore {
-    /// Puts the relationships of one kind back again and says what that did.
+    /// Puts the properties of one kind back again and says what that did.
     let restoreAgain: (RestoredPropertyKind) -> Set<RestoreOutcome>
     /// Whether the fetch the app uses (by `localID`, operations by `sequence`) finds the model
     /// in the live context: true or false, nil when the fetch failed.
     let isFoundAgain: () -> Bool?
 }
 
+/// The saved values of one live model, captured at one moment: before a `ModelContext.save()`
+/// (`AccountStore.save()`), or at the discard when no earlier capture is held.
+struct SavedValuesCapture {
+    /// The live model the values are for.
+    let model: any PersistentModel
+    /// The model's type, for `DiscardReport` (no ids, no values).
+    let typeName: String
+    /// Sets the properties of one kind to the captured values and says what that did.
+    let restore: (RestoredPropertyKind, AccountStore) -> Set<RestoreOutcome>
+    /// The names of the properties whose live value differs from the captured one.
+    let differing: () -> [String]
+    /// Whether the app's fetch finds the model in the live context; nil when the fetch fails.
+    let isFoundAgain: (AccountStore) -> Bool?
+    /// The context the saved copy was read through. Kept with the capture, so a saved
+    /// relationship target can still be read when it is resolved.
+    let source: ModelContext
+}
+
+/// What one discard saw and did. Read by tests (`AccountStore.lastDiscardReport`) so that a
+/// failure says why; never logged, and it holds no ids and no values (ADR 0025 Addendum
+/// M2-T37).
+struct DiscardReport: CustomStringConvertible {
+    /// Where the saved values of a model came from.
+    enum Source: String {
+        case capturedBeforeTheSave = "captured before a failed save"
+        case readAtTheDiscard = "read at the discard"
+        case notOnDisk = "not on disk"
+        case unreadable = "unreadable"
+    }
+
+    struct Entry {
+        let typeName: String
+        let source: Source
+        /// The properties that differed from the saved values when the discard began.
+        let differingBefore: [String]
+        /// The properties that still differ when it ends.
+        var differingAfter: [String]
+    }
+
+    /// What the context listed when the discard began.
+    var changedModels = 0
+    var deletedModels = 0
+    /// The captures of failed saves the store held when the discard began.
+    var heldCaptures = 0
+    var entries: [Entry] = []
+    var repair: AccountStore.RelationshipRepair?
+
+    var description: String {
+        let models = entries.map { entry in
+            "\(entry.typeName) (\(entry.source.rawValue)): differed \(entry.differingBefore), still differs \(entry.differingAfter)"
+        }
+        let repairText = repair.map { repair in "\(repair)" } ?? "none"
+        return "changed \(changedModels), deleted \(deletedModels), captures held \(heldCaptures), repair \(repairText); "
+            + models.joined(separator: "; ")
+    }
+}
+
+/// The models one `save()` hands to `ModelContext.save()`, and the saved values captured for
+/// them just before.
+struct PendingSave {
+    var models = Set<ObjectIdentifier>()
+    var captures: [ObjectIdentifier: SavedValuesCapture] = [:]
+}
+
 extension SavedValuesRestorable {
-    /// Puts the values the store holds back on this model. A model the store does not have,
-    /// or cannot read, is left to `rollback()`.
-    ///
-    /// A store that cannot be read here should not happen (the same container just answered
-    /// the write). If it does, the model is left to the bare `rollback()`, which may keep a
-    /// changed attribute in memory; that is reported (`DiscardFault.savedValuesUnreadable`),
-    /// and the store refuses later saves until it is opened again.
-    ///
-    /// Returns what is still done for the model after the rollback, nil when the store does
-    /// not have it (nothing to put back).
-    func restoreSavedValues(from saved: ModelContext, in store: AccountStore) -> SavedValuesRestore? {
-        let copy: Self?
-        do {
-            copy = try Self.savedCopy(of: self, in: saved)
-        } catch {
-            store.reportDiscardFault(.savedValuesUnreadable)
+    /// The saved values of this model, read now through `saved` (a fresh context on the
+    /// store's container), nil when the store does not have it. Throws when it cannot be read.
+    func captureSavedValues(from saved: ModelContext) throws -> SavedValuesCapture? {
+        guard let copy = try Self.savedCopy(of: self, in: saved) else {
             return nil
         }
-        guard let copy else {
-            return nil
+        let values = Self.restoredProperties.map { property in
+            (name: property.name, kind: property.kind, value: property.capture(copy))
         }
-        // Attributes first, then the to-one relationships (their inverses follow), then the
-        // to-many ones, which then only change what the to-one ones left wrong.
-        for kind in [RestoredPropertyKind.attribute, .toOne, .toMany] {
-            for property in Self.restoredProperties where property.kind == kind {
-                _ = property.restore(self, copy, store)
-            }
-        }
-        return SavedValuesRestore(
-            restoreAgain: { kind in
+        return SavedValuesCapture(
+            model: self,
+            typeName: String(describing: Self.self),
+            restore: { kind, store in
                 var outcomes = Set<RestoreOutcome>()
-                for property in Self.restoredProperties where property.kind == kind {
-                    outcomes.insert(property.restore(self, copy, store))
+                for entry in values where entry.kind == kind {
+                    outcomes.insert(entry.value.restore(self, store))
                 }
                 return outcomes
             },
-            isFoundAgain: {
+            differing: {
+                values.filter { entry in !entry.value.holds(self) }.map { entry in entry.name }
+            },
+            isFoundAgain: { store in
                 // The same fetch as `savedCopy`, through the live context: what the screens
                 // and the engine do when they read the model again by its key.
                 do {
@@ -304,7 +357,8 @@ extension SavedValuesRestorable {
                 } catch {
                     return nil
                 }
-            }
+            },
+            source: saved
         )
     }
 
@@ -313,12 +367,7 @@ extension SavedValuesRestorable {
     /// have the model. Changes nothing. The tests use it to check that what a discard leaves
     /// as a change of the context equals the disk.
     func propertiesDifferingFromSaved(in saved: ModelContext) throws -> [String]? {
-        guard let copy = try Self.savedCopy(of: self, in: saved) else {
-            return nil
-        }
-        return Self.restoredProperties
-            .filter { property in !property.holdsSavedValue(self, copy) }
-            .map(\.name)
+        try captureSavedValues(from: saved)?.differing()
     }
 }
 
@@ -402,10 +451,71 @@ extension AccountStore {
         onDiscardFault(fault)
     }
 
+    // MARK: Captures around a save (M2-T37)
+
+    /// Called by `save()` right before `ModelContext.save()`: lists the changed and deleted
+    /// models and reads their saved values through a fresh context, while the store still
+    /// answers with what is on disk. A model with a capture held from an earlier failed save
+    /// keeps that one (nothing of it was saved since, so it is still the disk's).
+    ///
+    /// Why (ADR 0025 Addendum M2-T37): after a `ModelContext.save()` that failed in the store,
+    /// a discard that read the saved values only then left an outbox operation's
+    /// `attemptCount` and `sentWithoutAnswer` at the failed write's values, also with the
+    /// attributes checked again after the rollback and with the models listed before the save.
+    /// What a fresh context answers once such a save failed is therefore not trusted. The
+    /// cost on the success path is one fresh context and one fetch by key per changed or
+    /// deleted model of the save.
+    func capturePendingSave() -> PendingSave {
+        let pending = context.changedModelsArray + context.deletedModelsArray
+        guard !pending.isEmpty else {
+            return PendingSave()
+        }
+        let saved = ModelContext(container)
+        saved.autosaveEnabled = false
+        var result = PendingSave()
+        for model in pending {
+            let key = ObjectIdentifier(model)
+            result.models.insert(key)
+            guard failedSaveCaptures[key] == nil, let restorable = model as? any SavedValuesRestorable else {
+                continue
+            }
+            // Not readable now: if the save fails, the discard reads it then (and says so if
+            // it cannot).
+            if let capture = try? restorable.captureSavedValues(from: saved) {
+                result.captures[key] = capture
+            }
+        }
+        return result
+    }
+
+    /// Called by `save()` after `ModelContext.save()`. A success writes the models of the
+    /// save, so their held captures are stale and go; the others stay (their rows did not
+    /// change). A failure keeps the save's captures for every later discard, also one called
+    /// without anything listed (the engine's `catch`, `write`'s end), until those models are
+    /// saved.
+    func finishSave(_ pending: PendingSave, succeeded: Bool) {
+        if succeeded {
+            for key in pending.models {
+                failedSaveCaptures[key] = nil
+            }
+        } else {
+            failedSaveCaptures.merge(pending.captures) { held, _ in held }
+        }
+    }
+
+    // MARK: The discard
+
     /// Undoes every unsaved change of the context: the changed and deleted models take the
     /// values the store holds for them again, then the context rolls back, which drops the
-    /// inserted models and the deletes, and then the relationships are checked against the
-    /// store once more and set where they differ.
+    /// inserted models and the deletes, and then every property is checked against the saved
+    /// values once more and set where it differs.
+    ///
+    /// Which saved values (M2-T37, ADR 0025 Addendum M2-T37): for a model that a failed
+    /// `ModelContext.save()` handed to the store, the values captured right before that save
+    /// (`capturePendingSave`); for any other, the values read now through a fresh context, as
+    /// before. The models are the context's changed and deleted ones plus every model with a
+    /// held capture, so a discard called without a list still finds a model the context no
+    /// longer lists after a failed save.
     ///
     /// Why the second pass (M2-T36, ADR 0025 Addendum M2-T36): when `ModelContext.save()` itself
     /// fails, the save has already applied the delete rules (nullify) to the deleted models,
@@ -414,8 +524,8 @@ extension AccountStore {
     /// in the bean's `shelfEntries`. So what the rollback leaves is not trusted: each restore is
     /// idempotent (it compares with the saved value and assigns the exact saved targets, never
     /// appends), the to-one relationships are set first and the to-many ones after, and the
-    /// pass repeats until nothing changes. A relationship set again here holds the store's
-    /// value, so a later save stores nothing of the failed write.
+    /// pass repeats until nothing changes. A property set again here holds the store's value,
+    /// so a later save stores nothing of the failed write.
     ///
     /// Why the pending changes are processed and every model is fetched again (ADR 0025
     /// Addendum M2-T36): after a real failed save and that repair, the first fetch of the
@@ -427,43 +537,82 @@ extension AccountStore {
     ///
     /// What could not be put back is reported (`reportDiscardFault`); a relationship left as
     /// the failed save set it makes the store refuse later saves (ADR 0025 Addendum M2-T37).
-    ///
-    /// Why attributes are checked after the rollback too, and `pending` (M2-T37): after a real
-    /// failed `ModelContext.save()` of an attribute change (the engine's `markSending` on a
-    /// store that refuses the write), the discard left `attemptCount` and `sentWithoutAnswer`
-    /// at the failed write's values. Attributes were only put back before the rollback, and the
-    /// changed models were only read from the context after the failed save had processed the
-    /// changes. Which of the two SwiftData steps lost the value (the rollback reverting to the
-    /// processed values, or the context no longer listing the model) was not observable from
-    /// Linux; checking every kind of property after the rollback, on the models listed before
-    /// the save as well, covers both. `pending` is what `save()` listed before it called
-    /// `ModelContext.save()`.
-    func discardUnsavedChanges(alsoChecking pending: [any PersistentModel] = []) {
+    func discardUnsavedChanges() {
+        _ = discardUnsavedChangesReporting()
+    }
+
+    /// `discardUnsavedChanges()`, returning what it saw and did (also kept as
+    /// `lastDiscardReport`). Behaves exactly the same; the report is for tests.
+    @discardableResult
+    func discardUnsavedChangesReporting() -> DiscardReport {
+        let changed = context.changedModelsArray
+        let deleted = context.deletedModelsArray
+        var report = DiscardReport(changedModels: changed.count, deletedModels: deleted.count, heldCaptures: failedSaveCaptures.count)
         var seen = Set<ObjectIdentifier>()
-        let touched = (pending + context.changedModelsArray + context.deletedModelsArray).filter { model in
+        let touched = (changed + deleted + failedSaveCaptures.values.map { capture in capture.model }).filter { model in
             seen.insert(ObjectIdentifier(model)).inserted
         }
         guard !touched.isEmpty else {
             context.rollback()
-            return
+            lastDiscardReport = report
+            return report
         }
         let saved = ModelContext(container)
         saved.autosaveEnabled = false
-        var restores: [SavedValuesRestore] = []
+        var captures: [SavedValuesCapture] = []
+        // For each capture, the index of its entry in the report.
+        var entryIndices: [Int] = []
         for model in touched {
-            if let restorable = model as? any SavedValuesRestorable,
-               let restore = restorable.restoreSavedValues(from: saved, in: self) {
-                restores.append(restore)
+            if let held = failedSaveCaptures[ObjectIdentifier(model)] {
+                entryIndices.append(report.entries.count)
+                report.entries.append(DiscardReport.Entry(typeName: held.typeName, source: .capturedBeforeTheSave, differingBefore: held.differing(), differingAfter: []))
+                captures.append(held)
+                continue
+            }
+            guard let restorable = model as? any SavedValuesRestorable else {
+                continue
+            }
+            let typeName = String(describing: type(of: model))
+            do {
+                if let capture = try restorable.captureSavedValues(from: saved) {
+                    entryIndices.append(report.entries.count)
+                    report.entries.append(DiscardReport.Entry(typeName: typeName, source: .readAtTheDiscard, differingBefore: capture.differing(), differingAfter: []))
+                    captures.append(capture)
+                } else {
+                    report.entries.append(DiscardReport.Entry(typeName: typeName, source: .notOnDisk, differingBefore: [], differingAfter: []))
+                }
+            } catch {
+                // The model is left to the bare rollback, which may keep a changed attribute.
+                reportDiscardFault(.savedValuesUnreadable)
+                report.entries.append(DiscardReport.Entry(typeName: typeName, source: .unreadable, differingBefore: [], differingAfter: []))
+            }
+        }
+        // Attributes first, then the to-one relationships (their inverses follow), then the
+        // to-many ones, which then only change what the to-one ones left wrong.
+        for kind in [RestoredPropertyKind.attribute, .toOne, .toMany] {
+            for capture in captures {
+                _ = capture.restore(kind, self)
             }
         }
         context.rollback()
-        // The saved copies are read through `saved`, which must live until the last pass.
-        withExtendedLifetime(saved) {
-            _ = repairAfterRollback(restores)
+        let restores = captures.map { capture in
+            SavedValuesRestore(
+                restoreAgain: { kind in capture.restore(kind, self) },
+                isFoundAgain: { capture.isFoundAgain(self) }
+            )
         }
+        // The copies read at the discard came through `saved`, which must live until the end.
+        report.repair = withExtendedLifetime(saved) {
+            repairAfterRollback(restores)
+        }
+        for (capture, index) in zip(captures, entryIndices) {
+            report.entries[index].differingAfter = capture.differing()
+        }
+        lastDiscardReport = report
+        return report
     }
 
-    /// What the relationship passes after a rollback ended with.
+    /// What the passes after a rollback ended with.
     struct RelationshipRepair: Equatable {
         /// The last pass changed nothing.
         var settled = false
@@ -473,16 +622,16 @@ extension AccountStore {
         var unresolved = false
     }
 
-    /// The part of `discardUnsavedChanges()` after the rollback: the relationship passes, then
-    /// the fetch of every restored model. Separate so that a test can run it on restores that
-    /// never settle or never resolve, which a real store cannot be made to do on purpose.
+    /// The part of `discardUnsavedChanges()` after the rollback: the passes over every
+    /// property, then the fetch of every restored model. Separate so that a test can run it on
+    /// restores that never settle or never resolve, which a real store cannot be made to do on
+    /// purpose.
     @discardableResult
     func repairAfterRollback(_ restores: [SavedValuesRestore]) -> RelationshipRepair {
         var repair = RelationshipRepair()
         for _ in 0..<AccountStore.relationshipPasses where !repair.settled {
             var outcomes = Set<RestoreOutcome>()
-            // Attributes too: after a failed save in the store, the rollback does not leave
-            // them at the values put back before it (see `discardUnsavedChanges`).
+            // Attributes too: what the rollback leaves is not trusted (see above).
             for kind in [RestoredPropertyKind.attribute, .toOne, .toMany] {
                 for restore in restores {
                     outcomes.formUnion(restore.restoreAgain(kind))
@@ -530,8 +679,8 @@ extension AccountStore {
         writeLogger.notice("A failed write's saved models were found on a second fetch.")
     }
 
-    /// How often the relationships are checked after a rollback before giving up: one pass
-    /// that sets them, one that finds them right, and one more in case a set changed an inverse.
+    /// How often the properties are checked after a rollback before giving up: one pass that
+    /// sets them, one that finds them right, and one more in case a set changed an inverse.
     private static let relationshipPasses = 3
 
     /// The live model that `saved` (a model of the fresh context on the store) is, so a
