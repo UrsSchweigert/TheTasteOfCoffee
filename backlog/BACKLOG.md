@@ -875,7 +875,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T33 Accessibility pass
-- status: in-progress
+- status: needs-mac-verification (written on Linux without Xcode: the UI tests, the audits at both text sizes and the new unit tests first run in the `ios` job)
 - owner: ios-engineer
 - depends: M2-T32
 - implements: docs/04-specification.md, Non-functional (Accessibility: Dynamic Type and VoiceOver on every control)

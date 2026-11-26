@@ -63,6 +63,7 @@ jobs:
             scripts/generate-ios-vocabulary.mjs
             scripts/generate-ios-api.mjs
             scripts/check-ios-strings.mjs
+            scripts/check-ios-accessibility.mjs
             .github/workflows/ci.yml
         # GitHub runs this with bash -eo pipefail; every check that may fail is
         # an `if` condition, so a failed git command falls through to ios=true.
@@ -157,8 +158,19 @@ jobs:
         run: node scripts/generate-ios-api.mjs --check
       - name: iOS String Catalog is complete
         run: node scripts/check-ios-strings.mjs
+      # The hand-written project file and scheme (M2-T33): every id defined once
+      # and referenced ids defined, and both test targets in the test action.
+      - name: iOS project file is consistent
+        run: node scripts/check-xcode-project.mjs
+      # Accessibility rules readable from the source, and the UI-test start
+      # compiled in Debug only (M2-T33).
+      - name: iOS accessibility and Debug-only checks
+        run: node scripts/check-ios-accessibility.mjs
 
-  # Builds the app and runs its unit tests on the iOS Simulator (M0-T6).
+  # Builds the app and runs its unit tests and, from M2-T33, its UI tests
+  # (CupmarkUITests: an accessibility audit of each screen at two text sizes)
+  # on the iOS Simulator (M0-T6). Both are in the Cupmark scheme's test action,
+  # which `xcodebuild test-without-building` runs whole.
   # The runner image and the Xcode version are pinned, so an upgrade is a
   # deliberate change here. Signing is off; no certificates or secrets.
   # Skipped when `changes` finds nothing that can affect the app (M0-T9).
@@ -167,7 +179,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.ios == 'true'
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       XCODE_APP: /Applications/Xcode_16.4.app
       SIMULATOR_DESTINATION: platform=iOS Simulator,name=iPhone 16,OS=latest

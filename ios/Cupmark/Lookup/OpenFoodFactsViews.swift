@@ -150,6 +150,7 @@ struct OpenFoodFactsConfirmView: View {
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
+            .controlSize(.large)
             .accessibilityIdentifier("lookup-confirm")
             Button {
                 onReject()
@@ -158,6 +159,7 @@ struct OpenFoodFactsConfirmView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
+            .controlSize(.large)
             .accessibilityIdentifier("lookup-reject")
         }
         .disabled(isSaving)

@@ -191,6 +191,12 @@ final class RatingFormModel {
         draft.score(for: criterion).map { score in RatingFormat.score(score, locale: locale) }
     }
 
+    /// What VoiceOver reads as a criterion's value, "7.5 of 10" (M2-T33); nil while it has no
+    /// score.
+    func spokenScoreText(for criterion: Vocabulary.Criterion, locale: Locale = .current) -> String? {
+        draft.score(for: criterion).map { score in RatingFormat.spokenScore(score, locale: locale) }
+    }
+
     /// Where a criterion's slider stands: its score, or the middle of the scale while it has
     /// none (the slider then shows "Not set" next to it).
     func sliderValue(for criterion: Vocabulary.Criterion) -> Double {

@@ -29,9 +29,12 @@ Cupmark/                  app target sources and resources
   Onboarding/             onboarding with consent (M2-T29): OnboardingRules, OnboardingModel, OnboardingGate, OnboardingScreen
   Settings/               Settings (M2-T29, M2-T30, M2-T31): SettingsModel, SettingsScreen (consent, export link, delete account link), removal of other accounts' local data
   AccountDeletion/        account deletion (M2-T31): AccountDeletionModel, AccountDeletionRecord (Keychain), AccountLocalData, the screens
+  Accessibility/          accessibility helpers (M2-T33): AccessibilityValue ("7.5 of 10"), minimumTapTarget(), FitsOrScrolls
+  UITestSupport/          Debug only (M2-T33): the UI-test launch argument, fixtures, stub API and fake sign-in
   L10n.swift              keys of the String Catalog
   Localizable.xcstrings   String Catalog, English (source) and German
 CupmarkTests/             XCTest unit tests (hosted in the app)
+CupmarkUITests/           XCTest UI tests (M2-T33): the accessibility audit of each screen
 ```
 
 ## Vocabulary
@@ -371,9 +374,23 @@ M2-T27 implements docs/04 F2, "A brew can be saved as a recipe and repeated with
   - `check-ios-strings.mjs` also fails a catalog value whose number of `%@` placeholders differs from its key's.
 - `scripts/check-no-free-text.sh` fails on any control that accepts typed text.
 
+## Accessibility
+
+M2-T33, docs/04 Non-functional (Dynamic Type and VoiceOver on every control).
+
+- **VoiceOver label and value.** Every slider, stepper and pick list has a label (the criterion or field) and a value. A value with a unit is read as shown ("Dose, 18.0 g"); one on a scale without a unit is read on its scale: a score "Aroma, 7.5 of 10" (`RatingFormat.spokenScore`), the normalised grind and the grind setting "4.5 of 10" (`BrewFormModel.spokenValueText(of:)`, `spokenGrindSettingText()`), through the format key `accessibility.value_of_scale %@ %@` (`AccessibilityValue.ofScale`). The long pick lists (`IndexedPickListRow`) read "Origin, Not set" like a `Picker`; a segmented picker with a hidden label has an accessibility label. Scores and steppers are the native `Slider` and `Stepper`, so VoiceOver adjusts them with swipes up and down.
+- **Tap targets.** Borderless buttons (Clear, the stepper's clear icon, the label photo row) are at least 44 by 44 points (`minimumTapTarget()`); bordered buttons in bars, fallbacks and the timer use the large control size. The A to Z index letters stay small, like the system section index, and are hidden from VoiceOver.
+- **Largest text sizes.** `ContentUnavailableView` does not scroll, so the scanner fallback, the lookup fallback, the pending bean and "not configured" are wrapped in `FitsOrScrolls` (as is at the default size, scrolling when too tall). The Sign in with Apple title has no line limit.
+- **Images.** Decorative symbols are hidden from VoiceOver; a symbol that is a button's whole label has the button's label.
+- **UI tests.** `CupmarkUITests/AccessibilityAuditTests` launches each screen with `-CupmarkUITestScreen <screen>` and runs `performAccessibilityAudit()` at the default size and at `UICTContentSizeCategoryAccessibilityXXXL`, English pinned: sign-in, not configured, onboarding, shelf, scanner fallback, lookup result, pick-list entry, brew form, the running timer, rating, recipes, statistics and settings. Three narrow exclusions, each commented: contrast on a disabled control (WCAG exempts inactive controls), hit region of UIKit's own segmented control and stepper, and clipped text inside the navigation bar. Further tests read a score's label and "x of 10" value and move it, increment the dose stepper and read "x g", and read a pick list's label and value.
+- **The UI-test start** (`UITestSupport/`, Debug only). `CupmarkApp` reads `-CupmarkUITestScreen` only inside `#if DEBUG`; with it, the window shows `UITestRootView` and nothing of the app's own start runs (no Keychain, no export folder, no network). Sign-in, onboarding and the shelf go through `RootView`, `AuthGate` and `SyncHost` on a real `AuthModel` with an in-memory credential store and fake Cognito endpoints; the other screens are shown on their own in a navigation stack. The store is `AccountStore.inMemory()` with `UITestFixtures` (two bags, rated brews of three methods, an unrated brew, recipes, a profile), all synced, so the outbox is empty; the engine's account check says no anyway. `UITestAPI` answers the fixture barcode with a catalogue bean and every other request with 503, on `api.cupmark.test`, through a `URLProtocol` of its own session. Without the argument a Debug build starts exactly as before; a Release build has neither the argument nor the code.
+- **Checks on Linux.** `node scripts/check-ios-accessibility.mjs` fails a slider or stepper without an accessibility label and value, a hidden picker label without an accessibility label, a symbol that is neither hidden nor labelled, a borderless button without `minimumTapTarget()` (unless the line before says `// Tap target: ...`), a `UITestSupport/` file that is not one `#if DEBUG` block, and any mention of the UI-test start outside `#if DEBUG` in the app or the unit tests. `UITestSupportTests` and `AccessibilityValueTests` test the parts that run without the simulator UI.
+
 ## Project file
 
-`Cupmark.xcodeproj` is written by hand, using Xcode 16 synchronized folders (`PBXFileSystemSynchronizedRootGroup`, object version 77): every file under `Cupmark/` and `CupmarkTests/` belongs to its target without a per-file entry. Adding a Swift file needs no project change, so it can be done without a Mac. XcodeGen was not used because CI would have to download an unpinned or separately verified binary.
+`Cupmark.xcodeproj` is written by hand, using Xcode 16 synchronized folders (`PBXFileSystemSynchronizedRootGroup`, object version 77): every file under `Cupmark/`, `CupmarkTests/` and `CupmarkUITests/` belongs to its target without a per-file entry. Adding a Swift file needs no project change, so it can be done without a Mac. XcodeGen was not used because CI would have to download an unpinned or separately verified binary.
+
+Targets: `Cupmark` (the app), `CupmarkTests` (unit tests, hosted in the app, `TEST_HOST`) and `CupmarkUITests` (UI tests, M2-T33: `com.apple.product-type.bundle.ui-testing`, `TEST_TARGET_NAME = Cupmark`, no host). Both test targets are in the `Cupmark` scheme's test action. `node scripts/check-xcode-project.mjs` checks the project file and the scheme on Linux: every object id defined once and every referenced id defined, each target with its configuration list (Debug and Release), build phases, product and dependency proxy, a UI-test target without `TEST_HOST`, and every test target in the scheme's test action.
 
 Signing: bundle id `app.cupmark.Cupmark`, automatic signing, no team id. Simulator and CI builds pass `CODE_SIGNING_ALLOWED=NO`. A device build needs the developer's own team, set locally and not committed.
 
@@ -386,4 +403,6 @@ xcodebuild test -project Cupmark.xcodeproj -scheme Cupmark \
   CODE_SIGNING_ALLOWED=NO
 ```
 
-CI runs the same on `macos-15` with Xcode 16.4 (job `ios` in `.github/workflows/ci.yml`). On a pull request the job runs only when the `changes` job finds a changed path under `ios/`, `contracts/vocabulary/`, `contracts/i18n/`, or a change to `contracts/openapi.yaml`, `contracts/lib/vocabulary.mjs`, `contracts/lib/lock.mjs`, `contracts/lib/openapi.mjs`, `scripts/generate-ios-vocabulary.mjs`, `scripts/generate-ios-api.mjs`, `scripts/check-ios-strings.mjs` or `ci.yml`: the app and every input the iOS generators read. `scripts/check-workflows.test.mjs` derives those inputs from the generator scripts and fails if `IOS_PATHS` in `ci.yml` lacks one. Pushes to `main` always run it, and so does any run where the diff cannot be computed. `ci-ok` accepts a skipped `ios` only when `changes` said `ios=false`.
+This runs both test targets, the unit tests and the UI tests (M2-T33); add `-only-testing:CupmarkTests` for the unit tests alone. The UI tests need a simulator with iOS 17 or later (`performAccessibilityAudit()`).
+
+CI runs the same on `macos-15` with Xcode 16.4 (job `ios` in `.github/workflows/ci.yml`). On a pull request the job runs only when the `changes` job finds a changed path under `ios/`, `contracts/vocabulary/`, `contracts/i18n/`, or a change to `contracts/openapi.yaml`, `contracts/lib/vocabulary.mjs`, `contracts/lib/lock.mjs`, `contracts/lib/openapi.mjs`, `scripts/generate-ios-vocabulary.mjs`, `scripts/generate-ios-api.mjs`, `scripts/check-ios-strings.mjs`, `scripts/check-ios-accessibility.mjs` or `ci.yml`: the app and every input the iOS generators read. `scripts/check-workflows.test.mjs` derives those inputs from the generator scripts and fails if `IOS_PATHS` in `ci.yml` lacks one. Pushes to `main` always run it, and so does any run where the diff cannot be computed. `ci-ok` accepts a skipped `ios` only when `changes` said `ios=false`.

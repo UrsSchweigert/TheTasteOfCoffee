@@ -178,6 +178,7 @@ struct RatingScreen: View {
                     title: VocabularyLabels.label(for: criterion, in: vocabulary, language: language),
                     question: question(for: criterion),
                     valueText: model.scoreText(for: criterion, locale: locale),
+                    spokenValueText: model.spokenScoreText(for: criterion, locale: locale),
                     value: scoreBinding(for: criterion),
                     onBegin: { model.beginSliding(criterion) }
                 )
@@ -301,13 +302,16 @@ struct RatingScreen: View {
 }
 
 /// One criterion: its label, its score (or "Not set"), its question and a slider on the
-/// vocabulary's scale and step. VoiceOver reads the label and the score, adjusts by one step
-/// with swipes up and down, and gives the question as the hint. At accessibility text sizes
-/// the label and the score stack.
+/// vocabulary's scale and step. VoiceOver reads the label and the score on its scale
+/// ("Aroma, 7.5 of 10", M2-T33), adjusts by one step with swipes up and down (the slider's
+/// adjustable action), and gives the question as the hint. At accessibility text sizes the
+/// label and the score stack.
 struct RatingScoreRow: View {
     let title: String
     let question: String?
     let valueText: String?
+    /// VoiceOver's value, "7.5 of 10"; `valueText` when nil.
+    var spokenValueText: String? = nil
     @Binding var value: Double
     /// Called when the slider is touched, before it moves.
     let onBegin: @MainActor () -> Void
@@ -366,8 +370,8 @@ struct RatingScoreRow: View {
     }
 
     private var accessibilityValue: Text {
-        if let valueText {
-            return Text(verbatim: valueText)
+        if let text = spokenValueText ?? valueText {
+            return Text(verbatim: text)
         }
         return Text(L10n.lookupPickNotSet)
     }
@@ -406,6 +410,7 @@ struct IntensityPicker: View {
                             selection = nil
                         } label: {
                             Text(L10n.beanEntryClear)
+                                .minimumTapTarget()
                         }
                         .buttonStyle(.borderless)
                         .accessibilityLabel(Text(L10n.ratingIntensityClear))
@@ -459,6 +464,7 @@ struct BuyAgainPicker: View {
                             selection = nil
                         } label: {
                             Text(L10n.beanEntryClear)
+                                .minimumTapTarget()
                         }
                         .buttonStyle(.borderless)
                         .accessibilityLabel(Text(L10n.ratingBuyAgainClear))

@@ -116,6 +116,13 @@ struct LookupFallbackView: View {
     var onKeepForLater: (@MainActor () -> Void)? = nil
 
     var body: some View {
+        // Scrolls at the largest text sizes instead of cutting off the message (M2-T33).
+        FitsOrScrolls {
+            fallback
+        }
+    }
+
+    private var fallback: some View {
         ContentUnavailableView {
             Label {
                 Text(LookupFallbackView.title(for: reason))
@@ -138,15 +145,18 @@ struct LookupFallbackView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
+                .controlSize(.large)
                 .accessibilityHint(Text(L10n.lookupKeepForLaterHint))
                 .accessibilityIdentifier("lookup-keep-for-later")
             }
             if onKeepForLater == nil {
                 pickListButton
                     .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
             } else {
                 pickListButton
                     .buttonStyle(.bordered)
+                    .controlSize(.large)
             }
             if reason.allowsRetry {
                 Button {
@@ -158,6 +168,7 @@ struct LookupFallbackView: View {
                         Image(systemName: "arrow.clockwise")
                             .accessibilityHidden(true)
                     }
+                    .minimumTapTarget()
                 }
                 .accessibilityIdentifier("lookup-retry")
             }
@@ -217,6 +228,14 @@ struct PendingBeanView: View {
     let barcode: CanonicalBarcode
 
     var body: some View {
+        // Scrolls at the largest text sizes instead of cutting off the message (M2-T33).
+        FitsOrScrolls {
+            pending
+        }
+        .accessibilityIdentifier("lookup-pending")
+    }
+
+    private var pending: some View {
         ContentUnavailableView {
             Label {
                 Text(L10n.lookupPendingTitle)
@@ -234,7 +253,6 @@ struct PendingBeanView: View {
                     .accessibilityValue(Text(verbatim: barcode.digits))
             }
         }
-        .accessibilityIdentifier("lookup-pending")
     }
 }
 

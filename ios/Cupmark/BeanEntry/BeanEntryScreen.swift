@@ -206,6 +206,7 @@ struct BeanEntryScreen: View {
             .frame(maxWidth: .infinity)
         }
         .buttonStyle(.borderedProminent)
+        .controlSize(.large)
         .disabled(!model.canSave)
         .accessibilityIdentifier("bean-entry-save")
         .padding()

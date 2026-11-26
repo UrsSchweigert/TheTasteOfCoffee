@@ -168,6 +168,20 @@ final class BrewFormModel {
         draft.value(of: field).map { value in BrewFormat.value(value, of: field, locale: locale) }
     }
 
+    /// What VoiceOver reads as a stepper's value (M2-T33): a value with a unit as shown
+    /// ("18.5 g", "94°C"), the normalised grind, which has none, on its scale ("4.5 of 10").
+    func spokenValueText(of field: BrewNumberField, locale: Locale = .current) -> String? {
+        guard let text = valueText(of: field, locale: locale) else {
+            return nil
+        }
+        switch field {
+        case .grind:
+            return AccessibilityValue.ofScale(text, maximum: field.range.maximum, locale: locale)
+        case .dose, .water, .temperature:
+            return text
+        }
+    }
+
     var temperatureChoice: BrewDraft.TemperatureChoice {
         get { draft.temperatureChoice }
         set { draft.chooseTemperature(newValue, seed: seed(for: .temperature)) }
@@ -247,6 +261,14 @@ final class BrewFormModel {
             return nil
         }
         return BrewFormat.grindSetting(setting, on: range, locale: locale)
+    }
+
+    /// The grind setting as VoiceOver reads it, on the grinder's own scale ("12 of 40", M2-T33).
+    func spokenGrindSettingText(locale: Locale = .current) -> String? {
+        guard let range = draft.grindSettingRange, let text = grindSettingText(locale: locale) else {
+            return nil
+        }
+        return AccessibilityValue.ofScale(text, maximum: range.maximum, locale: locale)
     }
 
     // MARK: - Derived values, shown as values change

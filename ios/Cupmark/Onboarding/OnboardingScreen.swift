@@ -115,8 +115,10 @@ struct OnboardingScreen: View {
             Button {
                 model.skip()
             } label: {
+                // A borderless button: at least 44 points high to tap (M2-T33).
                 Text(L10n.onboardingSkip)
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(Rectangle())
             }
             .accessibilityHint(Text(L10n.onboardingSkipHint))
             .accessibilityIdentifier("onboarding-skip")

@@ -7,6 +7,9 @@ import SwiftUI
 /// catalog with English and German, and that the catalog has no unused key.
 enum L10n {
     static var appTitle: LocalizedStringKey { "app.title" }
+    /// VoiceOver's value of a control on a scale without a unit ("7.5 of 10", M2-T33); both
+    /// numbers in the device locale. `bundle` is the app bundle; tests pass a language's `.lproj`.
+    static func valueOfScale(_ value: String, of maximum: String, bundle: Bundle = .main) -> String { String(localized: "accessibility.value_of_scale \(value) \(maximum)", bundle: bundle) }
     static var rootMethodsHeader: LocalizedStringKey { "root.methods.header" }
     static var rootVocabularyErrorTitle: LocalizedStringKey { "root.vocabulary_error.title" }
     static var rootVocabularyErrorMessage: LocalizedStringKey { "root.vocabulary_error.message" }

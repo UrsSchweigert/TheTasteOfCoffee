@@ -41,6 +41,17 @@
                ReferencedContainer = "container:Cupmark.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "C0FFEE000000000000000062"
+               BuildableName = "CupmarkUITests.xctest"
+               BlueprintName = "CupmarkUITests"
+               ReferencedContainer = "container:Cupmark.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction

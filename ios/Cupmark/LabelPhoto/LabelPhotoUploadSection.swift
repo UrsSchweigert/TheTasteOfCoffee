@@ -141,6 +141,7 @@ struct LabelPhotoUploadSection: View {
                         Image(systemName: "arrow.clockwise")
                             .accessibilityHidden(true)
                     }
+                    .minimumTapTarget()
                 }
                 .accessibilityIdentifier("label-photo-retry")
             }
@@ -155,6 +156,7 @@ struct LabelPhotoUploadSection: View {
                         Image(systemName: "camera")
                             .accessibilityHidden(true)
                     }
+                    .minimumTapTarget()
                 }
                 .accessibilityIdentifier("label-photo-retake")
             }
@@ -168,11 +170,13 @@ struct LabelPhotoUploadSection: View {
                         Image(systemName: "trash")
                             .accessibilityHidden(true)
                     }
+                    .minimumTapTarget()
                 }
                 .accessibilityIdentifier("label-photo-remove")
             }
         }
-        // Several buttons in one list row: borderless, so each takes its own taps.
+        // Several buttons in one list row: borderless, so each takes its own taps, each at
+        // least 44 points (M2-T33).
         .buttonStyle(.borderless)
         .font(.subheadline)
     }
