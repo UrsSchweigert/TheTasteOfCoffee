@@ -507,8 +507,12 @@ final class FailedWriteTests: XCTestCase {
         XCTAssertTrue(store.context.insertedModelsArray.isEmpty)
         XCTAssertTrue(store.context.deletedModelsArray.isEmpty)
         XCTAssertEqual(try store.bean(localID: pendingBeanID)?.localID, pendingBeanID)
-        XCTAssertEqual(scannedEntry.bean?.localID, pendingBeanID)
-        XCTAssertEqual(pendingBean.shelfEntries.map(\.localID), [scannedEntryID])
+        // Read through fresh fetches first (what the app's screens do: they keep local ids and
+        // fetch again), then through the instances held from before the failed write.
+        XCTAssertEqual(try store.shelfEntry(localID: scannedEntryID)?.bean?.localID, pendingBeanID, "fetched entry")
+        XCTAssertEqual(try store.bean(localID: pendingBeanID)?.shelfEntries.map(\.localID), [scannedEntryID], "fetched bean")
+        XCTAssertEqual(scannedEntry.bean?.localID, pendingBeanID, "held entry")
+        XCTAssertEqual(pendingBean.shelfEntries.map(\.localID), [scannedEntryID], "held bean")
         XCTAssertEqual(Set(try store.shelfEntries().map(\.localID)), [entryID, scannedEntryID])
         XCTAssertEqual(try queue(store), expectedQueue)
         XCTAssertEqual(try store.pendingBeanStates()[pendingBeanID], .lookingUp)
