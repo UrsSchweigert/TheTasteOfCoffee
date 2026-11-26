@@ -66,6 +66,44 @@ final class AuthSessionTests: XCTestCase {
         }
     }
 
+    // MARK: - Tokens of one account (M2-T31)
+
+    func testAnotherAccountSigningInDuringARefreshNeverGivesItsTokenForTheFirstAccount() async throws {
+        let other = AccountID(subject: AuthFixtures.otherSubject)
+        let endpoint = FakeTokenEndpoint(
+            exchange: { try AuthFixtures.tokenResponse(access: "access-b", subject: AuthFixtures.otherSubject, refresh: "refresh-b") },
+            refresh: { try AuthFixtures.tokenResponse(access: "access-a", refresh: nil) }
+        )
+        let (session, _) = await makeSession(endpoint: endpoint, store: FakeCredentialStore(storedCredential))
+        await endpoint.holdRefreshes()
+
+        // No token in memory yet, so the call refreshes, and the refresh is held.
+        let call = Task { try await session.accessToken(for: account) }
+        await endpoint.waitUntilARefreshIsHeld()
+        try await session.signIn(code: "code-b", verifier: "verifier-b")
+        await endpoint.releaseRefreshes()
+
+        do {
+            let token = try await call.value
+            XCTFail("expected a failure, got a token for A after B signed in: \(token == "access-b" ? "B's token" : "a token")")
+        } catch {
+            // The refresh's own "signed in again meanwhile" check (`notSignedIn`) or the
+            // account check after the token (`accountMismatch`) refuses it; neither returns a token.
+            let refused = error as? AuthError
+            XCTAssertTrue(refused == .accountMismatch || refused == .notSignedIn, "refused, got \(error)")
+        }
+        let signedInB = await session.isSignedIn(as: other)
+        XCTAssertTrue(signedInB, "B's sign-in stands")
+        await assertThrows(.accountMismatch) {
+            try await session.accessToken(for: account)
+        }
+        await assertThrows(.accountMismatch) {
+            try await session.refresh(for: account)
+        }
+        let tokenB = try await session.accessToken(for: other)
+        XCTAssertEqual(tokenB, "access-b", "B gets only its own token, through its own account")
+    }
+
     // MARK: - Sign-in and restore
 
     func testSignInSavesTheRefreshTokenAndKeepsTheAccessTokenInMemory() async throws {

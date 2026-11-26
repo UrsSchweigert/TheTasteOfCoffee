@@ -560,6 +560,9 @@ final class AccountDeletionTests: XCTestCase {
         let revoked = await revokes(endpoint)
         XCTAssertTrue(revoked.isEmpty, file: file, line: line)
 
+        // The model sees B through the session's status handler; wait for it rather than assume
+        // the hop has run.
+        try await waitUntil("the model sees the other account") { app.auth.phase == .signedIn(newAccount) }
         // A tap on the prompt shown with an unknown account only works it out again.
         app.deletion.deleteSignedInAccount()
         await app.deletion.running?.value
@@ -575,6 +578,50 @@ final class AccountDeletionTests: XCTestCase {
 
     func testAnotherSessionLandingJustBeforeTheDeleteTakesItsTokenSendsNothing() async throws {
         try await assertALandingSignInSendsNothing(.beforeTheDeleteTakesItsToken)
+    }
+
+    func testA401WhoseRefreshLosesTheSessionToAnotherAccountSendsOneDeleteWithTheFirstToken() async throws {
+        let script = DeleteScript([401])
+        let server = try StubServer { request in try script.respond(to: request) }
+        let records = FakeAccountDeletionStore()
+        let endpoint = FakeTokenEndpoint(exchange: { try AuthFixtures.tokenResponse(access: "access-b", subject: AuthFixtures.otherSubject, refresh: "refresh-b") })
+        let app = try await launch(
+            server: server,
+            credentials: signedIn(account),
+            records: records,
+            endpoint: endpoint,
+            makeRequests: { client, session in
+                let live = AccountDeletionRequests.live(client: client, session: session)
+                return AccountDeletionRequests(
+                    refreshToken: { target in
+                        try await live.refreshToken(target)
+                        // The client's refresh after the 401 is held, so B can sign in inside it.
+                        await endpoint.holdRefreshes()
+                    },
+                    deleteAccount: live.deleteAccount,
+                    signedInAccount: live.signedInAccount
+                )
+            }
+        )
+
+        app.deletion.start()
+        // DELETE /account answered 401; the client's one refresh for A is now in flight.
+        await endpoint.waitUntilARefreshIsHeld()
+        try await app.session.signIn(code: "code-b", verifier: "verifier-b")
+        await endpoint.releaseRefreshes()
+        await app.deletion.running?.value
+        try await waitUntil("the model sees the other account") { app.auth.phase == .signedIn(newAccount) }
+        // Anything that would go out late has time to arrive at the stub.
+        try await Task.sleep(for: .milliseconds(300))
+
+        XCTAssertEqual(server.requests.map { "\($0.method) \($0.path)" }, ["DELETE /account"], "exactly one DELETE, no retry with B's token")
+        XCTAssertEqual(server.requests.first?.header("Authorization"), "Bearer access-2", "carrying A's token")
+        XCTAssertEqual(app.deletion.state, .confirmDifferentAccount, "B is shown the prompt, not deleted")
+        XCTAssertNil(app.deletion.confirmationAccount)
+        XCTAssertEqual(records.record, AccountDeletionRecord(phase: .requested, account: account, localAccounts: [account]))
+        let revoked = await revokes(endpoint)
+        XCTAssertTrue(revoked.isEmpty, "nobody is signed out")
+        XCTAssertEqual(app.auth.phase, .signedIn(newAccount))
     }
 
     func testAResumeDuringSignInAgainStartsNoRun() async throws {

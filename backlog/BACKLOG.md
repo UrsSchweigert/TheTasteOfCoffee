@@ -841,7 +841,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T31 Account deletion
-- status: needs-mac-verification
+- status: done (#79; the macOS `ios` job built it and ran the deletion tests; a real `DELETE /account` against dev and the Keychain on a device are checked in M2-T34; ADR 0031)
 - owner: ios-engineer
 - depends: M2-T16
 - implements: docs/04-specification.md, Non-functional (account deletion in the app); ADR 0017 and its Addendum; contracts `deleteAccount`
