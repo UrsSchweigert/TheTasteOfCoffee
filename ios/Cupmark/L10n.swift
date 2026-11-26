@@ -466,4 +466,30 @@ enum L10n {
     static func galleryBagOption(_ bean: String, bought date: String, bundle: Bundle = .main) -> String { String(localized: "gallery.bag.option \(bean) \(date)", bundle: bundle) }
     static func galleryBeanUnnamed(bundle: Bundle = .main) -> String { String(localized: "gallery.bean.unnamed", bundle: bundle) }
     static var galleryViewerNotFound: LocalizedStringKey { "gallery.viewer.not_found" }
+    static func galleryCountValueFiltered(_ count: String, filter: String, bundle: Bundle = .main) -> String { String(localized: "gallery.count.value.filtered \(count) \(filter)", bundle: bundle) }
+
+    // Brew photo viewer (M2-T43b)
+    static var viewerTitle: LocalizedStringKey { "viewer.title" }
+    static var viewerDetailsHeader: LocalizedStringKey { "viewer.details.header" }
+    static func viewerDetailMethod(bundle: Bundle = .main) -> String { String(localized: "viewer.detail.method", bundle: bundle) }
+    static func viewerDetailDose(bundle: Bundle = .main) -> String { String(localized: "viewer.detail.dose", bundle: bundle) }
+    static func viewerDetailRatio(bundle: Bundle = .main) -> String { String(localized: "viewer.detail.ratio", bundle: bundle) }
+    static func viewerDetailTemperature(bundle: Bundle = .main) -> String { String(localized: "viewer.detail.temperature", bundle: bundle) }
+    static func viewerDetailGrind(bundle: Bundle = .main) -> String { String(localized: "viewer.detail.grind", bundle: bundle) }
+    static var viewerLinksHeader: LocalizedStringKey { "viewer.links.header" }
+    static var viewerLinksFooter: LocalizedStringKey { "viewer.links.footer" }
+    static var viewerLinkBrew: LocalizedStringKey { "viewer.link.brew" }
+    static var viewerLinkBrewHint: LocalizedStringKey { "viewer.link.brew.hint" }
+    static var viewerLinkBag: LocalizedStringKey { "viewer.link.bag" }
+    static var viewerLinkBagHint: LocalizedStringKey { "viewer.link.bag.hint" }
+    static var viewerLinkRecipe: LocalizedStringKey { "viewer.link.recipe" }
+    static var viewerLinkRecipeHint: LocalizedStringKey { "viewer.link.recipe.hint" }
+    static var viewerDeleteLabel: LocalizedStringKey { "viewer.delete.label" }
+    static var viewerDeleteFailed: LocalizedStringKey { "viewer.delete.failed" }
+
+    // Recipe screen reached from the viewer (M2-T43b)
+    static var recipeDetailTitle: LocalizedStringKey { "recipe_detail.title" }
+    static var recipeDetailBrew: LocalizedStringKey { "recipe_detail.brew" }
+    static var recipeDetailBrewHint: LocalizedStringKey { "recipe_detail.brew.hint" }
+    static var recipeDetailNotFound: LocalizedStringKey { "recipe_detail.not_found" }
 }

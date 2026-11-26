@@ -283,6 +283,33 @@ enum BrewPhotoThumbnails {
         return await load(url, maxPixelSize: maxPixelSize)
     }
 
+    /// A thumbnail that was loaded, with the file and the size it was made for.
+    struct Loaded: Sendable {
+        let url: URL
+        let pixels: Int
+        let thumbnail: Thumbnail
+    }
+
+    /// What a view shows after it asked for `url` at `maxPixelSize` (M2-T43b), given what it
+    /// showed before (`current`):
+    /// - no file: nothing;
+    /// - the image already shown is of this file and at least this large: it stays, nothing is
+    ///   read again (a scene phase change reloads every thumbnail otherwise);
+    /// - a load that fails keeps the last good image of the same file instead of replacing it
+    ///   with the placeholder; an image of another file is never kept.
+    static func updated(_ current: Loaded?, for url: URL?, maxPixelSize: Int) async -> Loaded? {
+        guard let url else {
+            return nil
+        }
+        if let current, current.url == url, current.pixels >= maxPixelSize {
+            return current
+        }
+        if let thumbnail = await loadWithRetry(url, maxPixelSize: maxPixelSize) {
+            return Loaded(url: url, pixels: maxPixelSize, thumbnail: thumbnail)
+        }
+        return current?.url == url ? current : nil
+    }
+
     /// Synchronous; call it off the main actor. The file is upright already (the encoder applied
     /// the orientation), and the thumbnail is never cached by ImageIO beyond this call.
     static func downsample(_ url: URL, maxPixelSize: Int) -> Thumbnail? {

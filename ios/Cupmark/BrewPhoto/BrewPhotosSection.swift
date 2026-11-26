@@ -318,7 +318,7 @@ private struct BrewPhotoRow: View {
 private struct BrewPhotoThumbnailView: View {
     let url: URL?
     let side: CGFloat
-    @State private var thumbnail: BrewPhotoThumbnails.Thumbnail?
+    @State private var loaded: BrewPhotoThumbnails.Loaded?
     @Environment(\.displayScale) private var displayScale
     @Environment(\.scenePhase) private var scenePhase
 
@@ -332,8 +332,8 @@ private struct BrewPhotoThumbnailView: View {
 
     var body: some View {
         ZStack {
-            if let thumbnail {
-                Image(decorative: thumbnail.image, scale: 1)
+            if let loaded, loaded.url == url {
+                Image(decorative: loaded.thumbnail.image, scale: 1)
                     .resizable()
                     .scaledToFill()
             } else {
@@ -348,12 +348,9 @@ private struct BrewPhotoThumbnailView: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .accessibilityHidden(true)
         .task(id: LoadKey(url: url, pixels: pixels, isActive: scenePhase == .active)) {
-            guard let url else {
-                thumbnail = nil
-                return
-            }
-            // One more try for a file that was not readable the first time.
-            thumbnail = await BrewPhotoThumbnails.loadWithRetry(url, maxPixelSize: pixels)
+            // One more try for a file that was not readable the first time; a failed load keeps
+            // the image already shown, and one that is shown is not read again.
+            loaded = await BrewPhotoThumbnails.updated(loaded, for: url, maxPixelSize: pixels)
         }
     }
 

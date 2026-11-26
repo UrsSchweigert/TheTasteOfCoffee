@@ -345,6 +345,44 @@ final class BrewPhotoGalleryModelTests: XCTestCase {
         XCTAssertTrue(both.contains(english.label(of: firstMethod)) && both.contains("Bohne, bought Nov 20, 2026"), both)
     }
 
+    func testVoiceOverReadsOnlyTheNumberAndTheFilterAfterTheLabel() throws {
+        let scenario = try makeScenario(try makeStore())
+        let english = try makeModel(scenario.store)
+        let german = try makeModel(scenario.store, language: .de)
+
+        // The element's label is "Brew photos"; its value does not say "photos" again.
+        XCTAssertEqual(english.spokenValue, "4")
+        XCTAssertEqual(german.spokenValue, "4")
+
+        english.methodFilter = firstMethod
+        german.methodFilter = firstMethod
+        XCTAssertEqual(english.spokenValue, "3, filter: \(english.label(of: firstMethod))")
+        XCTAssertEqual(german.spokenValue, "3, Filter: \(german.label(of: firstMethod))")
+        XCTAssertEqual(english.summary, "Photos: 3, filter: \(english.label(of: firstMethod))", "the text shown is unchanged")
+    }
+
+    func testAReloadKeepsEveryItemAndLabelWhenManyPhotosShareBrewsAndBags() throws {
+        let scenario = try makeScenario(try makeStore())
+        // At most 6 photos a brew (`BrewPhotoLimits.maxPerBrew`): the scenario's brews hold 2, 1
+        // and 1; one more brew of bag A takes a full 6. 4 + 5 + 5 + 6 = 20 more photos.
+        let extra = try addBrew(in: scenario.store, to: scenario.bagA, method: firstMethod)
+        var minute = 10
+        for (brew, number) in [(scenario.brewA1, 4), (scenario.brewB1, 5), (scenario.brewA2, 5), (extra, 6)] {
+            for _ in 0..<number {
+                try addPhoto(in: scenario.store, to: brew, minute: minute)
+                minute += 1
+            }
+        }
+        let model = try makeModel(scenario.store)
+
+        XCTAssertEqual(model.count, 24)
+        // Method, bag and day: bag A with the first method (two brews), bag A with the last, bag B.
+        XCTAssertEqual(Set(model.allItems.map(\.accessibilityLabel)).count, 3)
+        XCTAssertTrue(model.allItems.allSatisfy { $0.fileURL != nil })
+        model.reload()
+        XCTAssertEqual(model.count, 24)
+    }
+
     func testEveryGalleryStringResolvesInEachLanguage() throws {
         for language in VocabularyLanguage.allCases {
             let bundle = try languageBundle(language)

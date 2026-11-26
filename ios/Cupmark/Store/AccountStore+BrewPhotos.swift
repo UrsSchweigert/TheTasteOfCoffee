@@ -99,6 +99,13 @@ extension AccountStore {
         return try context.fetch(descriptor).first
     }
 
+    /// Every brew of the store, removed ones included, by local id: one fetch for a screen that
+    /// needs the brews of many photos (the gallery).
+    func brewsByLocalID() throws -> [UUID: StoredBrew] {
+        let brews = try context.fetch(FetchDescriptor<StoredBrew>())
+        return Dictionary(brews.map { ($0.localID, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
     /// The file of `photo`. A file that is not there is reported as `fileMissing` (and logged),
     /// never a crash; the record stays, so the user can delete it.
     func brewPhotoFileURL(of photo: StoredBrewPhoto) throws -> URL {
