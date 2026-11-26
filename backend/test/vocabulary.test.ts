@@ -61,6 +61,23 @@ describe('src/generated/vocabulary.ts', () => {
     }
   });
 
+  it('carries the v3 method field rules and grinder scales, and v1 and v2 carry none (M2-T5)', () => {
+    for (const version of [1, 2]) {
+      expect(publishedVocabularies[version]?.fieldRules, `v${String(version)}`).toBeUndefined();
+      expect(publishedVocabularies[version]?.entryRanges, `v${String(version)}`).toBeUndefined();
+    }
+    const brew = vocabularyFile(3, 'brew') as {
+      field_rules: Record<string, { allowed_methods: Record<string, true> }>;
+      grinders: { id: string; scale?: unknown }[];
+    };
+    const v3 = publishedVocabularies[3];
+    expect(Object.keys(v3?.fieldRules ?? {})).toEqual(Object.keys(brew.field_rules));
+    for (const [field, rule] of Object.entries(brew.field_rules)) expect(v3?.fieldRules?.[field], field).toEqual(Object.keys(rule.allowed_methods));
+    const scaled = brew.grinders.filter((grinder) => grinder.scale !== undefined);
+    expect(Object.keys(v3?.entryRanges?.grinders ?? {})).toEqual(scaled.map((grinder) => grinder.id));
+    for (const grinder of scaled) expect(v3?.entryRanges?.grinders?.[grinder.id], grinder.id).toEqual(grinder.scale);
+  });
+
   it('binds every vocabulary field of the request bodies', () => {
     expect(vocabularyBindings.Method).toEqual({ list: 'methods' });
     expect(vocabularyBindings.Score).toEqual({ range: 'criteria.scale@1' });

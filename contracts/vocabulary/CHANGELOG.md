@@ -4,7 +4,7 @@ A published version is immutable. Every change to a list goes into the next `v<N
 
 ## 2026-11-26: v3 published
 
-- The owner approved the v3 draft as it stands (in chat, 2026-11-26), including the grinder list, the grinder scales (the uncertain scales below, the three grinders without a scale, the 0.5 step for `df64`, the `sage_` ids) and the method field rules. All five files went from `draft` to `published`, and `v3.lock.json` locks them. v3 is now immutable.
+- The owner approved the v3 draft as it stands (in chat, 2026-11-26), including the grinder list, the grinder scales (the uncertain scales below, the three grinders without a scale, `df64` at the step the draft has (1), the `sage_` ids) and the method field rules. All five files went from `draft` to `published`, and `v3.lock.json` locks them. v3 is now immutable.
 - Added before publishing, by the lead (ADR 0029, ADR 0014): `unknown` at the end of `processes`, and `other` before `unknown` in `species`, labelled in en and de. `roast_levels` stays a scale without either. `processes` now has 9 ids and `species` 7.
 - The API follows (`openapi.yaml` 0.6.0): the `Grinder` enum, optional `grinder` and `grind_setting` in `BrewParameters`, the v3 method rules in its description, `VocabularyVersion.maximum: 3`, and the export columns `grinder` and `grind_setting`. `Process` and `Species` gain the new ids.
 - Not breaking: no id was removed or renamed. The flavour notes did not change.

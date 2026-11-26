@@ -101,13 +101,15 @@ async function populated(): Promise<{ h: Harness; json: Map<string, unknown> }> 
     parameters: { method: 'cold_brew', water_temp_special: 'cold' },
   };
   const rated = { ...full, brewed_at: '2026-11-27T06:00:00.5Z', rating: { scores: (full.rating as { scores: unknown }).scores } };
+  // A v3 brew with a grinder and its own-scale setting (M2-T5).
+  const ground = { ...full, vocabulary_version: 3, brewed_at: '2026-11-28T06:00:00Z', parameters: { method: 'v60', grinder: 'niche_zero', grind_setting: 24.5 } };
   const brews: Brew[] = [];
-  for (const body of [full, cold, rated]) {
+  for (const body of [full, cold, rated, ground]) {
     const created = await h.call('POST', '/brews', { json: body });
     expect(created.status, JSON.stringify(body)).toBe(201);
     brews.push(BrewSchema.parse(created.body));
   }
-  const recipe = RecipeSchema.parse((await h.call('POST', '/recipes', { json: recipeBody({ grind_normalised: 9.5 }) })).body);
+  const recipe = RecipeSchema.parse((await h.call('POST', '/recipes', { json: { vocabulary_version: 3, parameters: { method: 'espresso', grinder: 'df64', grind_setting: 40, grind_normalised: 9.5 } } })).body);
   const profile = (await h.call('PUT', '/profile', { json: { locale: 'de', consent: { contribute_to_aggregates: false } } })).body;
   // Label photos, completed out of id order; a pending upload and counters that must not appear.
   h.store.userPhotos.set(`${labelPhotoKey(ALICE, PHOTO_A).pk}|${labelPhotoKey(ALICE, PHOTO_A).sk}`, { beanId: BEAN, createdAt: 'x' });
@@ -155,6 +157,24 @@ describe('GET /export', () => {
     expect(Object.keys(response.result.headers ?? {})).not.toContain('content-disposition');
   });
 
+  it('writes grinder and grind_setting, right after grind_normalised, as the contract lists them', async () => {
+    const columns = csvMedia['x-csv-columns'] as string[];
+    const after = columns.indexOf('grind_normalised');
+    expect(columns.slice(after, after + 3)).toEqual(['grind_normalised', 'grinder', 'grind_setting']);
+    expect([...EXPORT_CSV_COLUMNS].slice(after, after + 3)).toEqual(['grind_normalised', 'grinder', 'grind_setting']);
+
+    const { h } = await populated();
+    const [header, ...rows] = parseCsv((await h.call('GET', '/export')).result.body ?? '');
+    const at = (column: string): number => (header ?? []).indexOf(column);
+    const grinders = rows.filter((row) => row[at('grinder')] !== '').map((row) => [row[at('item_type')], row[at('grinder')], row[at('grind_setting')]]);
+    expect(grinders).toEqual([
+      ['brew', 'niche_zero', '24.5'],
+      ['recipe', 'df64', '40'],
+    ]);
+    // Every other brew and recipe has both columns empty.
+    expect(rows.filter((row) => row[at('grinder')] === '' && row[at('grind_setting')] !== '')).toEqual([]);
+  });
+
   it('parses back to the JSON resources, column by column, row by row', async () => {
     const { h, json } = await populated();
     const response = await h.call('GET', '/export');
@@ -198,7 +218,7 @@ describe('GET /export', () => {
     const { h, json } = await populated();
     const rows = parseCsv((await h.call('GET', '/export')).result.body ?? '').slice(1);
     const types = rows.map((row) => row[0] ?? '');
-    expect(types).toEqual(['profile', 'shelf_entry', 'shelf_entry', 'brew', 'brew', 'brew', 'recipe', 'label_photo', 'label_photo']);
+    expect(types).toEqual(['profile', 'shelf_entry', 'shelf_entry', 'brew', 'brew', 'brew', 'brew', 'recipe', 'label_photo', 'label_photo']);
     const idIndex = (column: string): number => EXPORT_CSV_COLUMNS.indexOf(column as never);
     const brewIds = rows.filter((row) => row[0] === 'brew').map((row) => row[idIndex('brew_id')] ?? '');
     expect(brewIds).toEqual([...brewIds].sort());

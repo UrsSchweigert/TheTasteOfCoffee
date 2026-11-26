@@ -864,6 +864,132 @@ export const publishedVocabularies: Readonly<Record<number, PublishedVocabulary>
     },
     "values": {
       "flavour_notes.max_picks": 5
+    },
+    "fieldRules": {
+      "water_temp_c": [
+        "espresso",
+        "v60",
+        "chemex",
+        "kalita",
+        "batch_filter",
+        "aeropress",
+        "french_press",
+        "siphon",
+        "fully_automatic"
+      ],
+      "water_temp_special": [
+        "cold_brew"
+      ],
+      "grinder": [
+        "espresso",
+        "moka_pot",
+        "v60",
+        "chemex",
+        "kalita",
+        "batch_filter",
+        "aeropress",
+        "french_press",
+        "cold_brew",
+        "cezve",
+        "siphon"
+      ],
+      "grind_setting": [
+        "espresso",
+        "moka_pot",
+        "v60",
+        "chemex",
+        "kalita",
+        "batch_filter",
+        "aeropress",
+        "french_press",
+        "cold_brew",
+        "cezve",
+        "siphon"
+      ]
+    },
+    "entryRanges": {
+      "grinders": {
+        "comandante_c40": {
+          "minimum": 0,
+          "maximum": 50,
+          "multipleOf": 1
+        },
+        "onezpresso_jx_pro": {
+          "minimum": 0,
+          "maximum": 200,
+          "multipleOf": 1
+        },
+        "onezpresso_k_ultra": {
+          "minimum": 0,
+          "maximum": 200,
+          "multipleOf": 1
+        },
+        "timemore_chestnut_c3": {
+          "minimum": 0,
+          "maximum": 36,
+          "multipleOf": 1
+        },
+        "kingrinder_k6": {
+          "minimum": 0,
+          "maximum": 240,
+          "multipleOf": 1
+        },
+        "hario_skerton_pro": {
+          "minimum": 0,
+          "maximum": 30,
+          "multipleOf": 1
+        },
+        "porlex_mini_ii": {
+          "minimum": 0,
+          "maximum": 20,
+          "multipleOf": 1
+        },
+        "baratza_encore": {
+          "minimum": 1,
+          "maximum": 40,
+          "multipleOf": 1
+        },
+        "baratza_encore_esp": {
+          "minimum": 1,
+          "maximum": 40,
+          "multipleOf": 1
+        },
+        "baratza_virtuoso_plus": {
+          "minimum": 1,
+          "maximum": 40,
+          "multipleOf": 1
+        },
+        "wilfa_uniform": {
+          "minimum": 0,
+          "maximum": 40,
+          "multipleOf": 1
+        },
+        "graef_cm_800": {
+          "minimum": 1,
+          "maximum": 40,
+          "multipleOf": 1
+        },
+        "sage_smart_grinder_pro": {
+          "minimum": 1,
+          "maximum": 60,
+          "multipleOf": 1
+        },
+        "sage_dose_control_pro": {
+          "minimum": 1,
+          "maximum": 60,
+          "multipleOf": 1
+        },
+        "niche_zero": {
+          "minimum": 0,
+          "maximum": 50,
+          "multipleOf": 0.5
+        },
+        "df64": {
+          "minimum": 0,
+          "maximum": 90,
+          "multipleOf": 1
+        }
+      }
     }
   }
 };
