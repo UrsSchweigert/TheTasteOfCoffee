@@ -1,0 +1,2972 @@
+{
+  "kind": "reference_recipes",
+  "version": 1,
+  "vocabulary_version": 3,
+  "note": "Published brew recipes reduced to numbers. Not ratings, not community data.",
+  "recipes": [
+    {
+      "id": "ref0001",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 110,
+        "water_g": 200,
+        "water_temp_c": 100,
+        "brew_time_s": 195,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0002",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 120,
+        "water_g": 200,
+        "water_temp_c": 90,
+        "brew_time_s": 150,
+        "grind_normalised": 8.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0003",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 130,
+        "water_g": 200,
+        "water_temp_c": 88,
+        "brew_time_s": 125,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0004",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 140,
+        "water_g": 190,
+        "water_temp_c": 92,
+        "brew_time_s": 85,
+        "grind_normalised": 3
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0005",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 140,
+        "water_g": 200,
+        "water_temp_c": 85,
+        "brew_time_s": 120,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0006",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 140,
+        "water_g": 200,
+        "water_temp_c": 100,
+        "brew_time_s": 140,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0007",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 150,
+        "water_g": 150,
+        "water_temp_c": 93,
+        "brew_time_s": 65,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0008",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 150,
+        "water_g": 200,
+        "water_temp_c": 90,
+        "brew_time_s": 105,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0009",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 150,
+        "water_g": 220,
+        "water_temp_c": 95,
+        "brew_time_s": 160,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0010",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 150,
+        "water_g": 225,
+        "water_temp_c": 93,
+        "brew_time_s": 185,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0011",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 150,
+        "water_g": 225,
+        "water_temp_c": 96,
+        "brew_time_s": 90,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0012",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 150,
+        "water_g": 230,
+        "water_temp_c": 95,
+        "brew_time_s": 115,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0013",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 160,
+        "water_g": 200,
+        "water_temp_c": 92,
+        "brew_time_s": 150,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0014",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 170,
+        "water_g": 200,
+        "water_temp_c": 85,
+        "brew_time_s": 112,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0015",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 170,
+        "water_g": 260,
+        "water_temp_c": 96,
+        "brew_time_s": 85,
+        "grind_normalised": 3
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0016",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 170,
+        "water_g": 270,
+        "water_temp_c": 80,
+        "brew_time_s": 120,
+        "grind_normalised": 8.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0017",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 175,
+        "water_g": 270,
+        "water_temp_c": 82,
+        "brew_time_s": 130,
+        "grind_normalised": 8.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0018",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 180,
+        "water_g": 78,
+        "water_temp_c": 90,
+        "brew_time_s": 50,
+        "grind_normalised": 3
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0019",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 180,
+        "water_g": 90,
+        "water_temp_c": 100,
+        "brew_time_s": 133,
+        "grind_normalised": 1.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0020",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 180,
+        "water_g": 156,
+        "water_temp_c": 85,
+        "brew_time_s": 110,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0021",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 180,
+        "water_g": 180,
+        "water_temp_c": 80,
+        "brew_time_s": 130,
+        "grind_normalised": 8.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0022",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 180,
+        "water_g": 185,
+        "water_temp_c": 85,
+        "brew_time_s": 130,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0023",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 180,
+        "water_g": 200,
+        "water_temp_c": 92,
+        "brew_time_s": 85,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0024",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 180,
+        "water_g": 235,
+        "water_temp_c": 93,
+        "brew_time_s": 140,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0025",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 180,
+        "water_g": 240,
+        "water_temp_c": 100,
+        "brew_time_s": 165,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0026",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 180,
+        "water_g": 250,
+        "water_temp_c": 85,
+        "brew_time_s": 90,
+        "grind_normalised": 8.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0027",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 180,
+        "water_g": 250,
+        "water_temp_c": 85,
+        "brew_time_s": 165,
+        "grind_normalised": 8.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0028",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 180,
+        "water_g": 260,
+        "water_temp_c": 85,
+        "brew_time_s": 105,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0029",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 180,
+        "water_g": 260,
+        "water_temp_c": 100,
+        "brew_time_s": 610,
+        "grind_normalised": 3
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0030",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 190,
+        "water_g": 215,
+        "water_temp_c": 92,
+        "brew_time_s": 210,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0031",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 200,
+        "water_g": 50,
+        "water_temp_c": 100,
+        "brew_time_s": 80,
+        "grind_normalised": 3
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0032",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 200,
+        "water_g": 200,
+        "water_temp_c": 100,
+        "brew_time_s": 90,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0033",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 200,
+        "water_g": 230,
+        "water_temp_c": 80,
+        "brew_time_s": 90,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0034",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 200,
+        "water_g": 230,
+        "water_temp_c": 81,
+        "brew_time_s": 105,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0035",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 200,
+        "water_g": 240,
+        "water_temp_c": 90,
+        "brew_time_s": 210,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0036",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 200,
+        "water_g": 270,
+        "water_temp_c": 82,
+        "brew_time_s": 165,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0037",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 220,
+        "water_g": 370,
+        "water_temp_c": 93,
+        "brew_time_s": 120,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0038",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 250,
+        "water_g": 400,
+        "water_temp_c": 95,
+        "brew_time_s": 215,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0039",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 250,
+        "water_g": 400,
+        "water_temp_c": 96,
+        "brew_time_s": 180,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0040",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 280,
+        "water_g": 420,
+        "water_temp_c": 87,
+        "brew_time_s": 160,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0041",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 300,
+        "water_g": 500,
+        "water_temp_c": 85,
+        "brew_time_s": 120,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0042",
+      "parameters": {
+        "method": "aeropress",
+        "dose_dg": 400,
+        "water_g": 600,
+        "water_temp_c": 95,
+        "brew_time_s": 165,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0043",
+      "parameters": {
+        "method": "cezve",
+        "dose_dg": 70,
+        "water_g": 65,
+        "brew_time_s": 280,
+        "grind_normalised": 1.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0044",
+      "parameters": {
+        "method": "cezve",
+        "dose_dg": 70,
+        "water_g": 70,
+        "brew_time_s": 195,
+        "grind_normalised": 1.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0045",
+      "parameters": {
+        "method": "cezve",
+        "dose_dg": 70,
+        "water_g": 80,
+        "brew_time_s": 185,
+        "grind_normalised": 1.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0046",
+      "parameters": {
+        "method": "cezve",
+        "dose_dg": 70,
+        "water_g": 120,
+        "brew_time_s": 240,
+        "grind_normalised": 1.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0047",
+      "parameters": {
+        "method": "cezve",
+        "dose_dg": 80,
+        "water_g": 80,
+        "brew_time_s": 215,
+        "grind_normalised": 1.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0048",
+      "parameters": {
+        "method": "cezve",
+        "dose_dg": 100,
+        "water_g": 100,
+        "brew_time_s": 220,
+        "grind_normalised": 1.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0049",
+      "parameters": {
+        "method": "cezve",
+        "dose_dg": 100,
+        "water_g": 100,
+        "brew_time_s": 330,
+        "grind_normalised": 1.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0050",
+      "parameters": {
+        "method": "cezve",
+        "dose_dg": 100,
+        "water_g": 120,
+        "brew_time_s": 310,
+        "grind_normalised": 1.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0051",
+      "parameters": {
+        "method": "cezve",
+        "dose_dg": 120,
+        "water_g": 150,
+        "brew_time_s": 190,
+        "grind_normalised": 1.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0052",
+      "parameters": {
+        "method": "cezve",
+        "dose_dg": 140,
+        "water_g": 160,
+        "brew_time_s": 245,
+        "grind_normalised": 1.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0053",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 150,
+        "water_g": 250,
+        "water_temp_c": 97,
+        "brew_time_s": 210,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0054",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 150,
+        "water_g": 250,
+        "water_temp_c": 100,
+        "brew_time_s": 180,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0055",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 180,
+        "water_g": 270,
+        "water_temp_c": 90,
+        "brew_time_s": 180,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0056",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 180,
+        "water_g": 280,
+        "water_temp_c": 96,
+        "brew_time_s": 150,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0057",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 200,
+        "water_g": 320,
+        "water_temp_c": 96,
+        "brew_time_s": 210,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0058",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 220,
+        "water_g": 350,
+        "water_temp_c": 97,
+        "brew_time_s": 210,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0059",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 250,
+        "water_g": 400,
+        "water_temp_c": 96,
+        "brew_time_s": 210,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0060",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 260,
+        "water_g": 400,
+        "water_temp_c": 96,
+        "brew_time_s": 180,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0061",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 280,
+        "water_g": 475,
+        "water_temp_c": 90,
+        "brew_time_s": 210,
+        "grind_normalised": 8.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0062",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 300,
+        "water_g": 500,
+        "water_temp_c": 96,
+        "brew_time_s": 240,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0063",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 300,
+        "water_g": 500,
+        "water_temp_c": 100,
+        "brew_time_s": 250,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0064",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 300,
+        "water_g": 510,
+        "water_temp_c": 97,
+        "brew_time_s": 255,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0065",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 320,
+        "water_g": 512,
+        "water_temp_c": 95,
+        "brew_time_s": 300,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0066",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 360,
+        "water_g": 600,
+        "water_temp_c": 97,
+        "brew_time_s": 300,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0067",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 400,
+        "water_g": 640,
+        "water_temp_c": 100,
+        "brew_time_s": 270,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0068",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 400,
+        "water_g": 650,
+        "water_temp_c": 97,
+        "brew_time_s": 270,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0069",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 420,
+        "water_g": 640,
+        "water_temp_c": 90,
+        "brew_time_s": 240,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0070",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 420,
+        "water_g": 700,
+        "water_temp_c": 96,
+        "brew_time_s": 253,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0071",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 450,
+        "water_g": 700,
+        "water_temp_c": 96,
+        "brew_time_s": 270,
+        "grind_normalised": 8.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0072",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 450,
+        "water_g": 750,
+        "water_temp_c": 93,
+        "brew_time_s": 270,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0073",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 450,
+        "water_g": 750,
+        "water_temp_c": 93,
+        "brew_time_s": 300,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0074",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 480,
+        "water_g": 780,
+        "water_temp_c": 96,
+        "brew_time_s": 300,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0075",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 480,
+        "water_g": 800,
+        "water_temp_c": 97,
+        "brew_time_s": 360,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0076",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 500,
+        "water_g": 800,
+        "water_temp_c": 96,
+        "brew_time_s": 330,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0077",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 500,
+        "water_g": 800,
+        "water_temp_c": 96,
+        "brew_time_s": 330,
+        "grind_normalised": 8.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0078",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 500,
+        "water_g": 850,
+        "water_temp_c": 96,
+        "brew_time_s": 330,
+        "grind_normalised": 8.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0079",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 530,
+        "water_g": 800,
+        "water_temp_c": 96,
+        "brew_time_s": 330,
+        "grind_normalised": 9.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0080",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 550,
+        "water_g": 900,
+        "water_temp_c": 100,
+        "brew_time_s": 330,
+        "grind_normalised": 8.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0081",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 560,
+        "water_g": 840,
+        "water_temp_c": 90,
+        "brew_time_s": 300,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0082",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 620,
+        "water_g": 1000,
+        "water_temp_c": 96,
+        "brew_time_s": 390,
+        "grind_normalised": 8.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0083",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 650,
+        "water_g": 875,
+        "water_temp_c": 98,
+        "brew_time_s": 270,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0084",
+      "parameters": {
+        "method": "chemex",
+        "dose_dg": 650,
+        "water_g": 1050,
+        "water_temp_c": 96,
+        "brew_time_s": 390,
+        "grind_normalised": 8.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0085",
+      "parameters": {
+        "method": "cold_brew",
+        "dose_dg": 500,
+        "water_g": 625,
+        "brew_time_s": 39600,
+        "grind_normalised": 7,
+        "water_temp_special": "cold"
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0086",
+      "parameters": {
+        "method": "cold_brew",
+        "dose_dg": 600,
+        "water_g": 500,
+        "brew_time_s": 14400,
+        "grind_normalised": 5.5,
+        "water_temp_special": "cold"
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0087",
+      "parameters": {
+        "method": "cold_brew",
+        "dose_dg": 700,
+        "water_g": 700,
+        "brew_time_s": 43200,
+        "grind_normalised": 8.5,
+        "water_temp_special": "cold"
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0088",
+      "parameters": {
+        "method": "french_press",
+        "dose_dg": 140,
+        "water_g": 250,
+        "water_temp_c": 88,
+        "brew_time_s": 220,
+        "grind_normalised": 8.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0089",
+      "parameters": {
+        "method": "french_press",
+        "dose_dg": 150,
+        "water_g": 250,
+        "water_temp_c": 96,
+        "brew_time_s": 260,
+        "grind_normalised": 8.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0090",
+      "parameters": {
+        "method": "french_press",
+        "dose_dg": 150,
+        "water_g": 250,
+        "water_temp_c": 100,
+        "brew_time_s": 645,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0091",
+      "parameters": {
+        "method": "french_press",
+        "dose_dg": 150,
+        "water_g": 270,
+        "water_temp_c": 95,
+        "brew_time_s": 310,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0092",
+      "parameters": {
+        "method": "french_press",
+        "dose_dg": 180,
+        "water_g": 300,
+        "water_temp_c": 93,
+        "brew_time_s": 610,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0093",
+      "parameters": {
+        "method": "french_press",
+        "dose_dg": 180,
+        "water_g": 300,
+        "water_temp_c": 96,
+        "brew_time_s": 270,
+        "grind_normalised": 8.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0094",
+      "parameters": {
+        "method": "french_press",
+        "dose_dg": 180,
+        "water_g": 300,
+        "water_temp_c": 96,
+        "brew_time_s": 550,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0095",
+      "parameters": {
+        "method": "french_press",
+        "dose_dg": 200,
+        "water_g": 300,
+        "water_temp_c": 96,
+        "brew_time_s": 620,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0096",
+      "parameters": {
+        "method": "french_press",
+        "dose_dg": 280,
+        "water_g": 450,
+        "water_temp_c": 96,
+        "brew_time_s": 260,
+        "grind_normalised": 8.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0097",
+      "parameters": {
+        "method": "french_press",
+        "dose_dg": 280,
+        "water_g": 500,
+        "water_temp_c": 90,
+        "brew_time_s": 230,
+        "grind_normalised": 9.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0098",
+      "parameters": {
+        "method": "french_press",
+        "dose_dg": 280,
+        "water_g": 500,
+        "water_temp_c": 93,
+        "brew_time_s": 375,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0099",
+      "parameters": {
+        "method": "french_press",
+        "dose_dg": 300,
+        "water_g": 350,
+        "water_temp_c": 98,
+        "brew_time_s": 270,
+        "grind_normalised": 8.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0100",
+      "parameters": {
+        "method": "french_press",
+        "dose_dg": 300,
+        "water_g": 500,
+        "water_temp_c": 96,
+        "brew_time_s": 305,
+        "grind_normalised": 8.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0101",
+      "parameters": {
+        "method": "french_press",
+        "dose_dg": 300,
+        "water_g": 500,
+        "water_temp_c": 100,
+        "brew_time_s": 630,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0102",
+      "parameters": {
+        "method": "french_press",
+        "dose_dg": 300,
+        "water_g": 540,
+        "water_temp_c": 95,
+        "brew_time_s": 310,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0103",
+      "parameters": {
+        "method": "french_press",
+        "dose_dg": 350,
+        "water_g": 500,
+        "water_temp_c": 100,
+        "brew_time_s": 310,
+        "grind_normalised": 8.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0104",
+      "parameters": {
+        "method": "french_press",
+        "dose_dg": 500,
+        "water_g": 900,
+        "water_temp_c": 88,
+        "brew_time_s": 250,
+        "grind_normalised": 8.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0105",
+      "parameters": {
+        "method": "french_press",
+        "dose_dg": 560,
+        "water_g": 900,
+        "water_temp_c": 93,
+        "brew_time_s": 615,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0106",
+      "parameters": {
+        "method": "french_press",
+        "dose_dg": 560,
+        "water_g": 900,
+        "water_temp_c": 96,
+        "brew_time_s": 315,
+        "grind_normalised": 8.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0107",
+      "parameters": {
+        "method": "french_press",
+        "dose_dg": 560,
+        "water_g": 900,
+        "water_temp_c": 100,
+        "brew_time_s": 395,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0108",
+      "parameters": {
+        "method": "french_press",
+        "dose_dg": 560,
+        "water_g": 900,
+        "water_temp_c": 100,
+        "brew_time_s": 755,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0109",
+      "parameters": {
+        "method": "french_press",
+        "dose_dg": 650,
+        "water_g": 1000,
+        "water_temp_c": 96,
+        "brew_time_s": 735,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0110",
+      "parameters": {
+        "method": "french_press",
+        "dose_dg": 900,
+        "water_g": 1400,
+        "water_temp_c": 96,
+        "brew_time_s": 305,
+        "grind_normalised": 8.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0111",
+      "parameters": {
+        "method": "kalita",
+        "dose_dg": 120,
+        "water_g": 180,
+        "water_temp_c": 88,
+        "brew_time_s": 150,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0112",
+      "parameters": {
+        "method": "kalita",
+        "dose_dg": 120,
+        "water_g": 180,
+        "water_temp_c": 90,
+        "brew_time_s": 150,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0113",
+      "parameters": {
+        "method": "kalita",
+        "dose_dg": 120,
+        "water_g": 200,
+        "water_temp_c": 93,
+        "brew_time_s": 150,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0114",
+      "parameters": {
+        "method": "kalita",
+        "dose_dg": 120,
+        "water_g": 200,
+        "water_temp_c": 93,
+        "brew_time_s": 165,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0115",
+      "parameters": {
+        "method": "kalita",
+        "dose_dg": 120,
+        "water_g": 200,
+        "water_temp_c": 93,
+        "brew_time_s": 180,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0116",
+      "parameters": {
+        "method": "kalita",
+        "dose_dg": 120,
+        "water_g": 200,
+        "water_temp_c": 96,
+        "brew_time_s": 165,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0117",
+      "parameters": {
+        "method": "kalita",
+        "dose_dg": 130,
+        "water_g": 200,
+        "water_temp_c": 88,
+        "brew_time_s": 165,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0118",
+      "parameters": {
+        "method": "kalita",
+        "dose_dg": 130,
+        "water_g": 210,
+        "water_temp_c": 95,
+        "brew_time_s": 180,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0119",
+      "parameters": {
+        "method": "kalita",
+        "dose_dg": 140,
+        "water_g": 180,
+        "water_temp_c": 85,
+        "brew_time_s": 210,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0120",
+      "parameters": {
+        "method": "kalita",
+        "dose_dg": 150,
+        "water_g": 200,
+        "water_temp_c": 94,
+        "brew_time_s": 180,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0121",
+      "parameters": {
+        "method": "kalita",
+        "dose_dg": 150,
+        "water_g": 250,
+        "water_temp_c": 91,
+        "brew_time_s": 165,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0122",
+      "parameters": {
+        "method": "kalita",
+        "dose_dg": 150,
+        "water_g": 250,
+        "water_temp_c": 100,
+        "brew_time_s": 180,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0123",
+      "parameters": {
+        "method": "kalita",
+        "dose_dg": 160,
+        "water_g": 260,
+        "water_temp_c": 94,
+        "brew_time_s": 180,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0124",
+      "parameters": {
+        "method": "kalita",
+        "dose_dg": 180,
+        "water_g": 270,
+        "water_temp_c": 93,
+        "brew_time_s": 150,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0125",
+      "parameters": {
+        "method": "kalita",
+        "dose_dg": 180,
+        "water_g": 300,
+        "water_temp_c": 93,
+        "brew_time_s": 180,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0126",
+      "parameters": {
+        "method": "kalita",
+        "dose_dg": 180,
+        "water_g": 300,
+        "water_temp_c": 94,
+        "brew_time_s": 220,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0127",
+      "parameters": {
+        "method": "kalita",
+        "dose_dg": 200,
+        "water_g": 320,
+        "water_temp_c": 93,
+        "brew_time_s": 195,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0128",
+      "parameters": {
+        "method": "kalita",
+        "dose_dg": 200,
+        "water_g": 320,
+        "water_temp_c": 95,
+        "brew_time_s": 210,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0129",
+      "parameters": {
+        "method": "kalita",
+        "dose_dg": 200,
+        "water_g": 340,
+        "water_temp_c": 88,
+        "brew_time_s": 180,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0130",
+      "parameters": {
+        "method": "kalita",
+        "dose_dg": 210,
+        "water_g": 340,
+        "water_temp_c": 93,
+        "brew_time_s": 180,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0131",
+      "parameters": {
+        "method": "kalita",
+        "dose_dg": 220,
+        "water_g": 350,
+        "water_temp_c": 94,
+        "brew_time_s": 180,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0132",
+      "parameters": {
+        "method": "kalita",
+        "dose_dg": 220,
+        "water_g": 350,
+        "water_temp_c": 96,
+        "brew_time_s": 210,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0133",
+      "parameters": {
+        "method": "kalita",
+        "dose_dg": 220,
+        "water_g": 360,
+        "water_temp_c": 93,
+        "brew_time_s": 210,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0134",
+      "parameters": {
+        "method": "kalita",
+        "dose_dg": 240,
+        "water_g": 360,
+        "water_temp_c": 88,
+        "brew_time_s": 210,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0135",
+      "parameters": {
+        "method": "kalita",
+        "dose_dg": 240,
+        "water_g": 400,
+        "water_temp_c": 94,
+        "brew_time_s": 240,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0136",
+      "parameters": {
+        "method": "kalita",
+        "dose_dg": 240,
+        "water_g": 400,
+        "water_temp_c": 96,
+        "brew_time_s": 210,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0137",
+      "parameters": {
+        "method": "kalita",
+        "dose_dg": 250,
+        "water_g": 390,
+        "water_temp_c": 95,
+        "brew_time_s": 210,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0138",
+      "parameters": {
+        "method": "kalita",
+        "dose_dg": 250,
+        "water_g": 400,
+        "water_temp_c": 93,
+        "brew_time_s": 195,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0139",
+      "parameters": {
+        "method": "kalita",
+        "dose_dg": 250,
+        "water_g": 400,
+        "water_temp_c": 94,
+        "brew_time_s": 210,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0140",
+      "parameters": {
+        "method": "kalita",
+        "dose_dg": 250,
+        "water_g": 400,
+        "water_temp_c": 96,
+        "brew_time_s": 210,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0141",
+      "parameters": {
+        "method": "moka_pot",
+        "dose_dg": 150,
+        "water_g": 120,
+        "grind_normalised": 3
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0142",
+      "parameters": {
+        "method": "moka_pot",
+        "dose_dg": 150,
+        "water_g": 150,
+        "grind_normalised": 3
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0143",
+      "parameters": {
+        "method": "moka_pot",
+        "dose_dg": 150,
+        "water_g": 200,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0144",
+      "parameters": {
+        "method": "moka_pot",
+        "dose_dg": 170,
+        "water_g": 270,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0145",
+      "parameters": {
+        "method": "moka_pot",
+        "dose_dg": 180,
+        "water_g": 140,
+        "grind_normalised": 3
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0146",
+      "parameters": {
+        "method": "moka_pot",
+        "dose_dg": 180,
+        "water_g": 200,
+        "grind_normalised": 3
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0147",
+      "parameters": {
+        "method": "moka_pot",
+        "dose_dg": 180,
+        "water_g": 270,
+        "grind_normalised": 3
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0148",
+      "parameters": {
+        "method": "moka_pot",
+        "dose_dg": 200,
+        "water_g": 200,
+        "grind_normalised": 3
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0149",
+      "parameters": {
+        "method": "siphon",
+        "dose_dg": 150,
+        "water_g": 230,
+        "water_temp_c": 96,
+        "brew_time_s": 115,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0150",
+      "parameters": {
+        "method": "siphon",
+        "dose_dg": 200,
+        "water_g": 300,
+        "water_temp_c": 90,
+        "brew_time_s": 150,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0151",
+      "parameters": {
+        "method": "siphon",
+        "dose_dg": 200,
+        "water_g": 300,
+        "water_temp_c": 96,
+        "brew_time_s": 210,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0152",
+      "parameters": {
+        "method": "siphon",
+        "dose_dg": 220,
+        "water_g": 300,
+        "water_temp_c": 90,
+        "brew_time_s": 135,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0153",
+      "parameters": {
+        "method": "siphon",
+        "dose_dg": 235,
+        "water_g": 400,
+        "water_temp_c": 94,
+        "brew_time_s": 180,
+        "grind_normalised": 1.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0154",
+      "parameters": {
+        "method": "siphon",
+        "dose_dg": 240,
+        "water_g": 300,
+        "water_temp_c": 90,
+        "brew_time_s": 190,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0155",
+      "parameters": {
+        "method": "siphon",
+        "dose_dg": 250,
+        "water_g": 375,
+        "water_temp_c": 99,
+        "brew_time_s": 193,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0156",
+      "parameters": {
+        "method": "siphon",
+        "dose_dg": 280,
+        "water_g": 450,
+        "water_temp_c": 96,
+        "brew_time_s": 479,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0157",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 120,
+        "water_g": 180,
+        "water_temp_c": 88,
+        "brew_time_s": 150,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0158",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 120,
+        "water_g": 200,
+        "water_temp_c": 91,
+        "brew_time_s": 130,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0159",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 120,
+        "water_g": 200,
+        "water_temp_c": 95,
+        "brew_time_s": 150,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0160",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 120,
+        "water_g": 200,
+        "water_temp_c": 96,
+        "brew_time_s": 135,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0161",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 120,
+        "water_g": 200,
+        "water_temp_c": 97,
+        "brew_time_s": 140,
+        "grind_normalised": 3
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0162",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 130,
+        "water_g": 150,
+        "water_temp_c": 100,
+        "brew_time_s": 75,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0163",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 130,
+        "water_g": 200,
+        "water_temp_c": 91,
+        "brew_time_s": 130,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0164",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 130,
+        "water_g": 200,
+        "water_temp_c": 93,
+        "brew_time_s": 140,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0165",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 130,
+        "water_g": 208,
+        "water_temp_c": 92,
+        "brew_time_s": 130,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0166",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 140,
+        "water_g": 200,
+        "water_temp_c": 95,
+        "brew_time_s": 120,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0167",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 140,
+        "water_g": 210,
+        "water_temp_c": 92,
+        "brew_time_s": 170,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0168",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 140,
+        "water_g": 235,
+        "water_temp_c": 90,
+        "brew_time_s": 120,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0169",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 150,
+        "water_g": 165,
+        "water_temp_c": 85,
+        "brew_time_s": 120,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0170",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 150,
+        "water_g": 225,
+        "water_temp_c": 90,
+        "brew_time_s": 105,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0171",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 150,
+        "water_g": 225,
+        "water_temp_c": 92,
+        "brew_time_s": 150,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0172",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 150,
+        "water_g": 225,
+        "water_temp_c": 93,
+        "brew_time_s": 150,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0173",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 150,
+        "water_g": 225,
+        "water_temp_c": 93,
+        "brew_time_s": 180,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0174",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 150,
+        "water_g": 240,
+        "water_temp_c": 88,
+        "brew_time_s": 150,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0175",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 150,
+        "water_g": 240,
+        "water_temp_c": 92,
+        "brew_time_s": 120,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0176",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 150,
+        "water_g": 240,
+        "water_temp_c": 92,
+        "brew_time_s": 150,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0177",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 150,
+        "water_g": 250,
+        "water_temp_c": 93,
+        "brew_time_s": 180,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0178",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 150,
+        "water_g": 250,
+        "water_temp_c": 96,
+        "brew_time_s": 165,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0179",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 150,
+        "water_g": 250,
+        "water_temp_c": 98,
+        "brew_time_s": 150,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0180",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 150,
+        "water_g": 250,
+        "water_temp_c": 100,
+        "brew_time_s": 150,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0181",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 150,
+        "water_g": 250,
+        "water_temp_c": 100,
+        "brew_time_s": 180,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0182",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 150,
+        "water_g": 250,
+        "water_temp_c": 100,
+        "brew_time_s": 210,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0183",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 150,
+        "water_g": 250,
+        "water_temp_c": 100,
+        "brew_time_s": 240,
+        "grind_normalised": 3
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0184",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 160,
+        "water_g": 225,
+        "water_temp_c": 94,
+        "brew_time_s": 145,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0185",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 160,
+        "water_g": 230,
+        "water_temp_c": 87,
+        "brew_time_s": 145,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0186",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 160,
+        "water_g": 230,
+        "water_temp_c": 92,
+        "brew_time_s": 150,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0187",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 160,
+        "water_g": 230,
+        "water_temp_c": 93,
+        "brew_time_s": 130,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0188",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 160,
+        "water_g": 240,
+        "water_temp_c": 90,
+        "brew_time_s": 125,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0189",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 160,
+        "water_g": 240,
+        "water_temp_c": 90,
+        "brew_time_s": 150,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0190",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 160,
+        "water_g": 240,
+        "water_temp_c": 91,
+        "brew_time_s": 153,
+        "grind_normalised": 8.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0191",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 160,
+        "water_g": 240,
+        "water_temp_c": 91,
+        "brew_time_s": 175,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0192",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 160,
+        "water_g": 250,
+        "water_temp_c": 96,
+        "brew_time_s": 195,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0193",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 160,
+        "water_g": 270,
+        "water_temp_c": 93,
+        "brew_time_s": 210,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0194",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 180,
+        "water_g": 225,
+        "water_temp_c": 94,
+        "brew_time_s": 205,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0195",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 180,
+        "water_g": 270,
+        "water_temp_c": 93,
+        "brew_time_s": 180,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0196",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 180,
+        "water_g": 280,
+        "water_temp_c": 91,
+        "brew_time_s": 150,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0197",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 180,
+        "water_g": 290,
+        "water_temp_c": 85,
+        "brew_time_s": 150,
+        "grind_normalised": 8.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0198",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 180,
+        "water_g": 300,
+        "water_temp_c": 95,
+        "brew_time_s": 210,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0199",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 180,
+        "water_g": 306,
+        "water_temp_c": 100,
+        "brew_time_s": 230,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0200",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 200,
+        "water_g": 300,
+        "water_temp_c": 88,
+        "brew_time_s": 300,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0201",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 200,
+        "water_g": 300,
+        "water_temp_c": 90,
+        "brew_time_s": 150,
+        "grind_normalised": 3
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0202",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 200,
+        "water_g": 300,
+        "water_temp_c": 92,
+        "brew_time_s": 210,
+        "grind_normalised": 8.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0203",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 200,
+        "water_g": 300,
+        "water_temp_c": 93,
+        "brew_time_s": 150,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0204",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 200,
+        "water_g": 300,
+        "water_temp_c": 93,
+        "brew_time_s": 195,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0205",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 200,
+        "water_g": 300,
+        "water_temp_c": 93,
+        "brew_time_s": 210,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0206",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 200,
+        "water_g": 300,
+        "water_temp_c": 93,
+        "brew_time_s": 210,
+        "grind_normalised": 8.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0207",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 200,
+        "water_g": 300,
+        "water_temp_c": 96,
+        "brew_time_s": 210,
+        "grind_normalised": 9.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0208",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 200,
+        "water_g": 320,
+        "water_temp_c": 96,
+        "brew_time_s": 180,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0209",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 200,
+        "water_g": 340,
+        "water_temp_c": 96,
+        "brew_time_s": 210,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0210",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 200,
+        "water_g": 340,
+        "water_temp_c": 99,
+        "brew_time_s": 180,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0211",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 210,
+        "water_g": 350,
+        "water_temp_c": 96,
+        "brew_time_s": 180,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0212",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 210,
+        "water_g": 360,
+        "water_temp_c": 96,
+        "brew_time_s": 180,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0213",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 220,
+        "water_g": 360,
+        "water_temp_c": 95,
+        "brew_time_s": 180,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0214",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 220,
+        "water_g": 374,
+        "water_temp_c": 100,
+        "brew_time_s": 270,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0215",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 250,
+        "water_g": 300,
+        "water_temp_c": 92,
+        "brew_time_s": 180,
+        "grind_normalised": 8.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0216",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 260,
+        "water_g": 390,
+        "water_temp_c": 96,
+        "brew_time_s": 210,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0217",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 260,
+        "water_g": 415,
+        "water_temp_c": 95,
+        "brew_time_s": 210,
+        "grind_normalised": 4.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0218",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 280,
+        "water_g": 420,
+        "water_temp_c": 88,
+        "brew_time_s": 210,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0219",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 300,
+        "water_g": 450,
+        "water_temp_c": 93,
+        "brew_time_s": 210,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0220",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 300,
+        "water_g": 450,
+        "water_temp_c": 95,
+        "brew_time_s": 210,
+        "grind_normalised": 8.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0221",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 300,
+        "water_g": 500,
+        "water_temp_c": 93,
+        "brew_time_s": 210,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0222",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 300,
+        "water_g": 500,
+        "water_temp_c": 95,
+        "brew_time_s": 240,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0223",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 300,
+        "water_g": 500,
+        "water_temp_c": 96,
+        "brew_time_s": 270,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0224",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 300,
+        "water_g": 500,
+        "water_temp_c": 100,
+        "brew_time_s": 240,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0225",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 300,
+        "water_g": 500,
+        "water_temp_c": 100,
+        "brew_time_s": 240,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0226",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 400,
+        "water_g": 600,
+        "water_temp_c": 92,
+        "brew_time_s": 270,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0227",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 400,
+        "water_g": 640,
+        "water_temp_c": 96,
+        "brew_time_s": 300,
+        "grind_normalised": 5.5
+      },
+      "inferred": []
+    },
+    {
+      "id": "ref0228",
+      "parameters": {
+        "method": "v60",
+        "dose_dg": 500,
+        "water_g": 800,
+        "water_temp_c": 96,
+        "brew_time_s": 270,
+        "grind_normalised": 7
+      },
+      "inferred": []
+    }
+  ],
+  "typical_ranges": {
+    "aeropress": {
+      "recipes": 42,
+      "dose_g": {
+        "p10": 14,
+        "median": 18,
+        "p90": 24.7
+      },
+      "water_g": {
+        "p10": 158.4,
+        "median": 225,
+        "p90": 397
+      },
+      "ratio_water_per_dose": {
+        "p10": 10,
+        "median": 13.889,
+        "p90": 16
+      },
+      "water_temp_c": {
+        "p10": 82,
+        "median": 92,
+        "p90": 100
+      },
+      "brew_time_s": {
+        "p10": 85,
+        "median": 127.5,
+        "p90": 194
+      },
+      "grind_normalised": {
+        "p10": 3,
+        "median": 5,
+        "p90": 8.5
+      }
+    },
+    "cezve": {
+      "recipes": 10,
+      "dose_g": {
+        "p10": 7,
+        "median": 9,
+        "p90": 12.2
+      },
+      "water_g": {
+        "p10": 69.5,
+        "median": 100,
+        "p90": 151
+      },
+      "ratio_water_per_dose": {
+        "p10": 9.929,
+        "median": 10.714,
+        "p90": 12.964
+      },
+      "water_temp_c": null,
+      "brew_time_s": {
+        "p10": 189.5,
+        "median": 230,
+        "p90": 312
+      },
+      "grind_normalised": {
+        "p10": 1.5,
+        "median": 1.5,
+        "p90": 1.5
+      }
+    },
+    "chemex": {
+      "recipes": 32,
+      "dose_g": {
+        "p10": 18.2,
+        "median": 41,
+        "p90": 55.9
+      },
+      "water_g": {
+        "p10": 284,
+        "median": 645,
+        "p90": 872.5
+      },
+      "ratio_water_per_dose": {
+        "p10": 15.109,
+        "median": 16.141,
+        "p90": 16.667
+      },
+      "water_temp_c": {
+        "p10": 90.3,
+        "median": 96,
+        "p90": 99.8
+      },
+      "brew_time_s": {
+        "p10": 183,
+        "median": 270,
+        "p90": 330
+      },
+      "grind_normalised": {
+        "p10": 5.5,
+        "median": 7,
+        "p90": 8.5
+      }
+    },
+    "french_press": {
+      "recipes": 23,
+      "dose_g": {
+        "p10": 15,
+        "median": 30,
+        "p90": 56
+      },
+      "water_g": {
+        "p10": 254,
+        "median": 500,
+        "p90": 900
+      },
+      "ratio_water_per_dose": {
+        "p10": 15.077,
+        "median": 16.667,
+        "p90": 17.971
+      },
+      "water_temp_c": {
+        "p10": 90.6,
+        "median": 96,
+        "p90": 100
+      },
+      "brew_time_s": {
+        "p10": 252,
+        "median": 310,
+        "p90": 642
+      },
+      "grind_normalised": {
+        "p10": 5.5,
+        "median": 7,
+        "p90": 8.5
+      }
+    },
+    "kalita": {
+      "recipes": 30,
+      "dose_g": {
+        "p10": 12,
+        "median": 18,
+        "p90": 25
+      },
+      "water_g": {
+        "p10": 198,
+        "median": 300,
+        "p90": 400
+      },
+      "ratio_water_per_dose": {
+        "p10": 15,
+        "median": 16.077,
+        "p90": 16.667
+      },
+      "water_temp_c": {
+        "p10": 88,
+        "median": 93,
+        "p90": 96
+      },
+      "brew_time_s": {
+        "p10": 150,
+        "median": 180,
+        "p90": 210
+      },
+      "grind_normalised": {
+        "p10": 4.5,
+        "median": 5.5,
+        "p90": 7
+      }
+    },
+    "moka_pot": {
+      "recipes": 8,
+      "dose_g": {
+        "p10": 15,
+        "median": 17.5,
+        "p90": 18.6
+      },
+      "water_g": {
+        "p10": 134,
+        "median": 200,
+        "p90": 270
+      },
+      "ratio_water_per_dose": {
+        "p10": 7.933,
+        "median": 10.556,
+        "p90": 15.265
+      },
+      "water_temp_c": null,
+      "brew_time_s": null,
+      "grind_normalised": {
+        "p10": 3,
+        "median": 3,
+        "p90": 4.8
+      }
+    },
+    "siphon": {
+      "recipes": 8,
+      "dose_g": {
+        "p10": 18.5,
+        "median": 22.75,
+        "p90": 25.9
+      },
+      "water_g": {
+        "p10": 279,
+        "median": 300,
+        "p90": 415
+      },
+      "ratio_water_per_dose": {
+        "p10": 13.295,
+        "median": 15,
+        "p90": 16.356
+      },
+      "water_temp_c": {
+        "p10": 90,
+        "median": 95,
+        "p90": 96.9
+      },
+      "brew_time_s": {
+        "p10": 129,
+        "median": 185,
+        "p90": 290.7
+      },
+      "grind_normalised": {
+        "p10": 3.6,
+        "median": 5.5,
+        "p90": 7
+      }
+    },
+    "v60": {
+      "recipes": 72,
+      "dose_g": {
+        "p10": 13,
+        "median": 16,
+        "p90": 30
+      },
+      "water_g": {
+        "p10": 200,
+        "median": 250,
+        "p90": 495
+      },
+      "ratio_water_per_dose": {
+        "p10": 14.375,
+        "median": 15.59,
+        "p90": 16.667
+      },
+      "water_temp_c": {
+        "p10": 90,
+        "median": 93,
+        "p90": 100
+      },
+      "brew_time_s": {
+        "p10": 130,
+        "median": 180,
+        "p90": 240
+      },
+      "grind_normalised": {
+        "p10": 4.5,
+        "median": 5.5,
+        "p90": 7
+      }
+    }
+  }
+}

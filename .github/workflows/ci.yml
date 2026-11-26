@@ -156,6 +156,9 @@ jobs:
       # The companion page in site/ stays static and true to the decisions (M2-T38).
       - name: Companion page tests
         run: node --test scripts/site.test.mjs
+      # The reference recipe set stays numbers and vocabulary ids only (M2-T46).
+      - name: Reference recipe tests
+        run: node --test scripts/reference-recipes.test.mjs
       # The coffee look (M2-T41): the colour check, and the contrast of the colour sets.
       - name: iOS colour check tests
         run: node --test scripts/ios-colours.test.mjs
