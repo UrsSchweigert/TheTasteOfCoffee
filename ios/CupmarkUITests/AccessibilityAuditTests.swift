@@ -225,7 +225,8 @@ final class AccessibilityAuditTests: XCTestCase {
                             "element=\(element?.elementType.rawValue ?? 0)",
                             "id=\(element?.identifier ?? "-")",
                             "label=\(element?.label ?? "-")",
-                            "frame=\(element?.frame ?? .zero)"
+                            "frame=\(element?.frame ?? .zero)",
+                            "issue=\(String(describing: issue))"
                         )
                     }
                     return ignored
@@ -259,7 +260,10 @@ final class AccessibilityAuditTests: XCTestCase {
         case .contrast:
             // A disabled control is dimmed on purpose (Save before every score is set, Reset
             // with no time to reset). WCAG 1.4.3 exempts inactive user interface components.
+            // The audit often reports the text inside a disabled button, and that text is
+            // enabled on its own: look at the button around it.
             return !element.isEnabled
+                || isInside(element, anyOf: app.buttons.matching(NSPredicate(format: "isEnabled == false")))
         case .hitRegion:
             // UIKit draws the segments of a segmented control and the buttons of a stepper at
             // its own fixed height; the app does not size them. Only these system controls.

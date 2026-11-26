@@ -126,7 +126,8 @@ struct OnboardingScreen: View {
             .accessibilityIdentifier("onboarding-skip")
         }
         .padding()
-        .background(.bar)
+        // A solid colour: the contrast audit measures against what shows through a material.
+        .background(Color(.systemBackground))
     }
 
     private func title(for page: OnboardingPage) -> LocalizedStringKey {
