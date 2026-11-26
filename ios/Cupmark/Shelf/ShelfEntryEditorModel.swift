@@ -25,6 +25,12 @@ final class ShelfEntryEditorModel {
     enum Mode: Equatable, Sendable {
         /// A new entry for a catalogue bean the API returned.
         case add(API.Bean)
+        /// A new entry for a bean in the local store, by its local id: a bean described offline
+        /// (M2-T25).
+        case addStored(UUID)
+        /// A new entry for a barcode the lookup could not answer (M2-T25): the pending bean
+        /// (`AccountStore.pendingBean(barcode:)`) is saved with the entry, in one save.
+        case addScanned(CanonicalBarcode)
         /// The stored entry with this local id.
         case edit(UUID)
     }
@@ -88,6 +94,17 @@ final class ShelfEntryEditorModel {
                 brand: apiBean.openFoodFacts?.brand,
                 attributes: apiBean.attributeRows
             )
+        case .addScanned(let barcode):
+            draft = ShelfEntryDraft.new(today: now(), calendar: calendar)
+            bean = ShelfBeanSummary(try? store.bean(barcode: barcode.digits))
+        case .addStored(let beanID):
+            draft = ShelfEntryDraft.new(today: now(), calendar: calendar)
+            if let stored = try? store.bean(localID: beanID) {
+                bean = ShelfBeanSummary(stored)
+            } else {
+                bean = ShelfBeanSummary(nil)
+                failure = .notFound
+            }
         case .edit(let localID):
             let entry = try? store.shelfEntry(localID: localID)
             if let entry, entry.syncState != .pendingDelete {
@@ -108,10 +125,10 @@ final class ShelfEntryEditorModel {
     }
 
     var isAdding: Bool {
-        if case .add = mode {
-            return true
+        switch mode {
+        case .add, .addStored, .addScanned: return true
+        case .edit: return false
         }
-        return false
     }
 
     /// Why the bean change and the removal are disabled, nil when they are not.
@@ -216,6 +233,14 @@ final class ShelfEntryEditorModel {
             switch mode {
             case .add(let apiBean):
                 localID = try add(apiBean)
+            case .addScanned(let barcode):
+                localID = try add(try store.pendingBean(barcode: barcode))
+            case .addStored(let beanID):
+                guard let stored = try store.bean(localID: beanID) else {
+                    failure = .notFound
+                    return nil
+                }
+                localID = try add(stored)
             case .edit(let entryID):
                 guard let saved = try update(entryID) else {
                     return nil
@@ -283,10 +308,14 @@ final class ShelfEntryEditorModel {
     }
 
     private func add(_ apiBean: API.Bean) throws -> UUID {
+        try add(try store.catalogueBean(apiBean))
+    }
+
+    /// A new entry for `bean`, a bean of the store, saved with its queued create.
+    private func add(_ bean: StoredBean) throws -> UUID {
         guard let purchaseDate = draft.purchaseDate else {
             throw LocalStoreError.invalidDate
         }
-        let bean = try store.catalogueBean(apiBean)
         let entry = StoredShelfEntry(purchaseDate: purchaseDate)
         draft.apply(to: entry)
         try addEntry(store, entry, bean)

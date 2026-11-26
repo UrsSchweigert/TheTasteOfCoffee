@@ -49,6 +49,18 @@ struct ShelfEntryEditorScreen: View {
                         }
                     }
                     .accessibilityIdentifier("shelf-entry-brew")
+                    // The brews of this bag, to rate one later (M2-T20).
+                    NavigationLink {
+                        BrewListScreen(store: model.store, shelfEntry: route.shelfEntryLocalID, vocabulary: vocabulary, language: language)
+                    } label: {
+                        Label {
+                            Text(L10n.brewListTitle)
+                        } icon: {
+                            Image(systemName: "list.bullet")
+                                .accessibilityHidden(true)
+                        }
+                    }
+                    .accessibilityIdentifier("shelf-entry-brews")
                 }
             }
             beanSection
@@ -112,9 +124,8 @@ struct ShelfEntryEditorScreen: View {
             }
         }
         .sheet(item: $brewing) { route in
-            NavigationStack {
-                BrewFormScreen(store: model.store, shelfEntry: route.shelfEntryLocalID, vocabulary: vocabulary, language: language)
-            }
+            // The brew form, then the rating of the new brew (M2-T20).
+            BrewSheet(store: model.store, route: route, vocabulary: vocabulary, language: language)
         }
         .onReceive(NotificationCenter.default.publisher(for: AccountStore.didSaveNotification, object: model.store)) { _ in
             // A pull or the engine may have added a brew or set a flag meanwhile.

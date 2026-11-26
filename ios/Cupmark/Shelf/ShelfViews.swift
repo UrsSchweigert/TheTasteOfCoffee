@@ -75,6 +75,16 @@ struct ShelfRowView: View {
                 }
             }
             .font(.subheadline)
+            if let pending = row.pendingBean {
+                Label {
+                    Text(ShelfRowView.note(for: pending))
+                } icon: {
+                    Image(systemName: pending.asksUser ? "questionmark.circle" : "clock.arrow.circlepath")
+                        .accessibilityHidden(true)
+                }
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            }
             if row.issue != nil {
                 Label {
                     Text(L10n.shelfRowIssue)
@@ -91,11 +101,22 @@ struct ShelfRowView: View {
     }
 }
 
+extension ShelfRowView {
+    /// The note of a row whose bean is a pending scan (M2-T25).
+    static func note(for state: PendingBeanState) -> LocalizedStringKey {
+        switch state {
+        case .lookingUp: L10n.shelfRowBeanLookingUp
+        case .awaitingConfirmation: L10n.shelfRowBeanAwaitingConfirmation
+        case .awaitingDescription: L10n.shelfRowBeanAwaitingDescription
+        }
+    }
+}
+
 /// What the user is told about a sync issue (M2-T18, ADR 0025).
 enum SyncIssueTexts {
     static func title(for kind: SyncIssueItem.Kind) -> LocalizedStringKey {
         switch kind {
-        case .parked(.some(.create), _): L10n.syncIssuesRejectedCreateTitle
+        case .parked(.some(.create), _), .parked(.some(.lookUp), _), .parked(.some(.awaitConfirmation), _), .parked(.some(.awaitDescription), _): L10n.syncIssuesRejectedCreateTitle
         case .parked(.some(.update), _): L10n.syncIssuesRejectedUpdateTitle
         case .parked(.some(.delete), _): L10n.syncIssuesRejectedDeleteTitle
         case .parked(.none, _), .flagged(.rejected): L10n.syncIssuesRejectedTitle
@@ -106,7 +127,7 @@ enum SyncIssueTexts {
 
     static func message(for kind: SyncIssueItem.Kind) -> LocalizedStringKey {
         switch kind {
-        case .parked(.some(.create), _): L10n.syncIssuesRejectedCreateMessage
+        case .parked(.some(.create), _), .parked(.some(.lookUp), _), .parked(.some(.awaitConfirmation), _), .parked(.some(.awaitDescription), _): L10n.syncIssuesRejectedCreateMessage
         case .parked(.some(.update), _): L10n.syncIssuesRejectedUpdateMessage
         case .parked(.some(.delete), _): L10n.syncIssuesRejectedDeleteMessage
         case .parked(.none, _), .flagged(.rejected): L10n.syncIssuesRejectedMessage

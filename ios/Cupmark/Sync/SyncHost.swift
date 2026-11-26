@@ -15,8 +15,13 @@ import SwiftUI
 ///   and after a drain that finished an operation. A failed pull is tried again at the next
 ///   of these.
 /// - The label photo folders follow the account too (M2-T24, `LabelPhotoFolders`): leaving an
-///   account deletes its folder; a sign-in (also at app start) deletes every other account's
-///   folder and the account's own stale files.
+///   account deletes its screen photos and the queued files its store does not list; a sign-in
+///   (also at app start) deletes every other account's files but their queued ones, the
+///   account's own stale screen photos, and its queued files its store does not list. Queued
+///   photos (M2-T25) belong to the account's store, which stays on the device after a sign-out,
+///   so they stay with it and upload when the account signs in again.
+/// - The label photo queue (M2-T25, `LabelPhotoQueue`) runs in the engine's idle slot before
+///   the pull, so the beans the drain created have their server ids.
 @MainActor
 @Observable
 final class SyncHost {
@@ -35,6 +40,9 @@ final class SyncHost {
     @ObservationIgnored private let makeEngine: @MainActor @Sendable (AccountID, AccountStore) -> SyncEngine
     @ObservationIgnored private let makePuller: @MainActor @Sendable (AccountID, AccountStore) -> Puller?
     @ObservationIgnored private(set) var puller: Puller?
+    @ObservationIgnored private let makeLabelPhotoQueue: @MainActor @Sendable (AccountID, AccountStore, LabelPhotoFileStore) -> LabelPhotoQueue?
+    /// The signed-in account's label photo queue (M2-T25).
+    @ObservationIgnored private(set) var labelPhotoQueue: LabelPhotoQueue?
     /// A pull is due at the next idle slot.
     @ObservationIgnored private var pullRequested = false
     /// `SyncEngine.finishedOperations` when the last pull started.
@@ -52,6 +60,7 @@ final class SyncHost {
         makeStore: @escaping @MainActor @Sendable (AccountID) throws -> AccountStore,
         makeEngine: @escaping @MainActor @Sendable (AccountID, AccountStore) -> SyncEngine,
         makePuller: @escaping @MainActor @Sendable (AccountID, AccountStore) -> Puller? = { _, _ in nil },
+        makeLabelPhotoQueue: @escaping @MainActor @Sendable (AccountID, AccountStore, LabelPhotoFileStore) -> LabelPhotoQueue? = { _, _, _ in nil },
         drainPullInterval: TimeInterval = 30,
         now: @escaping @Sendable () -> Date = { Date() },
         labelPhotos: LabelPhotoFolders = .standard
@@ -59,6 +68,7 @@ final class SyncHost {
         self.makeStore = makeStore
         self.makeEngine = makeEngine
         self.makePuller = makePuller
+        self.makeLabelPhotoQueue = makeLabelPhotoQueue
         self.drainPullInterval = drainPullInterval
         self.now = now
         self.labelPhotos = labelPhotos
@@ -77,6 +87,16 @@ final class SyncHost {
                 Puller(store: store, client: client, isCurrentAccount: {
                     await session.isSignedIn(as: account)
                 })
+            },
+            makeLabelPhotoQueue: { account, store, files in
+                LabelPhotoQueue(
+                    store: store,
+                    account: account,
+                    files: files,
+                    uploader: LabelPhotoUploader(api: client, files: files, isCurrentAccount: { candidate in
+                        await session.isSignedIn(as: candidate)
+                    })
+                )
             }
         )
     }
@@ -88,16 +108,19 @@ final class SyncHost {
             return
         }
         if let previous = account {
-            // Nothing is queued for label photos yet (M2-T25), so an account's photos end
-            // with its session.
-            labelPhotos.removeFolder(of: previous)
+            // The screen's photos end with the session; queued ones stay with the store, as
+            // far as the store lists them (nil: it could not be read, so nothing is dropped).
+            let queued = try? store?.queuedLabelPhotoFileNames()
+            labelPhotos.close(previous, keepingQueued: queued)
         }
         engine?.stop()
         engine?.onIdle = nil
+        engine?.nextIdleWake = nil
         store?.onSave = nil
         engine = nil
         store = nil
         puller = nil
+        labelPhotoQueue = nil
         account = next
         signInRequired = false
         lastPull = nil
@@ -116,6 +139,9 @@ final class SyncHost {
             // No store, so nothing to send; the screens show the store error (M2-T18).
             return
         }
+        if let queued = try? opened.queuedLabelPhotoFileNames() {
+            labelPhotos.removeUnqueued(of: next, keeping: queued)
+        }
         let started = makeEngine(next, opened)
         started.onSignInRequired = { [weak self, weak started] in
             // Only the current engine speaks for the host; a stopped one may still finish.
@@ -128,7 +154,16 @@ final class SyncHost {
             guard let self, let started, self.engine === started else {
                 return .done
             }
+            if let queue = self.labelPhotoQueue, await queue.run() == .signInRequired {
+                return .signInRequired
+            }
+            guard self.engine === started else {
+                return .done
+            }
             return await self.pullIfDue(engine: started)
+        }
+        started.nextIdleWake = { [weak self] in
+            self?.labelPhotoQueue?.nextAttempt()
         }
         opened.onSave = { [weak started] in
             Task { @MainActor in
@@ -138,6 +173,7 @@ final class SyncHost {
         store = opened
         engine = started
         puller = makePuller(next, opened)
+        labelPhotoQueue = makeLabelPhotoQueue(next, opened, labelPhotos.queue(for: next))
         started.start()
     }
 

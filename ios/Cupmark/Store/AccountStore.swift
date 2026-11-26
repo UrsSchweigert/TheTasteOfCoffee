@@ -26,7 +26,7 @@ final class AccountStore {
     // MARK: - Containers
 
     /// The schema of the current version.
-    static var schema: Schema { Schema(versionedSchema: CupmarkSchemaV1.self) }
+    static var schema: Schema { Schema(versionedSchema: CupmarkSchemaV2.self) }
 
     /// The store of `account`: its own file in `directory` (`StoreLocation`). No other
     /// account's file is ever opened. CloudKit is off: data leaves the device only through
@@ -154,6 +154,12 @@ final class AccountStore {
         if item.syncState == .pendingDelete {
             return
         }
+        // A pending scan (M2-T25) lives for its shelf entries: removing the last one removes it.
+        var orphanedScan: StoredBean?
+        if let entry = item as? StoredShelfEntry, let bean = entry.bean, try isPendingScan(bean),
+           !bean.shelfEntries.contains(where: { other in other.localID != entry.localID && other.syncState != .pendingDelete }) {
+            orphanedScan = bean
+        }
         var decision = item.syncState.localDelete
         if decision == .removeNow, try createMayHaveReachedServer(item.localID) {
             decision = .markPendingDelete
@@ -162,6 +168,9 @@ final class AccountStore {
         case .removeNow:
             try removeOutboxOperations(for: item.localID)
             context.delete(item)
+            if let orphanedScan {
+                try dropPendingBean(orphanedScan)
+            }
         case .markPendingDelete:
             // Updates that have not been sent are dropped; one that may be on its way stays
             // and goes out before the delete.

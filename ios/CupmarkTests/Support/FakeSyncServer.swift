@@ -42,6 +42,8 @@ final class FakeSyncBackend: @unchecked Sendable {
     private var brews: [String: API.BrewInput] = [:]
     private var recipes: [String: API.RecipeInput] = [:]
     private var profile: API.Profile?
+    /// Open Food Facts products by 13-digit barcode, as the server's cache holds them (M2-T25).
+    private var openFoodFacts: [String: API.OpenFoodFactsProduct] = [:]
     private var override: Override?
 
     func setOverride(_ override: Override?) {
@@ -82,6 +84,11 @@ final class FakeSyncBackend: @unchecked Sendable {
         lock.withLock { profile = values }
     }
 
+    /// An Open Food Facts hit for `barcode` (M2-T25).
+    func seed(openFoodFacts product: API.OpenFoodFactsProduct, barcode: String) {
+        lock.withLock { openFoodFacts[barcode] = product }
+    }
+
     /// Removes an item as another device would (M2-T17).
     func remove(shelfEntry id: String) {
         lock.withLock { shelf[id] = nil }
@@ -113,13 +120,24 @@ final class FakeSyncBackend: @unchecked Sendable {
             switch (request.method, parts.first ?? "", parts.count) {
             case ("POST", "beans", 1):
                 let create = try decode(API.BeanCreate.self, request)
+                // As the backend: a barcode has one bean, and a confirmation needs a cached hit.
+                if let barcode = create.barcode, beans.values.contains(where: { bean in bean.barcode == barcode }) {
+                    return StubResponse(status: 409)
+                }
+                var product: API.OpenFoodFactsProduct?
+                if create.openFoodFactsConfirmed == true {
+                    guard let barcode = create.barcode, let hit = openFoodFacts[barcode] else {
+                        return StubResponse(status: 409)
+                    }
+                    product = hit
+                }
                 let bean = API.Bean(
                     beanId: nextServerID(),
                     vocabularyVersion: create.vocabularyVersion,
                     verified: false,
                     barcode: create.barcode,
-                    openFoodFactsMatch: false,
-                    openFoodFacts: nil,
+                    openFoodFactsMatch: product != nil,
+                    openFoodFacts: product,
                     pickedAttributes: create.attributes,
                     operatorAttributes: API.BeanAttributes()
                 )
@@ -129,6 +147,11 @@ final class FakeSyncBackend: @unchecked Sendable {
                 return try beans[parts[1]].map { bean in try reply(200, bean) } ?? StubResponse(status: 404)
             case ("GET", "barcodes", 2):
                 return try beans.values.first { bean in bean.barcode == parts[1] }.map { bean in try reply(200, bean) } ?? StubResponse(status: 404)
+            case ("GET", "barcodes", 3) where parts[2] == "open_food_facts":
+                if beans.values.contains(where: { bean in bean.barcode == parts[1] }) {
+                    return StubResponse(status: 409)
+                }
+                return try openFoodFacts[parts[1]].map { product in try reply(200, product) } ?? StubResponse(status: 404)
 
             case ("POST", "shelf", 1):
                 let values = try decode(API.ShelfEntryInput.self, request)

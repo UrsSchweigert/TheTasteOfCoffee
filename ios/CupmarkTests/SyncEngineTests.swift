@@ -802,9 +802,12 @@ final class SyncEngineTests: XCTestCase {
 
     func testTheHostIgnoresSignInRequiredFromAnEngineItReplaced() throws {
         let server = try FakeSyncServer()
+        let root = LabelPhotoFixtures.temporaryDirectory()
+        folders.append(root)
         let host = SyncHost(
             makeStore: { _ in try AccountStore.inMemory() },
-            makeEngine: { _, store in SyncEngine(store: store, client: server.client(), sleep: { _ in }) }
+            makeEngine: { _, store in SyncEngine(store: store, client: server.client(), sleep: { _ in }) },
+            labelPhotos: LabelPhotoFolders(root: root)
         )
         host.switchTo(AccountID(subject: AuthFixtures.subject))
         let old = try XCTUnwrap(host.engine)
@@ -819,9 +822,12 @@ final class SyncEngineTests: XCTestCase {
 
     func testTheHostStopsTheEngineWhenTheAccountChanges() throws {
         let server = try FakeSyncServer()
+        let root = LabelPhotoFixtures.temporaryDirectory()
+        folders.append(root)
         let host = SyncHost(
             makeStore: { _ in try AccountStore.inMemory() },
-            makeEngine: { _, store in SyncEngine(store: store, client: server.client(), sleep: { _ in }) }
+            makeEngine: { _, store in SyncEngine(store: store, client: server.client(), sleep: { _ in }) },
+            labelPhotos: LabelPhotoFolders(root: root)
         )
         let account = AccountID(subject: AuthFixtures.subject)
         host.switchTo(account)

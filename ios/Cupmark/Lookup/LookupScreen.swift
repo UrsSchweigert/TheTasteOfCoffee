@@ -55,8 +55,27 @@ struct LookupScreen: View {
                         await model.lookUp()
                     }
                 },
-                onPickListEntry: onPickListEntry
+                onPickListEntry: onPickListEntry,
+                onKeepForLater: keepForLater(reason)
             )
+        case .keptForLater:
+            PendingBeanView(barcode: model.barcode)
+                .safeAreaInset(edge: .bottom) {
+                    if let shelf {
+                        AddToShelfBar(scanned: model.barcode, context: shelf, vocabulary: vocabulary, language: language, presentsAtOnce: true)
+                    }
+                }
+        }
+    }
+
+    /// "Add to Shelf Now" while the lookup cannot answer (M2-T25): opens the shelf entry form
+    /// for the scanned barcode, which saves the pending bean with the entry. Only with a shelf.
+    private func keepForLater(_ reason: LookupModel.PickListReason) -> (@MainActor () -> Void)? {
+        guard shelf != nil, reason.allowsKeepingForLater else {
+            return nil
+        }
+        return { [model] in
+            model.keepForLater()
         }
     }
 
@@ -93,6 +112,8 @@ struct LookupFallbackView: View {
     let reason: LookupModel.PickListReason
     let onRetry: @MainActor () -> Void
     let onPickListEntry: @MainActor () -> Void
+    /// Keeps the barcode as a pending bean and adds it to the shelf (M2-T25); nil hides it.
+    var onKeepForLater: (@MainActor () -> Void)? = nil
 
     var body: some View {
         ContentUnavailableView {
@@ -105,18 +126,28 @@ struct LookupFallbackView: View {
         } description: {
             Text(LookupFallbackView.message(for: reason))
         } actions: {
-            Button {
-                onPickListEntry()
-            } label: {
-                Label {
-                    Text(L10n.scannerPickListEntry)
-                } icon: {
-                    Image(systemName: "list.bullet")
-                        .accessibilityHidden(true)
+            if let onKeepForLater {
+                Button {
+                    onKeepForLater()
+                } label: {
+                    Label {
+                        Text(L10n.lookupKeepForLater)
+                    } icon: {
+                        Image(systemName: "tray.and.arrow.down")
+                            .accessibilityHidden(true)
+                    }
                 }
+                .buttonStyle(.borderedProminent)
+                .accessibilityHint(Text(L10n.lookupKeepForLaterHint))
+                .accessibilityIdentifier("lookup-keep-for-later")
             }
-            .buttonStyle(.borderedProminent)
-            .accessibilityIdentifier("lookup-pick-list")
+            if onKeepForLater == nil {
+                pickListButton
+                    .buttonStyle(.borderedProminent)
+            } else {
+                pickListButton
+                    .buttonStyle(.bordered)
+            }
             if reason.allowsRetry {
                 Button {
                     onRetry()
@@ -131,6 +162,20 @@ struct LookupFallbackView: View {
                 .accessibilityIdentifier("lookup-retry")
             }
         }
+    }
+
+    private var pickListButton: some View {
+        Button {
+            onPickListEntry()
+        } label: {
+            Label {
+                Text(L10n.scannerPickListEntry)
+            } icon: {
+                Image(systemName: "list.bullet")
+                    .accessibilityHidden(true)
+            }
+        }
+        .accessibilityIdentifier("lookup-pick-list")
     }
 
     static func title(for reason: LookupModel.PickListReason) -> LocalizedStringKey {
@@ -161,6 +206,35 @@ struct LookupFallbackView: View {
         case .unavailable: "icloud.slash"
         case .failed: "exclamationmark.triangle"
         }
+    }
+}
+
+/// A barcode the lookup could not answer, to be put on the shelf now (M2-T25): once its bag is
+/// on the shelf it can have brews, and it is looked up when the device is online. An Open Food
+/// Facts hit is then offered for confirmation, and a bean nothing was found for for a
+/// description, the next time the app is opened.
+struct PendingBeanView: View {
+    let barcode: CanonicalBarcode
+
+    var body: some View {
+        ContentUnavailableView {
+            Label {
+                Text(L10n.lookupPendingTitle)
+            } icon: {
+                Image(systemName: "clock.arrow.circlepath")
+                    .accessibilityHidden(true)
+            }
+        } description: {
+            VStack(spacing: 8) {
+                Text(L10n.lookupPendingMessage)
+                // Digits only, checked by CanonicalBarcode; not translatable text.
+                Text(verbatim: barcode.digits)
+                    .monospacedDigit()
+                    .accessibilityLabel(Text(L10n.beanEntryBarcode))
+                    .accessibilityValue(Text(verbatim: barcode.digits))
+            }
+        }
+        .accessibilityIdentifier("lookup-pending")
     }
 }
 
@@ -230,7 +304,7 @@ struct ScanFlowView: View {
         let labelPhotos = auth.flatMap { auth in
             auth.accountID.map { LabelPhotoAccount.live(account: $0, session: auth.session) }
         }
-        entry = BeanEntryModel(barcode: barcode, client: client, labelPhotos: labelPhotos)
+        entry = BeanEntryModel(barcode: barcode, client: client, labelPhotos: labelPhotos, offlineStore: shelf?.store)
         onPickListEntry()
     }
 }

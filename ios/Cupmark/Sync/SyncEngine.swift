@@ -32,6 +32,11 @@ extension StoredRecipe: ServerIdentified {}
 /// - A create that was sent without a clear answer (`sentWithoutAnswer`, also after the
 ///   app was ended mid-request) is checked first: the engine lists the resource and adopts a
 ///   server item that matches and has no local counterpart, instead of creating a duplicate.
+/// - A pending bean (M2-T25) is looked up when its `lookUp` operation comes: `GET
+///   /barcodes/{barcode}` (a known bean is used), then Open Food Facts through the backend (a
+///   miss is created as it is, a hit waits for the user's confirmation). A look-up that cannot
+///   run now waits for its next attempt without holding the queue: only the operations of
+///   items that name its bean wait with it (`AccountStore.nextOutboxOperation(at:)`).
 ///
 /// - When the outbox is empty the run loop runs `onIdle` in the drain's slot: `SyncHost`
 ///   pulls there (M2-T17), so a pull never overlaps a drain and local writes go out first.
@@ -43,7 +48,8 @@ extension StoredRecipe: ServerIdentified {}
 @MainActor
 final class SyncEngine {
     enum DrainResult: Equatable, Sendable {
-        /// Nothing is left to send (parked operations are not counted).
+        /// Nothing is left to send now: parked operations are not counted, nor a bean look-up
+        /// that waits and the operations that wait for its bean (M2-T25).
         case idle
         /// The next operation backs off until then.
         case waiting(until: Date)
@@ -82,6 +88,14 @@ final class SyncEngine {
     /// (`SyncHost` pulls here, M2-T17). While it runs, `drain()` answers `.busy`; a `kick()`
     /// meanwhile makes the loop drain again as soon as it returns.
     var onIdle: (@MainActor () async -> IdleOutcome)?
+
+    /// The next moment the idle work wants to run again by itself (`SyncHost`: the label photo
+    /// queue's next attempt), nil for none. The run loop rests no longer than that.
+    var nextIdleWake: (@MainActor () -> Date?)?
+
+    /// How long a bean look-up waits after the daily Open Food Facts lookup cap answered 429
+    /// (M2-T25). Other operations go out meanwhile.
+    nonisolated static let lookUpLimitWait: TimeInterval = 3600
 
     /// How many operations the engine finished (sent, parked or dropped) since it was made.
     /// `SyncHost` pulls again when this has changed since its last pull.
@@ -149,7 +163,7 @@ final class SyncEngine {
                 guard await runIdleWork() else {
                     return
                 }
-                await rest(for: idleWait)
+                await rest(for: restAfterIdle())
             case .waiting(let until):
                 await rest(for: max(0, until.timeIntervalSince(now())))
             case .busy:
@@ -174,6 +188,22 @@ final class SyncEngine {
             return false
         }
         return true
+    }
+
+    /// `idleWait`, or less when a bean look-up or the idle work wants to run again sooner.
+    private func restAfterIdle() -> TimeInterval {
+        let current = now()
+        var wakes: [Date] = []
+        if let lookUp = try? store.nextLookUpAttempt(after: current) {
+            wakes.append(lookUp)
+        }
+        if let idle = nextIdleWake?() {
+            wakes.append(idle)
+        }
+        guard let first = wakes.min() else {
+            return idleWait
+        }
+        return min(idleWait, max(0, first.timeIntervalSince(current)))
     }
 
     private func rest(for seconds: TimeInterval) async {
@@ -205,6 +235,9 @@ final class SyncEngine {
         }
         isDraining = true
         defer { isDraining = false }
+        // The operations deferred in this drain (a bean look-up that waits). They are not picked
+        // again before the next drain, so the loop cannot spin on one that keeps deferring.
+        var deferred = Set<Int>()
 
         while true {
             if isStopped || Task.isCancelled {
@@ -212,7 +245,7 @@ final class SyncEngine {
             }
             let next: OutboxOperation?
             do {
-                next = try store.nextOutboxOperation()
+                next = try store.nextOutboxOperation(at: now(), skipping: deferred)
             } catch {
                 return .waiting(until: now().addingTimeInterval(backoff.maximum))
             }
@@ -242,6 +275,10 @@ final class SyncEngine {
             case .next:
                 finishedOperations += 1
                 continue
+            case .deferred:
+                // A bean look-up waits (for its next attempt or for the user); the rest goes on.
+                deferred.insert(sequence)
+                continue
             case .retry:
                 guard let retried = try? store.outboxOperation(sequence: sequence) else {
                     continue
@@ -268,6 +305,9 @@ final class SyncEngine {
         case next
         /// Back off, then send this one again.
         case retry
+        /// The operation waits without holding the queue (a bean look-up, M2-T25): go on with
+        /// the next one that does not depend on it.
+        case deferred
         case signInRequired
         case cancelled
     }
@@ -287,6 +327,11 @@ final class SyncEngine {
         switch (resource, action) {
         case (.bean, .create):
             return try await createBean(sequence, localID)
+        case (.bean, .lookUp):
+            return try await lookUpBean(sequence, localID)
+        case (.bean, .awaitConfirmation), (.bean, .awaitDescription):
+            // Never picked (it waits for the user); if it were, it would go on waiting.
+            return .deferred
         case (.shelfEntry, .create):
             return try await create(
                 sequence, localID, resource: .shelfEntry,
@@ -534,6 +579,7 @@ final class SyncEngine {
                 entry.bean = existing
             }
             existing.apply(server)
+            try store.moveQueuedLabelPhotos(from: localID, to: existing.localID)
             try store.removeOutboxOperations(for: localID)
             store.context.delete(bean)
         } else {
@@ -542,6 +588,143 @@ final class SyncEngine {
         }
         try store.save()
         return .next
+    }
+
+    // MARK: - Pending bean look-up (M2-T25)
+
+    /// A bean scanned while the lookup could not answer: `GET /barcodes/{barcode}`, then
+    /// `GET /barcodes/{barcode}/open_food_facts`.
+    /// - 200 from the catalogue: that bean is used (`adoptBean`), without asking.
+    /// - An Open Food Facts hit: kept on the bean, and the operation waits for the user's
+    ///   confirmation (`awaitConfirmation`); what depends on the bean waits with it.
+    /// - An Open Food Facts miss (404): the operation waits for the user to describe the bean or
+    ///   skip that (`awaitDescription`, docs/04 F1 step 4); what depends on it waits with it.
+    /// - A bean with no live shelf entry (its form was never saved, or its entries are gone) is
+    ///   dropped without a request.
+    /// - 409 from Open Food Facts: the barcode got a bean meanwhile; the next attempt finds it.
+    /// - No network, 5xx, 429 (throttling, or the daily lookup cap of the Open Food Facts route):
+    ///   the look-up waits for its next attempt (backoff, or `lookUpLimitWait` for the cap)
+    ///   without holding the queue.
+    private func lookUpBean(_ sequence: Int, _ localID: UUID) async throws -> Outcome {
+        guard let bean = try store.bean(localID: localID) else {
+            return try drop(sequence)
+        }
+        if bean.serverID != nil {
+            let isLast = try complete(sequence, localID: localID)
+            settle(bean, isLast: isLast)
+            try store.save()
+            return .next
+        }
+        if !bean.hasLiveShelfEntries {
+            // Nothing on the device needs it: no catalogue bean is made for it.
+            try store.dropPendingBean(bean)
+            try store.save()
+            return .next
+        }
+        guard let barcode = bean.barcode.flatMap({ code in LookupBarcode(code) }) else {
+            // Nothing to look up: created from what it has.
+            return try await createAfterLookUp(sequence, localID)
+        }
+        // A look-up counts as an attempt, so a failing one backs off.
+        if let operation = try store.outboxOperation(sequence: sequence) {
+            operation.attemptCount += 1
+            try store.save()
+        }
+
+        switch await call({ try await self.client.lookupBarcode(barcode) }) {
+        case .value(let server):
+            return try adoptBean(server, sequence, localID)
+        case .cancelled:
+            return .cancelled
+        case .failed(.notFound):
+            break
+        case .failed(let error):
+            return try lookUpFailed(error, sequence, localID, openFoodFactsRoute: false)
+        }
+
+        switch await call({ try await self.client.lookupOpenFoodFacts(barcode) }) {
+        case .value(let product):
+            guard let current = try store.bean(localID: localID),
+                  let operation = try store.outboxOperation(sequence: sequence) else {
+                return try drop(sequence)
+            }
+            current.holdOpenFoodFactsProduct(product)
+            operation.actionRaw = OutboxAction.awaitConfirmation.rawValue
+            operation.attemptCount = 0
+            operation.nextAttemptAt = Date.distantPast
+            try store.save()
+            return .deferred
+        case .cancelled:
+            return .cancelled
+        case .failed(.notFound):
+            // No product: the user describes the bean, or skips that, next time (F1 step 4).
+            return try askForDescription(sequence)
+        case .failed(.conflict):
+            // The barcode points to a bean now: the next attempt's catalogue lookup finds it.
+            return try deferLookUp(sequence, by: backoffDelay(sequence))
+        case .failed(let error):
+            return try lookUpFailed(error, sequence, localID, openFoodFactsRoute: true)
+        }
+    }
+
+    /// The look-up found no bean and no product (or had no barcode): the operation becomes the
+    /// bean's create and is sent at once.
+    private func createAfterLookUp(_ sequence: Int, _ localID: UUID) async throws -> Outcome {
+        guard let operation = try store.outboxOperation(sequence: sequence) else {
+            return .next
+        }
+        operation.actionRaw = OutboxAction.create.rawValue
+        operation.attemptCount = 0
+        operation.nextAttemptAt = Date.distantPast
+        try store.save()
+        return try await createBean(sequence, localID)
+    }
+
+    /// The operation waits for the user's description (`awaitDescription`).
+    private func askForDescription(_ sequence: Int) throws -> Outcome {
+        guard let operation = try store.outboxOperation(sequence: sequence) else {
+            return .next
+        }
+        operation.actionRaw = OutboxAction.awaitDescription.rawValue
+        operation.attemptCount = 0
+        operation.nextAttemptAt = Date.distantPast
+        try store.save()
+        return .deferred
+    }
+
+    /// A failed catalogue or Open Food Facts lookup. Nothing was written on the server, so
+    /// there is nothing to check before the next attempt.
+    private func lookUpFailed(_ error: APIError, _ sequence: Int, _ localID: UUID, openFoodFactsRoute: Bool) throws -> Outcome {
+        if openFoodFactsRoute, case .tooManyRequests = error {
+            // The daily lookup cap: try again later, and let everything else go meanwhile.
+            return try deferLookUp(sequence, by: SyncEngine.lookUpLimitWait)
+        }
+        if error.isRetryable {
+            return try deferLookUp(sequence, by: backoffDelay(sequence))
+        }
+        switch error {
+        case .unauthorized:
+            return .signInRequired
+        case .badRequest:
+            return try park(sequence, .rejected, resource: .bean, localID: localID)
+        default:
+            return try park(sequence, .unexpectedResponse, resource: .bean, localID: localID)
+        }
+    }
+
+    /// The backoff after the operation's attempts so far.
+    private func backoffDelay(_ sequence: Int) throws -> TimeInterval {
+        let attempts = try store.outboxOperation(sequence: sequence)?.attemptCount ?? 1
+        return backoff.delay(afterAttempt: max(1, attempts), jitter: jitter())
+    }
+
+    /// The look-up waits `seconds` without holding the queue.
+    private func deferLookUp(_ sequence: Int, by seconds: TimeInterval) throws -> Outcome {
+        if let operation = try store.outboxOperation(sequence: sequence) {
+            operation.nextAttemptAt = now().addingTimeInterval(seconds)
+            try store.save()
+        }
+        return .deferred
     }
 
     // MARK: - Replace

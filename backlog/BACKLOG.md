@@ -664,7 +664,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T20 Rating screen
-- status: todo
+- status: done (built and tested by the macOS `ios` job in #63; decisions in ADR 0026)
 - owner: ios-engineer
 - depends: M2-T19
 - implements: docs/04-specification.md, F3
@@ -746,7 +746,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the unit tests run in the `ios` job. The task ends `needs-mac-verification` until a real upload to dev passes in M2-T34.
 
 ### M2-T25 Offline scan and pending beans
-- status: todo
+- status: done (built and tested by the macOS `ios` job in #63; decisions in the ADR 0025 addendum)
 - owner: ios-engineer
 - depends: M2-T18, M2-T24
 - implements: docs/04-specification.md, Non-functional (Offline: "Scan, brew and rate work offline and sync later")
@@ -844,7 +844,7 @@ Planning notes (planned 2026-11-25):
 - owner: ios-engineer
 - depends: M2-T16
 - implements: docs/04-specification.md, Non-functional (account deletion in the app); ADR 0017 and its Addendum; contracts `deleteAccount`
-- note: from the M2-T24 review, account deletion must also remove the account's `Application Support/LabelPhotos/<account>` folder of pending label photos.
+- note: from the M2-T24 and M2-T25 reviews, account deletion must also remove the account's `Application Support/LabelPhotos/<account>` folder, including its `Queued` label photos, together with the store.
 - acceptance:
   - From the M2-T16 review: a 401 from the ADR 0017 tombstone signs the user out without a reason. Give `AuthModel` a way to show "this account was deleted or its session ended" when sync asks for sign-in.
   - Settings, then Delete account. Two steps confirm with buttons only, and they say what is deleted: the data, the label photos of unverified beans, and the sign-in.
@@ -931,3 +931,21 @@ From M1-T4d (ADR 0016, D10): the operator CLI reads label photos from `labels/<p
 Goal: TestFlight, then App Store. Not yet planned. Mostly human tasks.
 
 Scope: App Store listing, screenshots, privacy nutrition labels, privacy policy and terms, TestFlight round with the persona interviews, production deployment, launch checklist.
+
+### M2-T35 Failed saves put edited fields back
+- status: todo
+- owner: ios-engineer
+- depends: M2-T25
+- implements: docs/04-specification.md, Non-functional (Durability: no loss of a confirmed write, and no write sent that was not confirmed); ADR 0025
+- acceptance:
+  - From PR #63: `ModelContext.rollback()` does not restore an attribute changed on a model that was already saved. The rating write now keeps a `BrewRatingSnapshot` and puts the fields back itself.
+  - Do the same at every other `rollback()` after an edit of a saved model: `ShelfEntryEditorModel`, `BrewFormModel`, `SyncIssuesModel` (redo, discard), `Puller` and `AccountStore.save()`. Otherwise a failed edit stays in memory with no operation queued, and the next unrelated save stores it without ever sending it.
+  - From the M2-T25 round 2 review, the M2-T25 sites too: `describePendingBean` and `skipDescription` (AccountStore+PendingBeans.swift), the existing-bean branch of `addOfflineBean`, `settleQuestion`, and `askForDescription` (SyncEngine.swift). Today a failed describe leaves `create` in memory, and a retry deletes the queued photo and reports success. Correct the comment in PendingBeanConfirmation.swift that says `save()` rolled the change back.
+  - Also from that review:
+    - moving the last shelf entry off a pending bean (ShelfEntryEditorModel) drops the bean as `markDeleted` does, so a bean waiting for an answer cannot stay in the outbox forever;
+    - `BeanEntryModel` never calls `createBean` while `describing` is set, even without an offline store;
+    - add tests that a failed `.addScanned` save leaves nothing behind and that a parked dependency does not loop.
+  - From PR #63: some `StoreFixtures` ids are not valid contract ids (`shelfEntryID` has an `L`, `recipeID` an `I`), so the engine parks any operation that names them. Make every fixture id a valid ULID.
+  - Prefer one shared mechanism in `AccountStore` (for example, a write that snapshots the changed models' sync state and fields and restores them on failure) over a snapshot per screen.
+  - Each site has a test like `RatingTests.testAFailedSaveLeavesNothingBehind`: a write that throws after changing a saved model leaves the model as it was and queues nothing.
+  - Mac: the `ios` job.

@@ -71,6 +71,29 @@ struct BeanEntryScreen: View {
                     AddToShelfBar(bean: bean, context: shelf, vocabulary: vocabulary, language: language)
                 }
             }
+        } else if case .savedOffline(let beanID) = model.state {
+            // Saved on the device while offline (M2-T25): the outbox creates it later.
+            ContentUnavailableView {
+                Label {
+                    Text(L10n.beanEntrySavedOfflineTitle)
+                } icon: {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .accessibilityHidden(true)
+                }
+            } description: {
+                VStack(spacing: 8) {
+                    Text(L10n.beanEntrySavedOfflineMessage)
+                    if model.picksNotKept {
+                        Text(L10n.beanEntryPicksNotKept)
+                    }
+                }
+            }
+            .accessibilityIdentifier("bean-entry-saved-offline")
+            .safeAreaInset(edge: .bottom) {
+                if let shelf {
+                    AddToShelfBar(storedBean: beanID, context: shelf, vocabulary: vocabulary, language: language)
+                }
+            }
         } else if model.state == .failed(.signInRequired) {
             SignInAgainView()
         } else {
@@ -192,8 +215,8 @@ struct BeanEntryScreen: View {
     private var saveTitle: LocalizedStringKey {
         switch model.state {
         case .saving: L10n.lookupSaving
-        case .failed(.retryable): L10n.lookupRetry
-        case .editing, .saved, .failed(.rejected), .failed(.signInRequired): L10n.beanEntrySave
+        case .failed(.retryable), .failed(.photoNotSaved): L10n.lookupRetry
+        case .editing, .saved, .savedOffline, .failed(.rejected), .failed(.signInRequired): L10n.beanEntrySave
         }
     }
 
@@ -211,6 +234,7 @@ struct BeanEntryScreen: View {
     static func title(for failure: BeanEntryModel.Failure) -> LocalizedStringKey {
         switch failure {
         case .rejected: L10n.beanEntryRejectedTitle
+        case .photoNotSaved: L10n.beanEntryPhotoNotSavedTitle
         case .retryable: L10n.beanEntryFailedTitle
         case .signInRequired: L10n.signInAgainTitle
         }
@@ -219,6 +243,7 @@ struct BeanEntryScreen: View {
     static func message(for failure: BeanEntryModel.Failure) -> LocalizedStringKey {
         switch failure {
         case .rejected: L10n.beanEntryRejectedMessage
+        case .photoNotSaved: L10n.beanEntryPhotoNotSavedMessage
         case .retryable: L10n.beanEntryFailedMessage
         case .signInRequired: L10n.signInAgainMessage
         }

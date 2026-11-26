@@ -379,6 +379,42 @@
         }
       }
     },
+    "bean_entry.photo_not_saved.message" : {
+      "comment" : "Message when the label photo could not be stored on the device while saving offline.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Etikettfoto konnte auf diesem Gerät nicht gespeichert werden, deshalb wurde nichts gespeichert. Versuche es noch einmal oder entferne das Foto."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The label photo could not be stored on this device, so nothing was saved. Try again, or remove the photo."
+          }
+        }
+      }
+    },
+    "bean_entry.photo_not_saved.title" : {
+      "comment" : "Title when the label photo could not be stored on the device while saving offline.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Foto nicht gespeichert"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Photo Not Saved"
+          }
+        }
+      }
+    },
     "bean_entry.picks.footer" : {
       "comment" : "Footer of the pick lists: every pick is optional and the roaster is added later.",
       "extractionState" : "manual",
@@ -411,6 +447,24 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "What the Bag Says (Optional)"
+          }
+        }
+      }
+    },
+    "bean_entry.picks_not_kept" : {
+      "comment" : "Note after an offline save of a bean the device already had from the catalogue.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Packung ist schon im Katalog, deshalb wurden deine Angaben nicht übernommen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This bag is already in the catalogue, so your picks were not added to it."
           }
         }
       }
@@ -483,6 +537,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Save Bean"
+          }
+        }
+      }
+    },
+    "bean_entry.saved_offline.message" : {
+      "comment" : "Message shown after a bean described with pick lists was saved on the device while offline.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Bohne kommt in den Katalog, sobald du online bist. Du kannst die Packung schon jetzt ins Regal legen und Brühungen erfassen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The bean is added to the catalogue once you are online. You can put the bag on your shelf and log brews now."
+          }
+        }
+      }
+    },
+    "bean_entry.saved_offline.title" : {
+      "comment" : "Title shown after a bean described with pick lists was saved on the device while offline.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auf diesem Gerät gespeichert"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saved on This Device"
           }
         }
       }
@@ -1027,6 +1117,78 @@
         }
       }
     },
+    "brew_list.empty" : {
+      "comment" : "Shown in the brew list when no brew of the bag has been logged.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch keine Zubereitung aus dieser Packung."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No brews of this bag yet."
+          }
+        }
+      }
+    },
+    "brew_list.not_rated" : {
+      "comment" : "Status of a brew in the brew list that has no rating yet.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch nicht bewertet"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not rated yet"
+          }
+        }
+      }
+    },
+    "brew_list.rated" : {
+      "comment" : "Status of a brew in the brew list that has a rating.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bewertet"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rated"
+          }
+        }
+      }
+    },
+    "brew_list.title" : {
+      "comment" : "Title of the list of brews of a bag, and the row on the bag that opens it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zubereitungen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brews"
+          }
+        }
+      }
+    },
     "label_photo.add_another" : {
       "comment" : "Button that opens the camera for one more label photo.",
       "extractionState" : "manual",
@@ -1549,6 +1711,42 @@
         }
       }
     },
+    "lookup.keep_for_later" : {
+      "comment" : "Button on the lookup fallback that keeps a barcode scanned offline as a pending bean and adds it to the shelf.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jetzt ins Regal legen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add to Shelf Now"
+          }
+        }
+      }
+    },
+    "lookup.keep_for_later.hint" : {
+      "comment" : "Accessibility hint of the button that keeps a barcode scanned offline.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Behält den Barcode auf diesem Gerät und sucht ihn, sobald du online bist."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keeps the barcode on this device and looks it up once you are online."
+          }
+        }
+      }
+    },
     "lookup.limit.message" : {
       "comment" : "Message when the daily lookup limit for new barcodes is used up.",
       "extractionState" : "manual",
@@ -1635,6 +1833,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Barcode Not Found"
+          }
+        }
+      }
+    },
+    "lookup.pending.message" : {
+      "comment" : "Message shown when a barcode the lookup could not answer is put on the shelf for now.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lege die Packung jetzt ins Regal und erfasse Brühungen. Der Barcode wird gesucht, sobald du online bist."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Put the bag on your shelf now and log brews. The barcode is looked up once you are online."
+          }
+        }
+      }
+    },
+    "lookup.pending.title" : {
+      "comment" : "Title shown when a barcode the lookup could not answer is put on the shelf for now.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Später suchen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Look It Up Later"
           }
         }
       }
@@ -1959,6 +2193,654 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Name"
+          }
+        }
+      }
+    },
+    "pending_beans.done" : {
+      "comment" : "Button that closes the confirmation screen when nothing is left to confirm.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fertig"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done"
+          }
+        }
+      }
+    },
+    "pending_beans.later" : {
+      "comment" : "Button that closes the confirmation of a bag scanned offline without answering; it is asked again next time.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Später"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Later"
+          }
+        }
+      }
+    },
+    "pending_beans.none.message" : {
+      "comment" : "Message when no bag scanned offline waits for a confirmation.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle Packungen, die du offline gescannt hast, sind gesucht."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every bag you scanned offline has been looked up."
+          }
+        }
+      }
+    },
+    "pending_beans.none.title" : {
+      "comment" : "Title when no bag scanned offline waits for a confirmation.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nichts zu bestätigen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing to Confirm"
+          }
+        }
+      }
+    },
+    "pending_beans.row" : {
+      "comment" : "Shelf row that opens the questions about bags scanned offline: an Open Food Facts match to confirm, or a bean to describe.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gescannte Packungen prüfen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scanned Bags to Check"
+          }
+        }
+      }
+    },
+    "pending_beans.save_failed" : {
+      "comment" : "Note when the answer to a confirmation could not be saved on the device.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Antwort konnte nicht gespeichert werden. Versuche es noch einmal."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your answer could not be saved. Try again."
+          }
+        }
+      }
+    },
+    "pending_beans.skip" : {
+      "comment" : "Button that skips describing a bag scanned offline that nothing was found for; the bean is added with its barcode only.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Überspringen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skip"
+          }
+        }
+      }
+    },
+    "pending_beans.skip.hint" : {
+      "comment" : "Accessibility hint of the button that skips describing a bag scanned offline.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fügt die Bohne nur mit ihrem Barcode hinzu. Sie kann später nicht mehr beschrieben werden."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adds the bean with its barcode only. It cannot be described later."
+          }
+        }
+      }
+    },
+    "pending_beans.title" : {
+      "comment" : "Title of the screen that asks about a bag scanned offline.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gescannte Packung"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scanned Bag"
+          }
+        }
+      }
+    },
+    "rating.brew_header" : {
+      "comment" : "Header of the section that shows which brew is rated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zubereitung"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brew"
+          }
+        }
+      }
+    },
+    "rating.brewed_at" : {
+      "comment" : "Label of the time a brew was made.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zubereitet"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brewed"
+          }
+        }
+      }
+    },
+    "rating.buy_again" : {
+      "comment" : "Label of the optional buy-again answer: whether the user would buy this bean again.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Bohne wieder kaufen?"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buy This Bean Again?"
+          }
+        }
+      }
+    },
+    "rating.buy_again.clear" : {
+      "comment" : "VoiceOver label of the button that sets the buy-again answer back to not set.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiederkauf zurücksetzen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear buy again"
+          }
+        }
+      }
+    },
+    "rating.buy_again.no" : {
+      "comment" : "Answer no to whether the user would buy this bean again.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nein"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No"
+          }
+        }
+      }
+    },
+    "rating.buy_again.yes" : {
+      "comment" : "Answer yes to whether the user would buy this bean again.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ja"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yes"
+          }
+        }
+      }
+    },
+    "rating.incomplete" : {
+      "comment" : "Shown when a rating is saved before every criterion has a score.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gib zuerst jedem Kriterium Punkte."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Give every criterion a score first."
+          }
+        }
+      }
+    },
+    "rating.intensity.clear" : {
+      "comment" : "VoiceOver label of the button that clears an intensity; the dimension is read after it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Intensität zurücksetzen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear intensity"
+          }
+        }
+      }
+    },
+    "rating.intensity.footer" : {
+      "comment" : "Explains the intensities: how much, not how good.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Optional. Wie stark es ausgeprägt ist, nicht wie gut."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Optional. How much of it there is, not how good it is."
+          }
+        }
+      }
+    },
+    "rating.intensity.header" : {
+      "comment" : "Header of the section with the optional intensities of acidity, body and bitterness.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Intensität"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Intensity"
+          }
+        }
+      }
+    },
+    "rating.later" : {
+      "comment" : "Closes the rating offered right after a brew was saved, leaving the brew unrated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Später"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Later"
+          }
+        }
+      }
+    },
+    "rating.not_found" : {
+      "comment" : "Shown when the brew being rated is no longer on the device.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Zubereitung ist nicht mehr auf diesem iPhone."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This brew is no longer on this iPhone."
+          }
+        }
+      }
+    },
+    "rating.note.remove_hint" : {
+      "comment" : "VoiceOver hint of a picked flavour note in the rating.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entfernt dieses Aroma."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Removes this flavour note."
+          }
+        }
+      }
+    },
+    "rating.notes.choose" : {
+      "comment" : "Row that opens the flavour categories; the number of picked notes is shown next to it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aromen auswählen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick Flavour Notes"
+          }
+        }
+      }
+    },
+    "rating.notes.footer" : {
+      "comment" : "Explains the flavour notes.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Optional. Wähle eine Kategorie, dann die Aromen, die du schmeckst."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Optional. Pick a category, then the notes you taste."
+          }
+        }
+      }
+    },
+    "rating.notes.full" : {
+      "comment" : "Shown when the most flavour notes are picked.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mehr Aromen sind nicht möglich. Entferne eines, um ein anderes zu wählen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No more notes can be picked. Remove one to pick another."
+          }
+        }
+      }
+    },
+    "rating.notes.header" : {
+      "comment" : "Header of the flavour notes section, and title of the list of flavour categories.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aromen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Flavour Notes"
+          }
+        }
+      }
+    },
+    "rating.notes.max" : {
+      "comment" : "Label of the most flavour notes that can be picked.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Höchstens"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Most you can pick"
+          }
+        }
+      }
+    },
+    "rating.notes.picked" : {
+      "comment" : "Label of the number of flavour notes picked.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ausgewählt"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Picked"
+          }
+        }
+      }
+    },
+    "rating.read_only" : {
+      "comment" : "Shown on the rating of a brew saved with a newer version of the app's vocabulary; the rating cannot be changed here.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Zubereitung wurde mit einer neueren Version von Cupmark gesichert. Aktualisiere die App, um ihre Bewertung zu ändern."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This brew was saved with a newer version of Cupmark. Update the app to change its rating."
+          }
+        }
+      }
+    },
+    "rating.save" : {
+      "comment" : "Saves the rating.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sichern"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save"
+          }
+        }
+      }
+    },
+    "rating.scores.footer" : {
+      "comment" : "Explains the score sliders.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ziehe jeden Regler, um Punkte zu geben; mit VoiceOver wische darauf nach oben oder unten. Ein Regler ohne Punkte bekommt beim Berühren den angezeigten Wert. Die Bewertung lässt sich sichern, sobald jedes Kriterium Punkte hat."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drag each slider to give a score; with VoiceOver, swipe up or down on it. Touching a slider that has no score yet gives it the score shown. The rating can be saved once every criterion has a score."
+          }
+        }
+      }
+    },
+    "rating.scores.header" : {
+      "comment" : "Header of the section with one slider per rating criterion.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Punkte"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scores"
+          }
+        }
+      }
+    },
+    "rating.scores.missing" : {
+      "comment" : "Label of the number of criteria that have no score yet.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch ohne Punkte"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Still to score"
+          }
+        }
+      }
+    },
+    "rating.title" : {
+      "comment" : "Title of the screen that rates a brew.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bewertung"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rating"
+          }
+        }
+      }
+    },
+    "rating.use_last" : {
+      "comment" : "Button that fills the rating with the latest rating of an earlier brew of the same bag.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mit der letzten Bewertung dieser Packung beginnen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start from the Last Rating of This Bag"
+          }
+        }
+      }
+    },
+    "rating.use_last.footer" : {
+      "comment" : "Explains the button that copies the last rating of the bag.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Übernimmt Punkte, Intensitäten, Aromen und Wiederkauf der zuletzt bewerteten Zubereitung aus dieser Packung. Danach änderst du, was anders war."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copies the scores, intensities, flavour notes and buy again of the latest rated brew of this bag. Then change what was different."
           }
         }
       }
@@ -2769,6 +3651,60 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No roast date"
+          }
+        }
+      }
+    },
+    "shelf.row.bean_awaiting_confirmation" : {
+      "comment" : "Note in a shelf row whose bean scanned offline has an Open Food Facts match waiting for the user's confirmation.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Food Facts hat sie gefunden: bitte bestätigen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Food Facts found it: please confirm"
+          }
+        }
+      }
+    },
+    "shelf.row.bean_awaiting_description" : {
+      "comment" : "Note in a shelf row whose bean scanned offline was not found and waits for the user to describe it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht gefunden: bitte beschreiben"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not found: please describe it"
+          }
+        }
+      }
+    },
+    "shelf.row.bean_looking_up" : {
+      "comment" : "Note in a shelf row whose bean was scanned offline and is not looked up yet.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wird gesucht, sobald du online bist"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Looked up once you are online"
           }
         }
       }

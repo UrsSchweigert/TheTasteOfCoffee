@@ -142,7 +142,7 @@ extension AccountStore {
         for (index, target) in targets.enumerated() {
             let operations = try outboxOperations(for: target.localID).filter { operation in
                 // The item itself: every parked operation. A referenced item: its create only.
-                operation.parked && (index == 0 || operation.action == .create)
+                operation.parked && (index == 0 || operation.action?.createsItem == true)
             }
             if index > 0, operations.isEmpty {
                 // A referenced item with no parked create keeps its flag.
@@ -221,7 +221,7 @@ extension AccountStore {
         if actions.contains(.delete) {
             return .pendingDelete
         }
-        if actions.contains(.create) {
+        if actions.contains(where: { action in action.createsItem }) {
             return .pendingCreate
         }
         if actions.contains(.update) {
@@ -236,7 +236,7 @@ extension AccountStore {
         if resource == .profile {
             return false
         }
-        if action == .create {
+        if action?.createsItem == true {
             return true
         }
         switch resource {

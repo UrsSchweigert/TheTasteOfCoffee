@@ -55,6 +55,16 @@ struct ShelfScreen: View {
     @State private var isScanning = false
     /// The shelf entry whose brew form is open (M2-T19).
     @State private var brewing: BrewRoute?
+    /// The Open Food Facts hits of pending beans waiting for the user (M2-T25).
+    @State private var pendingBeans: PendingBeansModel
+    @State private var isConfirmingBeans = false
+    /// Whether the questions were offered since the app was last opened; they are asked once
+    /// each time the app comes to the foreground, not on every return to the shelf.
+    @State private var askedForConfirmation = false
+    /// Whether the shelf itself is on screen: false while a screen is pushed over it (an entry,
+    /// the scan flow, the sync issues), whatever that screen presents. With no sheet of its own
+    /// up, this is the gate for the questions.
+    @State private var isOnScreen = false
     @Environment(\.apiClient) private var apiClient
     @Environment(\.scenePhase) private var scenePhase
 
@@ -63,6 +73,7 @@ struct ShelfScreen: View {
         self.vocabulary = vocabulary
         self.language = language
         _model = State(initialValue: ShelfModel(store: store))
+        _pendingBeans = State(initialValue: PendingBeansModel(store: store))
     }
 
     var body: some View {
@@ -84,6 +95,25 @@ struct ShelfScreen: View {
                         }
                     }
                     .accessibilityIdentifier("shelf-sync-issues")
+                }
+            }
+            if model.questionCount > 0 {
+                Section {
+                    Button {
+                        isConfirmingBeans = true
+                    } label: {
+                        LabeledContent {
+                            Text(model.questionCount, format: .number)
+                        } label: {
+                            Label {
+                                Text(L10n.pendingBeansRow)
+                            } icon: {
+                                Image(systemName: "questionmark.circle")
+                                    .accessibilityHidden(true)
+                            }
+                        }
+                    }
+                    .accessibilityIdentifier("shelf-pending-beans")
                 }
             }
             Section {
@@ -133,9 +163,8 @@ struct ShelfScreen: View {
             }
         }
         .sheet(item: $brewing) { route in
-            NavigationStack {
-                BrewFormScreen(store: store, shelfEntry: route.shelfEntryLocalID, vocabulary: vocabulary, language: language)
-            }
+            // The brew form, then the rating of the new brew (M2-T20).
+            BrewSheet(store: store, route: route, vocabulary: vocabulary, language: language)
         }
         .navigationDestination(for: ShelfEntryRoute.self) { route in
             ShelfEntryEditorScreen(store: store, mode: .edit(route.localID), vocabulary: vocabulary, language: language)
@@ -155,8 +184,20 @@ struct ShelfScreen: View {
                 NotConfiguredView()
             }
         }
-        .onAppear {
+        .sheet(isPresented: $isConfirmingBeans, onDismiss: {
             model.reload()
+        }) {
+            NavigationStack {
+                PendingBeansScreen(model: pendingBeans, vocabulary: vocabulary, language: language)
+            }
+        }
+        .onAppear {
+            isOnScreen = true
+            model.reload()
+            askForConfirmationIfDue()
+        }
+        .onDisappear {
+            isOnScreen = false
         }
         .onReceive(NotificationCenter.default.publisher(for: AccountStore.didSaveNotification, object: store)) { _ in
             model.reload()
@@ -165,7 +206,26 @@ struct ShelfScreen: View {
             // Days since roast move on with the calendar day.
             if phase == .active {
                 model.reload()
+                askForConfirmationIfDue()
+            } else if phase == .background {
+                // The next opening asks again.
+                askedForConfirmation = false
             }
+        }
+    }
+
+    /// Opens the confirmation of pending beans' Open Food Facts hits once per opening of the
+    /// app, if there are any (M2-T25).
+    private func askForConfirmationIfDue() {
+        // Only on the bare shelf: not over its own brew sheet, and not while any pushed screen
+        // (and whatever sheet that screen shows) covers it.
+        guard isOnScreen, !askedForConfirmation, !isConfirmingBeans, brewing == nil, !isScanning else {
+            return
+        }
+        pendingBeans.reload()
+        if pendingBeans.current != nil {
+            askedForConfirmation = true
+            isConfirmingBeans = true
         }
     }
 }

@@ -29,6 +29,15 @@ final class LookupModel {
         /// Any other failure, for example an answer the app cannot read.
         case failed
 
+        /// Whether the scanned barcode can be kept as a pending bean (M2-T25): the lookup could
+        /// not answer now, but will once online or tomorrow. The outbox looks it up later.
+        var allowsKeepingForLater: Bool {
+            switch self {
+            case .unavailable, .limitReached: true
+            case .rejected, .noProduct, .failed: false
+            }
+        }
+
         /// Whether "Try again" makes sense. A rejection, a missing product or the daily limit
         /// would only give the same answer.
         var allowsRetry: Bool {
@@ -52,6 +61,10 @@ final class LookupModel {
         case confirming(API.OpenFoodFactsProduct)
         /// No bean: the pick-list entry is offered.
         case pickList(PickListReason)
+        /// The lookup could not answer, and the user chose to put the bag on the shelf now
+        /// (M2-T25). The shelf entry form saves the pending bean with the entry
+        /// (`ShelfEntryEditorModel.Mode.addScanned`); until then nothing is stored.
+        case keptForLater
         /// The server refused the token, also after a refresh (401, `APIError.unauthorized`):
         /// the user has to sign in again. No retry and no pick-list entry, which would be
         /// refused the same way.
@@ -84,9 +97,28 @@ final class LookupModel {
             true
         case .pickList(let reason):
             reason.allowsRetry
-        case .lookingUp, .bean, .openFoodFacts, .confirming, .signInRequired:
+        case .lookingUp, .bean, .openFoodFacts, .confirming, .signInRequired, .keptForLater:
             false
         }
+    }
+
+    /// Whether `keepForLater()` would keep the barcode now.
+    var canKeepForLater: Bool {
+        if case .pickList(let reason) = state {
+            return reason.allowsKeepingForLater
+        }
+        return false
+    }
+
+    /// The lookup could not answer now (no network, unavailable, the daily cap): the bag can go
+    /// on the shelf anyway (M2-T25). Nothing is stored here: the shelf entry form saves the
+    /// pending bean together with the entry, so a cancelled form leaves nothing behind, and the
+    /// outbox looks the barcode up once online.
+    func keepForLater() {
+        guard canKeepForLater else {
+            return
+        }
+        state = .keptForLater
     }
 
     /// Looks the barcode up: the catalogue first, then, on a 404, Open Food Facts through the

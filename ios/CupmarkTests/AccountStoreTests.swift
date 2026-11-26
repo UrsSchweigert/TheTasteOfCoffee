@@ -7,14 +7,38 @@ import XCTest
 final class AccountStoreTests: XCTestCase {
     // MARK: - Schema
 
-    func testTheSchemaStartsAtVersion1AndThePlanHasNoStagesYet() {
+    func testTheSchemaIsAtVersion2WithOneLightweightStageFromVersion1() {
         XCTAssertEqual(CupmarkSchemaV1.versionIdentifier, Schema.Version(1, 0, 0))
-        XCTAssertEqual(CupmarkMigrationPlan.schemas.count, 1)
+        XCTAssertEqual(CupmarkSchemaV2.versionIdentifier, Schema.Version(2, 0, 0))
+        XCTAssertEqual(CupmarkMigrationPlan.schemas.count, 2)
         XCTAssertTrue(CupmarkMigrationPlan.schemas.first == CupmarkSchemaV1.self)
-        XCTAssertTrue(CupmarkMigrationPlan.stages.isEmpty)
+        XCTAssertTrue(CupmarkMigrationPlan.schemas.last == CupmarkSchemaV2.self)
+        XCTAssertEqual(CupmarkMigrationPlan.stages.count, 1)
         let names = Set(CupmarkSchemaV1.models.map { model in String(describing: model) })
         // `OutboxOperation` joined version 1 before any release (M2-T16, ADR 0025).
         XCTAssertEqual(names, ["StoredBean", "StoredShelfEntry", "StoredBrew", "StoredRecipe", "StoredProfile", "OutboxOperation"])
+        // Version 2 (M2-T25) keeps every model of version 1 and adds the label photo queue.
+        let current = Set(CupmarkSchemaV2.models.map { model in String(describing: model) })
+        XCTAssertEqual(current, names.union(["QueuedLabelPhoto"]))
+    }
+
+    // MARK: - Outbox sequences
+
+    /// Operations queued before one save each get their own, increasing sequence, before and
+    /// after the save (the engine finds an operation again by its sequence).
+    func testOperationsQueuedBeforeOneSaveGetDistinctSequences() throws {
+        let store = try AccountStore.inMemory()
+        let first = try store.enqueue(.create, .bean, localID: UUID())
+        let second = try store.enqueue(.create, .shelfEntry, localID: UUID())
+        let third = try store.enqueue(.create, .brew, localID: UUID())
+        XCTAssertEqual([first.sequence, second.sequence, third.sequence], [1, 2, 3])
+        try store.save()
+
+        let fourth = try store.enqueue(.create, .recipe, localID: UUID())
+        let fifth = try store.enqueue(.create, .brew, localID: UUID())
+        XCTAssertEqual([fourth.sequence, fifth.sequence], [4, 5])
+        try store.save()
+        XCTAssertEqual(try store.outboxOperations().map(\.sequence), [1, 2, 3, 4, 5])
     }
 
     // MARK: - Create
