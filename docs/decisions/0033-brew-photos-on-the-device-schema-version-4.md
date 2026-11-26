@@ -46,3 +46,9 @@ The task leaves open how the photo is stored and linked to its brew, how a local
 - A record whose file is missing (for example after a restore of a backup made in between) counts towards the limit of 6 until the user deletes it.
 - After an account deletion the photos may still be in the user's own earlier device backups, which the app cannot reach.
 - Migration tested only in the simulator: the version 3 to 4 migration is tested with a real version 3 store file in `StoreMigrationTests` on the macOS runner, not on a device store.
+
+## Addendum M2-T42b: capture and pick
+
+- The photo library is reached only through SwiftUI `PhotosPicker` (iOS 16 and later; the app's minimum is 17), which runs out of process and hands the app only the photo the user picked. So there is no `NSPhotoLibraryUsageDescription`, no photo library authorisation and no `photoLibrary:` argument (which would make the picker return asset identifiers and ask for access). The camera uses the existing `NSCameraUsageDescription`, whose text (en and de) now also says the camera photographs a brew.
+- The privacy manifest needs no change, checked against the required-reason API categories: the picker and the camera add none; thumbnails are read with ImageIO from a file URL (no file timestamp, disk space, user defaults, boot time or keyboard API). The App Privacy answers stay as they are, since a brew photo is never sent.
+- A photo is added only to a saved brew: the "Photos" section is on the rating screen of a saved brew (the brew sheet's rating after saving, and the brew list's detail), so no draft photo record or temporary photo data exists.

@@ -13,6 +13,8 @@ import SwiftUI
 ///   many are picked the other notes are disabled.
 /// - Buy again: optional, Yes or No as a segmented control with "Clear"; not set is not
 ///   sent.
+/// - Photos: a "Photos" section for the saved brew (`BrewPhotosSection`, M2-T42b), on the
+///   device only.
 /// - Nothing is typed (invariant 1). Every list comes from the generated vocabulary.
 /// - Save writes through `RatingFormModel` to `AccountStore`, which queues it in the outbox,
 ///   so it works offline.
@@ -26,6 +28,7 @@ struct RatingScreen: View {
     }
 
     @State private var model: RatingFormModel
+    @State private var photos: BrewPhotosModel
     let mode: Mode
     let vocabulary: VocabularyStore
     let language: VocabularyLanguage
@@ -43,6 +46,7 @@ struct RatingScreen: View {
         language: VocabularyLanguage
     ) {
         _model = State(initialValue: RatingFormModel(brew: localID, store: store, repeatedFrom: repeatedFrom))
+        _photos = State(initialValue: BrewPhotosModel(brew: localID, store: store))
         self.mode = mode
         self.vocabulary = vocabulary
         self.language = language
@@ -74,6 +78,9 @@ struct RatingScreen: View {
             }
             // A rating made with a newer vocabulary is shown, not changed.
             .disabled(model.isReadOnly)
+            // Photos stay on the device and belong to the saved brew, so they can be added and
+            // deleted even when the rating is read-only (M2-T42b).
+            BrewPhotosSection(model: photos)
             if let failure = model.failure {
                 Section {
                     Label {
@@ -88,6 +95,7 @@ struct RatingScreen: View {
             }
         }
         .formBackground()
+        .brewPhotoPresentations(photos)
         .navigationTitle(Text(L10n.ratingTitle))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

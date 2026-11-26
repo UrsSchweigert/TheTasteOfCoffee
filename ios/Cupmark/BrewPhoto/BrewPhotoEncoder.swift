@@ -62,4 +62,12 @@ enum BrewPhotoEncoder {
             try BrewPhotoEncoder.encode(imageData)
         }.value
     }
+
+    /// The same for a camera capture (M2-T42b): the pixels are redrawn upright and encoded on a
+    /// background task. `LabelPhotoCapture` is `Sendable`, so nothing else crosses.
+    static func encodeInBackground(_ capture: LabelPhotoCapture) async throws -> EncodedBrewPhoto {
+        try await Task.detached(priority: .userInitiated) {
+            try BrewPhotoEncoder.encode(capture.image, orientation: capture.orientation)
+        }.value
+    }
 }
