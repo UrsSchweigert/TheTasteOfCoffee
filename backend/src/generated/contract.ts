@@ -19,7 +19,7 @@ export type CalendarDate = z.infer<typeof CalendarDateSchema>;
 export const TimestampSchema = z.string().refine(isDateTime, { error: 'Invalid date-time' });
 export type Timestamp = z.infer<typeof TimestampSchema>;
 
-export const VocabularyVersionSchema = z.int().min(1).max(2);
+export const VocabularyVersionSchema = z.int().min(1).max(3);
 export type VocabularyVersion = z.infer<typeof VocabularyVersionSchema>;
 
 export const HealthStatusSchema = z.strictObject({
@@ -68,6 +68,31 @@ export type MilkType = z.infer<typeof MilkTypeSchema>;
 export const WaterTempSpecialSchema = z.enum(['cold']);
 export type WaterTempSpecial = z.infer<typeof WaterTempSpecialSchema>;
 
+export const GrinderSchema = z.enum([
+  'comandante_c40',
+  'onezpresso_jx_pro',
+  'onezpresso_k_ultra',
+  'timemore_chestnut_c3',
+  'kingrinder_k6',
+  'hario_skerton_pro',
+  'porlex_mini_ii',
+  'baratza_encore',
+  'baratza_encore_esp',
+  'baratza_virtuoso_plus',
+  'fellow_ode_gen_2',
+  'fellow_opus',
+  'wilfa_uniform',
+  'graef_cm_800',
+  'sage_smart_grinder_pro',
+  'sage_dose_control_pro',
+  'niche_zero',
+  'df64',
+  'eureka_mignon_specialita',
+  'pre_ground',
+  'other',
+]);
+export type Grinder = z.infer<typeof GrinderSchema>;
+
 export const ProcessSchema = z.enum([
   'washed',
   'natural',
@@ -77,6 +102,7 @@ export const ProcessSchema = z.enum([
   'anaerobic',
   'carbonic_maceration',
   'other',
+  'unknown',
 ]);
 export type Process = z.infer<typeof ProcessSchema>;
 
@@ -143,7 +169,7 @@ export const OriginSchema = z.enum([
 ]);
 export type Origin = z.infer<typeof OriginSchema>;
 
-export const SpeciesSchema = z.enum(['arabica', 'robusta', 'liberica', 'excelsa', 'arabica_robusta_blend', 'unknown']);
+export const SpeciesSchema = z.enum(['arabica', 'robusta', 'liberica', 'excelsa', 'arabica_robusta_blend', 'unknown', 'other']);
 export type Species = z.infer<typeof SpeciesSchema>;
 
 export const VarietySchema = z.enum([
@@ -295,6 +321,9 @@ export type BrewTimeS = z.infer<typeof BrewTimeSSchema>;
 export const GrindNormalisedSchema = z.number().min(1).max(10).refine((value) => value % 0.5 === 0, { error: 'Not a multiple of 0.5' });
 export type GrindNormalised = z.infer<typeof GrindNormalisedSchema>;
 
+export const GrindSettingSchema = z.number().min(0).max(240).refine((value) => value % 0.5 === 0, { error: 'Not a multiple of 0.5' });
+export type GrindSetting = z.infer<typeof GrindSettingSchema>;
+
 export const ScoreSchema = z.number().min(1).max(10).refine((value) => value % 0.5 === 0, { error: 'Not a multiple of 0.5' });
 export type Score = z.infer<typeof ScoreSchema>;
 
@@ -397,7 +426,12 @@ export const BrewParametersSchema = z.strictObject({
   grind_normalised: GrindNormalisedSchema.optional(),
   water_type: WaterTypeSchema.optional(),
   milk: MilkTypeSchema.optional(),
+  grinder: GrinderSchema.optional(),
+  grind_setting: GrindSettingSchema.optional(),
 }).superRefine((value, ctx) => {
+  if (isPresent(value, 'grind_setting') && !isPresent(value, 'grinder')) {
+    ctx.addIssue({ code: 'custom', message: 'grind_setting requires grinder', path: ['grinder'] });
+  }
   if (isPresent(value, 'water_temp_c') && isPresent(value, 'water_temp_special')) {
     ctx.addIssue({ code: 'custom', message: 'water_temp_c, water_temp_special exclude each other', path: [] });
   }
@@ -495,6 +529,7 @@ export const componentSchemas = {
   WaterType: WaterTypeSchema,
   MilkType: MilkTypeSchema,
   WaterTempSpecial: WaterTempSpecialSchema,
+  Grinder: GrinderSchema,
   Process: ProcessSchema,
   RoastLevel: RoastLevelSchema,
   Origin: OriginSchema,
@@ -509,6 +544,7 @@ export const componentSchemas = {
   WaterTempC: WaterTempCSchema,
   BrewTimeS: BrewTimeSSchema,
   GrindNormalised: GrindNormalisedSchema,
+  GrindSetting: GrindSettingSchema,
   Score: ScoreSchema,
   BeanAttributes: BeanAttributesSchema,
   BeanCreate: BeanCreateSchema,

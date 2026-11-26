@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "status": "draft",
+  "status": "published",
   "processes": [
     { "id": "washed" },
     { "id": "natural" },
@@ -9,7 +9,8 @@
     { "id": "wet_hulled" },
     { "id": "anaerobic" },
     { "id": "carbonic_maceration" },
-    { "id": "other" }
+    { "id": "other" },
+    { "id": "unknown" }
   ],
   "roast_levels": [
     { "id": "light" },
@@ -82,6 +83,7 @@
     { "id": "liberica" },
     { "id": "excelsa" },
     { "id": "arabica_robusta_blend" },
+    { "id": "other" },
     { "id": "unknown" }
   ],
   "varieties": [

@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse } from 'yaml';
 import Ajv2020 from 'ajv/dist/2020.js';
-import { CONTRACTS_DIR, collectIds, listVersions, loadI18n, loadVocabulary, mergeIdLists } from './vocabulary.mjs';
+import { CONTRACTS_DIR, collectIds, isExactStep, listVersions, loadI18n, loadVocabulary, mergeIdLists } from './vocabulary.mjs';
 
 export const OPENAPI_FILE = join(CONTRACTS_DIR, 'openapi.yaml');
 
@@ -226,7 +226,6 @@ export function forEachSchema(doc, visit) {
   }
 }
 
-const isDyadic = (step) => Number.isFinite(step) && step > 0 && Number.isInteger(step * 2 ** 20);
 const isAnchored = (pattern) => pattern.startsWith('^') && pattern.endsWith('$') && !pattern.endsWith('\\$');
 const WIDE_ESCAPES = ['S', 's', 'W', 'w', 'D', 'P', 'p'];
 
@@ -374,7 +373,7 @@ export function lintSchemas(doc) {
         if (typeof schema.minimum === 'number' && typeof schema.maximum === 'number' && schema.minimum > schema.maximum) {
           add(path, 'minimum is above maximum');
         }
-        if ('multipleOf' in schema && !isDyadic(schema.multipleOf)) {
+        if ('multipleOf' in schema && !isExactStep(schema.multipleOf)) {
           add(path, `multipleOf ${schema.multipleOf} is not exact in binary floating point; use a scaled integer`);
         }
         break;

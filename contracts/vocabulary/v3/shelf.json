@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "status": "draft",
+  "status": "published",
   "bag_sizes": [
     { "id": "g_250", "grams": 250 },
     { "id": "g_500", "grams": 500 },

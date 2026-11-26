@@ -54,9 +54,9 @@ test('openapi.yaml: no field, parameter or path segment names a user', () => {
   assert.deepEqual(findIdentityFields(doc), []);
 });
 
-test('openapi.yaml: enums, ranges and limits equal the published vocabulary (v1 and v2)', () => {
-  assert.equal(context.latestPublished, 2);
-  assert.deepEqual(context.published.map((p) => p.version), [1, 2]);
+test('openapi.yaml: enums, ranges and limits equal the published vocabulary (v1, v2 and v3)', () => {
+  assert.equal(context.latestPublished, 3);
+  assert.deepEqual(context.published.map((p) => p.version), [1, 2, 3]);
   assert.deepEqual(checkVocabularyBindings(doc, context), []);
 });
 
@@ -265,7 +265,7 @@ test('openapi.yaml: the export returns CSV only', () => {
 const EXPORT_COLUMNS = [
   'item_type', 'locale', 'contribute_to_aggregates', 'shelf_entry_id', 'vocabulary_version', 'bean_id',
   'purchase_date', 'roast_date', 'bag_size', 'price_band', 'brew_id', 'brewed_at',
-  'method', 'dose_dg', 'water_g', 'water_temp_c', 'water_temp_special', 'brew_time_s', 'grind_normalised', 'water_type', 'milk',
+  'method', 'dose_dg', 'water_g', 'water_temp_c', 'water_temp_special', 'brew_time_s', 'grind_normalised', 'grinder', 'grind_setting', 'water_type', 'milk',
   'scores_aroma', 'scores_flavour', 'scores_aftertaste', 'scores_acidity', 'scores_body', 'scores_sweetness', 'scores_balance', 'scores_overall',
   'intensities_acidity', 'intensities_body', 'intensities_bitterness', 'flavour_notes', 'buy_again', 'recipe_id', 'photo_id',
 ];
@@ -450,7 +450,7 @@ test('schemas reject what the specification forbids', () => {
   rejects('BrewInput', brewWith((b) => { b.note = 'tasty'; }), 'unknown property');
   rejects('BrewInput', brewWith((b) => { b.user_id = 'abc'; }), 'user id in the body');
   rejects('BrewInput', brewWith((b) => { delete b.vocabulary_version; }), 'missing vocabulary version');
-  rejects('BrewInput', brewWith((b) => { b.vocabulary_version = 3; }), 'unpublished vocabulary version');
+  rejects('BrewInput', brewWith((b) => { b.vocabulary_version = 4; }), 'unpublished vocabulary version');
   rejects('BrewInput', brewWith((b) => { delete b.parameters.method; }), 'method is required');
   rejects('BrewInput', brewWith((b) => { b.parameters.method = 'pour_over'; }), 'unknown method');
   rejects('BrewInput', brewWith((b) => { b.parameters.dose_dg = 49; }), 'dose below 5.0 g');
@@ -678,7 +678,7 @@ test('vocabulary binding fails on wrong ranges, steps, keys, limits and versions
     s.GrindNormalised.type = 'integer';
     s.BrewTimeS.type = 'number';
     s.Rating.properties.flavour_notes.maxItems = 6;
-    s.VocabularyVersion.maximum = 3;
+    s.VocabularyVersion.maximum = 2;
     delete s.Intensities.properties.bitterness;
     s.WaterG['x-vocabulary-rnage'] = 'brew.ranges.water_g';
   }), context);
@@ -688,7 +688,7 @@ test('vocabulary binding fails on wrong ranges, steps, keys, limits and versions
   assertProblem(problems, '#/components/schemas/GrindNormalised: step 0.5 is fractional, so type must be number');
   assertProblem(problems, '#/components/schemas/BrewTimeS: step 1 is whole, so type must be integer');
   assertProblem(problems, 'maxItems 6 differs from vocabulary flavour_notes.max_picks 5');
-  assertProblem(problems, '#/components/schemas/VocabularyVersion: vocabulary version must be an integer from 1 to the latest published version 2');
+  assertProblem(problems, '#/components/schemas/VocabularyVersion: vocabulary version must be an integer from 1 to the latest published version 3');
   assertProblem(problems, '#/components/schemas/Intensities: properties acidity, body differ from vocabulary intensity_dimensions');
   assertProblem(problems, '#/components/schemas/WaterG: unknown keyword x-vocabulary-rnage');
 });
@@ -995,9 +995,9 @@ test('raw body check fails: a JPEG or CSV body anywhere a client sends data (req
 
 // ---- Vocabulary v2: published on 2026-11-25 and bound (ADR 0004, 0006, 0011) ----
 
-test('v2 is bound: origin, species and variety are in BeanAttributes, and the version allows 2', () => {
+test('v2 is bound: origin, species and variety are in BeanAttributes, and the version allows 3', () => {
   const s = schemas(doc);
-  assert.equal(s.VocabularyVersion.maximum, 2);
+  assert.equal(s.VocabularyVersion.maximum, 3);
   assert.deepEqual(s.BeanAttributes.properties, {
     process: { $ref: '#/components/schemas/Process' },
     roast_level: { $ref: '#/components/schemas/RoastLevel' },
@@ -1007,10 +1007,11 @@ test('v2 is bound: origin, species and variety are in BeanAttributes, and the ve
   });
   const lists = collectIds(loadVocabulary(2)).lists;
   assert.deepEqual([s.Origin['x-vocabulary'], s.Origin.enum], ['origins', lists.origins]);
-  assert.deepEqual([s.Species['x-vocabulary'], s.Species.enum], ['species', lists.species]);
+  // The enum spans versions (ids are never reused), so v3's other follows v2's unknown.
+  assert.deepEqual([s.Species['x-vocabulary'], s.Species.enum], ['species', [...lists.species, 'other']]);
   assert.deepEqual([s.Variety['x-vocabulary'], s.Variety.enum], ['varieties', lists.varieties]);
-  // The v3 draft (M2-T2) adds grinders; it is bound when v3 is published (M2-T4).
-  assert.deepEqual(context.draftLists, { grinders: 3 });
+  // v3 is published and bound (M2-T4): no list is left that only a draft has.
+  assert.deepEqual(context.draftLists, {});
 });
 
 test('v2 bean attributes: the schema accepts v2 ids and rejects anything else', () => {
@@ -1021,33 +1022,33 @@ test('v2 bean attributes: the schema accepts v2 ids and rejects anything else', 
   rejects({ vocabulary_version: 2, attributes: { variety: 'robusta' } }, 'robusta is a species, not a variety');
   rejects({ vocabulary_version: 2, attributes: { species: 'canephora' } }, 'not a species id');
   rejects({ vocabulary_version: 2, attributes: { country: 'indonesia' } }, 'the country is derived from the vocabulary, never sent');
-  rejects({ vocabulary_version: 3, attributes: {} }, 'v3 is not published');
+  rejects({ vocabulary_version: 4, attributes: {} }, 'v4 is not published');
   // The schema is the union over versions, so origin with version 1 passes
   // here; the server rejects it, because v1 has no origins (ADR 0004, M1-T5).
   assert.deepEqual(validate('BeanCreate', { vocabulary_version: 1, attributes: { origin: 'kenya' } }), []);
 });
 
 test('once a later version is published, the contract fails until it is bound and allowed', () => {
-  // A made-up v3 that adds a list, published.
-  const v3 = clone(loadVocabulary(2));
-  for (const file of Object.values(v3)) { file.version = 3; file.status = 'published'; }
-  v3.bean.altitudes = [{ id: 'low' }, { id: 'high' }];
-  const versions = [1, 2].map((version) => ({ version, files: loadVocabulary(version) }));
-  const published = buildVocabularyContext([...versions, { version: 3, files: v3 }], context.languages);
-  assert.equal(published.latestPublished, 3);
+  // A made-up v4 that adds a list, published.
+  const v4 = clone(loadVocabulary(3));
+  for (const file of Object.values(v4)) { file.version = 4; file.status = 'published'; }
+  v4.bean.altitudes = [{ id: 'low' }, { id: 'high' }];
+  const versions = [1, 2, 3].map((version) => ({ version, files: loadVocabulary(version) }));
+  const published = buildVocabularyContext([...versions, { version: 4, files: v4 }], context.languages);
+  assert.equal(published.latestPublished, 4);
   const problems = checkVocabularyBindings(doc, published);
   assertProblem(problems, 'vocabulary list altitudes is not used by any schema');
-  assertProblem(problems, 'vocabulary version must be an integer from 1 to the latest published version 3');
+  assertProblem(problems, 'vocabulary version must be an integer from 1 to the latest published version 4');
   // While it is a draft, its new list cannot be bound.
-  for (const file of Object.values(v3)) file.status = 'draft';
-  const draft = buildVocabularyContext([...versions, { version: 3, files: v3 }], context.languages);
-  assert.equal(draft.latestPublished, 2);
-  assert.deepEqual(draft.draftLists, { altitudes: 3 });
+  for (const file of Object.values(v4)) file.status = 'draft';
+  const draft = buildVocabularyContext([...versions, { version: 4, files: v4 }], context.languages);
+  assert.equal(draft.latestPublished, 3);
+  assert.deepEqual(draft.draftLists, { altitudes: 4 });
   const bound = broken((d) => {
     schemas(d).Altitude = { type: 'string', enum: ['low', 'high'], 'x-vocabulary': 'altitudes' };
     schemas(d).BeanAttributes.properties.altitude = { $ref: '#/components/schemas/Altitude' };
   });
-  assertProblem(checkVocabularyBindings(bound, draft), '#/components/schemas/Altitude: x-vocabulary altitudes is only in draft vocabulary v3; bind it when v3 is published');
+  assertProblem(checkVocabularyBindings(bound, draft), '#/components/schemas/Altitude: x-vocabulary altitudes is only in draft vocabulary v4; bind it when v4 is published');
 });
 
 test('v2 lists must stay bound and in step with the vocabulary', () => {
@@ -1071,7 +1072,7 @@ test('v2 lists must stay bound and in step with the vocabulary', () => {
   assertProblem(drifted, '#/components/schemas/Variety: enum differs from vocabulary varieties; not in vocabulary robusta');
   assertProblem(drifted, '#/components/schemas/Species: enum differs from vocabulary species; order differs');
   const stale = checkVocabularyBindings(broken((d) => { schemas(d).VocabularyVersion.maximum = 1; }), context);
-  assertProblem(stale, 'vocabulary version must be an integer from 1 to the latest published version 2');
+  assertProblem(stale, 'vocabulary version must be an integer from 1 to the latest published version 3');
 });
 
 test('every list of the latest published version is bound, except the documented ones', () => {
@@ -1081,4 +1082,39 @@ test('every list of the latest published version is bound, except the documented
   }), context);
   assertProblem(problems, 'vocabulary list intensity_dimensions is not used by any schema');
   assert.ok(!hasProblem(checkVocabularyBindings(doc, context), 'flavour_categories'));
+});
+
+// ---- Vocabulary v3: published on 2026-11-26 and bound (ADR 0004, 0021, 0029) ----
+
+test('v3 is bound: grinder and grind_setting are in BrewParameters, and processes and species have their new ids', () => {
+  const s = schemas(doc);
+  const brew = loadVocabulary(3).brew;
+  const lists = collectIds(loadVocabulary(3)).lists;
+  assert.deepEqual([s.Grinder['x-vocabulary'], s.Grinder.enum], ['grinders', brew.grinders.map((g) => g.id)]);
+  assert.equal(s.Process.enum.at(-1), 'unknown');
+  assert.ok(s.Species.enum.includes('other'));
+  assert.deepEqual([...s.Species.enum].sort(), [...lists.species].sort());
+  assert.deepEqual(s.BrewParameters.properties.grinder, { $ref: '#/components/schemas/Grinder' });
+  assert.deepEqual(s.BrewParameters.properties.grind_setting, { $ref: '#/components/schemas/GrindSetting' });
+  assert.deepEqual(s.BrewParameters.dependentRequired, { grind_setting: ['grinder'] });
+  assert.doesNotMatch(s.BrewParameters.description, /not defined in vocabulary v1/);
+});
+
+test('grind_setting is bounded by the widest grinder scale, and its step divides every scale step', () => {
+  const setting = schemas(doc).GrindSetting;
+  const scales = loadVocabulary(3).brew.grinders.filter((g) => g.scale).map((g) => g.scale);
+  assert.equal(setting.minimum, Math.min(...scales.map((r) => r.minimum)));
+  assert.equal(setting.maximum, Math.max(...scales.map((r) => r.maximum)));
+  for (const range of scales) assert.equal(range.multipleOf % setting.multipleOf, 0, `step ${range.multipleOf}`);
+  assert.equal(setting.multipleOf, Math.min(...scales.map((r) => r.multipleOf)));
+});
+
+test('v3 brew parameters: the schema accepts a grinder with a setting and rejects a setting alone or off the step', () => {
+  const brew = (parameters) => ({ ...validBrew(), vocabulary_version: 3, parameters: { method: 'v60', ...parameters } });
+  assert.deepEqual(validate('BrewInput', brew({ grinder: 'niche_zero', grind_setting: 18.5 })), []);
+  assert.deepEqual(validate('BrewInput', brew({ grinder: 'pre_ground' })), []);
+  assert.notDeepEqual(validate('BrewInput', brew({ grind_setting: 18 })), [], 'a setting needs a grinder');
+  assert.notDeepEqual(validate('BrewInput', brew({ grinder: 'niche_zero', grind_setting: 18.25 })), [], 'off the 0.5 step');
+  assert.notDeepEqual(validate('BrewInput', brew({ grinder: 'niche_zero', grind_setting: 241 })), [], 'above the widest scale');
+  assert.notDeepEqual(validate('BrewInput', brew({ grinder: 'Niche Zero' })), [], 'an id, not a name');
 });

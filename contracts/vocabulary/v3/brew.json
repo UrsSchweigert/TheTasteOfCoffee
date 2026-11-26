@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "status": "draft",
+  "status": "published",
   "methods": [
     { "id": "espresso" },
     { "id": "moka_pot" },

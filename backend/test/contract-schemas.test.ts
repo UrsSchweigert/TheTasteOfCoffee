@@ -78,7 +78,7 @@ describe('BrewInput', () => {
     ['a timestamp without offset', (b: Mutable) => { b.brewed_at = '2026-11-25T07:30:00'; }],
     ['a timestamp on a day that does not exist', (b: Mutable) => { b.brewed_at = '2026-02-29T07:30:00Z'; }],
     ['a date where a timestamp belongs', (b: Mutable) => { b.brewed_at = '2026-11-25'; }],
-    ['an unpublished vocabulary version', (b: Mutable) => { b.vocabulary_version = 3; }],
+    ['an unpublished vocabulary version', (b: Mutable) => { b.vocabulary_version = 4; }],
     ['a missing method', (b: Mutable) => { delete child(b, 'parameters').method; }],
     [
       'both water_temp_c and water_temp_special',
