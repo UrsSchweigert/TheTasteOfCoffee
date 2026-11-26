@@ -165,6 +165,49 @@ describe.each(STAGES)('stage %s', (stage) => {
   });
 });
 
+describe('CupmarkCfnExecution and the bootstrap version parameter', () => {
+  const ssmAllows = execution.filter((s) => s.Effect === 'Allow' && list(s.Action).some((a) => /^ssm:/i.test(a)));
+  const version = `arn:aws:ssm:${REGION}:${FAKE_ACCOUNT}:parameter/cdk-bootstrap/cupmark/version`;
+
+  it('has exactly one statement for it: two read actions on one parameter of the cupmark qualifier', () => {
+    const own = execution.filter((s) => s.Sid === 'CupmarkBootstrapVersionParameter');
+    expect(own).toEqual([
+      {
+        Sid: 'CupmarkBootstrapVersionParameter',
+        Effect: 'Allow',
+        Action: ['ssm:GetParameter', 'ssm:GetParameters'],
+        Resource: version,
+      },
+    ]);
+  });
+
+  it('lets CloudFormation resolve BootstrapVersion of the cupmark qualifier and no other qualifier', () => {
+    expect(allows(execution, 'ssm:GetParameters', version)).toBe(true);
+    expect(allows(execution, 'ssm:GetParameter', version)).toBe(true);
+    const other = (q: string) => `arn:aws:ssm:${REGION}:${FAKE_ACCOUNT}:parameter/cdk-bootstrap/${q}/version`;
+    expect(allows(execution, 'ssm:GetParameters', other('hnb659fds'))).toBe(false);
+    expect(allows(execution, 'ssm:GetParameters', other('cupmarkx'))).toBe(false);
+    expect(allows(execution, 'ssm:GetParameters', `${version}/x`)).toBe(false);
+    expect(allows(execution, 'ssm:GetParameters', version.replace(REGION, 'eu-west-1'))).toBe(false);
+    for (const action of ['ssm:PutParameter', 'ssm:DeleteParameter', 'ssm:GetParametersByPath']) {
+      expect(allows(execution, action, version), action).toBe(false);
+    }
+  });
+
+  it('names no bootstrap qualifier but cupmark under /cdk-bootstrap/', () => {
+    const text = readFileSync(new URL('../../scripts/aws/cupmark-cfn-execution-policy.json', import.meta.url), 'utf8');
+    expect(text.match(/cdk-bootstrap\/[^/"]*/g)).toEqual(['cdk-bootstrap/cupmark']);
+  });
+
+  it('keeps ssm access to /cupmark/* and that one parameter, and a wildcard resource only for the region-scoped services', () => {
+    const resources = ssmAllows.flatMap((s) => list(s.Resource)).filter((r) => r.startsWith('arn:aws:ssm:'));
+    expect(resources.sort()).toEqual([`arn:aws:ssm:${REGION}:${FAKE_ACCOUNT}:parameter/cupmark/*`, version].sort());
+    const starResource = execution.filter((s) => s.Effect === 'Allow' && list(s.Resource).includes('*'));
+    expect(starResource.map((s) => s.Sid)).toEqual(['ServicesThatCannotBeNameScoped']);
+    expect(list(starResource[0]?.Action)).toEqual(['apigateway:*', 'cognito-idp:*', 'cognito-identity:*']);
+  });
+});
+
 describe('the boundary stays narrow', () => {
   it('allows the Cognito identity-provider actions and AdminDeleteUser only, and only on user pools in eu-central-1', () => {
     const pool = `arn:aws:cognito-idp:${REGION}:${FAKE_ACCOUNT}:userpool/${REGION}_Example1`;

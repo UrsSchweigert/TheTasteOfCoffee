@@ -328,6 +328,7 @@ Steps 1 and 4 below, and the trust edit of #46, are done by `scripts/aws/first-d
 1. **Re-apply the guardrails** with `scripts/aws/apply-guardrails.sh` (dry run first, then `--apply`). M1-T2 changed both policies:
    - `CupmarkBoundary`: `dynamodb:ConditionCheckItem` on `table/cupmark-*` (the repository's transactions use condition checks), and the four Cognito identity-provider actions on `userpool/*` in eu-central-1 for the Apple provider function (pools cannot be name-scoped; each role's own policy names its pool).
    - `CupmarkCfnExecution`: `s3:GetObject` on `cdk-cupmark-assets-<account>-eu-central-1/*`, so CloudFormation can create functions from the bootstrap's asset bucket.
+   - `CupmarkCfnExecution` (fix after the first dev deploy): `ssm:GetParameter` and `ssm:GetParameters` on exactly `parameter/cdk-bootstrap/cupmark/version`. Every stack on the `cupmark` qualifier has a `BootstrapVersion` parameter that CloudFormation resolves with the execution role; without this the change set fails with AccessDenied. `CupmarkBoundary` is unchanged: it caps roles the stacks create, and the execution role is not one of them. Re-apply the guardrails again if you applied the version above before this fix.
    - `test/policies.test.ts` checks that the boundary allows everything the stack's roles are granted, and that the execution policy can read the code.
 
    M1-T6 (account deletion, ADR 0017) changed `CupmarkBoundary` again, so re-apply it even if you already applied the M1-T2 version:

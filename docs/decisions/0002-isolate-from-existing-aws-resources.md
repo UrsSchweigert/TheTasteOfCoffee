@@ -27,3 +27,7 @@ Cupmark deploys into an AWS account that already hosts other projects (sites, bu
 - IAM cannot scope API Gateway and Cognito creation by name (ids are generated), so those two services are allowed region-wide. Cupmark cannot be stopped from creating extra APIs or pools, but it can no longer change or delete resources of other projects in the name-scoped services.
 - Every new service Cupmark needs must be added to `CupmarkCfnExecution` first; a failed deploy with AccessDenied is the signal.
 - Costs nothing: IAM policies and a bootstrap bucket.
+
+## Addendum 2026-11-26: bootstrap version parameter
+
+The first dev deploy failed because CloudFormation, acting as the execution role, resolves the `BootstrapVersion` parameter of every stack on the `cupmark` qualifier from SSM. `CupmarkCfnExecution` now allows `ssm:GetParameter` and `ssm:GetParameters` on exactly `parameter/cdk-bootstrap/cupmark/version` (statement `CupmarkBootstrapVersionParameter`), and nothing else under `/cdk-bootstrap/`; the shared default qualifier stays out of reach. `CupmarkBoundary` is unchanged: it caps the roles the stacks create, not the execution role. The owner re-applies the guardrails after the merge.

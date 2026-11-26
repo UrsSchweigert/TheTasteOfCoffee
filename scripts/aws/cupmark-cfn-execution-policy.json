@@ -42,6 +42,15 @@
       "Resource": "arn:aws:s3:::cdk-cupmark-assets-${ACCOUNT}-${REGION}/*"
     },
     {
+      "Sid": "CupmarkBootstrapVersionParameter",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetParameter",
+        "ssm:GetParameters"
+      ],
+      "Resource": "arn:aws:ssm:${REGION}:${ACCOUNT}:parameter/cdk-bootstrap/cupmark/version"
+    },
+    {
       "Sid": "CupmarkIamRolesWithBoundary",
       "Effect": "Allow",
       "Action": [
