@@ -258,7 +258,8 @@ describe.each(STAGES)('stage %s', (stage) => {
         Sid: 'Logs',
         Effect: 'Allow',
         Action: ['logs:CreateLogStream', 'logs:PutLogEvents'],
-        Resource: { 'Fn::GetAtt': [logGroupId, 'Arn'] },
+        // Literal name, not GetAtt Arn: CloudFormation resolves that with logs:DescribeLogGroups.
+        Resource: { 'Fn::Join': ['', ['arn:aws:logs:eu-central-1:', { Ref: 'AWS::AccountId' }, `:log-group:/aws/lambda/${name}:*`]] },
       };
       const tableArn = { 'Fn::GetAtt': [tableId, 'Arn'] };
       const expected =
