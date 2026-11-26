@@ -29,6 +29,24 @@ final class StatisticsMethodPickerUITests: XCTestCase {
         app.descendants(matching: .any).matching(identifier: identifier).firstMatch
     }
 
+    /// Whether `identifier` is somewhere on the screen. A list builds only the rows near the
+    /// window, so an element far down does not exist until it is scrolled to: scroll down in
+    /// steps, then back to the top. "Absent" is only believed after scrolling the whole screen.
+    @MainActor
+    private func isOnScreen(_ identifier: String, in app: XCUIApplication, steps: Int = 8) -> Bool {
+        var found = element(identifier, in: app).exists
+        var swipes = 0
+        while !found && swipes < steps {
+            app.swipeUp()
+            swipes += 1
+            found = element(identifier, in: app).exists
+        }
+        for _ in 0..<swipes {
+            app.swipeDown()
+        }
+        return found
+    }
+
     @MainActor
     private func attachDiagnostics(_ app: XCUIApplication, _ name: String) {
         let attachment = XCTAttachment(string: app.debugDescription)
@@ -51,8 +69,8 @@ final class StatisticsMethodPickerUITests: XCTestCase {
         XCTAssertTrue(total.waitForExistence(timeout: 10), "the brew total is shown")
         // Four brews in the fixture: one unrated, three rated, of three methods.
         XCTAssertTrue(total.label.contains("4"), "all methods count every brew: \(total.label)")
-        XCTAssertTrue(element("statistics-best-method", in: app).exists, "all methods compare methods")
-        XCTAssertFalse(element("statistics-method-below", in: app).exists, "no empty state of a method yet")
+        XCTAssertTrue(isOnScreen("statistics-best-method", in: app), "all methods compare methods")
+        XCTAssertFalse(isOnScreen("statistics-method-below", in: app), "no empty state of a method yet")
 
         // Pick the first method the menu offers.
         picker.tap()
@@ -69,13 +87,13 @@ final class StatisticsMethodPickerUITests: XCTestCase {
         }
         option.tap()
 
-        let below = element("statistics-method-below", in: app)
-        guard below.waitForExistence(timeout: 10) else {
+        XCTAssertTrue(element("statistics-brews-total", in: app).waitForExistence(timeout: 10))
+        guard isOnScreen("statistics-method-below", in: app) else {
             attachDiagnostics(app, "missing: the empty state of the method")
             XCTFail("a method below the threshold did not show its empty state")
             return
         }
-        XCTAssertFalse(element("statistics-best-method", in: app).exists, "one method has nothing to compare")
+        XCTAssertFalse(isOnScreen("statistics-best-method", in: app), "one method has nothing to compare")
         // The first method has two of the fixture's four brews (one rated, the newest unrated).
         let methodTotal = element("statistics-brews-total", in: app).label
         XCTAssertTrue(methodTotal.contains("2"), "the total is that of the method: \(methodTotal)")
@@ -90,8 +108,9 @@ final class StatisticsMethodPickerUITests: XCTestCase {
             return
         }
         all.tap()
-        XCTAssertTrue(element("statistics-best-method", in: app).waitForExistence(timeout: 10), "the best method is back")
-        XCTAssertFalse(element("statistics-method-below", in: app).exists)
+        XCTAssertTrue(element("statistics-brews-total", in: app).waitForExistence(timeout: 10))
+        XCTAssertTrue(isOnScreen("statistics-best-method", in: app), "the best method is back")
+        XCTAssertFalse(isOnScreen("statistics-method-below", in: app))
         XCTAssertTrue(element("statistics-brews-total", in: app).label.contains("4"), "all methods again")
     }
 }
