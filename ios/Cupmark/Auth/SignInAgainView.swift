@@ -20,6 +20,7 @@ struct SignInAgainView: View {
         } actions: {
             SignInAgainButton()
         }
+        .screenBackground()
         .accessibilityIdentifier("sign-in-again")
     }
 }
@@ -36,7 +37,7 @@ struct SignInAgainButton: View {
         } label: {
             Text(L10n.signInAgainButton)
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(.prominent)
         .disabled(auth == nil)
         .accessibilityIdentifier("sign-in-again-button")
     }

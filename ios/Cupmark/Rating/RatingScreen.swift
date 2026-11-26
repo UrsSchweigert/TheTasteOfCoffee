@@ -61,6 +61,7 @@ struct RatingScreen: View {
                     }
                     .accessibilityIdentifier("rating-read-only")
                 }
+                .surfaceRow()
             }
             if model.offersLastRating {
                 lastRatingSection
@@ -83,8 +84,10 @@ struct RatingScreen: View {
                     }
                     .accessibilityIdentifier("rating-error")
                 }
+                .surfaceRow()
             }
         }
+        .formBackground()
         .navigationTitle(Text(L10n.ratingTitle))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -138,7 +141,9 @@ struct RatingScreen: View {
             }
         } header: {
             Text(L10n.ratingBrewHeader)
+                .secondaryText()
         }
+        .surfaceRow()
     }
 
     private var lastRatingSection: some View {
@@ -156,7 +161,9 @@ struct RatingScreen: View {
             .accessibilityIdentifier("rating-use-last")
         } footer: {
             Text(L10n.ratingUseLastFooter)
+                .secondaryText()
         }
+        .surfaceRow()
     }
 
     /// The offer says where its rating comes from (ADR 0026, Addendum M2-T27).
@@ -195,9 +202,12 @@ struct RatingScreen: View {
             }
         } header: {
             Text(L10n.ratingScoresHeader)
+                .secondaryText()
         } footer: {
             Text(L10n.ratingScoresFooter)
+                .secondaryText()
         }
+        .surfaceRow()
     }
 
     private var intensitySection: some View {
@@ -213,9 +223,12 @@ struct RatingScreen: View {
             }
         } header: {
             Text(L10n.ratingIntensityHeader)
+                .secondaryText()
         } footer: {
             Text(L10n.ratingIntensityFooter)
+                .secondaryText()
         }
+        .surfaceRow()
     }
 
     private var flavourNotesSection: some View {
@@ -238,7 +251,7 @@ struct RatingScreen: View {
                         Text(verbatim: VocabularyLabels.label(for: note, in: vocabulary, language: language))
                         Spacer()
                         Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
+                            .secondaryText()
                             .accessibilityHidden(true)
                     }
                     .contentShape(Rectangle())
@@ -249,9 +262,12 @@ struct RatingScreen: View {
             }
         } header: {
             Text(L10n.ratingNotesHeader)
+                .secondaryText()
         } footer: {
             Text(L10n.ratingNotesFooter)
+                .secondaryText()
         }
+        .surfaceRow()
     }
 
     private var buyAgainSection: some View {
@@ -260,7 +276,9 @@ struct RatingScreen: View {
                 .accessibilityIdentifier("rating-buy-again")
         } footer: {
             Text(L10n.brewOfflineNote)
+                .secondaryText()
         }
+        .surfaceRow()
     }
 
     // MARK: - Bindings and texts
@@ -336,16 +354,17 @@ struct RatingScoreRow: View {
                     Text(verbatim: valueText)
                         .font(.headline)
                         .monospacedDigit()
+                        .accentText()
                 } else {
                     Text(L10n.lookupPickNotSet)
-                        .foregroundStyle(.secondary)
+                        .secondaryText()
                 }
             }
             .accessibilityHidden(true)
             if let question {
                 Text(verbatim: question)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .secondaryText()
                     .accessibilityHidden(true)
             }
             Slider(
@@ -361,6 +380,7 @@ struct RatingScoreRow: View {
                     }
                 }
             )
+            .tint(Theme.accent)
             .opacity(valueText == nil ? 0.5 : 1)
             .accessibilityLabel(Text(verbatim: title))
             .accessibilityValue(accessibilityValue)

@@ -92,8 +92,10 @@ struct BrewFormScreen: View {
                     }
                     .accessibilityIdentifier("brew-error")
                 }
+                .surfaceRow()
             }
         }
+        .formBackground()
         .navigationTitle(Text(L10n.brewTitle))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -147,7 +149,9 @@ struct BrewFormScreen: View {
             }
         } header: {
             Text(L10n.brewBeanHeader)
+                .secondaryText()
         }
+        .surfaceRow()
     }
 
     private var methodSection: some View {
@@ -165,7 +169,9 @@ struct BrewFormScreen: View {
             .accessibilityIdentifier("brew-method")
         } footer: {
             Text(L10n.brewMethodFooter)
+                .secondaryText()
         }
+        .surfaceRow()
     }
 
     private var amountsSection: some View {
@@ -181,7 +187,9 @@ struct BrewFormScreen: View {
             }
         } header: {
             Text(L10n.brewAmountsHeader)
+                .secondaryText()
         }
+        .surfaceRow()
     }
 
     private var ratioRow: some View {
@@ -192,7 +200,7 @@ struct BrewFormScreen: View {
                         .monospacedDigit()
                 } else {
                     Text(L10n.brewRatioMissing)
-                        .foregroundStyle(.secondary)
+                        .secondaryText()
                 }
             } label: {
                 Text(L10n.brewRatio)
@@ -215,9 +223,12 @@ struct BrewFormScreen: View {
             )
         } header: {
             Text(L10n.brewTimerHeader)
+                .secondaryText()
         } footer: {
             Text(L10n.brewTimerFooter)
+                .secondaryText()
         }
+        .surfaceRow()
     }
 
     private var waterSection: some View {
@@ -244,7 +255,9 @@ struct BrewFormScreen: View {
             }
         } header: {
             Text(L10n.brewWaterHeader)
+                .secondaryText()
         }
+        .surfaceRow()
     }
 
     private var grindAndMilkSection: some View {
@@ -264,9 +277,12 @@ struct BrewFormScreen: View {
             }
         } header: {
             Text(L10n.brewMoreHeader)
+                .secondaryText()
         } footer: {
             Text(L10n.brewOfflineNote)
+                .secondaryText()
         }
+        .surfaceRow()
     }
 
     /// Keeps the values as a recipe on save (M2-T27): a new recipe, or the recipe the form was
@@ -280,15 +296,19 @@ struct BrewFormScreen: View {
             .accessibilityIdentifier("brew-keep-recipe")
         } header: {
             Text(L10n.recipeHeader)
+                .secondaryText()
         } footer: {
             if model.valuesAreAnotherRecipe {
                 // Keeping them keeps that recipe; two equal recipes are never made (ADR 0028).
                 Text(L10n.brewRecipeAlreadyKept)
                     .accessibilityIdentifier("brew-recipe-already-kept")
+                    .secondaryText()
             } else {
                 Text(L10n.recipeFooter)
+                    .secondaryText()
             }
         }
+        .surfaceRow()
     }
 
     /// What a repeat was copied from, nil for an empty form.
@@ -429,7 +449,7 @@ struct BrewStepperRow: View {
                             .monospacedDigit()
                     } else {
                         Text(L10n.lookupPickNotSet)
-                            .foregroundStyle(.secondary)
+                            .secondaryText()
                     }
                 }
             } onIncrement: {
@@ -444,7 +464,7 @@ struct BrewStepperRow: View {
                     onClear()
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
+                        .secondaryText()
                         .minimumTapTarget()
                 }
                 .buttonStyle(.borderless)

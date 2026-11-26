@@ -16,6 +16,7 @@ struct NotConfiguredView: View {
             } description: {
                 Text(L10n.notConfiguredMessage)
             }
+            .screenBackground()
         }
         .accessibilityIdentifier("not-configured")
     }

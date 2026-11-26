@@ -200,6 +200,7 @@ struct PendingBeansScreen: View {
             } description: {
                 Text(L10n.pendingBeansNoneMessage)
             }
+            .screenBackground()
         }
     }
 

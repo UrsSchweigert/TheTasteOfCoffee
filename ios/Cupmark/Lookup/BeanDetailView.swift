@@ -47,11 +47,12 @@ struct BeanDetailView: View {
                     .font(.headline)
                     Text(bean.verified ? L10n.beanVerifiedMessage : L10n.beanUnverifiedMessage)
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .secondaryText()
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("bean-verified-state")
             }
+            .surfaceRow()
 
             if let product = bean.openFoodFacts {
                 OpenFoodFactsSection(product: product, loadImage: loadImage)
@@ -61,7 +62,7 @@ struct BeanDetailView: View {
                 let rows = bean.attributeRows
                 if rows.isEmpty {
                     Text(L10n.beanAttributesEmpty)
-                        .foregroundStyle(.secondary)
+                        .secondaryText()
                 } else {
                     ForEach(rows) { row in
                         LabeledContent {
@@ -69,7 +70,7 @@ struct BeanDetailView: View {
                                 Text(verbatim: label(for: row))
                                 Text(row.source.title)
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .secondaryText()
                             }
                             .multilineTextAlignment(.trailing)
                         } label: {
@@ -80,12 +81,15 @@ struct BeanDetailView: View {
                 }
             } header: {
                 Text(L10n.beanAttributesHeader)
+                    .secondaryText()
             }
+            .surfaceRow()
 
             if let labelPhotos {
                 labelPhotos
             }
         }
+        .listBackground()
         .accessibilityIdentifier("bean-detail")
     }
 
