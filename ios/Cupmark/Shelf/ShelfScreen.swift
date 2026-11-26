@@ -128,6 +128,18 @@ struct ShelfScreen: View {
                     }
                 }
                 .accessibilityIdentifier("shelf-scan")
+                // Personal statistics (M2-T28), read from this store, offline.
+                NavigationLink {
+                    StatisticsScreen(store: store, vocabulary: vocabulary, language: language)
+                } label: {
+                    Label {
+                        Text(L10n.statisticsTitle)
+                    } icon: {
+                        Image(systemName: "chart.bar")
+                            .accessibilityHidden(true)
+                    }
+                }
+                .accessibilityIdentifier("shelf-statistics")
             }
             Section {
                 if model.loadFailed {
@@ -155,6 +167,20 @@ struct ShelfScreen: View {
                             }
                             .tint(.brown)
                             .accessibilityIdentifier("shelf-entry-brew")
+                            // Repeats the last brew on this bag, prefilled (M2-T27).
+                            if model.canRepeatLastBrew {
+                                Button {
+                                    brewing = BrewRoute(shelfEntryLocalID: row.id, start: .lastBrew)
+                                } label: {
+                                    Label {
+                                        Text(L10n.brewRepeatLast)
+                                    } icon: {
+                                        Image(systemName: "arrow.clockwise")
+                                    }
+                                }
+                                .tint(.indigo)
+                                .accessibilityIdentifier("shelf-entry-repeat")
+                            }
                         }
                     }
                 }

@@ -23,6 +23,7 @@ Cupmark/                  app target sources and resources
   Brew/                   brew form of a shelf entry (M2-T19): BrewDraft, BrewFormModel, BrewFormScreen;
                           BrewSheet and the brew list (M2-T20); the brew timer (M2-T21)
   Rating/                 rating of a brew (M2-T20): RatingDraft, RatingFormModel, RatingScreen, flavour note lists
+  Statistics/             personal statistics (M2-T28): PersonalStatistics, StatisticsModel, StatisticsScreen
   L10n.swift              keys of the String Catalog
   Localizable.xcstrings   String Catalog, English (source) and German
 CupmarkTests/             XCTest unit tests (hosted in the app)
@@ -258,6 +259,22 @@ M2-T25 makes docs/04, Non-functional (Offline: "Scan, brew and rate work offline
 - **Brew list.** Rows are value links (`BrewRatingRoute`), so a rating screen and its model are made only when one opens.
 - Nothing is typed, and no list, scale or limit is written in Swift: the views read them through `RatingDraft` and the generated enums (`scripts/ios-scripts.test.mjs` checks it).
 - Tests: `RatingTests` (the mapping to `Rating` and its JSON, optional parts left out, buy again omitted when not set and sent as true or false, a round trip of a stored rating, unknown ids dropped, the scale equal to the bundled one, half-step snapping and clamping, the slider touch, every criterion's question in every language, the limit equal to the bundled `max_picks`, further picks refused and allowed again after a removal, an incomplete set of scores not saved by the model or the store, one queued update for a synced brew and its coalescing, the rating riding on an unsent create, an offline rating sent as `PUT` once online, the last rating of the bag, a removed brew, a failed save, and the brew list).
+
+## Statistics
+
+`Statistics/` (M2-T28, ADR 0027) shows the user's own statistics, computed on the device from the account's local store. It works offline, calls no route and writes nothing.
+
+- **Where.** The shelf has "Statistics" under "Scan a bag", one tap from the shelf. `StatisticsScreen` reads again on appearing, after every save of the store (`AccountStore.didSaveNotification`) and when the app comes to the foreground.
+- **Pure computation.** `StatisticsModel` turns the store's brews (`AccountStore.brewsNewestFirst()`) into plain `StatisticsBrew` values (time, method, the shelf entry's bean as a `ShelfBeanSummary`, the `RatingValues`, removed or not) and calls `PersonalStatistics.compute(_:now:calendar:)`, a pure function, so the tests need no SwiftData.
+- **What.** Removed brews (`pendingDelete`) count nowhere; unrated brews count as brews, never in a score.
+  - Brews: the total, the rated ones, and brews per ISO week for the last `StatisticsRules.weekCount` weeks, oldest first, the current week last. Weeks are ISO 8601 (Monday first, the first week has at least four days) in the device time zone (`PersonalStatistics.isoWeekCalendar(timeZone:)`), so a brew late on a Sunday stays in its week and the week number of the last days of December can be 53. A week without brews shows 0 once there are brews.
+  - Taste profile: the mean of each criterion over the ratings that score it, in vocabulary order, and the same per method for each method with at least `StatisticsRules.minimumRatedBrews` rated brews. Methods with an id this build does not know count as brews only.
+  - Flavour notes: the `StatisticsRules.topFlavourNoteCount` notes picked most often, a note counted once per rating; equal counts keep the vocabulary order.
+  - Best method and best bean: by mean `overall` score, among methods or beans with at least `StatisticsRules.minimumRatedBrews` rated brews. On an equal mean, more rated brews win, then the most recent brew; a full tie falls back to the vocabulary order (methods) or the bean's local id, so the result never depends on the store's order.
+  - Buy again: the share of yes among the ratings that answer it; an unanswered rating is not a no (ADR 0026).
+- **How shown.** Means with `StatisticsRules.meanFractionDigits` (one) decimal and the share as a whole percentage, in the device locale (`StatisticsRules.meanStyle()`, `shareStyle()`). With no brews or no rated brews a section shows an empty state, never zeros. Criterion, method and note labels come from contracts/i18n through `Text(verbatim:)`; the bean is shown with `BeanSummaryView`, so unconfirmed Open Food Facts text is not shown and confirmed text only through `Text(verbatim:)`. Plain lists, no charts.
+- The thresholds are defined only in `StatisticsRules`; `scripts/ios-scripts.test.mjs` checks that, and that the statistics sources write nothing and have no typed text.
+- Tests: `PersonalStatisticsTests` (the ADR's thresholds, one decimal in de and en, the empty state, unrated brews, means and partly scored ratings, the per-method threshold, top notes with ties and unknown ids, best method and bean with threshold and both tie rules in either input order, the buy-again share without unanswered ratings, removed brews, ISO weeks across New Year in Europe/Berlin) and `StatisticsModelTests` (read from an in-memory store without removed brews, with the shelf entry's bean, and no outbox change).
 
 ## Sign-in
 

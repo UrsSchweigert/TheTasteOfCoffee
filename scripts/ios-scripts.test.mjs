@@ -1291,3 +1291,26 @@ test('offline scan: pending beans write through AccountStore and never send Open
   assert.match(engine, /case \(\.bean, \.lookUp\):\s*return try await lookUpBean\(sequence, localID\)/);
   assert.match(masked('ios/Cupmark/Sync/SyncHost.swift'), /queue\.run\(\)/, 'queued label photos run in the idle slot');
 });
+
+// ---- Personal statistics (M2-T28, ADR 0027) ----
+
+test('statistics: read-only, offline, no typed text, thresholds only in StatisticsRules (M2-T28)', () => {
+  const masked = (path) => lexSwift(readFileSync(join(repoRoot, path), 'utf8')).masked;
+  const files = ['PersonalStatistics.swift', 'StatisticsModel.swift', 'StatisticsScreen.swift'].map((name) => `ios/Cupmark/Statistics/${name}`);
+  for (const file of files) {
+    const code = masked(file);
+    assert.doesNotMatch(code, /\.searchable\b|\bTextField\b|\bTextEditor\b|\bSecureField\b/, `${file}: no typed text (invariant 1)`);
+    assert.doesNotMatch(code, /\bcontext\s*\.|\.write\s*\{|\bmark(Updated|Deleted)\(|\.add(Brew|Bean|ShelfEntry|Recipe)\(|\.save\(\)/, `${file}: never writes to the store`);
+    assert.doesNotMatch(code, /\bapiClient\b|\bAPIClient\b|URLSession/, `${file}: no route (ADR 0027)`);
+    assert.doesNotMatch(code, /\.rawValue\s*==|rawValue:\s*"/, `${file}: no vocabulary id as a string`);
+  }
+  // The thresholds are defined once; the computation and the screen name them.
+  const rules = masked('ios/Cupmark/Statistics/PersonalStatistics.swift');
+  for (const name of ['minimumRatedBrews', 'weekCount', 'topFlavourNoteCount', 'meanFractionDigits']) {
+    assert.equal(rules.match(new RegExp(`static let ${name}\\s*=`, 'g'))?.length, 1, `${name} is defined once`);
+  }
+  const screen = masked('ios/Cupmark/Statistics/StatisticsScreen.swift');
+  assert.doesNotMatch(screen, /(>=|<=|[<>]|==)\s*\d|prefix\(\s*\d|fractionLength\(/, 'the screen hard-codes no threshold or decimal count');
+  assert.doesNotMatch(screen, /\bText\(\s*(?!verbatim:)[^)\n]*\b(name|brand)\b/, 'Open Food Facts text only through Text(verbatim:)');
+  assert.match(masked('ios/Cupmark/Shelf/ShelfScreen.swift'), /StatisticsScreen\(store: store/, 'the shelf opens the statistics');
+});
