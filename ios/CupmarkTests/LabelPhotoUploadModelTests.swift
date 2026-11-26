@@ -87,6 +87,9 @@ private final class GatedUploader: LabelPhotoUploading, @unchecked Sendable {
 @MainActor
 final class LabelPhotoUploadModelTests: XCTestCase {
     private var store = LabelPhotoFixtures.fileStore()
+    /// The stub registry holds servers weakly, so each test keeps its servers alive here
+    /// even when it ignores the one `makeEntry` returns.
+    private var servers: [StubServer] = []
 
     override func tearDown() {
         try? FileManager.default.removeItem(at: store.directory)
@@ -317,6 +320,7 @@ final class LabelPhotoUploadModelTests: XCTestCase {
     private func makeEntry(saving bean: API.Bean, uploader: ScriptedUploader) throws -> (BeanEntryModel, StubServer) {
         let body = try JSONEncoder().encode(bean)
         let server = try StubServer { _ in StubResponse(status: 201, body: body, headers: ["Content-Type": "application/json"]) }
+        servers.append(server)
         let client = APIClient(baseURL: server.baseURL, tokenProvider: FakeTokenProvider(), session: server.makeSession(), imageCache: nil)
         let model = BeanEntryModel(
             barcode: nil,
@@ -459,6 +463,7 @@ final class LabelPhotoUploadModelTests: XCTestCase {
     func testNobodySignedInMeansNoLabelPhotos() async throws {
         let body = try JSONEncoder().encode(bean(verified: false))
         let server = try StubServer { _ in StubResponse(status: 201, body: body, headers: ["Content-Type": "application/json"]) }
+        servers.append(server)
         let client = APIClient(baseURL: server.baseURL, tokenProvider: FakeTokenProvider(), session: server.makeSession(), imageCache: nil)
         let entry = BeanEntryModel(barcode: nil, client: client)
         await entry.labelPhoto.attach(try capture())
