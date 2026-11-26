@@ -55,9 +55,8 @@ struct ShelfEntryEditorScreen: View {
                     }
                     .accessibilityIdentifier("shelf-entry-brew")
                     // The brews of this bag, to rate one later (M2-T20).
-                    NavigationLink {
-                        BrewListScreen(store: model.store, shelfEntry: route.shelfEntryLocalID, vocabulary: vocabulary, language: language)
-                    } label: {
+                    // A value link, resolved at the stack root (M2-T40).
+                    NavigationLink(value: BrewListRoute(shelfEntryLocalID: route.shelfEntryLocalID)) {
                         Label {
                             Text(L10n.brewListTitle)
                         } icon: {

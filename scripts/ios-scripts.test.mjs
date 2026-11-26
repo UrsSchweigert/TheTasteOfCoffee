@@ -1329,9 +1329,32 @@ test('the rating has no typed text, takes its lists, scale and limit from the vo
   assert.match(sheet, /RatingScreen\(\s*store: store,\s*brew: savedBrewID,\s*mode: \.afterBrew,\s*repeatedFrom: flow\.form\.copiedBrewID/);
   const list = read('ios/Cupmark/Brew/BrewListScreen.swift');
   assert.match(list, /NavigationLink\(value: BrewRatingRoute\(brewLocalID: row\.id\)\)/, 'the rating is made only when it opens');
-  assert.match(list, /RatingScreen\(store: model\.store, brew: route\.brewLocalID, mode: \.later/);
+  const routes = read('ios/Cupmark/Brew/BrewRoutes.swift');
+  assert.match(routes, /RatingScreen\(store: store, brew: route\.brewLocalID, mode: \.later/);
+  assert.match(routes, /BrewListScreen\(store: store, shelfEntry: route\.shelfEntryLocalID/);
   const editor = read('ios/Cupmark/Shelf/ShelfEntryEditorScreen.swift');
-  assert.match(editor, /BrewListScreen\(store: model\.store, shelfEntry: route\.shelfEntryLocalID/);
+  assert.match(editor, /NavigationLink\(value: BrewListRoute\(shelfEntryLocalID: route\.shelfEntryLocalID\)\)/);
+});
+
+test('navigation: value destinations are registered at the stack root, never inside a pushed screen (M2-T40)', () => {
+  const read = (path) => readFileSync(new URL('../' + path, import.meta.url), 'utf8');
+  const root = new URL('../ios/Cupmark/', import.meta.url);
+  const found = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else if (entry.name.endsWith('.swift')) {
+        const source = readFileSync(path, 'utf8');
+        if (/\.navigationDestination\(for:/.test(source)) found.push(path.slice(path.indexOf('ios/Cupmark/') + 'ios/Cupmark/'.length));
+      }
+    }
+  };
+  walk(fileURLToPath(root));
+  assert.deepEqual(found.sort(), ['Brew/BrewRoutes.swift', 'Shelf/ShelfScreen.swift']);
+  const shelf = read('ios/Cupmark/Shelf/ShelfScreen.swift');
+  assert.match(shelf, /\.brewNavigationDestinations\(store: store/);
+  assert.doesNotMatch(read('ios/Cupmark/Brew/BrewListScreen.swift'), /\.navigationDestination\(for:/);
 });
 
 test('label photo upload: the Swift patterns equal the contract, and the S3 POST never goes through APIClient (M2-T24)', () => {
