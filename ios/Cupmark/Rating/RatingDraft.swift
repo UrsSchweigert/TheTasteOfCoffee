@@ -29,7 +29,6 @@ struct RatingDraft: Equatable, Sendable {
     private(set) var intensities: [Vocabulary.IntensityDimension: Vocabulary.IntensityLevel]
     /// The flavour notes, in the order picked. Change them through `toggle(_:)`.
     private(set) var flavourNotes: [Vocabulary.FlavourNote]
-    /// `buy_again`.
     /// `buy_again`: nil while not set, then yes (true) or no (false).
     var buyAgain: Bool?
 

@@ -42,13 +42,28 @@ struct RatingScreen: View {
     var body: some View {
         Form {
             brewSection
+            if model.isReadOnly {
+                Section {
+                    Label {
+                        Text(L10n.ratingReadOnly)
+                    } icon: {
+                        Image(systemName: "lock")
+                            .accessibilityHidden(true)
+                    }
+                    .accessibilityIdentifier("rating-read-only")
+                }
+            }
             if model.offersLastRating {
                 lastRatingSection
             }
-            scoresSection
-            intensitySection
-            flavourNotesSection
-            buyAgainSection
+            Group {
+                scoresSection
+                intensitySection
+                flavourNotesSection
+                buyAgainSection
+            }
+            // A rating made with a newer vocabulary is shown, not changed.
+            .disabled(model.isReadOnly)
             if let failure = model.failure {
                 Section {
                     Label {

@@ -1206,7 +1206,8 @@ test('the rating has no typed text, takes its lists, scale and limit from the vo
   const sheet = read('ios/Cupmark/Brew/BrewSheet.swift');
   assert.match(sheet, /RatingScreen\(store: store, brew: savedBrewID, mode: \.afterBrew/);
   const list = read('ios/Cupmark/Brew/BrewListScreen.swift');
-  assert.match(list, /RatingScreen\(store: model\.store, brew: row\.id, mode: \.later/);
+  assert.match(list, /NavigationLink\(value: BrewRatingRoute\(brewLocalID: row\.id\)\)/, 'the rating is made only when it opens');
+  assert.match(list, /RatingScreen\(store: model\.store, brew: route\.brewLocalID, mode: \.later/);
   const editor = read('ios/Cupmark/Shelf/ShelfEntryEditorScreen.swift');
   assert.match(editor, /BrewListScreen\(store: model\.store, shelfEntry: route\.shelfEntryLocalID/);
 });

@@ -8,7 +8,11 @@ import Observation
 ///   it through `AccountStore.rateBrew` in one save, so it works offline: a brew the server
 ///   has goes out as `PUT /brews/{brew_id}`, a brew not sent yet in its own create
 ///   (ADR 0025).
-/// - A brew that already has a rating opens with it.
+/// - A brew that already has a rating opens with it. Saving it unchanged writes nothing, so
+///   no update is queued.
+/// - A brew stored with a newer vocabulary than the bundled one (picked on a newer app) opens
+///   read-only (`isReadOnly`): the draft keeps only the ids this build knows, so saving it
+///   could drop flavour notes or intensities it does not know.
 /// - An unrated brew offers the latest rating of an earlier brew of the same bag
 ///   (`lastRating`), which `useLastRating()` copies into the draft. A repeat brew then needs
 ///   only the changes, not eight new scores. It is never copied without that tap.
@@ -38,6 +42,9 @@ final class RatingFormModel {
     private(set) var failure: Failure?
     /// Whether the rating was saved at least once.
     private(set) var didSave = false
+    /// The brew's `vocabulary_version` is newer than the bundled one: the rating is shown but
+    /// cannot be changed.
+    private(set) var isReadOnly = false
 
     /// Stores the rating and saves (`AccountStore.rateBrew`). Tests replace it to make the
     /// write fail.
@@ -61,7 +68,9 @@ final class RatingFormModel {
             let stored = brew.rating
             wasRated = stored != nil
             draft = RatingDraft(stored)
-            lastRating = stored == nil ? RatingFormModel.latestEarlierRating(of: brew) : nil
+            let readOnly = RatingFormModel.isNewer(brew)
+            isReadOnly = readOnly
+            lastRating = stored == nil && !readOnly ? RatingFormModel.latestEarlierRating(of: brew) : nil
             failure = nil
         } else {
             bean = ShelfBeanSummary(nil)
@@ -91,7 +100,12 @@ final class RatingFormModel {
     /// Whether "Start from the last rating" is offered: the brew has no rating of its own
     /// yet and an earlier brew of the bag has one.
     var offersLastRating: Bool {
-        lastRating != nil && failure != .notFound
+        lastRating != nil && failure != .notFound && !isReadOnly
+    }
+
+    /// Whether `brew` was stored with a newer vocabulary than this build bundles.
+    static func isNewer(_ brew: StoredBrew) -> Bool {
+        brew.vocabularyVersion > Vocabulary.version
     }
 
     /// Copies the last rating of the bag into the draft (only what the bundled vocabulary
@@ -108,7 +122,7 @@ final class RatingFormModel {
 
     /// Whether `save()` would write: every criterion has a score and the brew exists.
     var canSave: Bool {
-        draft.isComplete && failure != .notFound
+        draft.isComplete && failure != .notFound && !isReadOnly
     }
 
     // MARK: - Controls
@@ -155,7 +169,7 @@ final class RatingFormModel {
     /// `failure` says why.
     @discardableResult
     func save() -> Bool {
-        guard failure != .notFound else {
+        guard failure != .notFound, !isReadOnly else {
             return false
         }
         guard let values = draft.values else {
@@ -166,6 +180,15 @@ final class RatingFormModel {
             guard let brew = try store.brew(localID: brewLocalID), brew.syncState != .pendingDelete else {
                 failure = .notFound
                 return false
+            }
+            guard !RatingFormModel.isNewer(brew) else {
+                isReadOnly = true
+                return false
+            }
+            if brew.rating == values {
+                // Nothing changed: no write, so no update is queued or sent.
+                failure = nil
+                return true
             }
             try rate(store, brew, values)
             failure = nil
@@ -190,6 +213,10 @@ final class RatingFormModel {
         bean = ShelfBeanSummary(brew.shelfEntry?.bean)
         method = brew.method
         brewedAt = brew.brewedAt
+        if RatingFormModel.isNewer(brew) {
+            isReadOnly = true
+            lastRating = nil
+        }
         if failure == .notFound {
             failure = nil
         }

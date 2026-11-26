@@ -2611,6 +2611,24 @@
         }
       }
     },
+    "rating.read_only" : {
+      "comment" : "Shown on the rating of a brew saved with a newer version of the app's vocabulary; the rating cannot be changed here.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Zubereitung wurde mit einer neueren Version von Cupmark gesichert. Aktualisiere die App, um ihre Bewertung zu ändern."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This brew was saved with a newer version of Cupmark. Update the app to change its rating."
+          }
+        }
+      }
+    },
     "rating.save" : {
       "comment" : "Saves the rating.",
       "extractionState" : "manual",
@@ -2636,13 +2654,13 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tippe oder schiebe jeden Regler, um Punkte zu geben. Die Bewertung lässt sich sichern, sobald jedes Kriterium Punkte hat."
+            "value" : "Ziehe jeden Regler, um Punkte zu geben; mit VoiceOver wische darauf nach oben oder unten. Ein Regler ohne Punkte bekommt beim Berühren den angezeigten Wert. Die Bewertung lässt sich sichern, sobald jedes Kriterium Punkte hat."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Touch or slide each slider to give a score. The rating can be saved once every criterion has one."
+            "value" : "Drag each slider to give a score; with VoiceOver, swipe up or down on it. Touching a slider that has no score yet gives it the score shown. The rating can be saved once every criterion has a score."
           }
         }
       }

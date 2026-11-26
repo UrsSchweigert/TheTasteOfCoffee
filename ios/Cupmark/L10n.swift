@@ -228,6 +228,7 @@ enum L10n {
     static var ratingBuyAgainClear: LocalizedStringKey { "rating.buy_again.clear" }
     static var ratingNotFound: LocalizedStringKey { "rating.not_found" }
     static var ratingIncomplete: LocalizedStringKey { "rating.incomplete" }
+    static var ratingReadOnly: LocalizedStringKey { "rating.read_only" }
     static var signInAgainTitle: LocalizedStringKey { "sign_in_again.title" }
     static var signInAgainMessage: LocalizedStringKey { "sign_in_again.message" }
     static var signInAgainButton: LocalizedStringKey { "sign_in_again.button" }

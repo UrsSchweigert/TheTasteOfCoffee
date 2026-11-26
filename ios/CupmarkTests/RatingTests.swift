@@ -8,6 +8,11 @@ import XCTest
 /// and sends once online. Criteria, dimensions, levels and notes come from the generated
 /// enums, the scale and the limit from `Vocabulary.Ranges` and `Vocabulary.Constants`, never
 /// from a list typed here.
+/// Counts the writes of a rating model's injected `rate` closure. Only the main actor uses it.
+private final class WriteCounter: @unchecked Sendable {
+    var count = 0
+}
+
 @MainActor
 final class RatingTests: XCTestCase {
     private var appBundle: Bundle { Bundle(for: AppBundleToken.self) }
@@ -400,12 +405,112 @@ final class RatingTests: XCTestCase {
         model.useLastRating()
         XCTAssertEqual(try model.draft.apiRating(), try StoreFixtures.rating())
         XCTAssertTrue(model.canSave)
+        model.draft.buyAgain = false
         XCTAssertTrue(model.save())
         XCTAssertFalse(model.offersLastRating)
 
         // The earlier brew has nothing earlier to offer, and a rated brew offers nothing.
         XCTAssertFalse(RatingFormModel(brew: earlier.localID, store: store).offersLastRating)
         XCTAssertFalse(RatingFormModel(brew: current.localID, store: store).offersLastRating)
+
+        // The newer brew is now offered the rating just saved, not the earlier one.
+        let next = RatingFormModel(brew: later.localID, store: store)
+        XCTAssertTrue(next.offersLastRating)
+        XCTAssertEqual(next.lastRating, current.rating)
+        XCTAssertEqual(next.lastRating?.buyAgain, false)
+    }
+
+    func testOnlyEarlierBrewsAreOfferedAndTheEarliestUnratedOneGetsNone() throws {
+        let store = try AccountStore.inMemory()
+        let entry = try StoreFixtures.syncedShelfEntry(in: store)
+        let earliest = try StoredBrew(try StoreFixtures.brewInput(brewedAt: "2026-11-23T08:00:00.000Z", rated: false))
+        try store.addBrew(earliest, shelfEntry: entry)
+        let rated = try StoredBrew(try StoreFixtures.brewInput(brewedAt: "2026-11-25T08:00:00.000Z", rated: true))
+        try store.addBrew(rated, shelfEntry: entry)
+
+        let model = RatingFormModel(brew: earliest.localID, store: store)
+        XCTAssertNil(model.lastRating, "a rating of a later brew is not offered")
+        XCTAssertFalse(model.offersLastRating)
+        model.useLastRating()
+        XCTAssertEqual(model.draft, RatingDraft(), "nothing is copied without an offer")
+    }
+
+    // MARK: - Unchanged ratings and newer vocabularies
+
+    func testSavingAnUnchangedRatingWritesNothing() throws {
+        let store = try AccountStore.inMemory()
+        let entry = try StoreFixtures.syncedShelfEntry(in: store)
+        let brew = try StoredBrew(try StoreFixtures.brewInput(rated: true), serverID: StoreFixtures.brewID)
+        try store.addBrew(brew, shelfEntry: entry, syncState: .synced)
+        let writes = WriteCounter()
+        let model = RatingFormModel(brew: brew.localID, store: store, rate: { store, brew, rating in
+            writes.count += 1
+            try store.rateBrew(brew, rating: rating)
+        })
+        XCTAssertTrue(model.canSave)
+
+        XCTAssertTrue(model.save(), "an unchanged rating counts as saved")
+
+        XCTAssertEqual(writes.count, 0)
+        XCTAssertTrue(try queue(store).isEmpty, "no update is queued, so no PUT is sent")
+        XCTAssertEqual(brew.syncState, .synced)
+
+        model.draft.buyAgain = false
+        XCTAssertTrue(model.save())
+        XCTAssertEqual(writes.count, 1)
+        XCTAssertEqual(try queue(store), ["update brew"])
+    }
+
+    func testABrewWithANewerVocabularyOpensReadOnly() throws {
+        let store = try AccountStore.inMemory()
+        let entry = try StoreFixtures.syncedShelfEntry(in: store)
+        var input = try StoreFixtures.brewInput(rated: true)
+        input.vocabularyVersion = Vocabulary.version + 1
+        let brew = try StoredBrew(input, serverID: StoreFixtures.brewID)
+        try store.addBrew(brew, shelfEntry: entry, syncState: .synced)
+        let stored = brew.ratingData
+
+        let model = RatingFormModel(brew: brew.localID, store: store)
+
+        XCTAssertTrue(model.isReadOnly)
+        XCTAssertTrue(model.draft.isComplete, "the rating is shown")
+        XCTAssertFalse(model.canSave)
+        model.draft.buyAgain = false
+        XCTAssertFalse(model.save())
+        XCTAssertEqual(brew.ratingData, stored, "nothing it does not know is dropped")
+        XCTAssertTrue(try queue(store).isEmpty)
+
+        // An unrated brew of a newer vocabulary is not offered a rating to copy either.
+        let unratedInput = try StoreFixtures.brewInput(brewedAt: "2026-11-26T08:00:00.000Z", rated: false)
+        var newer = unratedInput
+        newer.vocabularyVersion = Vocabulary.version + 1
+        let unrated = try StoredBrew(newer)
+        try store.addBrew(unrated, shelfEntry: entry)
+        let other = RatingFormModel(brew: unrated.localID, store: store)
+        XCTAssertTrue(other.isReadOnly)
+        XCTAssertFalse(other.offersLastRating)
+        XCTAssertFalse(RatingFormModel(brew: brew.localID, store: try AccountStore.inMemory()).isReadOnly, "a brew that is not there is not found, not read-only")
+    }
+
+    func testRatingRaisesAnOlderVocabularyVersionAndKeepsANewerOne() throws {
+        let store = try AccountStore.inMemory()
+        let entry = try StoreFixtures.syncedShelfEntry(in: store)
+        let rating = RatingValues(try StoreFixtures.rating())
+
+        var olderInput = try StoreFixtures.brewInput(rated: false)
+        olderInput.vocabularyVersion = Vocabulary.version - 1
+        let older = try StoredBrew(olderInput, serverID: StoreFixtures.brewID)
+        try store.addBrew(older, shelfEntry: entry, syncState: .synced)
+        try store.rateBrew(older, rating: rating)
+        XCTAssertEqual(older.vocabularyVersion, Vocabulary.version, "the rating's ids are from the bundled version")
+        XCTAssertEqual(try older.apiInput().vocabularyVersion, Vocabulary.version)
+
+        var newerInput = try StoreFixtures.brewInput(brewedAt: "2026-11-26T08:00:00.000Z", rated: false)
+        newerInput.vocabularyVersion = Vocabulary.version + 1
+        let newer = try StoredBrew(newerInput)
+        try store.addBrew(newer, shelfEntry: entry)
+        try store.rateBrew(newer, rating: rating)
+        XCTAssertEqual(newer.vocabularyVersion, Vocabulary.version + 1, "a newer version is never lowered")
     }
 
     func testARemovedBrewCannotBeRated() throws {
