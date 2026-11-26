@@ -26,6 +26,8 @@ test('parseCsv reads quoted fields, doubled quotes, line breaks and a byte order
 test('methodOf maps what the vocabulary has and drops the rest instead of forcing it', () => {
   assert.equal(methodOf('Pour-over', 'Hario V60 NEO 02'), 'v60');
   assert.equal(methodOf('Pour-over', 'V60 01'), 'v60');
+  assert.equal(methodOf('Pour-over', 'Chemex lookalike'), 'chemex');
+  assert.equal(methodOf('AeroPress', 'Chemex Cup'), 'aeropress');
   assert.equal(methodOf('Pour-over', 'Kalita Wave 185'), 'kalita');
   assert.equal(methodOf('Chemex pour-over', 'Chemex 6 Cup'), 'chemex');
   assert.equal(methodOf('AeroPress', 'AeroPress Go'), 'aeropress');
@@ -56,17 +58,62 @@ test('rows that cannot be trusted are dropped with a reason', () => {
   const rows = [
     row({ ...base, brewer: 'Orea Z1', method: 'Pour-over' }),
     row({ ...base, quality_flags: 'bypass_or_dilution_check_water_basis' }),
+    row({ ...base, quality_flags: 'ice_or_iced_service_check_water_basis' }),
     row({ ...base, coffee_g_source: '' }),
     row({ ...base, method: 'Cold brew', brewer: 'Cold Brew', coffee_g_source: '340', water_g_source: '1600' }),
   ];
   const { recipes, report } = convert(rows, brew);
   assert.equal(recipes.length, 0);
-  assert.deepEqual(report.dropped, { no_matching_method: 1, water_basis_unclear: 1, dose_or_water_missing: 1, outside_vocabulary_range: 1 });
+  assert.deepEqual(report.dropped, { no_matching_method: 1, water_basis_unclear: 2, dose_or_water_missing: 1, outside_vocabulary_range: 1 });
+});
+
+test('a published number outside the vocabulary range drops the row: it is not a missing number', () => {
+  const rows = [
+    // a cold steep of 4 degrees is not a hot French press brew
+    row({ ...base, method: 'French press', brewer: 'French Press 3 Cup', water_temperature_start_c: '4', total_recipe_time_s: '54000', coffee_g_source: '60', water_g_source: '400' }),
+    row({ ...base, water_temperature_start_c: '75', coffee_g_source: '15' }),
+    row({ ...base, total_recipe_time_s: '999999', coffee_g_source: '16' }),
+    row({ ...base, water_temperature_start_c: '', coffee_g_source: '17' }),
+    row({ ...base, water_temperature_start_c: '90', coffee_g_source: '18' }),
+  ];
+  const { recipes, report } = convert(rows, brew);
+  assert.equal(report.dropped.temperature_outside_range, 2);
+  assert.equal(report.dropped.time_outside_range, 1);
+  assert.equal(recipes.length, 2);
+  const filled = recipes.find((r) => r.inferred.length > 0);
+  assert.deepEqual(filled.inferred, ['water_temp_c']);
+  assert.equal(filled.parameters.water_temp_c, 90, 'the median of what was published, not of what was dropped');
+});
+
+test('the medians for missing numbers come from published values only, whatever the order', () => {
+  const rows = [
+    row({ ...base, total_recipe_time_s: '100', coffee_g_source: '15' }),
+    row({ ...base, total_recipe_time_s: '', coffee_g_source: '16' }),
+    row({ ...base, total_recipe_time_s: '300', coffee_g_source: '17' }),
+    row({ ...base, total_recipe_time_s: '', coffee_g_source: '18' }),
+  ];
+  const forward = convert(rows, brew).recipes;
+  const backward = convert([...rows].reverse(), brew).recipes;
+  assert.deepEqual(forward, backward);
+  assert.deepEqual(forward.filter((r) => r.inferred.length).map((r) => r.parameters.brew_time_s), [200, 200]);
+});
+
+test('typical ranges leave out inferred values and groups that are too small', () => {
+  const rows = [
+    ...[10, 11, 12, 13, 14].map((g) => row({ ...base, coffee_g_source: String(g), water_g_source: String(g * 15), water_temperature_start_c: String(90 + g - 10) })),
+    row({ ...base, coffee_g_source: '15', water_g_source: '225', water_temperature_start_c: '' }),
+    row({ ...base, method: 'Moka pot', brewer: 'Moka Pot', coffee_g_source: '15', water_g_source: '150' }),
+  ];
+  const { ranges } = convert(rows, brew);
+  assert.ok(ranges.aeropress);
+  assert.equal(ranges.aeropress.recipes, 6);
+  assert.deepEqual(ranges.aeropress.water_temp_c, { p10: 90.4, median: 92, p90: 93.6 });
+  assert.equal(ranges.moka_pot, undefined, 'one recipe is too few for ranges');
 });
 
 test('a missing number takes the median of the same method and is marked inferred; nothing else is invented', () => {
   const rows = [
-    row({ ...base, brew_time_s: '', total_recipe_time_s: '100', coffee_g_source: '15' }),
+    row({ ...base, total_recipe_time_s: '100', coffee_g_source: '15' }),
     row({ ...base, total_recipe_time_s: '140', coffee_g_source: '16' }),
     row({ ...base, total_recipe_time_s: '', coffee_g_source: '17' }),
     row({ ...base, grind: 'unknown word', coffee_g_source: '18', total_recipe_time_s: '120' }),
@@ -129,6 +176,8 @@ test('the committed set is on vocabulary v3 and inside its ranges and field rule
     assert.ok(!ids.has(id), `duplicate id ${id}`);
     ids.add(id);
     assert.ok(methodIds.includes(p.method), `${id}: method`);
+    // Cold brew carries the special temperature, and a temperature the source gave is never replaced.
+    if (p.method === 'cold_brew') assert.equal(p.water_temp_special, 'cold', `${id}: cold brew`);
     const { ranges: r } = brew;
     assert.ok(Number.isInteger(p.dose_dg) && p.dose_dg >= r.dose_g.minimum * 10 && p.dose_dg <= r.dose_g.maximum * 10, `${id}: dose`);
     assert.ok(Number.isInteger(p.water_g) && p.water_g >= r.water_g.minimum && p.water_g <= r.water_g.maximum, `${id}: water`);
@@ -160,7 +209,7 @@ test('the committed set holds numbers and vocabulary ids only: no name, link, te
     assert.deepEqual(Object.keys({ id, parameters, inferred }).sort(), ['id', 'inferred', 'parameters']);
   }
   const text = JSON.stringify(committed);
-  assert.doesNotMatch(text, /https?:|www\.|gota|youtube|instagram|@/i);
+  assert.doesNotMatch(text, /https?:|www\.|@|\b[a-z0-9-]+\.(com|cafe|uk|org|net|jp|co|io)\b/i);
   assert.doesNotMatch(text, /"(score|scores|rating|rater|raters|aggregate)"/i);
 });
 

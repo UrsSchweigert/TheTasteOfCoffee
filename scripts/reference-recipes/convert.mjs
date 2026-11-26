@@ -27,8 +27,11 @@ export const GRIND_WORDS = {
   'extra coarse': 9.5,
 };
 
-/** Methods whose recipes may carry a water temperature (vocabulary field_rules.water_temp_c). */
-const TEMPERATURE_METHODS = ['espresso', 'v60', 'chemex', 'kalita', 'batch_filter', 'aeropress', 'french_press', 'siphon', 'fully_automatic'];
+/** Smallest group of recipes of one method that gets typical ranges (fewer say little). */
+export const MIN_RECIPES_FOR_RANGES = 5;
+
+/** The methods a field rule of the vocabulary allows (invariant 2: the list lives in contracts/). */
+const allowedMethods = (brew, field) => Object.keys(brew.field_rules[field].allowed_methods).filter((id) => brew.field_rules[field].allowed_methods[id]);
 
 /**
  * The vocabulary method a source row stands for, or null when none of ours fits (Orea, Cafec,
@@ -44,7 +47,7 @@ export function methodOf(method, brewer) {
   if (m === 'ibrik / turkish') return 'cezve';
   if (m === 'moka pot') return 'moka_pot';
   if (m === 'siphon') return 'siphon';
-  if (m === 'chemex pour-over' || /chemex/.test(b)) return 'chemex';
+  if (m === 'chemex pour-over' || (m === 'pour-over' && /chemex/.test(b))) return 'chemex';
   if (m === 'pour-over' && /kalita/.test(b)) return 'kalita';
   if (m === 'pour-over' && /\bv60\b/.test(b)) return 'v60';
   return null;
@@ -123,6 +126,8 @@ const clean = (value) => Number(value.toFixed(3));
  */
 export function convert(rows, brew) {
   const { ranges } = brew;
+  const temperatureMethods = allowedMethods(brew, 'water_temp_c');
+  const specialMethods = allowedMethods(brew, 'water_temp_special');
   const report = { rows: rows.length, kept: 0, dropped: {}, duplicates: 0, inferred: {} };
   const drop = (reason) => {
     report.dropped[reason] = (report.dropped[reason] ?? 0) + 1;
@@ -135,8 +140,10 @@ export function convert(rows, brew) {
       drop('no_matching_method');
       continue;
     }
+    // Any flag that asks to check the water basis (bypass, dilution, ice, concentrate): the water
+    // amount is then not the water of a plain hot brew, so the row is dropped, not guessed.
     const flags = String(row.quality_flags ?? '');
-    if (flags.includes('bypass_or_dilution_check_water_basis')) {
+    if (/check_water_basis/.test(flags)) {
       drop('water_basis_unclear');
       continue;
     }
@@ -155,22 +162,30 @@ export function convert(rows, brew) {
     const parameters = { method, dose_dg: doseDg, water_g: waterG };
     const inferred = [];
 
+    // A published number outside the vocabulary range is not a missing number: the row is dropped
+    // (a 4 degree cold steep is not a hot brew). Only a value the source did not give is inferred.
     const temp = toNumber(row.water_temperature_start_c);
-    if (TEMPERATURE_METHODS.includes(method)) {
-      if (temp !== null && temp >= ranges.water_temp_c.minimum && temp <= ranges.water_temp_c.maximum) {
+    if (temperatureMethods.includes(method)) {
+      if (temp === null) {
+        inferred.push('water_temp_c');
+      } else if (temp >= ranges.water_temp_c.minimum && temp <= ranges.water_temp_c.maximum) {
         parameters.water_temp_c = Math.round(temp);
       } else {
-        inferred.push('water_temp_c');
+        drop('temperature_outside_range');
+        continue;
       }
-    } else if (method === 'cold_brew') {
-      parameters.water_temp_special = 'cold';
+    } else if (specialMethods.includes(method)) {
+      parameters.water_temp_special = brew.water_temp_special[0].id;
     }
 
     const time = toNumber(row.total_recipe_time_s);
-    if (time !== null && time >= ranges.brew_time_s.minimum && time <= ranges.brew_time_s.maximum) {
+    if (time === null) {
+      inferred.push('brew_time_s');
+    } else if (time >= ranges.brew_time_s.minimum && time <= ranges.brew_time_s.maximum) {
       parameters.brew_time_s = Math.round(time);
     } else {
-      inferred.push('brew_time_s');
+      drop('time_outside_range');
+      continue;
     }
 
     const grind = GRIND_WORDS[String(row.grind ?? '').trim().toLowerCase()];
@@ -183,10 +198,15 @@ export function convert(rows, brew) {
   }
 
   // Missing numbers take the median of the same method, marked inferred. Never invented otherwise.
-  const byMethod = new Map();
+  // The medians come from the published values only, computed once before anything is filled.
+  const known = new Map();
   for (const { parameters } of candidates) {
-    if (!byMethod.has(parameters.method)) byMethod.set(parameters.method, []);
-    byMethod.get(parameters.method).push(parameters);
+    for (const field of ['water_temp_c', 'brew_time_s', 'grind_normalised']) {
+      if (parameters[field] === undefined) continue;
+      const key = `${parameters.method}/${field}`;
+      if (!known.has(key)) known.set(key, []);
+      known.get(key).push(parameters[field]);
+    }
   }
   const fill = {
     water_temp_c: (v) => Math.round(v),
@@ -195,9 +215,9 @@ export function convert(rows, brew) {
   };
   for (const { parameters, inferred } of candidates) {
     for (const field of inferred) {
-      const known = byMethod.get(parameters.method).map((p) => p[field]).filter((v) => v !== undefined);
-      if (known.length > 0) {
-        parameters[field] = fill[field](median(known));
+      const values = known.get(`${parameters.method}/${field}`) ?? [];
+      if (values.length > 0) {
+        parameters[field] = fill[field](median(values));
         report.inferred[field] = (report.inferred[field] ?? 0) + 1;
       }
     }
@@ -237,7 +257,11 @@ export function convert(rows, brew) {
   const rangesByMethod = {};
   const methods = [...new Set(recipes.map((r) => r.parameters.method))].sort();
   for (const method of methods) {
-    const group = recipes.filter((r) => r.parameters.method === method).map((r) => r.parameters);
+    const members = recipes.filter((r) => r.parameters.method === method);
+    if (members.length < MIN_RECIPES_FOR_RANGES) continue;
+    const group = members.map((r) => r.parameters);
+    // Inferred values are not published numbers, so they stay out of the ranges.
+    const published = (field) => members.filter((r) => !r.inferred.includes(field)).map((r) => r.parameters[field]);
     const stat = (values) => {
       const sorted = values.filter((v) => v !== undefined).sort((a, b) => a - b);
       return sorted.length === 0 ? null : { p10: clean(percentile(sorted, 0.1)), median: clean(percentile(sorted, 0.5)), p90: clean(percentile(sorted, 0.9)) };
@@ -247,9 +271,9 @@ export function convert(rows, brew) {
       dose_g: stat(group.map((p) => p.dose_dg / 10)),
       water_g: stat(group.map((p) => p.water_g)),
       ratio_water_per_dose: stat(group.map((p) => p.water_g / (p.dose_dg / 10))),
-      water_temp_c: stat(group.map((p) => p.water_temp_c)),
-      brew_time_s: stat(group.map((p) => p.brew_time_s)),
-      grind_normalised: stat(group.map((p) => p.grind_normalised)),
+      water_temp_c: stat(published('water_temp_c')),
+      brew_time_s: stat(published('brew_time_s')),
+      grind_normalised: stat(published('grind_normalised')),
     };
   }
   return { recipes, ranges: rangesByMethod, report };
