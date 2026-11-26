@@ -1020,7 +1020,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job. Marked `needs-mac-verification` until it passes.
 
 ### M2-T44 My averages for one coffee: the dimensions over all my brews of it
-- status: needs-mac-verification (written on Linux: Swift, XCTest and UI tests not built or run; the macOS `ios` job must pass)
+- status: done (#100; the macOS `ios` job passed on 6e65d8d, including the averages unit and UI tests)
 - owner: ios-engineer
 - depends: M2-T28, M2-T40
 - implements: owner request of 2026-11-26 ("if I click on a coffee, I want to see the averages of all my brews, the dimensions, for that coffee, and later also the community ones"); docs/04-specification.md, F2 and F3; ADR 0027 (personal statistics, computed on the device)
@@ -1035,7 +1035,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job. Marked `needs-mac-verification` until it passes.
 
 ### M2-T45 A setting: include brew photos in the device backup
-- status: needs-mac-verification (written and statically checked on Linux; the Swift tests and the UI test have not run, the `ios` job on macOS must pass)
+- status: done (#99; the macOS `ios` job passed on acac882, including the resource-value tests)
 - owner: ios-engineer
 - depends: M2-T42, M2-T42b
 - implements: owner decision of 2026-11-26 ("the iCloud backup should include the photos if the user wishes, to be toggled in the options"); ADR 0033 (brew photos on the device; its first version left them in the backup, as iOS does by default); invariant 6 and the privacy policy (nothing leaves the device on our initiative)
@@ -1060,7 +1060,7 @@ Planning notes (planned 2026-11-25):
   - `scripts/reference-recipes.test.mjs` (in CI) tests the rules on synthetic rows and the committed set against vocabulary v3.
 
 ### M2-T47 Starting-point recipes in the recipe list
-- status: todo
+- status: in-progress
 - owner: ios-engineer
 - depends: M2-T46, M2-T27
 - implements: ADR 0034 (reference recipes), ADR 0028 (recipes); owner request of 2026-11-26
