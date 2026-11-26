@@ -330,6 +330,12 @@ Steps 1 and 4 below, and the trust edit of #46, are done by `scripts/aws/first-d
    - `CupmarkCfnExecution`: `s3:GetObject` on `cdk-cupmark-assets-<account>-eu-central-1/*`, so CloudFormation can create functions from the bootstrap's asset bucket.
    - `test/policies.test.ts` checks that the boundary allows everything the stack's roles are granted, and that the execution policy can read the code.
 
+   Fixes after the first dev deploy changed `CupmarkCfnExecution` twice more, so re-apply it even if you applied the versions above:
+   - `ssm:GetParameter` and `ssm:GetParameters` on exactly `parameter/cdk-bootstrap/cupmark/version`. Every stack on the `cupmark` qualifier has a `BootstrapVersion` parameter that CloudFormation resolves with the execution role; without this the change set fails with AccessDenied. `CupmarkBoundary` is unchanged: it caps roles the stacks create, and the execution role is not one of them.
+   - `iam:TagRole` and `iam:UntagRole` moved from the statement conditioned on `iam:PermissionsBoundary` to the name-scoped statement for `role/cupmark-*` (and `policy/cupmark-*`). IAM does not document that condition key for tagging, so the condition never matched and creating a tagged role failed. Creating, attaching and writing role policies still requires `CupmarkBoundary`.
+
+   To apply: run `scripts/aws/apply-guardrails.sh` as a dry run first, then with `--apply`, as an admin identity.
+
    M1-T6 (account deletion, ADR 0017) changed `CupmarkBoundary` again, so re-apply it even if you already applied the M1-T2 version:
    - two new statements: `AccountDeletionOfLabelPhotos` (`s3:DeleteObject`, `s3:DeleteObjectVersion` on `arn:aws:s3:::cupmark-*-photos-*/labels/*` and `/uploads/*`) and `AccountDeletionListPhotoVersions` (`s3:ListBucketVersions` on `arn:aws:s3:::cupmark-*-photos-*`), so no other bucket, the backups and the deletion log included, can have objects or versions deleted through the boundary;
    - `cognito-idp:AdminDeleteUser` added to the user-pool statement, renamed from `AppleIdentityProviderOfCupmarkPools` to `CognitoOfCupmarkPools`.
