@@ -15,7 +15,9 @@ import SwiftData
 //
 // - `syncIssueRaw` holds a `SyncIssue` raw value, nil while nothing went wrong (M2-T16).
 //
-// Version 3 (M2-T26) adds the grinder and its setting to brews and recipes.
+// Version 3 (M2-T26) adds the grinder and its setting to brews and recipes. Version 4 (M2-T42,
+// ADR 0033) adds `StoredBrewPhoto`, a device-only photo of a brew; it is not synced, so the
+// rules about `serverID`, `syncStateRaw` and `vocabularyVersion` do not apply to it.
 //
 // `OutboxOperation` (M2-T16, ADR 0025) joined version 1 before any release: no store with
 // the shorter model list exists outside development, so no migration stage is needed.
@@ -653,17 +655,60 @@ enum CupmarkSchemaV3: VersionedSchema {
     }
 }
 
+/// Version 4 of the local schema (M2-T42, ADR 0033): version 3's models, unchanged, and
+/// `StoredBrewPhoto`, a photo of a brew that stays on the device.
+///
+/// The photo names its brew by the brew's `localID`, not by a relationship, so `StoredBrew`
+/// (and the models whose relationships name it) keep the hashes of version 3, and a store
+/// written by version 3 migrates with one lightweight stage that only adds the new entity.
+/// Stores of version 3 may exist on development devices, so the new model is a new version
+/// rather than an edit of version 3 (as for versions 2 and 3, ADR 0030).
+enum CupmarkSchemaV4: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(4, 0, 0) }
+
+    static var models: [any PersistentModel.Type] {
+        CupmarkSchemaV3.models + [StoredBrewPhoto.self]
+    }
+
+    /// One photo of a brew (M2-T42, ADR 0033). The JPEG is a file of the account's brew photo
+    /// folder (`BrewPhotoFolders`); `fileName` names it, so a moved app container does not
+    /// matter. It is never uploaded: it is in no API type, no outbox operation and no export,
+    /// so it has no `serverID` and no sync state, and no `vocabularyVersion` since it holds no
+    /// vocabulary value. It has no caption and no other text (invariant 1).
+    @Model
+    final class StoredBrewPhoto {
+        @Attribute(.unique) var localID: UUID = UUID()
+        /// The `localID` of the `StoredBrew` the photo belongs to.
+        var brewLocalID: UUID = UUID()
+        /// The JPEG's file name in the account's brew photo folder, `<UUID>.jpg`.
+        var fileName: String = ""
+        /// When the photo was added; photos list newest first.
+        var createdAt: Date = Date.distantPast
+
+        init(localID: UUID = UUID(), brewLocalID: UUID, fileName: String, createdAt: Date) {
+            self.localID = localID
+            self.brewLocalID = brewLocalID
+            self.fileName = fileName
+            self.createdAt = createdAt
+        }
+    }
+}
+
 /// Migrations between local schema versions. A new version adds its schema to `schemas` and
 /// a `MigrationStage` here.
 enum CupmarkMigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [CupmarkSchemaV1.self, CupmarkSchemaV2.self, CupmarkSchemaV3.self] }
+    static var schemas: [any VersionedSchema.Type] {
+        [CupmarkSchemaV1.self, CupmarkSchemaV2.self, CupmarkSchemaV3.self, CupmarkSchemaV4.self]
+    }
 
     /// Version 1 to 2 adds an entity and changes none: lightweight. Version 2 to 3 adds two
-    /// optional attributes to two entities: lightweight.
+    /// optional attributes to two entities: lightweight. Version 3 to 4 adds an entity and
+    /// changes none: lightweight.
     static var stages: [MigrationStage] {
         [
             MigrationStage.lightweight(fromVersion: CupmarkSchemaV1.self, toVersion: CupmarkSchemaV2.self),
             MigrationStage.lightweight(fromVersion: CupmarkSchemaV2.self, toVersion: CupmarkSchemaV3.self),
+            MigrationStage.lightweight(fromVersion: CupmarkSchemaV3.self, toVersion: CupmarkSchemaV4.self),
         ]
     }
 }
@@ -671,7 +716,8 @@ enum CupmarkMigrationPlan: SchemaMigrationPlan {
 // The current models. A new schema version moves these aliases; version 3 (M2-T26) changed
 // `StoredBrew` and `StoredRecipe`, and listed `StoredBean` and `StoredShelfEntry` again for
 // their relationships. The profile and the outbox are still version 1's, the label photo
-// queue version 2's.
+// queue version 2's. Version 4 (M2-T42) changes none of them and adds the brew photo, so
+// only that alias is new and the others stay where they are.
 typealias StoredBean = CupmarkSchemaV3.StoredBean
 typealias StoredShelfEntry = CupmarkSchemaV3.StoredShelfEntry
 typealias StoredBrew = CupmarkSchemaV3.StoredBrew
@@ -679,3 +725,4 @@ typealias StoredRecipe = CupmarkSchemaV3.StoredRecipe
 typealias StoredProfile = CupmarkSchemaV1.StoredProfile
 typealias OutboxOperation = CupmarkSchemaV1.OutboxOperation
 typealias QueuedLabelPhoto = CupmarkSchemaV2.QueuedLabelPhoto
+typealias StoredBrewPhoto = CupmarkSchemaV4.StoredBrewPhoto

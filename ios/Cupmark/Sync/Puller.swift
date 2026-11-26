@@ -353,7 +353,8 @@ final class Puller {
         if fetched.brews.undecodableItems.isEmpty {
             for local in localBrews where isGone(local, from: serverBrewIDs) && !isPending(local) {
                 removedBrews.insert(local.localID)
-                context.delete(local)
+                // With its photos (M2-T42); their files go after the save.
+                try store.deleteFromDevice(local)
                 report.removed += 1
             }
         }

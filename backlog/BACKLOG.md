@@ -939,7 +939,7 @@ Planning notes (planned 2026-11-25):
 - Mac: the `ios` job; the owner re-checks on the device in M2-T34.
 
 ### M2-T41 The coffee look: palette, named colours and warmer headings
-- status: needs-mac-verification (reason: the Swift is written on Linux and has not been compiled; the `ios` job on macOS must build it and run the unit tests and UI audits)
+- status: done (#89; the macOS `ios` job passed on d8015e3, including the contrast tests; the look on a device is judged by the owner)
 - owner: ios-engineer
 - depends: M2-T40
 - implements: owner decision of 2026-11-26 ("the taste looks good"); docs/04-specification.md, Non-functional (Accessibility: Dynamic Type); docs/03-project-brief.md, Goals
@@ -955,7 +955,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job. Marked `needs-mac-verification` until it passes; the look on a device is judged by the owner in M2-T34.
 
 ### M2-T42 Brew photos: the local model, the files and their deletion
-- status: todo
+- status: needs-mac-verification (written on Linux; the schema v4 migration from a real v3 store and the brew photo store tests first run in the `ios` job)
 - owner: ios-engineer (run on the opus model: it touches `ios/Cupmark/Store`)
 - depends: M2-T40, M2-T31, M2-T23
 - implements: owner decision of 2026-11-26 (brew photos stay on the device); docs/05-system-design.md, Security and Data (local store); docs/04-specification.md, Non-functional (account deletion in the app); ADR 0030 (how a local schema version is added); ADR 0031 (the account deletion cleanup, point 6); invariants 1 and 6

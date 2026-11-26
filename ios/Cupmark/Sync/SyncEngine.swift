@@ -1119,11 +1119,12 @@ final class SyncEngine {
         return .next
     }
 
-    /// Removes the item and every operation of it.
+    /// Removes the item and every operation of it; a brew takes its photos with it (M2-T42,
+    /// `AccountStore.deleteFromDevice(_:)`).
     private func removeLocally<Model: PersistentModel>(_ sequence: Int, _ localID: UUID, find: (UUID) throws -> Model?) throws -> Outcome {
         try store.removeOutboxOperations(for: localID)
         if let item = try find(localID) {
-            store.context.delete(item)
+            try store.deleteFromDevice(item)
         }
         try store.save()
         return .next

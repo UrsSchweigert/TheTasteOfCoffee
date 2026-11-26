@@ -20,6 +20,10 @@ import SwiftUI
 ///   account's own stale screen photos, and its queued files its store does not list. Queued
 ///   photos (M2-T25) belong to the account's store, which stays on the device after a sign-out,
 ///   so they stay with it and upload when the account signs in again.
+/// - Brew photos (M2-T42, ADR 0033, `BrewPhotoFolders`) belong to the account's store and stay
+///   with it across a sign-out and another account's sign-in. When a store is opened, its
+///   sweep (`AccountStore.sweepBrewPhotos()`) deletes the photos of removed brews and the files
+///   no record lists.
 /// - The label photo queue (M2-T25, `LabelPhotoQueue`) runs in the engine's idle slot before
 ///   the pull, so the beans the drain created have their server ids.
 /// - While an account deletion is recorded (M2-T31, `isHeld`), no store is open and no engine
@@ -172,6 +176,9 @@ final class SyncHost {
         if let queued = try? opened.queuedLabelPhotoFileNames() {
             labelPhotos.removeUnqueued(of: next, keeping: queued)
         }
+        // Brew photos (M2-T42, ADR 0033) stay with the store across sign-outs; at every open
+        // the records of removed brews and the files no record lists go.
+        opened.sweepBrewPhotos()
         let started = makeEngine(next, opened)
         started.onSignInRequired = { [weak self, weak started] in
             // Only the current engine speaks for the host; a stopped one may still finish.
