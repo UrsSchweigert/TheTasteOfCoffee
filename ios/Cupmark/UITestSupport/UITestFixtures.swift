@@ -37,7 +37,10 @@ enum UITestFixtures {
     static let photoBackupSetting: BrewPhotoBackupSetting = {
         let suite = "cupmark-ui-test-photo-backup"
         UserDefaults.standard.removePersistentDomain(forName: suite)
-        return BrewPhotoBackupSetting(defaults: UserDefaults(suiteName: suite) ?? .standard)
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            preconditionFailure("The UI-test UserDefaults suite could not be made.")
+        }
+        return BrewPhotoBackupSetting(defaults: defaults)
     }()
 
     static var account: AccountID {

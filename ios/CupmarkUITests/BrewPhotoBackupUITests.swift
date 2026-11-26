@@ -41,7 +41,7 @@ final class BrewPhotoBackupUITests: XCTestCase {
     /// Waits until the switch's value is `expected` ("1" on, "0" off).
     @MainActor
     private func waitForValue(_ expected: String, of toggle: XCUIElement, in app: XCUIApplication, timeout: TimeInterval = 5) -> Bool {
-        let reached = expectation(for: NSPredicate(format: "value == %@", expected), evaluatedWith: toggle)
+        let reached = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", expected), object: toggle)
         return XCTWaiter().wait(for: [reached], timeout: timeout) == .completed
     }
 

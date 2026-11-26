@@ -47,6 +47,10 @@ final class AccountStore {
     /// once the records are gone from disk; a failed write forgets them, since its records come
     /// back (`Store/AccountStore+BrewPhotos.swift`).
     var brewPhotoFilesToRemove: Set<String> = []
+    /// The last application of the device-backup setting to the brew photo folders could not
+    /// set every flag (M2-T45); cleared by the next one that does. Set by `SyncHost` at store
+    /// open and by `SettingsModel`, shown in Settings.
+    var brewPhotoBackupApplyFailed = false
 
     init(container: ModelContainer, brewPhotoFiles: BrewPhotoFileStore? = nil) {
         self.container = container

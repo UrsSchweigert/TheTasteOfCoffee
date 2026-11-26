@@ -73,7 +73,8 @@ final class UITestHarness {
                     makeEngine: { _, store in
                         SyncEngine(store: store, client: client, isCurrentAccount: { false })
                     },
-                    labelPhotos: LabelPhotoFolders(root: FileManager.default.temporaryDirectory.appending(path: "CupmarkUITestLabelPhotos"))
+                    labelPhotos: LabelPhotoFolders(root: FileManager.default.temporaryDirectory.appending(path: "CupmarkUITestLabelPhotos")),
+                    brewPhotos: nil
                 )
             }
             seeded = nil

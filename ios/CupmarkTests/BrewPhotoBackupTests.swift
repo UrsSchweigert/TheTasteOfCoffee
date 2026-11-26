@@ -269,6 +269,21 @@ final class BrewPhotoBackupTests: XCTestCase {
         XCTAssertEqual(try store.outboxOperations().count, 0)
     }
 
+    func testAFailedApplicationIsShownUntilALaterOneSucceeds() throws {
+        let files = folders.files(for: account)
+        _ = try files.write(try BrewPhotoFixtures.photo())
+        let store = try AccountStore.inMemory(brewPhotoFiles: files)
+        // What a store open that could not set every flag leaves behind.
+        store.brewPhotoBackupApplyFailed = true
+        let model = SettingsModel(store: store, backup: setting, folders: folders)
+        XCTAssertTrue(model.backupApplyFailed)
+
+        model.setBrewPhotosInBackup(true)
+
+        XCTAssertFalse(model.backupApplyFailed)
+        XCTAssertFalse(store.brewPhotoBackupApplyFailed)
+    }
+
     func testTheSettingsModelWithoutFoldersAppliesToTheOpenStoresFolderOnly() throws {
         let files = folders.files(for: account)
         let theirs = folders.files(for: other)

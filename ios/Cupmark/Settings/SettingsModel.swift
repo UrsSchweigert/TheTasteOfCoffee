@@ -50,15 +50,18 @@ final class SettingsModel {
     func setBrewPhotosInBackup(_ value: Bool) {
         backup.isIncluded = value
         brewPhotosInBackup = value
-        var applied = store.applyBrewPhotoBackupSetting()
-        if let folders, !folders.applyBackupSettingToAllFolders() {
-            applied = false
-        }
+        // On the main actor on purpose: one flag per file, a few microseconds each, and the
+        // switch must show the result at once and stay deterministic in tests. The shared
+        // folders include the open store's own, so it is set once; without them (tests, the
+        // UI-test launch) only the open store's folder is set.
+        let applied = folders?.applyBackupSettingToAllFolders() ?? store.applyBrewPhotoBackupSetting()
+        store.brewPhotoBackupApplyFailed = !applied
         backupApplyFailed = !applied
     }
 
     func reload() {
         brewPhotosInBackup = backup.isIncluded
+        backupApplyFailed = store.brewPhotoBackupApplyFailed
         do {
             contributesToAggregates = try store.profile()?.contributeToAggregates ?? false
             loadFailed = false
