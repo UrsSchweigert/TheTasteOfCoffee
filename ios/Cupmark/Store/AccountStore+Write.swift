@@ -68,6 +68,17 @@ enum RestoredPropertyKind {
     case toMany
 }
 
+/// What putting one property back did.
+enum RestoreOutcome: Hashable {
+    /// It already held the saved value.
+    case unchanged
+    /// It was set to the saved value.
+    case changed
+    /// The saved value names a model the live context could not give (not found, or the read
+    /// failed). The property is left as it is, never set to nil in its place.
+    case unresolved
+}
+
 /// One stored property that a failed write puts back.
 struct RestoredProperty<Model: PersistentModel> {
     /// The property's name in the schema.
@@ -77,53 +88,74 @@ struct RestoredProperty<Model: PersistentModel> {
     let keyPath: PartialKeyPath<Model>
     let kind: RestoredPropertyKind
     /// Sets the property of the live model (first) to the saved copy's value (second), and
-    /// returns whether it had to change anything. Setting it again once it holds the saved
-    /// value changes nothing (idempotent), so it may run before and after the rollback.
-    let restore: (Model, Model, AccountStore) -> Bool
+    /// says whether it had to. Setting it again once it holds the saved value changes nothing
+    /// (idempotent), so it may run before and after the rollback.
+    let restore: (Model, Model, AccountStore) -> RestoreOutcome
 
     /// An attribute: the saved value is set as it is.
     static func attribute<Value>(_ name: String, _ keyPath: ReferenceWritableKeyPath<Model, Value>) -> RestoredProperty {
         RestoredProperty(name: name, keyPath: keyPath, kind: .attribute) { live, saved, _ in
             live[keyPath: keyPath] = saved[keyPath: keyPath]
-            return true
+            return .changed
         }
     }
 
-    /// A to-one relationship, compared by the target's local id. The target is resolved in the
-    /// live context (`resolve`), a deleted one included.
+    /// A to-one relationship, compared by the target's local id. The saved target is resolved
+    /// in the live context (`resolve`, given the saved copy's target). When it cannot be, the
+    /// relationship is left as it is (`unresolved`): a saved target is never replaced by nil.
     static func toOne<Target: PersistentModel>(
         _ name: String,
         _ keyPath: ReferenceWritableKeyPath<Model, Target?>,
         id: KeyPath<Target, UUID>,
-        resolve: @escaping (AccountStore, UUID) -> Target?
+        resolve: @escaping (AccountStore, Target) -> Target?
     ) -> RestoredProperty {
         RestoredProperty(name: name, keyPath: keyPath, kind: .toOne) { live, saved, store in
-            let savedID = saved[keyPath: keyPath].map { target in target[keyPath: id] }
-            guard live[keyPath: keyPath].map({ target in target[keyPath: id] }) != savedID else {
-                return false
+            let current = live[keyPath: keyPath]
+            guard let savedTarget = saved[keyPath: keyPath] else {
+                guard current != nil else {
+                    return .unchanged
+                }
+                live[keyPath: keyPath] = nil
+                return .changed
             }
-            live[keyPath: keyPath] = savedID.flatMap { localID in resolve(store, localID) }
-            return true
+            if let current, current[keyPath: id] == savedTarget[keyPath: id] {
+                return .unchanged
+            }
+            guard let target = resolve(store, savedTarget) else {
+                return .unresolved
+            }
+            live[keyPath: keyPath] = target
+            return .changed
         }
     }
 
     /// A to-many relationship. It holds the saved targets exactly once each, or it is set to
     /// them: never appended to, so a target the live list holds twice (seen after a failed
-    /// `ModelContext.save()`, ADR 0025 Addendum M2-T36) is listed once again.
+    /// `ModelContext.save()`, ADR 0025 Addendum M2-T36) is listed once again. If any saved
+    /// target cannot be resolved, the list is left as it is (`unresolved`), not cut short.
     static func toMany<Target: PersistentModel>(
         _ name: String,
         _ keyPath: ReferenceWritableKeyPath<Model, [Target]>,
         id: KeyPath<Target, UUID>,
-        resolve: @escaping (AccountStore, UUID) -> Target?
+        resolve: @escaping (AccountStore, Target) -> Target?
     ) -> RestoredProperty {
         RestoredProperty(name: name, keyPath: keyPath, kind: .toMany) { live, saved, store in
-            let savedIDs = Set(saved[keyPath: keyPath].map { target in target[keyPath: id] })
+            let savedTargets = saved[keyPath: keyPath]
+            let savedIDs = Set(savedTargets.map { target in target[keyPath: id] })
             let liveIDs = live[keyPath: keyPath].map { target in target[keyPath: id] }
             guard liveIDs.count != savedIDs.count || Set(liveIDs) != savedIDs else {
-                return false
+                return .unchanged
             }
-            live[keyPath: keyPath] = savedIDs.compactMap { localID in resolve(store, localID) }
-            return true
+            var targets: [Target] = []
+            var seen = Set<UUID>()
+            for savedTarget in savedTargets where seen.insert(savedTarget[keyPath: id]).inserted {
+                guard let target = resolve(store, savedTarget) else {
+                    return .unresolved
+                }
+                targets.append(target)
+            }
+            live[keyPath: keyPath] = targets
+            return .changed
         }
     }
 }
@@ -136,9 +168,9 @@ extension SavedValuesRestorable {
     /// the write). If it does, the model is left to the bare `rollback()`, which may keep a
     /// changed attribute in memory; that is said, in debug by an assertion, always in the log.
     ///
-    /// Returns what puts the relationships of one kind back again after the rollback (true when
-    /// it had to change anything), nil when there is nothing to put back.
-    func restoreSavedValues(from saved: ModelContext, in store: AccountStore) -> ((RestoredPropertyKind) -> Bool)? {
+    /// Returns what puts the relationships of one kind back again after the rollback (with the
+    /// outcomes it had), nil when there is nothing to put back.
+    func restoreSavedValues(from saved: ModelContext, in store: AccountStore) -> ((RestoredPropertyKind) -> Set<RestoreOutcome>)? {
         let copy: Self?
         do {
             copy = try Self.savedCopy(of: self, in: saved)
@@ -158,13 +190,11 @@ extension SavedValuesRestorable {
             }
         }
         return { kind in
-            var changed = false
+            var outcomes = Set<RestoreOutcome>()
             for property in Self.restoredProperties where property.kind == kind {
-                if property.restore(self, copy, store) {
-                    changed = true
-                }
+                outcomes.insert(property.restore(self, copy, store))
             }
-            return changed
+            return outcomes
         }
     }
 }
@@ -238,7 +268,7 @@ extension AccountStore {
         }
         let saved = ModelContext(container)
         saved.autosaveEnabled = false
-        var restoreAgain: [(RestoredPropertyKind) -> Bool] = []
+        var restoreAgain: [(RestoredPropertyKind) -> Set<RestoreOutcome>] = []
         for model in touched {
             if let restorable = model as? any SavedValuesRestorable,
                let again = restorable.restoreSavedValues(from: saved, in: self) {
@@ -250,20 +280,24 @@ extension AccountStore {
         withExtendedLifetime(saved) {
             var settled = false
             var repaired = false
+            var unresolved = false
             for _ in 0..<AccountStore.relationshipPasses where !settled {
-                var changed = false
+                var outcomes = Set<RestoreOutcome>()
                 for kind in [RestoredPropertyKind.toOne, .toMany] {
                     for restore in restoreAgain {
-                        if restore(kind) {
-                            changed = true
-                        }
+                        outcomes.formUnion(restore(kind))
                     }
                 }
+                let changed = outcomes.contains(.changed)
+                unresolved = outcomes.contains(.unresolved)
                 repaired = repaired || changed
                 settled = !changed
             }
-            if !settled {
+            if !settled || unresolved {
+                // A relationship differs from the store and could not be set: the next save
+                // might store it. Should not happen; said loudly in debug, always in the log.
                 writeLogger.fault("A failed write could not put every relationship back after the rollback.")
+                assertionFailure("A failed write could not put every relationship back after the rollback.")
             } else if repaired {
                 writeLogger.notice("A failed write put relationships back after the rollback.")
             }
@@ -274,30 +308,45 @@ extension AccountStore {
     /// that sets them, one that finds them right, and one more in case a set changed an inverse.
     private static let relationshipPasses = 3
 
-    /// The live model of the bean with this local id, one deleted in the unsaved changes
-    /// included, so a restored relationship can point to it again before the rollback brings
-    /// it back.
-    fileprivate func liveBean(_ localID: UUID) -> StoredBean? {
-        if let deleted = context.deletedModelsArray.lazy.compactMap({ model in model as? StoredBean }).first(where: { bean in bean.localID == localID }) {
+    /// The live model that `saved` (a model of the fresh context on the store) is, so a
+    /// restored relationship can point to it: first one deleted in the unsaved changes (before
+    /// the rollback brings it back), then one the context has registered under the same
+    /// identifier, then a fetch by local id. A failed fetch is not taken for "gone": it is
+    /// logged and answers nil, which the restore treats as `unresolved` and leaves the
+    /// relationship as it is.
+    fileprivate func liveModel<Target: PersistentModel>(
+        matching saved: Target,
+        id: KeyPath<Target, UUID>,
+        fetch: (UUID) throws -> Target?
+    ) -> Target? {
+        let localID = saved[keyPath: id]
+        let deleted = context.deletedModelsArray.lazy
+            .compactMap { model in model as? Target }
+            .first { model in model[keyPath: id] == localID }
+        if let deleted {
             return deleted
         }
-        return try? bean(localID: localID)
+        if let registered: Target = context.registeredModel(for: saved.persistentModelID), registered[keyPath: id] == localID {
+            return registered
+        }
+        do {
+            return try fetch(localID)
+        } catch {
+            writeLogger.fault("A failed write could not read a related model; the relationship was left as it is.")
+            return nil
+        }
     }
 
-    /// The live model of the shelf entry with this local id, a deleted one included.
-    fileprivate func liveShelfEntry(_ localID: UUID) -> StoredShelfEntry? {
-        if let deleted = context.deletedModelsArray.lazy.compactMap({ model in model as? StoredShelfEntry }).first(where: { entry in entry.localID == localID }) {
-            return deleted
-        }
-        return try? shelfEntry(localID: localID)
+    fileprivate func liveBean(_ saved: StoredBean) -> StoredBean? {
+        liveModel(matching: saved, id: \StoredBean.localID) { localID in try bean(localID: localID) }
     }
 
-    /// The live model of the brew with this local id, a deleted one included.
-    fileprivate func liveBrew(_ localID: UUID) -> StoredBrew? {
-        if let deleted = context.deletedModelsArray.lazy.compactMap({ model in model as? StoredBrew }).first(where: { brew in brew.localID == localID }) {
-            return deleted
-        }
-        return try? brew(localID: localID)
+    fileprivate func liveShelfEntry(_ saved: StoredShelfEntry) -> StoredShelfEntry? {
+        liveModel(matching: saved, id: \StoredShelfEntry.localID) { localID in try shelfEntry(localID: localID) }
+    }
+
+    fileprivate func liveBrew(_ saved: StoredBrew) -> StoredBrew? {
+        liveModel(matching: saved, id: \StoredBrew.localID) { localID in try brew(localID: localID) }
     }
 }
 
@@ -340,7 +389,7 @@ extension StoredBean: SavedValuesRestorable {
             .attribute("operatorVarietyID", \.operatorVarietyID),
             // The inverse of `StoredShelfEntry.bean`: an entry inserted by the failed write
             // leaves it, one it moved away or deleted comes back.
-            .toMany("shelfEntries", \.shelfEntries, id: \StoredShelfEntry.localID) { store, localID in store.liveShelfEntry(localID) },
+            .toMany("shelfEntries", \.shelfEntries, id: \StoredShelfEntry.localID) { store, saved in store.liveShelfEntry(saved) },
         ]
     }
 }
@@ -366,10 +415,10 @@ extension StoredShelfEntry: SavedValuesRestorable {
             .attribute("priceBandID", \.priceBandID),
             // The bean: a bean change (D14) is put back, which also puts the entry back into
             // the old bean's `shelfEntries` and out of the new one's.
-            .toOne("bean", \.bean, id: \StoredBean.localID) { store, localID in store.liveBean(localID) },
+            .toOne("bean", \.bean, id: \StoredBean.localID) { store, saved in store.liveBean(saved) },
             // The inverse of `StoredBrew.shelfEntry`: a brew inserted by the failed write leaves
             // it, one it moved away or deleted comes back.
-            .toMany("brews", \.brews, id: \StoredBrew.localID) { store, localID in store.liveBrew(localID) },
+            .toMany("brews", \.brews, id: \StoredBrew.localID) { store, saved in store.liveBrew(saved) },
         ]
     }
 }
@@ -399,7 +448,7 @@ extension StoredBrew: SavedValuesRestorable {
             .attribute("waterTypeID", \.waterTypeID),
             .attribute("milkID", \.milkID),
             .attribute("ratingData", \.ratingData),
-            .toOne("shelfEntry", \.shelfEntry, id: \StoredShelfEntry.localID) { store, localID in store.liveShelfEntry(localID) },
+            .toOne("shelfEntry", \.shelfEntry, id: \StoredShelfEntry.localID) { store, saved in store.liveShelfEntry(saved) },
         ]
     }
 }

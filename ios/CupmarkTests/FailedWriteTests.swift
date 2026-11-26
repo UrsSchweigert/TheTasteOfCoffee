@@ -373,27 +373,37 @@ final class FailedWriteTests: XCTestCase {
     /// removals delete models with relationships: a brew on its entry, and a scanned bag's
     /// entry with the pending bean it leaves.
     func testASaveThatFailsInTheStoreUndoesADeletionWithRelationships() throws {
-        let directory = FileManager.default.temporaryDirectory.appending(
+        // Two folders: the writable store fills the first and is closed; the read-only store
+        // opens a copy in the second, so no other connection ever shares its SQLite files (a
+        // writable container closed late checkpoints and unlinks the -wal and -shm files under
+        // the read-only one, and its reads then miss rows; ADR 0025, Addendum M2-T36).
+        let root = FileManager.default.temporaryDirectory.appending(
             path: "FailedWriteTests-\(UUID().uuidString)",
             directoryHint: .isDirectory
         )
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let written = root.appending(path: "written", directoryHint: .isDirectory)
+        let readOnly = root.appending(path: "read-only", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: written, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: readOnly, withIntermediateDirectories: true)
         addTeardownBlock {
-            try? FileManager.default.removeItem(at: directory)
+            try? FileManager.default.removeItem(at: root)
         }
-        let url = directory.appending(path: "account.store", directoryHint: .notDirectory)
-        func openStore(allowsSave: Bool) throws -> AccountStore {
+        let fileName = "account.store"
+        func openStore(in directory: URL, allowsSave: Bool) throws -> AccountStore {
             let schema = AccountStore.schema
+            let url = directory.appending(path: fileName, directoryHint: .notDirectory)
             let configuration = ModelConfiguration("FailedWriteTests", schema: schema, url: url, allowsSave: allowsSave, cloudKitDatabase: .none)
             return AccountStore(container: try ModelContainer(for: schema, migrationPlan: CupmarkMigrationPlan.self, configurations: configuration))
         }
 
-        let entryID: UUID
-        let brewID: UUID
-        let scannedEntryID: UUID
-        let pendingBeanID: UUID
-        do {
-            let writable = try openStore(allowsSave: true)
+        var entryID = UUID()
+        var brewID = UUID()
+        var scannedEntryID = UUID()
+        var pendingBeanID = UUID()
+        weak var writableContainer: ModelContainer?
+        try autoreleasepool {
+            let writable = try openStore(in: written, allowsSave: true)
+            writableContainer = writable.container
             let entry = try StoreFixtures.syncedShelfEntry(in: writable)
             let brew = try StoredBrew(try StoreFixtures.brewInput())
             try writable.addBrew(brew, shelfEntry: entry)
@@ -403,9 +413,39 @@ final class FailedWriteTests: XCTestCase {
             scannedEntryID = scannedEntry
             pendingBeanID = try XCTUnwrap(writable.shelfEntry(localID: scannedEntry)?.bean?.localID)
         }
+        XCTAssertTrue(waitUntilReleased { writableContainer != nil }, "the writable store is closed before its files are copied")
+        for name in [fileName, "\(fileName)-wal"] {
+            let source = written.appending(path: name, directoryHint: .notDirectory)
+            if FileManager.default.fileExists(atPath: source.path(percentEncoded: false)) {
+                try FileManager.default.copyItem(at: source, to: readOnly.appending(path: name, directoryHint: .notDirectory))
+            }
+        }
+        weak var readOnlyContainer: ModelContainer?
+        // The read-only store is closed before the teardown removes its folder.
+        defer {
+            XCTAssertTrue(waitUntilReleased { readOnlyContainer != nil }, "the read-only store is closed before its folder is removed")
+        }
+        try autoreleasepool {
+            let store = try openStore(in: readOnly, allowsSave: false)
+            readOnlyContainer = store.container
+            try checkFailedSaves(in: store, entryID: entryID, brewID: brewID, scannedEntryID: scannedEntryID, pendingBeanID: pendingBeanID)
+        }
+    }
+
+    /// Spins the run loop for up to 5 s while `isAlive` holds; true once it no longer does.
+    private func waitUntilReleased(_ isAlive: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(5)
+        while isAlive(), Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        return !isAlive()
+    }
+
+    /// The removals of `testASaveThatFailsInTheStoreUndoesADeletionWithRelationships` on the
+    /// read-only store.
+    private func checkFailedSaves(in store: AccountStore, entryID: UUID, brewID: UUID, scannedEntryID: UUID, pendingBeanID: UUID) throws {
         let expectedQueue = ["create brew", "look_up bean", "create shelf_entry"]
 
-        let store = try openStore(allowsSave: false)
         XCTAssertNil(store.willSave, "the store itself fails, not the hook")
         let entry = try XCTUnwrap(store.shelfEntry(localID: entryID))
         let brew = try XCTUnwrap(store.brew(localID: brewID))
