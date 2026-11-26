@@ -1,5 +1,5 @@
 #!/bin/bash
-# Xcode Cloud runs this before every xcodebuild action (M2-T12, ADR 0035).
+# Xcode Cloud runs this before every xcodebuild action (M2-T12, ADR 0036).
 # It sets the build number (CURRENT_PROJECT_VERSION) to Xcode Cloud's CI_BUILD_NUMBER,
 # so every TestFlight upload has a number App Store Connect has not seen.
 # Outside Xcode Cloud (CI_XCODE_CLOUD unset) it does nothing. No network, no secrets.

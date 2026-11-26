@@ -460,7 +460,7 @@ Signing: bundle id `app.cupmark.Cupmark`, automatic signing, `DEVELOPMENT_TEAM =
 
 ## TestFlight (Xcode Cloud)
 
-M2-T12, ADR 0035. Xcode Cloud builds from the repository and uploads to TestFlight; GitHub Actions stays the CI for pull requests.
+M2-T12, ADR 0036. Xcode Cloud builds from the repository and uploads to TestFlight; GitHub Actions stays the CI for pull requests.
 
 - **Workflow** (created once by the owner in Xcode: Integrate, Create Workflow; grant Xcode Cloud read access to the GitHub repository; team `2F695PTZC6`; the App Store Connect app of `app.cupmark.Cupmark`):
   - start condition: manual, or a tag on `main`;

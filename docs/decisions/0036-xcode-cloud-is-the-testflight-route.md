@@ -1,4 +1,4 @@
-# 0035 Xcode Cloud is the TestFlight route; GitHub Actions stays the CI
+# 0036 Xcode Cloud is the TestFlight route; GitHub Actions stays the CI
 
 - Status: accepted
 - Date: 2026-11-26
