@@ -78,7 +78,9 @@ final class APITypesTests: XCTestCase {
             brewTimeS: 180,
             grindNormalised: 5.5,
             waterType: first(Vocabulary.WaterType.self),
-            milk: last(Vocabulary.MilkType.self)
+            milk: last(Vocabulary.MilkType.self),
+            grinder: first(Vocabulary.Grinder.self),
+            grindSetting: 30.5
         )
         parameters.doseGrams = 18.5
         return parameters
