@@ -955,7 +955,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job. Marked `needs-mac-verification` until it passes; the look on a device is judged by the owner in M2-T34.
 
 ### M2-T42 Brew photos: the local model, the files and their deletion
-- status: needs-mac-verification (written on Linux; the schema v4 migration from a real v3 store and the brew photo store tests first run in the `ios` job)
+- status: done (#90; the macOS `ios` job passed, including the migration from a real version 3 store)
 - owner: ios-engineer (run on the opus model: it touches `ios/Cupmark/Store`)
 - depends: M2-T40, M2-T31, M2-T23
 - implements: owner decision of 2026-11-26 (brew photos stay on the device); docs/05-system-design.md, Security and Data (local store); docs/04-specification.md, Non-functional (account deletion in the app); ADR 0030 (how a local schema version is added); ADR 0031 (the account deletion cleanup, point 6); invariants 1 and 6
@@ -974,7 +974,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job. Marked `needs-mac-verification` until it passes.
 
 ### M2-T42b Brew photos: take or pick a photo on a brew
-- status: needs-mac-verification (written on Linux; the ios job and a device check of the camera and the real picker in M2-T34 have not run)
+- status: done (#93; the macOS `ios` job passed on 579be04, including the UI tests; the real camera and picker are checked on a device in M2-T34)
 - owner: ios-engineer
 - depends: M2-T42
 - implements: owner decision of 2026-11-26 (brew photos); docs/04-specification.md, F2 (brew log); invariants 1 and 7
@@ -989,7 +989,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job; the camera and the real picker are checked on a device in M2-T34. Marked `needs-mac-verification` until the job passes.
 
 ### M2-T43 Brew photo gallery from the shelf, with pick-list filters
-- status: todo
+- status: in-progress
 - owner: ios-engineer
 - depends: M2-T42
 - implements: owner decision of 2026-11-26 (photo browsing); docs/04-specification.md, F2; M2-T40 (the route registration rule); invariant 1 (no search box)
@@ -1116,7 +1116,7 @@ Scope: App Store listing, screenshots, privacy nutrition labels, privacy policy 
   - Mac: the `ios` job.
 
 ### M2-T37 Failed-write repair: the remaining review notes
-- status: needs-mac-verification (written on Linux, where Swift cannot be built; the new and changed XCTests in FailedWriteTests and OnboardingTests must pass in the macOS `ios` job; ADR 0025 addendum M2-T37)
+- status: done (#87; the macOS `ios` job passed on cbde39d, including the real failed-save test: ADR 0025 Addendum M2-T37)
 - owner: ios-engineer
 - depends: M2-T36
 - implements: ADR 0025 (addenda M2-T35 and M2-T36)
