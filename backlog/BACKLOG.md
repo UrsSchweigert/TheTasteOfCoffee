@@ -1151,12 +1151,12 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
 - **M4 reads, M3 never serves.** No route returns aggregates in M3. The one read function (T7) exists so M4's paid routes have exactly one path to aggregate keys.
 
 ### M3-T1 ADR: nightly rebuild replaces the incremental aggregator
-- status: todo
+- status: done
 - owner: planner (the lead writes it under ADR 0014; the owner already decided the four points below, so it is recorded, not re-decided)
 - depends: none
 - implements: docs/05-system-design.md, Aggregation pipeline; docs/07-open-questions.md D1, D2; the owner decisions of 2026-11-26
 - acceptance:
-  - `docs/decisions/0035-nightly-aggregate-rebuild.md` supersedes the incremental stream design (ADR 0010 stays for key and ranking facet formats; the ADR says which parts of 0010 and 0017 it replaces: the "subtract on delete" mechanism of D2 and the "consent at write time" rule of D1).
+  - `docs/decisions/0035-nightly-rebuild-of-community-aggregates.md` supersedes the incremental stream design (ADR 0010 stays for key and ranking facet formats; the ADR says which parts of 0010 and 0017 it replaces: the "subtract on delete" mechanism of D2 and the "consent at write time" rule of D1).
   - It records:
     - the owner decisions of 2026-11-26 (nightly Scan, withdrawal removes contributions at the next run, daily one-vote weights, cap 10);
     - the weight definition exactly as in the planning notes: groups per (user, bean, UTC day) for bean-level and per (user, bean, method, UTC day) for method-level, `L = 2520`, the integer bound and the fail-closed assertion, distinct raters as distinct users;
