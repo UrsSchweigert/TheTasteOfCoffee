@@ -412,7 +412,7 @@ test('label check fails: a label left for an id that was removed (robusta under 
   assert.deepEqual(checkI18n('en', en, allLists()), ['en: orphan label varieties.robusta']);
 });
 
-// ---- Vocabulary v3 (draft, task M2-T2, D13): grinders and the method field rules. ----
+// ---- Vocabulary v3 (task M2-T2 to M2-T4, D13): grinders and the method field rules. Published 2026-11-26. ----
 
 for (const version of versions) {
   test(`v${version}: every entry scale sits on its step, and the step is exact in binary`, () => {
@@ -420,29 +420,24 @@ for (const version of versions) {
   });
 }
 
-/**
- * Fields that v3 adds to BrewParameters when it is published (M2-T4). Until
- * then the API does not have them, because a draft is not in the API.
- */
-const V3_FIELDS_NOT_IN_API_YET = ['grinder', 'grind_setting'];
 const brewParameterFields = () => Object.keys(loadOpenApi().components.schemas.BrewParameters.properties);
-const ruleFields = () => [...new Set([...brewParameterFields(), ...V3_FIELDS_NOT_IN_API_YET])];
+const ruleFields = () => brewParameterFields();
 const v3 = () => clone(loadVocabulary(3));
 const methodIds = () => loadVocabulary(3).brew.methods.map((entry) => entry.id);
 const allowedBy = (files, field) => Object.keys(files.brew.field_rules[field]?.allowed_methods ?? {});
 const except = (...ids) => methodIds().filter((id) => !ids.includes(id));
 
-test('v3 is a draft in every file, and v1, v2 and their locks are untouched (the lock test covers the bytes)', () => {
+test('v3 is published in every file, and v1 and v2 are too (the lock test covers the bytes)', () => {
   for (const [name, file] of Object.entries(loadVocabulary(3))) {
     assert.equal(file.version, 3, `${name}.json`);
-    assert.equal(file.status, 'draft', `${name}.json`);
+    assert.equal(file.status, 'published', `${name}.json`);
   }
   for (const version of [1, 2]) {
     for (const file of Object.values(loadVocabulary(version))) assert.equal(file.status, 'published');
   }
 });
 
-test('v3 is v2 plus grinders and field_rules in brew.json, and nothing else changed', () => {
+test('v3 is v2 plus grinders and field_rules in brew.json, unknown in processes and other in species (ADR 0029), and nothing else changed', () => {
   const v2 = loadVocabulary(2);
   const files = loadVocabulary(3);
   assert.deepEqual(Object.keys(files), Object.keys(v2));
@@ -452,6 +447,15 @@ test('v3 is v2 plus grinders and field_rules in brew.json, and nothing else chan
       const { grinders, field_rules: fieldRules, ...rest } = actual;
       assert.deepEqual(rest, withoutMeta(v2.brew), 'brew.json: v2 lists and ranges unchanged');
       assert.ok(grinders && fieldRules, 'brew.json: grinders and field_rules added');
+    } else if (name === 'bean') {
+      const before = withoutMeta(v2.bean);
+      const ids = (list) => list.map((entry) => entry.id);
+      assert.deepEqual(ids(actual.processes), [...ids(before.processes), 'unknown'], 'processes gain unknown at the end');
+      assert.deepEqual(ids(actual.species), [...ids(before.species).slice(0, -1), 'other', 'unknown'], 'species gain other before unknown');
+      assert.deepEqual(ids(actual.roast_levels), ids(before.roast_levels), 'roast levels stay a scale without other or unknown');
+      const { processes, species, ...rest } = actual;
+      const { processes: p2, species: s2, ...rest2 } = before;
+      assert.deepEqual(rest, rest2, 'every other bean list is unchanged');
     } else {
       assert.deepEqual(actual, withoutMeta(v2[name]), `${name}.json`);
     }
@@ -493,6 +497,12 @@ test('v3 field rules are the D13 decision (ADR 0021)', () => {
   }
 });
 
+for (const version of versions.filter((v) => v >= 3)) {
+  test(`v${version}: every method field rule names a known method and field, and grind_setting needs grinder`, () => {
+    assert.deepEqual(checkFieldRules(loadVocabulary(version), { fields: ruleFields() }), []);
+  });
+}
+
 test('v3: every rule names a known method and a known BrewParameters field, never method', () => {
   assert.deepEqual(checkFieldRules(loadVocabulary(3), { fields: ruleFields() }), []);
   for (const field of Object.keys(loadVocabulary(3).brew.field_rules)) {
@@ -500,11 +510,8 @@ test('v3: every rule names a known method and a known BrewParameters field, neve
   }
 });
 
-test('the fields v3 adds are not in the API while v3 is a draft, and must be once it is published', () => {
-  const published = Object.values(loadVocabulary(3)).every((file) => file.status === 'published');
-  for (const field of V3_FIELDS_NOT_IN_API_YET) {
-    assert.equal(brewParameterFields().includes(field), published, `${field}: drop it from V3_FIELDS_NOT_IN_API_YET once BrewParameters has it`);
-  }
+test('the fields v3 adds are in the API, because v3 is published', () => {
+  for (const field of ['grinder', 'grind_setting']) assert.ok(brewParameterFields().includes(field), field);
 });
 
 test('the grinder scale binding: SCALED_FIELDS and ENTRY_RANGES name v3 lists and fields', () => {

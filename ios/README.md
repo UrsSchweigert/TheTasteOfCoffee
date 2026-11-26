@@ -227,7 +227,7 @@ M2-T25 makes docs/04, Non-functional (Offline: "Scan, brew and rate work offline
 
 ## Brew form
 
-`Brew/` (M2-T19) implements docs/04 F2 for vocabulary v2, which has no method field rules yet: every field is offered with every method (M2-T26 adds the v3 rules and the grinder).
+`Brew/` (M2-T19) implements docs/04 F2 without the method field rules: every field is offered with every method, although the app bundles v3 since M2-T4, which has the rules (M2-T26 applies them and adds the grinder).
 
 - **Start.** A brew starts from a shelf entry: swipe a shelf row to the right ("Log a Brew", also a VoiceOver action) or use the button at the top of the entry's screen. Both open `BrewFormScreen` in a sheet.
 - **Fields.** Method: a pick list, required; it starts as the method of the entry's latest brew, so a repeat brew needs no pick. Dose, water or yield and the normalised grind: steppers. Water temperature: a pick list of "Not set", "Heated" (then a stepper in °C) and the vocabulary's `water_temp_special` values (`cold`); `API.WaterTemperature` holds one of them, so a temperature and `cold` are never both set. Water type and milk: pick lists. Everything but the method is optional, and each stepper has a clear button. Nothing is typed.

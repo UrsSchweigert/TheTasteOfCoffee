@@ -366,7 +366,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the script tests run on Linux, and the `ios` job runs because the generator changed.
 
 ### M2-T4 Publish vocabulary v3 and follow it in the API
-- status: todo
+- status: needs-mac-verification (contracts, backend and script tests pass; the v3 Swift and the pbxproj folder reference are first compiled by the `ios` job)
 - owner: contract-keeper
 - needs: human (the owner approves the v3 draft, in particular the grinder list and the method field rules; contracts/README.md, Publishing a version, step 3)
 - depends: M2-T2, M2-T3

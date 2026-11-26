@@ -184,7 +184,7 @@ describe('unknown properties are rejected at every level', () => {
 });
 
 describe('the vocabulary version', () => {
-  it.each([[0], [3], [4], [-1], [1.5], ['1'], ['2'], [null]])('rejects vocabulary_version %j', async (version) => {
+  it.each([[0], [4], [5], [-1], [1.5], ['1'], ['2'], [null]])('rejects vocabulary_version %j', async (version) => {
     expect(await brewWith('vocabulary_version', version)).toBe(400);
     expect((await h.call('POST', '/shelf', { json: shelfBody({ vocabulary_version: version }) })).status).toBe(400);
     expect((await h.call('POST', '/recipes', { json: { ...recipeBody(), vocabulary_version: version } })).status).toBe(400);
@@ -194,16 +194,16 @@ describe('the vocabulary version', () => {
     expect(await brewWith('vocabulary_version', undefined)).toBe(400);
   });
 
-  it('accepts the published versions 1 and 2 on every route', async () => {
-    for (const version of [1, 2]) {
+  it('accepts the published versions 1, 2 and 3 on every route', async () => {
+    for (const version of [1, 2, 3]) {
       expect(await brewWith('vocabulary_version', version), `brew v${String(version)}`).toBe(201);
       expect((await h.call('POST', '/shelf', { json: shelfBody({ vocabulary_version: version }) })).status).toBe(201);
       expect((await h.call('POST', '/recipes', { json: { ...recipeBody(), vocabulary_version: version } })).status).toBe(201);
     }
   });
 
-  it('loads exactly the published versions, v1 and v2', () => {
-    expect(Object.keys(publishedVocabularies)).toEqual(['1', '2']);
+  it('loads exactly the published versions, v1, v2 and v3', () => {
+    expect(Object.keys(publishedVocabularies)).toEqual(['1', '2', '3']);
   });
 });
 
