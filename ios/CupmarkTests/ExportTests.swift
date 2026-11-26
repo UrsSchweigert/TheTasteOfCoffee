@@ -23,7 +23,7 @@ final class ExportTests: XCTestCase {
         return data
     }
 
-    private let day = Date(timeIntervalSince1970: 1_795_000_000)
+    private let day = Date(timeIntervalSince1970: 1_795_000_000) // 2026-11-18 11:06 UTC, the same day in Berlin and in UTC
 
     private func calendar(_ identifier: String) throws -> Calendar {
         try StoreFixtures.calendar(identifier)
@@ -115,7 +115,7 @@ final class ExportTests: XCTestCase {
         await model.export()
 
         let ready = try readyFile(model)
-        XCTAssertEqual(ready.url.lastPathComponent, "cupmark-export-2026-11-25.csv")
+        XCTAssertEqual(ready.url.lastPathComponent, "cupmark-export-2026-11-18.csv")
         XCTAssertEqual(try Data(contentsOf: ready.url), csvBytes)
         XCTAssertTrue(ready.url.standardizedFileURL.path(percentEncoded: false).hasPrefix(root.standardizedFileURL.path(percentEncoded: false)))
         XCTAssertFalse(ready.hasPendingChanges)
