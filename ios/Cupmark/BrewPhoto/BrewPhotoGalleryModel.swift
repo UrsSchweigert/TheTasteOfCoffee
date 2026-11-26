@@ -50,6 +50,9 @@ final class BrewPhotoGalleryModel {
     private let locale: Locale
     private let calendar: Calendar
     private let bundle: Bundle
+    /// Joins the filter phrase; made once, since `filterDescription` is read by every redraw.
+    /// (The texts of a reload are made anew each time, so none of them goes stale.)
+    @ObservationIgnored private let joiner: BrewPhotoTexts
 
     /// Every photo that can be shown, newest first, before filtering.
     private(set) var allItems: [BrewPhotoGalleryItem] = []
@@ -77,6 +80,7 @@ final class BrewPhotoGalleryModel {
         self.locale = locale
         self.calendar = calendar
         self.bundle = bundle
+        joiner = BrewPhotoTexts(vocabulary: vocabulary, language: language, locale: locale, calendar: calendar, bundle: bundle)
     }
 
     // MARK: - State
@@ -116,7 +120,7 @@ final class BrewPhotoGalleryModel {
     /// Nov 2026".
     var filterDescription: String? {
         let parts = [methodFilterTitle, bagFilterTitle].compactMap { $0 }
-        return parts.isEmpty ? nil : makeTexts().join(parts)
+        return parts.isEmpty ? nil : joiner.join(parts)
     }
 
     /// The count as shown, with the active filter: "Photos: 3" or "Photos: 2, filter:

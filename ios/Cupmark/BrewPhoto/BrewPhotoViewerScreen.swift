@@ -77,6 +77,12 @@ struct BrewPhotoViewerScreen: View {
                 dismiss()
             }
         }
+        .onChange(of: model.vanished) { _, vanished in
+            // Removed while open (a pull, the sync engine): back to the gallery, not an empty page.
+            if vanished {
+                dismiss()
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: AccountStore.didSaveNotification, object: model.store)) { _ in
             model.reload()
         }
@@ -103,6 +109,9 @@ struct BrewPhotoViewerScreen: View {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(verbatim: content.accessibilityLabel))
+            // With the file missing the visible text is ignored with the other children, so
+            // VoiceOver is told in the value.
+            .accessibilityValue(content.fileURL == nil ? Text(L10n.brewPhotosFileMissing) : Text(verbatim: String()))
             .accessibilityAddTraits(.isImage)
             .accessibilityIdentifier("gallery-viewer-photo")
             .task(id: content.fileURL) {

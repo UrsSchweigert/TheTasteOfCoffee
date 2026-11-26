@@ -74,6 +74,14 @@ final class BrewPhotoViewerModel {
     private(set) var hasLoaded = false
     /// True when the last read of the store failed.
     private(set) var loadFailed = false
+    /// The photo was shown at least once, so a photo that disappears later (a pull, the sync
+    /// engine) can be told from an id that never existed.
+    private(set) var hadContent = false
+
+    /// The photo, or its brew, went away while the viewer was open and the user did not delete
+    /// it here: the screen goes back.
+    var vanished: Bool { hadContent && isGone && !isDeleted }
+
     /// The photo was deleted here (or was already gone when the user confirmed).
     private(set) var isDeleted = false
     /// The last delete could not be saved; nothing was changed.
@@ -107,6 +115,9 @@ final class BrewPhotoViewerModel {
     func reload() {
         do {
             content = try readContent()
+            if content != nil {
+                hadContent = true
+            }
             loadFailed = false
         } catch {
             loadFailed = true

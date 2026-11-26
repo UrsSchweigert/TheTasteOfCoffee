@@ -284,7 +284,7 @@ enum BrewPhotoThumbnails {
     }
 
     /// A thumbnail that was loaded, with the file and the size it was made for.
-    struct Loaded: @unchecked Sendable {
+    struct Loaded: Sendable {
         let url: URL
         let pixels: Int
         let thumbnail: Thumbnail

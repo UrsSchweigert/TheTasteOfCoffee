@@ -268,6 +268,30 @@ final class BrewPhotoViewerModelTests: XCTestCase {
         XCTAssertFalse(model.loadFailed)
     }
 
+    func testAPhotoThatDisappearsWhileOpenHasVanishedButAnUnknownIdHasNot() throws {
+        let scenario = try makeScenario()
+        let model = try makeModel(scenario.store, photo: scenario.photo)
+        XCTAssertFalse(model.vanished)
+
+        try scenario.store.deleteBrewPhoto(localID: scenario.photo.localID)
+        model.reload()
+        XCTAssertTrue(model.vanished, "removed elsewhere while shown: the screen goes back")
+
+        let unknown = try makeModel(scenario.store, photoID: UUID())
+        XCTAssertTrue(unknown.isGone)
+        XCTAssertFalse(unknown.vanished, "never shown")
+    }
+
+    func testDeletingHereIsNotVanishing() throws {
+        let scenario = try makeScenario()
+        let model = try makeModel(scenario.store, photo: scenario.photo)
+
+        model.confirmDelete()
+
+        XCTAssertTrue(model.isDeleted)
+        XCTAssertFalse(model.vanished, "the delete already goes back; it must not go back twice")
+    }
+
     func testThePhotoOfARemovedBrewIsGone() throws {
         let scenario = try makeScenario()
         scenario.brew.syncState = .pendingDelete
