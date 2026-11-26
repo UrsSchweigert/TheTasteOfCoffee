@@ -128,6 +128,46 @@ function collectLists(files: Readonly<Record<string, unknown>>): Record<string, 
   return lists;
 }
 
+/** The methods each `brew.json` field rule allows, by field (contracts/README.md, `field_rules`). */
+function collectFieldRules(version: number, files: Readonly<Record<string, unknown>>): Record<string, string[]> | undefined {
+  const brew = files.brew;
+  const rules = isObject(brew) ? brew.field_rules : undefined;
+  if (rules === undefined) return undefined;
+  if (!isObject(rules)) fail(`v${String(version)}: brew.field_rules is not an object`);
+  const result: Record<string, string[]> = {};
+  for (const [field, rule] of Object.entries(rules)) {
+    if (!isObject(rule) || !isObject(rule.allowed_methods)) fail(`v${String(version)}: field_rules.${field} has no allowed_methods`);
+    result[field] = Object.entries(rule.allowed_methods)
+      .filter(([, allowed]) => allowed === true)
+      .map(([method]) => method);
+  }
+  return result;
+}
+
+/** The `scale` of list entries that carry one (`grinders`, from v3), by list and entry id. */
+function collectEntryRanges(version: number, files: Readonly<Record<string, unknown>>, lists: ReadonlySet<string>): Record<string, Record<string, ScaledRange>> {
+  const result: Record<string, Record<string, ScaledRange>> = {};
+  const walk = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item);
+      return;
+    }
+    if (!isObject(value)) return;
+    for (const [key, child] of Object.entries(value)) {
+      if (lists.has(key) && Array.isArray(child)) {
+        for (const item of child) {
+          if (!isObject(item) || typeof item.id !== 'string' || item.scale === undefined) continue;
+          const range = scaledRange(version, `${key}.${item.id}.scale`, 1, item.scale);
+          if (range !== undefined) (result[key] ??= {})[item.id] = range;
+        }
+      }
+      walk(child);
+    }
+  };
+  for (const content of Object.values(files)) walk(content);
+  return result;
+}
+
 function lookup(files: Readonly<Record<string, unknown>>, dotted: string): unknown {
   let node: unknown = files;
   for (const key of dotted.split('.')) {
@@ -245,7 +285,15 @@ export function generateVocabularySource(document: unknown, versions: readonly V
       if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) fail(`v${String(entry.version)}: ${path} is not a count`);
       values[path] = value;
     }
-    published[entry.version] = { lists, ranges, values };
+    const fieldRules = collectFieldRules(entry.version, entry.files);
+    const entryRanges = collectEntryRanges(entry.version, entry.files, uses.lists);
+    published[entry.version] = {
+      lists,
+      ranges,
+      values,
+      ...(fieldRules === undefined ? {} : { fieldRules }),
+      ...(Object.keys(entryRanges).length === 0 ? {} : { entryRanges }),
+    };
   }
   if (Object.keys(published).length === 0) fail('no published vocabulary version');
 

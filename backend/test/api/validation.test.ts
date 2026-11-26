@@ -159,7 +159,7 @@ describe('ids, dates and pick lists', () => {
 describe('unknown properties are rejected at every level', () => {
   it.each([
     ['note', 'a comment'],
-    ['parameters.grinder', 'comandante'],
+    ['parameters.grinder_model', 'comandante'],
     ['parameters.dose_g', 15],
     ['rating.comment', 'nice'],
     ['rating.scores.overall_comment', 'x'],
@@ -208,10 +208,9 @@ describe('the vocabulary version', () => {
 });
 
 describe('method-dependent fields', () => {
-  // The spec (F2) says fields depend on the method but defines no mapping, and
-  // vocabulary v1 has none, so no published version has a rule.
-  it('no published version defines a rule, so every method takes every field', async () => {
-    for (const version of Object.keys(publishedVocabularies)) expect(methodRulesFor(Number(version))).toEqual([]);
+  // The rules themselves are tested in test/api/method-rules.test.ts.
+  it('versions 1 and 2 define no rule, so every method takes every field', async () => {
+    for (const version of [1, 2]) expect(methodRulesFor(version)).toEqual([]);
     const methods = publishedVocabularies[1]?.lists.methods ?? [];
     expect(methods).toHaveLength(12);
     for (const method of methods) {

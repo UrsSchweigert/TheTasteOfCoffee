@@ -7,9 +7,9 @@
 import type { z } from 'zod';
 import type { UserId } from '../auth/user-id.ts';
 import { BrewInputSchema, RecipeInputSchema, ShelfEntryInputSchema } from '../generated/contract.ts';
-import type { Brew, BrewInput, BrewParameters, Recipe, RecipeInput, ShelfEntry, ShelfEntryInput } from '../generated/contract.ts';
+import type { Brew, BrewInput, Recipe, RecipeInput, ShelfEntry, ShelfEntryInput } from '../generated/contract.ts';
 import type { ListOptions, Page, Repository } from '../repository/index.ts';
-import { methodRulesFor, violatesMethodRules } from '../vocabulary/method-rules.ts';
+import { methodRulesHold } from '../vocabulary/method-rules.ts';
 import type { CursorList } from './cursor.ts';
 
 /** The part of the repository the API uses. Unit tests pass an in-memory fake. */
@@ -75,9 +75,6 @@ export interface Resource<I extends { vocabulary_version: number }, O> {
   readonly remove: (store: ApiStore, user: UserId, id: string) => Promise<void>;
 }
 
-function methodRulesHold(input: { vocabulary_version: number; parameters: BrewParameters }): boolean {
-  return !violatesMethodRules(input.parameters, methodRulesFor(input.vocabulary_version));
-}
 
 export const shelfResource: Resource<ShelfEntryInput, ShelfEntry> = {
   collection: 'shelf',

@@ -17,6 +17,19 @@ export interface PublishedVocabulary {
   readonly ranges: Readonly<Record<string, ScaledRange>>;
   /** Plain numbers by `<file>.<path>` (for example `flavour_notes.max_picks`). */
   readonly values: Readonly<Record<string, number>>;
+  /**
+   * Method field rules (`brew.json`, `field_rules`, from v3): for each
+   * `BrewParameters` field that only some methods allow, those methods. A field
+   * without an entry is allowed with every method. Absent when the version has
+   * no rules.
+   */
+  readonly fieldRules?: Readonly<Record<string, readonly string[]>>;
+  /**
+   * Ranges that entries of a list carry (`scale` on a grinder, from v3): list
+   * name, then entry id, then the range as the vocabulary states it. An entry
+   * without a range has no key. Absent when the version has none.
+   */
+  readonly entryRanges?: Readonly<Record<string, Readonly<Record<string, ScaledRange>>>>;
 }
 
 /**

@@ -386,7 +386,7 @@ Planning notes (planned 2026-11-25):
   - The Xcode folder reference moves to `vocabulary/v3`, and `Generated/Vocabulary.swift` is regenerated (`--check` passes). The `ios` job passes.
 
 ### M2-T5 Backend: method field rules and grinder scales from v3
-- status: todo
+- status: done (rules read from the generated v3 data; backend tests pass; the backend CI job is the final check)
 - owner: backend-engineer
 - depends: M2-T4
 - implements: docs/04-specification.md, F2; docs/07 D13; the M1-T5 rule hook (`backend/src/vocabulary/method-rules.ts`)
