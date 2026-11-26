@@ -45,17 +45,21 @@ struct BrewStartSection: View {
             }
             if model.deleteFailed {
                 Text(L10n.recipeDeleteFailed)
-                    .foregroundStyle(.secondary)
+                    .secondaryText()
             }
         } header: {
             Text(L10n.brewRepeatHeader)
+                .secondaryText()
         } footer: {
             if model.lastBrew == nil && model.recipes.isEmpty {
                 Text(L10n.recipeEmpty)
+                    .secondaryText()
             } else {
                 Text(L10n.brewRepeatFooter)
+                    .secondaryText()
             }
         }
+        .surfaceRow()
         .onAppear {
             model.reload()
         }
@@ -85,10 +89,12 @@ struct RecipeListScreen: View {
         List {
             if model.loadFailed {
                 Text(L10n.shelfStoreErrorTitle)
-                    .foregroundStyle(.secondary)
+                    .secondaryText()
+                    .surfaceRow()
             } else if model.recipes.isEmpty {
                 Text(L10n.recipeEmpty)
-                    .foregroundStyle(.secondary)
+                    .secondaryText()
+                    .surfaceRow()
             } else {
                 Section {
                     ForEach(model.recipes) { row in
@@ -105,12 +111,16 @@ struct RecipeListScreen: View {
                 } footer: {
                     if model.deleteFailed {
                         Text(L10n.recipeDeleteFailed)
+                            .secondaryText()
                     } else {
                         Text(L10n.brewRepeatFooter)
+                            .secondaryText()
                     }
                 }
+                .surfaceRow()
             }
         }
+        .listBackground()
         .navigationTitle(Text(L10n.recipeListTitle))
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $brewing) { route in
@@ -145,10 +155,11 @@ private struct RecipeButton: View {
                         Text(L10n.shelfRowIssue)
                     } icon: {
                         Image(systemName: "exclamationmark.icloud")
+                            .foregroundStyle(Theme.errorText)
                             .accessibilityHidden(true)
                     }
                     .font(.footnote)
-                    .foregroundStyle(.orange)
+                    .secondaryText()
                 }
             }
             .accessibilityElement(children: .combine)
@@ -182,7 +193,7 @@ struct BrewSummaryView: View {
             if !line.isEmpty {
                 Text(verbatim: line)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .secondaryText()
                     .monospacedDigit()
             }
         }

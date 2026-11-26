@@ -57,3 +57,4 @@ What this costs, what it rules out, when to revisit.
 - [0029 Processes gain `unknown` and species gain `other` in vocabulary v3](0029-processes-gain-unknown-and-species-gain-other.md)
 - [0030 Brew form v3: method rules in the draft, the grinder pick list, and local schema version 3](0030-brew-form-v3-fields-grinder-and-schema-version-3.md)
 - [0031 Account deletion on the device: a Keychain record, no sign-out before the 204, and another account only after a tap](0031-account-deletion-on-the-device-and-a-new-sign-in-finishes-it.md)
+- [0032 The coffee look: espresso accent, cream and dark-roast backgrounds, named colours](0032-the-coffee-look-espresso-and-cream.md)

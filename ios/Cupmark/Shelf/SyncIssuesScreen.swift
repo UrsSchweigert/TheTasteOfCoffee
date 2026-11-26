@@ -32,12 +32,14 @@ struct SyncIssuesScreen: View {
                     }
                     .accessibilityIdentifier("sync-issues-error")
                 }
+                .surfaceRow()
             }
             if model.rows.isEmpty {
                 Section {
                     Text(L10n.syncIssuesNone)
-                        .foregroundStyle(.secondary)
+                        .secondaryText()
                 }
+                .surfaceRow()
             }
             ForEach(model.rows) { row in
                 Section {
@@ -47,13 +49,15 @@ struct SyncIssuesScreen: View {
                             .font(.headline)
                         Text(SyncIssueTexts.message(for: row.item.kind))
                             .font(.footnote)
-                            .foregroundStyle(.secondary)
+                            .secondaryText()
                     }
                     .accessibilityElement(children: .combine)
                     actions(for: row.item)
                 }
+                .surfaceRow()
             }
         }
+        .listBackground()
         .navigationTitle(Text(L10n.syncIssuesTitle))
         .navigationBarTitleDisplayMode(.inline)
         .confirmationDialog(
@@ -97,7 +101,7 @@ struct SyncIssuesScreen: View {
             if let block = item.discardBlock {
                 Text(SyncIssueTexts.reason(for: block))
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .secondaryText()
             }
         } else {
             Button {
@@ -160,7 +164,7 @@ struct SyncIssueSubjectView: View {
                     Text(L10n.syncIssuesBrew)
                     Text(verbatim: methodLabel(methodID))
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .secondaryText()
                 }
             }
             .accessibilityElement(children: .combine)

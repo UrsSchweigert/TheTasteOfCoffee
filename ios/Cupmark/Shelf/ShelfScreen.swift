@@ -35,6 +35,7 @@ struct ShelfRoot: View {
                     } description: {
                         Text(L10n.shelfStoreErrorMessage)
                     }
+                    .screenBackground()
                 }
             } else {
                 ProgressView()
@@ -100,6 +101,7 @@ struct ShelfScreen: View {
                     }
                     .accessibilityIdentifier("shelf-sync-issues")
                 }
+                .surfaceRow()
             }
             if model.questionCount > 0 {
                 Section {
@@ -119,6 +121,7 @@ struct ShelfScreen: View {
                     }
                     .accessibilityIdentifier("shelf-pending-beans")
                 }
+                .surfaceRow()
             }
             Section {
                 Button {
@@ -154,13 +157,14 @@ struct ShelfScreen: View {
                 }
                 .accessibilityIdentifier("shelf-settings")
             }
+            .surfaceRow()
             Section {
                 if model.loadFailed {
                     Text(L10n.shelfStoreErrorTitle)
-                        .foregroundStyle(.secondary)
+                        .secondaryText()
                 } else if model.rows.isEmpty {
                     Text(L10n.shelfEmpty)
-                        .foregroundStyle(.secondary)
+                        .secondaryText()
                 } else {
                     ForEach(model.rows) { row in
                         NavigationLink(value: ShelfEntryRoute(localID: row.id)) {
@@ -178,7 +182,7 @@ struct ShelfScreen: View {
                                     Image(systemName: "cup.and.saucer")
                                 }
                             }
-                            .tint(.brown)
+                            .tint(Theme.swipeAction)
                             .accessibilityIdentifier("shelf-entry-brew")
                             // Repeats the last brew on this bag, prefilled (M2-T27).
                             if model.canRepeatLastBrew {
@@ -191,7 +195,7 @@ struct ShelfScreen: View {
                                         Image(systemName: "arrow.clockwise")
                                     }
                                 }
-                                .tint(.indigo)
+                                .tint(Theme.swipeActionSecondary)
                                 .accessibilityIdentifier("shelf-entry-repeat")
                             }
                         }
@@ -199,8 +203,11 @@ struct ShelfScreen: View {
                 }
             } header: {
                 Text(L10n.shelfHeader)
+                    .secondaryText()
             }
+            .surfaceRow()
         }
+        .listBackground()
         .sheet(item: $brewing) { route in
             // The brew form, then the rating of the new brew (M2-T20).
             BrewSheet(store: store, route: route, vocabulary: vocabulary, language: language)

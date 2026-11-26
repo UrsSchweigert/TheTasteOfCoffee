@@ -30,9 +30,12 @@ struct LabelPhotoUploadSection: View {
                 footerContent
             } header: {
                 Text(L10n.labelPhotoUploadsHeader)
+                    .secondaryText()
             } footer: {
                 Text(L10n.labelPhotoUploadsFooter)
+                    .secondaryText()
             }
+            .surfaceRow()
             .accessibilityIdentifier("label-photo-uploads")
             .fullScreenCover(isPresented: $isCapturing) {
                 LabelPhotoCamera(
@@ -97,7 +100,7 @@ struct LabelPhotoUploadSection: View {
                     if let message = LabelPhotoUploadSection.message(for: photo.status) {
                         Text(message)
                             .font(.footnote)
-                            .foregroundStyle(.secondary)
+                            .secondaryText()
                     }
                 }
                 Spacer(minLength: 0)

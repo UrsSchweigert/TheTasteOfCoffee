@@ -939,7 +939,7 @@ Planning notes (planned 2026-11-25):
 - Mac: the `ios` job; the owner re-checks on the device in M2-T34.
 
 ### M2-T41 The coffee look: palette, named colours and warmer headings
-- status: todo
+- status: needs-mac-verification (reason: the Swift is written on Linux and has not been compiled; the `ios` job on macOS must build it and run the unit tests and UI audits)
 - owner: ios-engineer
 - depends: M2-T40
 - implements: owner decision of 2026-11-26 ("the taste looks good"); docs/04-specification.md, Non-functional (Accessibility: Dynamic Type); docs/03-project-brief.md, Goals

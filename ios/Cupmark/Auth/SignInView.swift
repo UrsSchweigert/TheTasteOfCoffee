@@ -21,17 +21,17 @@ struct SignInView: View {
                     .foregroundStyle(.tint)
                     .accessibilityHidden(true)
                 Text(L10n.signInTitle)
-                    .font(.largeTitle.bold())
+                    .themeTitle()
                     .multilineTextAlignment(.center)
                     .accessibilityAddTraits(.isHeader)
                 Text(L10n.signInMessage)
                     .font(.body)
-                    .foregroundStyle(.secondary)
+                    .secondaryText()
                     .multilineTextAlignment(.center)
                 if finishesDeletion {
                     Text(L10n.accountDeletionSignInNote)
                         .font(.callout)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Theme.errorText)
                         .multilineTextAlignment(.center)
                         .accessibilityIdentifier("sign-in-deletion-note")
                 }
@@ -39,7 +39,7 @@ struct SignInView: View {
                 if let failure {
                     Text(failure.message)
                         .font(.callout)
-                        .foregroundStyle(failure.isProblem ? Color.red : Color.secondary)
+                        .foregroundStyle(failure.isProblem ? Theme.errorText : Theme.textSecondary)
                         .multilineTextAlignment(.center)
                         .accessibilityIdentifier("sign-in-failure")
                 }
@@ -54,6 +54,7 @@ struct SignInView: View {
             .frame(maxWidth: 480)
             .frame(maxWidth: .infinity)
         }
+        .screenBackground()
         .accessibilityIdentifier("sign-in")
     }
 }

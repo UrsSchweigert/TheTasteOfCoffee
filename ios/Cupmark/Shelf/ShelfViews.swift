@@ -20,7 +20,7 @@ struct BeanSummaryView: View {
                 if let brand = summary.brand {
                     Text(verbatim: brand)
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .secondaryText()
                 }
             } else if summary.attributes.isEmpty {
                 Text(L10n.shelfBeanUnnamed)
@@ -59,7 +59,7 @@ struct ShelfRowView: View {
                     }
                 } else {
                     Text(L10n.shelfRoastDateUnknown)
-                        .foregroundStyle(.secondary)
+                        .secondaryText()
                 }
                 if let days = row.daysSinceRoast {
                     LabeledContent {
@@ -83,17 +83,18 @@ struct ShelfRowView: View {
                         .accessibilityHidden(true)
                 }
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .secondaryText()
             }
             if row.issue != nil {
                 Label {
                     Text(L10n.shelfRowIssue)
                 } icon: {
                     Image(systemName: "exclamationmark.icloud")
+                        .foregroundStyle(Theme.errorText)
                         .accessibilityHidden(true)
                 }
                 .font(.footnote)
-                .foregroundStyle(.orange)
+                .secondaryText()
             }
         }
         .padding(.vertical, 2)

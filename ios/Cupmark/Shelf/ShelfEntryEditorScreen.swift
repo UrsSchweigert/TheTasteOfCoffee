@@ -66,6 +66,7 @@ struct ShelfEntryEditorScreen: View {
                     }
                     .accessibilityIdentifier("shelf-entry-brews")
                 }
+                .surfaceRow()
                 // One tap from a repeat of the last brew or a recipe (M2-T27).
                 if let repeats {
                     BrewStartSection(model: repeats, vocabulary: vocabulary, language: language) { start in
@@ -86,6 +87,7 @@ struct ShelfEntryEditorScreen: View {
                     }
                     .accessibilityElement(children: .combine)
                 }
+                .surfaceRow()
             }
             if !model.isAdding {
                 deleteSection
@@ -101,8 +103,10 @@ struct ShelfEntryEditorScreen: View {
                     }
                     .accessibilityIdentifier("shelf-entry-error")
                 }
+                .surfaceRow()
             }
         }
+        .formBackground()
         .navigationTitle(Text(model.isAdding ? L10n.shelfEntryAddTitle : L10n.shelfEntryEditTitle))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -160,12 +164,15 @@ struct ShelfEntryEditorScreen: View {
             }
         } header: {
             Text(L10n.shelfEntryBeanHeader)
+                .secondaryText()
         } footer: {
             if model.lockReason != nil {
                 Text(L10n.shelfEntryLockedReason)
                     .accessibilityIdentifier("shelf-entry-locked-reason")
+                    .secondaryText()
             }
         }
+        .surfaceRow()
     }
 
     private var datesSection: some View {
@@ -177,6 +184,7 @@ struct ShelfEntryEditorScreen: View {
             Toggle(isOn: hasRoastDate) {
                 Text(L10n.shelfEntryRoastDateKnown)
             }
+            .tint(Theme.accent)
             .accessibilityIdentifier("shelf-entry-roast-known")
             if model.hasRoastDate {
                 DatePicker(selection: roastDate, in: ...model.latestDate, displayedComponents: .date) {
@@ -194,7 +202,9 @@ struct ShelfEntryEditorScreen: View {
             }
         } header: {
             Text(L10n.shelfEntryDatesHeader)
+                .secondaryText()
         }
+        .surfaceRow()
     }
 
     private var bagSection: some View {
@@ -205,11 +215,14 @@ struct ShelfEntryEditorScreen: View {
                 .accessibilityIdentifier("shelf-entry-price-band")
         } header: {
             Text(L10n.shelfEntryBagHeader)
+                .secondaryText()
         } footer: {
             if model.isAdding {
                 Text(L10n.shelfEntryOfflineNote)
+                    .secondaryText()
             }
         }
+        .surfaceRow()
     }
 
     private var deleteSection: some View {
@@ -224,8 +237,10 @@ struct ShelfEntryEditorScreen: View {
         } footer: {
             if model.lockReason != nil {
                 Text(L10n.shelfEntryLockedReason)
+                    .secondaryText()
             }
         }
+        .surfaceRow()
     }
 
     // MARK: - Bindings and actions
@@ -304,6 +319,7 @@ struct ShelfBeanChoiceList: View {
                     Spacer()
                     if choice.id == model.beanLocalID {
                         Image(systemName: "checkmark")
+                            .accentText()
                             .accessibilityHidden(true)
                     }
                 }
@@ -311,7 +327,9 @@ struct ShelfBeanChoiceList: View {
             }
             .tint(.primary)
             .accessibilityAddTraits(choice.id == model.beanLocalID ? .isSelected : [])
+            .surfaceRow()
         }
+        .listBackground()
         .navigationTitle(Text(L10n.shelfEntryChooseBeanTitle))
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {

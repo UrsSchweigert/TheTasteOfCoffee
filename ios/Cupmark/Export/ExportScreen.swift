@@ -36,7 +36,9 @@ struct ExportScreen: View {
                 }
             } footer: {
                 Text(L10n.exportFooter)
+                    .secondaryText()
             }
+            .surfaceRow()
             switch model.state {
             case .ready(let file):
                 Section {
@@ -58,17 +60,21 @@ struct ExportScreen: View {
                 } footer: {
                     if file.hasPendingChanges {
                         Text(L10n.exportPendingChanges)
+                            .secondaryText()
                     }
                 }
+                .surfaceRow()
             case .failed(let failure):
                 Section {
                     Text(ExportScreen.message(for: failure))
                         .accessibilityIdentifier("export-failure")
                 }
+                .surfaceRow()
             case .idle, .preparing:
                 EmptyView()
             }
         }
+        .listBackground()
         .navigationTitle(Text(L10n.exportTitle))
         .onDisappear {
             model.discardFile()
