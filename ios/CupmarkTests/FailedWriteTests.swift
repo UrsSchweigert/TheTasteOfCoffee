@@ -1,3 +1,4 @@
+import SQLite3
 import SwiftData
 import XCTest
 @testable import Cupmark
@@ -423,6 +424,11 @@ final class FailedWriteTests: XCTestCase {
                 try FileManager.default.copyItem(at: source, to: readOnly.appending(path: name, directoryHint: .notDirectory))
             }
         }
+        // A read-only connection does not reliably read rows that are still only in the copied
+        // write-ahead log (it cannot rebuild the -shm index it needs), which lost the newest rows
+        // on the macOS job. Fold the log into the main file of the copy first, so the read-only
+        // store reads one self-contained file.
+        try checkpointAndCloseWriteAheadLog(of: readOnly.appending(path: fileName, directoryHint: .notDirectory))
         weak var readOnlyContainer: ModelContainer?
         // The read-only store is closed, as far as SwiftData lets go of it, before the teardown
         // removes its folder.
@@ -434,6 +440,29 @@ final class FailedWriteTests: XCTestCase {
             readOnlyContainer = store.container
             try checkFailedSaves(in: store, entryID: entryID, brewID: brewID, scannedEntryID: scannedEntryID, pendingBeanID: pendingBeanID)
         }
+    }
+
+    /// Writes every frame of the SQLite write-ahead log at `url` into the main file, truncates the
+    /// log and closes the connection, through the SQLite C API (SwiftData has no checkpoint call).
+    private func checkpointAndCloseWriteAheadLog(of url: URL) throws {
+        var database: OpaquePointer?
+        let path = url.path(percentEncoded: false)
+        guard sqlite3_open_v2(path, &database, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK, let database else {
+            sqlite3_close(database)
+            throw StoreCopyError.open
+        }
+        defer { sqlite3_close(database) }
+        var logFrames: Int32 = 0
+        var checkpointed: Int32 = 0
+        guard sqlite3_wal_checkpoint_v2(database, nil, SQLITE_CHECKPOINT_TRUNCATE, &logFrames, &checkpointed) == SQLITE_OK else {
+            throw StoreCopyError.checkpoint
+        }
+        XCTAssertEqual(logFrames, checkpointed, "every log frame is in the main file")
+    }
+
+    private enum StoreCopyError: Error {
+        case open
+        case checkpoint
     }
 
     /// Spins the run loop for up to 5 s while `isAlive` holds; true once it no longer does.
