@@ -33,6 +33,11 @@ export const KEYS_FILE = join(appDir, 'L10n.swift');
 export const INFOPLIST_CATALOG_FILE = join(appDir, 'InfoPlist.xcstrings');
 export const PROJECT_FILE = join(root, 'ios', 'Cupmark.xcodeproj', 'project.pbxproj');
 
+/** Number of format placeholders (`%@`, `%1$@`, `%d`, `%lld`) in a catalog key or value. */
+export function placeholderCount(text) {
+  return (text.match(/%(?:\d+\$)?(?:l{0,2}[dfs]|@)/g) ?? []).length;
+}
+
 /** Problems with a parsed .xcstrings catalog. */
 export function checkCatalog(catalog, languages = LANGUAGES) {
   const problems = [];
@@ -62,6 +67,9 @@ export function checkCatalog(catalog, languages = LANGUAGES) {
         problems.push(`${key}: ${lang} state is ${JSON.stringify(unit.state)}, expected "translated"`);
       } else if (typeof unit.value !== 'string' || unit.value.trim() === '') {
         problems.push(`${key}: ${lang} value is empty`);
+      } else if (placeholderCount(unit.value) !== placeholderCount(key)) {
+        // A value that drops or adds a `%@` shows a broken or truncated sentence.
+        problems.push(`${key}: ${lang} value has ${placeholderCount(unit.value)} placeholders, the key has ${placeholderCount(key)}`);
       }
     }
     for (const lang of Object.keys(localizations)) {
@@ -84,7 +92,8 @@ export function keysInL10n(source) {
   const keys = [];
   // A `String` member's literal may interpolate String parameters
   // (`String(localized: "a.b \(time)")`); each one is `%@` in the catalog key.
-  const pattern = /(?::|->)\s*(?:LocalizedStringKey\s*\{\s*"([^"\\]+)"|String\s*\{\s*String\(localized:\s*"((?:[^"\\]|\\\([A-Za-z_][A-Za-z0-9_]*\))+)"\s*\))\s*\}/g;
+  // An optional `, bundle: name` after the literal lets a test look the key up in one language.
+  const pattern = /(?::|->)\s*(?:LocalizedStringKey\s*\{\s*"([^"\\]+)"|String\s*\{\s*String\(localized:\s*"((?:[^"\\]|\\\([A-Za-z_][A-Za-z0-9_]*\))+)"\s*(?:,\s*bundle:\s*[A-Za-z_][A-Za-z0-9_]*\s*)?\))\s*\}/g;
   for (const match of source.matchAll(pattern)) {
     keys.push(match[1] ?? match[2].replace(/\\\([A-Za-z_][A-Za-z0-9_]*\)/g, '%@'));
   }

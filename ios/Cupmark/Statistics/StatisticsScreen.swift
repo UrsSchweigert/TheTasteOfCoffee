@@ -105,7 +105,7 @@ struct StatisticsScreen: View {
                 LabeledContent {
                     Text(week.count, format: .number)
                 } label: {
-                    Text(week.start, format: .dateTime.day().month().year())
+                    Text(week.start, format: DisplayDate.day)
                 }
                 .accessibilityIdentifier("statistics-week")
             }

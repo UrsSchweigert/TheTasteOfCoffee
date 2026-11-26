@@ -32,15 +32,22 @@ struct VocabularyRange: Equatable, Sendable {
 }
 
 extension VocabularyLanguage {
-    /// The first of the bundle's preferred localizations that has labels,
-    /// otherwise the fallback language.
-    static func preferred(in bundle: Bundle) -> VocabularyLanguage {
-        for localization in bundle.preferredLocalizations {
-            let code = Locale(identifier: localization).language.languageCode?.identifier ?? localization
-            if let language = VocabularyLanguage(rawValue: code) {
-                return language
-            }
+    /// The one language rule of the app (M2-T32): German when the first preferred language is
+    /// German (`de`, `de-CH`, `de-AT` and so on), otherwise English. The profile's `locale`
+    /// (`OnboardingRules.profileLocale`) and the language of every vocabulary label use this
+    /// function, so they never disagree. A label missing in this language falls back to
+    /// `VocabularyLanguage.fallback` (`VocabularyStore.label`).
+    static func resolving(preferredLanguages: [String]) -> VocabularyLanguage {
+        guard let first = preferredLanguages.first else {
+            return .fallback
         }
-        return .fallback
+        let code: Locale.LanguageCode? = Locale.Language(identifier: first).languageCode
+        return code == Locale.LanguageCode.german ? .de : .fallback
+    }
+
+    /// The language for the device's preferred languages (`Locale.preferredLanguages`, which
+    /// follows the per-app language setting).
+    static var current: VocabularyLanguage {
+        resolving(preferredLanguages: Locale.preferredLanguages)
     }
 }

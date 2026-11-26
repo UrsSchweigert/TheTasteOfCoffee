@@ -913,6 +913,93 @@ test('the committed InfoPlist.xcstrings localises the camera permission in en an
   assert.ok(catalog.strings.NSCameraUsageDescription);
 });
 
+// ---- Localisation pass (M2-T32) ----
+
+test('checkInfoPlistCatalog fails a usage description missing a language or not extractionState manual', () => {
+  const catalog = (e) => ({ sourceLanguage: 'en', strings: { NSCameraUsageDescription: e } });
+  const pbx = pbxWithCamera('Reads codes.');
+  const complete = { extractionState: 'manual', localizations: { en: unit('Reads codes.'), de: unit('Liest Codes.') } };
+  assert.deepEqual(checkInfoPlistCatalog(catalog(complete), pbx, ['en', 'de']), []);
+  // Each language, in turn, missing.
+  for (const lang of ['en', 'de']) {
+    const { [lang]: _gone, ...rest } = complete.localizations;
+    const problems = checkInfoPlistCatalog(catalog({ ...complete, localizations: rest }), pbx, ['en', 'de']);
+    assert.ok(problems.some((p) => p.includes(`no ${lang} value`)), `${lang}: ${problems.join('; ')}`);
+  }
+  // An untranslated German value and a catalog Xcode may mark stale.
+  assert.ok(checkInfoPlistCatalog(catalog({ ...complete, localizations: { en: unit('Reads codes.'), de: unit('Liest Codes.', 'new') } }), pbx, ['en', 'de']).length > 0);
+  for (const state of [undefined, 'stale', 'extracted_with_value']) {
+    const problems = checkInfoPlistCatalog(catalog({ ...complete, extractionState: state }), pbx, ['en', 'de']);
+    assert.ok(problems.some((p) => /extractionState/.test(p)), `${state}: ${problems.join('; ')}`);
+  }
+});
+
+test('the committed InfoPlist.xcstrings is run through the same check by main (and so by the ios job)', () => {
+  const source = readFileSync(new URL('./check-ios-strings.mjs', import.meta.url), 'utf8');
+  assert.match(source, /checkInfoPlistCatalog\(infoPlistCatalog/);
+});
+
+test('every L10n key resolves to a non-empty translation in en and de, and L10n and the catalogue list the same keys', () => {
+  const catalog = JSON.parse(readFileSync(new URL('../ios/Cupmark/Localizable.xcstrings', import.meta.url), 'utf8'));
+  const source = readFileSync(new URL('../ios/Cupmark/L10n.swift', import.meta.url), 'utf8');
+  const keys = keysInL10n(source);
+  assert.ok(keys.length > 300, `only ${keys.length} keys found; did the L10n pattern stop matching?`);
+  // As many keys as members: a member the pattern cannot read would escape every check below.
+  const members = source.match(/^\s*static (?:var|func) /gm) ?? [];
+  assert.equal(keys.length, members.length, 'a member of L10n.swift is not a key the checker reads');
+  for (const key of keys) {
+    for (const lang of ['en', 'de']) {
+      const value = catalog.strings[key]?.localizations?.[lang]?.stringUnit?.value;
+      assert.equal(typeof value, 'string', `${key} has no ${lang} value`);
+      assert.notEqual(value.trim(), '', `${key} is empty in ${lang}`);
+    }
+  }
+  assert.deepEqual(checkKeys(keys, Object.keys(catalog.strings)), []);
+  assert.deepEqual([...new Set(keys)].sort(), Object.keys(catalog.strings).sort());
+});
+
+test('keysInL10n reads a key looked up in a given bundle (the ratio)', () => {
+  const source = 'enum L10n {\n    static func r(_ number: String, bundle: Bundle = .main) -> String { String(localized: "r.value \\(number)", bundle: bundle) }\n}';
+  assert.deepEqual(keysInL10n(source), ['r.value %@']);
+});
+
+test('checkCatalog fails a value that drops or adds a placeholder of its key', () => {
+  const catalog = (de) => ({ sourceLanguage: 'en', strings: { 'a.b %@': entry({ en: unit('Grind %@'), de: unit(de) }) } });
+  assert.deepEqual(checkCatalog(catalog('Mahlgrad %@'), ['en', 'de']), []);
+  assert.deepEqual(checkCatalog(catalog('Mahlgrad %1$@'), ['en', 'de']), []);
+  assert.match(checkCatalog(catalog('Mahlgrad'), ['en', 'de']).join('\n'), /de value has 0 placeholders, the key has 1/);
+  assert.equal(checkCatalog(catalog('%@ und %@'), ['en', 'de']).length, 1);
+});
+
+test('the ratio prefix is in the catalogue, not in BrewFormat', () => {
+  const catalog = JSON.parse(readFileSync(new URL('../ios/Cupmark/Localizable.xcstrings', import.meta.url), 'utf8'));
+  for (const lang of ['en', 'de']) assert.equal(catalog.strings['brew.ratio.value %@'].localizations[lang].stringUnit.value, '1:%@');
+  const draft = readFileSync(new URL('../ios/Cupmark/Brew/BrewDraft.swift', import.meta.url), 'utf8');
+  assert.doesNotMatch(lexSwift(draft).masked, /"1:"/);
+  assert.match(draft, /L10n\.brewRatioValue\(/);
+});
+
+test('one function decides the language: the profile locale and the vocabulary labels share it', () => {
+  const rules = readFileSync(new URL('../ios/Cupmark/Onboarding/OnboardingRules.swift', import.meta.url), 'utf8');
+  const item = readFileSync(new URL('../ios/Cupmark/Vocabulary/VocabularyItem.swift', import.meta.url), 'utf8');
+  const load = readFileSync(new URL('../ios/Cupmark/VocabularyLoadState.swift', import.meta.url), 'utf8');
+  assert.match(rules, /VocabularyLanguage\.resolving\(preferredLanguages: preferredLanguages\)/);
+  assert.doesNotMatch(lexSwift(rules).masked, /Locale\.Language|languageCode/, 'the rule is not copied into OnboardingRules');
+  assert.match(item, /static func resolving\(preferredLanguages/);
+  assert.match(load, /VocabularyLanguage\.current/);
+  // The Foundation date and number styles are the only ones: no pattern strings, no String(format:) in views.
+  for (const [dir] of [['Brew'], ['Rating'], ['Shelf'], ['Statistics'], ['Onboarding'], ['Settings'], ['Export'], ['AccountDeletion']]) {
+    for (const name of m2t32Fs.readdirSync(new URL(`../ios/Cupmark/${dir}/`, import.meta.url))) {
+      if (!name.endsWith('.swift')) continue;
+      const masked = lexSwift(readFileSync(new URL(`../ios/Cupmark/${dir}/${name}`, import.meta.url), 'utf8')).masked;
+      assert.doesNotMatch(masked, /\bDateFormatter\s*\(|\bdateFormat\s*=/, `${dir}/${name} writes a date pattern`);
+      if (name !== 'ExportFileStore.swift') assert.doesNotMatch(masked, /String\(format:/, `${dir}/${name} formats by hand`);
+    }
+  }
+});
+
+import * as m2t32Fs from 'node:fs';
+
 // ---- Lookup and confirm flow (M2-T14, ADR 0005, ADR 0011) ----
 
 import * as m2t14Fs from 'node:fs';
@@ -1394,7 +1481,9 @@ test('onboarding and settings: no typed text, opt-in by default, written through
   assert.match(masked('ios/Cupmark/Settings/SettingsModel.swift'), /store\.setProfile\(/);
   // The locale comes from the preferred languages, never a list typed here.
   const rules = masked('ios/Cupmark/Onboarding/OnboardingRules.swift');
-  assert.match(rules, /Locale\.LanguageCode\.german \? \.de : \.en/);
+  // M2-T32: the rule moved to VocabularyLanguage.resolving, shared with the vocabulary labels.
+  assert.match(rules, /VocabularyLanguage\.resolving\(preferredLanguages: preferredLanguages\)/);
+  assert.match(masked('ios/Cupmark/Vocabulary/VocabularyItem.swift'), /Locale\.LanguageCode\.german \? \.de : \.fallback/);
   // The gate sits before the shelf, and Settings is one tap from it.
   const shelf = masked('ios/Cupmark/Shelf/ShelfScreen.swift');
   assert.match(shelf, /OnboardingGate\(store: store, sync: sync\)\s*\{\s*ShelfScreen\(/);

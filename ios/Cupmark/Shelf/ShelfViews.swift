@@ -53,7 +53,7 @@ struct ShelfRowView: View {
             Group {
                 if let roastDate = row.roastDate, let date = ShelfDates.date(of: roastDate) {
                     LabeledContent {
-                        Text(date, format: .dateTime.day().month().year())
+                        Text(date, format: DisplayDate.day)
                     } label: {
                         Text(L10n.shelfRoastDate)
                     }

@@ -413,9 +413,10 @@ struct BrewDraft: Equatable, Sendable {
 /// Foundation's measurement formatting, so no unit text is written here.
 enum BrewFormat {
     /// The ratio as `1:<grams of water per gram of coffee>`, one decimal (`1:16.2`, in German
-    /// `1:16,2`).
-    static func ratio(_ ratio: Double, locale: Locale = .current) -> String {
-        "1:" + number(ratio, fractionDigits: 1, locale: locale)
+    /// `1:16,2`). The `1:` is in the String Catalog (`brew.ratio.value %@`), so a language that
+    /// writes ratios differently changes it there; `bundle` is the app bundle.
+    static func ratio(_ ratio: Double, locale: Locale = .current, bundle: Bundle = .main) -> String {
+        L10n.brewRatioValue(number(ratio, fractionDigits: 1, locale: locale), bundle: bundle)
     }
 
     /// `value` with exactly `fractionDigits` decimals.

@@ -196,8 +196,55 @@ final class VocabularyStoreTests: XCTestCase {
         XCTAssertEqual(range.stepCount, 950)
     }
 
-    func testPreferredLanguageFallsBackWhenTheBundleHasNoMatchingLocalization() {
-        let testBundle = Bundle(for: VocabularyStoreTests.self)
-        XCTAssertTrue(VocabularyLanguage.allCases.contains(VocabularyLanguage.preferred(in: testBundle)))
+    // MARK: - The language rule (M2-T32)
+
+    func testTheLanguageRuleIsGermanForAnyGermanFirstLanguageElseEnglish() {
+        XCTAssertEqual(VocabularyLanguage.resolving(preferredLanguages: ["de"]), .de)
+        XCTAssertEqual(VocabularyLanguage.resolving(preferredLanguages: ["de-CH", "en-US"]), .de)
+        XCTAssertEqual(VocabularyLanguage.resolving(preferredLanguages: ["en-US"]), .en)
+        XCTAssertEqual(VocabularyLanguage.resolving(preferredLanguages: ["fr-FR"]), .en, "French falls back to English")
+        XCTAssertEqual(VocabularyLanguage.resolving(preferredLanguages: ["fr-FR", "de-DE"]), .en, "only the first language counts")
+        XCTAssertEqual(VocabularyLanguage.resolving(preferredLanguages: []), .en)
+    }
+
+    func testTheProfileLocaleUsesTheSameRuleAsTheVocabularyLabels() {
+        for languages in [["de"], ["de-AT"], ["en-GB"], ["fr-FR"], ["fr-FR", "de-DE"], []] {
+            XCTAssertEqual(
+                OnboardingRules.profileLocale(preferredLanguages: languages),
+                VocabularyLanguage.resolving(preferredLanguages: languages),
+                "\(languages)"
+            )
+        }
+    }
+
+    /// A store whose German file lacks `beta` and has an empty `alpha`; English has both.
+    private func storeMissingGerman() throws -> VocabularyStore {
+        func file(_ language: VocabularyLanguage, labels: String) -> Data {
+            data(#"{"language": "\#(language.rawValue)", "labels": {"methods": \#(labels)}, "questions": {"criteria": {}}}"#)
+        }
+        return try VocabularyStore(
+            files: ["brew": data(#"{"version": \#(version), "status": "published", "methods": [{"id": "alpha"}, {"id": "beta"}]}"#)],
+            languages: [
+                .en: file(.en, labels: #"{"alpha": "Alpha", "beta": "Beta"}"#),
+                .de: file(.de, labels: #"{"alpha": " "}"#),
+            ]
+        )
+    }
+
+    func testALabelMissingInGermanFallsBackToEnglish() throws {
+        let store = try storeMissingGerman()
+        XCTAssertEqual(try store.label(namespace: .methods, id: "beta", language: .de), "Beta", "missing in de")
+        XCTAssertEqual(try store.label(namespace: .methods, id: "alpha", language: .de), "Alpha", "empty in de")
+        XCTAssertEqual(try store.label(namespace: .methods, id: "beta", language: .en), "Beta")
+    }
+
+    func testALabelMissingInEnglishStillThrowsAndAnUnknownIdDoesNotFallBack() throws {
+        let store = try makeStore()
+        XCTAssertThrowsError(try store.label(namespace: .methods, id: "beta", language: .de)) { error in
+            XCTAssertEqual(error as? VocabularyError, .missingLabel(namespace: "methods", id: "beta", language: "en"))
+        }
+        XCTAssertThrowsError(try store.label(namespace: .methods, id: "gamma", language: .de)) { error in
+            XCTAssertEqual(error as? VocabularyError, .unknownId(namespace: "methods", id: "gamma"))
+        }
     }
 }

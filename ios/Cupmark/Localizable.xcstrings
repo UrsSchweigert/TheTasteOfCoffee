@@ -206,7 +206,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Du hast dich mit einem anderen Konto angemeldet als dem, das du löschen wolltest. Das Konto, das du löschen wolltest, ist vielleicht schon gelöscht, vielleicht gibt es es aber noch. Wenn du fortfährst, werden **dieses** Konto und alle seine Daten gelöscht. Das lässt sich nicht rückgängig machen."
+            "value" : "Du hast dich mit einem anderen Konto angemeldet als dem, das du löschen wolltest. Das Konto, das du löschen wolltest, ist vielleicht schon gelöscht, oder es existiert noch. Wenn du fortfährst, werden **dieses** Konto und alle seine Daten gelöscht. Das lässt sich nicht rückgängig machen."
           }
         },
         "en" : {
@@ -278,7 +278,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Jetzt versuchen"
+            "value" : "Jetzt erneut versuchen"
           }
         },
         "en" : {
@@ -296,7 +296,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Der Server war nicht erreichbar oder konnte noch nicht fertig werden. Cupmark versucht es von selbst erneut."
+            "value" : "Der Server war nicht erreichbar oder hat das Löschen noch nicht abgeschlossen. Cupmark versucht es automatisch erneut."
           }
         },
         "en" : {
@@ -440,7 +440,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Auf diesem iPhone wurde das Löschen eines Kontos begonnen, aber sein Eintrag kann nicht gelesen werden. Wenn du fortfährst, werden **das Konto, mit dem du angemeldet bist,** und alle seine Daten gelöscht. Das lässt sich nicht rückgängig machen."
+            "value" : "Auf diesem iPhone wurde das Löschen eines Kontos begonnen, der zugehörige Eintrag lässt sich aber nicht lesen. Wenn du fortfährst, werden **das Konto, mit dem du angemeldet bist,** und alle seine Daten gelöscht. Das lässt sich nicht rückgängig machen."
           }
         },
         "en" : {
@@ -512,7 +512,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Die Etikettenfotos, die du von nicht bestätigten Bohnen gemacht hast. Fotos bestätigter Bohnen bleiben im Katalog, ohne Verbindung zu dir."
+            "value" : "Die Etikettenfotos, die du von nicht bestätigten Bohnen gemacht hast. Fotos bestätigter Bohnen bleiben im Katalog, ganz ohne Bezug zu dir."
           }
         },
         "en" : {
@@ -1430,7 +1430,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wird sofort auf diesem iPhone gesichert und synchronisiert, sobald du online bist."
+            "value" : "Wird sofort auf diesem iPhone gespeichert und synchronisiert, sobald du online bist."
           }
         },
         "en" : {
@@ -1495,6 +1495,24 @@
         }
       }
     },
+    "brew.ratio.value %@" : {
+      "comment" : "The brew ratio as shown, water per coffee; %@ is the number of grams of water per gram of coffee in the device locale, for example \"16.2\". A language that writes ratios differently changes the prefix here.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1:%@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1:%@"
+          }
+        }
+      }
+    },
     "brew.recipe.already_kept" : {
       "comment" : "Footer of the recipe toggle when the brew's values are already another recipe.",
       "extractionState" : "manual",
@@ -1520,7 +1538,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Auch als Rezept sichern"
+            "value" : "Auch als Rezept speichern"
           }
         },
         "en" : {
@@ -1556,7 +1574,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ein Tippen öffnet eine neue Zubereitung dieser Packung mit diesen Werten, der Timer ist bereit. Wische über ein Rezept, um es zu entfernen."
+            "value" : "Ein Tipp öffnet eine neue Zubereitung dieser Packung mit diesen Werten und startbereitem Timer. Wische über ein Rezept, um es zu entfernen."
           }
         },
         "en" : {
@@ -1628,7 +1646,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sichern"
+            "value" : "Speichern"
           }
         },
         "en" : {
@@ -1646,7 +1664,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Das konnte auf diesem iPhone nicht gesichert werden. Bitte versuche es noch einmal."
+            "value" : "Das konnte auf diesem iPhone nicht gespeichert werden. Bitte versuche es noch einmal."
           }
         },
         "en" : {
@@ -2132,7 +2150,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Als Rezept gesichert"
+            "value" : "Als Rezept gespeichert"
           }
         },
         "en" : {
@@ -2186,7 +2204,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Diese Zubereitung konnte nicht als Rezept gesichert werden."
+            "value" : "Diese Zubereitung konnte nicht als Rezept gespeichert werden."
           }
         },
         "en" : {
@@ -2204,7 +2222,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Als Rezept sichern"
+            "value" : "Als Rezept speichern"
           }
         },
         "en" : {
@@ -2258,7 +2276,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Die Datei konnte auf diesem Gerät nicht gespeichert werden. Schaffe etwas Speicherplatz und versuche es erneut."
+            "value" : "Die Datei konnte auf diesem Gerät nicht gespeichert werden. Gib etwas Speicherplatz frei und versuche es erneut."
           }
         },
         "en" : {
@@ -2312,7 +2330,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Der Export konnte nicht erstellt werden. Möglicherweise überschreitet er die Größengrenze von 5 MiB und kann noch nicht exportiert werden. Versuche es später erneut."
+            "value" : "Der Export konnte nicht erstellt werden. Möglicherweise ist er größer als die Grenze von 5 MiB; so große Exporte sind noch nicht möglich. Versuche es später erneut."
           }
         },
         "en" : {
@@ -2366,7 +2384,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Die Datei listet dein Profil, Regal, Zubereitungen, Rezepte und Etikettenfoto-Verknüpfungen als CSV-Datei auf. Sie entsteht aus den Daten auf dem Server, deshalb sind noch nicht gesendete Änderungen nicht enthalten."
+            "value" : "Die Datei listet dein Profil, dein Regal, deine Zubereitungen, deine Rezepte und die Verknüpfungen zu deinen Etikettenfotos als CSV-Datei auf. Sie entsteht aus den Daten auf dem Server, deshalb sind noch nicht gesendete Änderungen nicht enthalten."
           }
         },
         "en" : {
@@ -2960,7 +2978,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nutze das für ein Konto, das auf einem anderen Gerät gelöscht wurde oder das du nicht mehr verwendest. Das angemeldete Konto ist nicht betroffen."
+            "value" : "Verwende das für ein Konto, das auf einem anderen Gerät gelöscht wurde oder das du nicht mehr benutzt. Das angemeldete Konto ist nicht betroffen."
           }
         },
         "en" : {
@@ -3608,7 +3626,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sonst wird nichts geteilt: weder dein Regal noch deine Rezepte, deine Statistik oder etwas über dich. Wenn du nicht zustimmst, wird nichts von dir gezählt, und dein eigenes Tagebuch funktioniert genauso."
+            "value" : "Sonst wird nichts geteilt: weder dein Regal noch deine Rezepte noch deine Statistik, und auch sonst nichts über dich. Wenn du nicht zustimmst, wird nichts von dir gezählt, und dein eigenes Tagebuch funktioniert genauso."
           }
         },
         "en" : {
@@ -3968,7 +3986,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Alle Packungen, die du offline gescannt hast, sind gesucht."
+            "value" : "Für alle Packungen, die du offline gescannt hast, wurde die Suche abgeschlossen."
           }
         },
         "en" : {
@@ -4454,7 +4472,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Diese Zubereitung wurde mit einer neueren Version von Cupmark gesichert. Aktualisiere die App, um ihre Bewertung zu ändern."
+            "value" : "Diese Zubereitung wurde mit einer neueren Version von Cupmark gespeichert. Aktualisiere die App, um ihre Bewertung zu ändern."
           }
         },
         "en" : {
@@ -4472,7 +4490,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sichern"
+            "value" : "Speichern"
           }
         },
         "en" : {
@@ -4490,7 +4508,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ziehe jeden Regler, um Punkte zu geben; mit VoiceOver wische darauf nach oben oder unten. Ein Regler ohne Punkte bekommt beim Berühren den angezeigten Wert. Die Bewertung lässt sich sichern, sobald jedes Kriterium Punkte hat."
+            "value" : "Ziehe jeden Regler, um Punkte zu geben; mit VoiceOver wische darauf nach oben oder unten. Ein Regler ohne Punkte bekommt beim Berühren den angezeigten Wert. Die Bewertung lässt sich speichern, sobald jedes Kriterium Punkte hat."
           }
         },
         "en" : {
@@ -4742,7 +4760,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Noch nichts zum Wiederholen. Erfasste Zubereitungen und gesicherte Rezepte erscheinen hier."
+            "value" : "Noch nichts zum Wiederholen. Erfasste Zubereitungen und gespeicherte Rezepte erscheinen hier."
           }
         },
         "en" : {
@@ -5426,7 +5444,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Daten"
+            "value" : "Datumsangaben"
           }
         },
         "en" : {
@@ -5534,7 +5552,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wird sofort auf diesem iPhone gesichert und synchronisiert, sobald du online bist."
+            "value" : "Wird sofort auf diesem iPhone gespeichert und synchronisiert, sobald du online bist."
           }
         },
         "en" : {
@@ -5588,7 +5606,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sichern"
+            "value" : "Speichern"
           }
         },
         "en" : {
@@ -5606,7 +5624,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Das konnte auf diesem iPhone nicht gesichert werden. Bitte versuche es noch einmal."
+            "value" : "Das konnte auf diesem iPhone nicht gespeichert werden. Bitte versuche es noch einmal."
           }
         },
         "en" : {
@@ -5714,7 +5732,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open Food Facts hat sie gefunden: bitte bestätigen"
+            "value" : "Treffer bei Open Food Facts: bitte bestätigen"
           }
         },
         "en" : {
@@ -5930,7 +5948,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Das Konto, mit dem du dich angemeldet und das du zum Löschen gewählt hast, und seine Daten wurden gelöscht."
+            "value" : "Das Konto, mit dem du dich angemeldet hast, wurde auf deinen Wunsch samt seinen Daten gelöscht."
           }
         },
         "en" : {
@@ -6596,7 +6614,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Für diese Packung sind Zubereitungen erfasst, deshalb kann sich die Bohne nicht ändern. Die vorige Bohne ist zurück, die übrigen Änderungen wurden gesichert."
+            "value" : "Für diese Packung sind Zubereitungen erfasst, deshalb kann sich die Bohne nicht ändern. Die vorige Bohne ist zurück, die übrigen Änderungen wurden gespeichert."
           }
         },
         "en" : {
@@ -6974,7 +6992,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Änderung auf dem Server nicht gesichert"
+            "value" : "Änderung auf dem Server nicht gespeichert"
           }
         },
         "en" : {
@@ -7010,7 +7028,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Das konnte auf diesem iPhone nicht gesichert werden. Bitte versuche es noch einmal."
+            "value" : "Das konnte auf diesem iPhone nicht gespeichert werden. Bitte versuche es noch einmal."
           }
         },
         "en" : {

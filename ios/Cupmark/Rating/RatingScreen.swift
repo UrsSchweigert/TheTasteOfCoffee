@@ -130,7 +130,7 @@ struct RatingScreen: View {
             }
             if let brewedAt = model.brewedAt {
                 LabeledContent {
-                    Text(brewedAt, format: .dateTime.day().month().year().hour().minute())
+                    Text(brewedAt, format: DisplayDate.dayAndTime)
                 } label: {
                     Text(L10n.ratingBrewedAt)
                 }

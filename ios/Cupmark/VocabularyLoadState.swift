@@ -8,7 +8,7 @@ enum VocabularyLoadState: Sendable {
     static func load(from bundle: Bundle) -> VocabularyLoadState {
         do {
             let store = try VocabularyStore.load(from: bundle)
-            return .loaded(store, VocabularyLanguage.preferred(in: bundle))
+            return .loaded(store, VocabularyLanguage.current)
         } catch let error as VocabularyError {
             return .failed(error)
         } catch {

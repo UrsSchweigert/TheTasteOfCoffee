@@ -365,6 +365,10 @@ M2-T27 implements docs/04 F2, "A brew can be saved as a recipe and repeated with
   - a name bound to a string literal in the same file (`let title = "Hi"`) passed as the first argument of one of those calls.
   Literals that are not shown text, such as `Image(systemName:)` or `systemImage:`, are allowed.
 - `InfoPlist.xcstrings` localises the Info.plist permission strings. `check-ios-strings.mjs` checks it with the same rules and requires exactly the `INFOPLIST_KEY_NS...UsageDescription` settings of `project.pbxproj`, with the English value equal to the build setting.
+- **Localisation pass (M2-T32).**
+  - Language: one rule, `VocabularyLanguage.resolving(preferredLanguages:)` (German when the first preferred language is German, else English), used by the profile locale (`OnboardingRules.profileLocale`) and by `VocabularyLanguage.current`, the language of every vocabulary label. A label or question missing or empty in that language falls back to English (`VocabularyStore`); a unknown id still throws.
+  - Numbers, units and durations use Foundation (`BrewFormat`, `BrewTimerFormat`, `RatingFormat`) with the device locale; dates use `DisplayDate.day` and `DisplayDate.dayAndTime` (`Date.FormatStyle`). The timer reads `m:ss` and `h:mm:ss` from one hour (`48:00:00` at the largest `brew_time_s`, never days). The ratio's `1:` is the catalogue key `brew.ratio.value %@`. Data sent to the server (RFC 3339, `YYYY-MM-DD`, JSON numbers) and the export file name are never localised. Tests pin the formatter locale (`FormattingTests`).
+  - `check-ios-strings.mjs` also fails a catalog value whose number of `%@` placeholders differs from its key's.
 - `scripts/check-no-free-text.sh` fails on any control that accepts typed text.
 
 ## Project file

@@ -22,6 +22,36 @@ final class LocalizationTests: XCTestCase {
         }
     }
 
+    private func placeholderCount(_ text: String) -> Int {
+        text.components(separatedBy: "%@").count - 1
+    }
+
+    /// `scripts/check-ios-strings.mjs` proves every key of `L10n.swift` is in the catalogue, and
+    /// the catalogue has no other key; the compiled tables here are that catalogue. A key with
+    /// `%@` in a language that drops it would show a broken sentence.
+    func testEveryFormatKeyKeepsItsPlaceholdersInEveryLanguage() throws {
+        let tables = try VocabularyLanguage.allCases.map { try table($0.rawValue) }
+        var formatKeys = 0
+        for key in try table(VocabularyLanguage.fallback.rawValue).keys {
+            for strings in tables {
+                XCTAssertEqual(placeholderCount(strings[key] ?? ""), placeholderCount(key), key)
+            }
+            if key.contains("%@") { formatKeys += 1 }
+        }
+        XCTAssertGreaterThan(formatKeys, 0)
+    }
+
+    func testTheFormatFunctionsOfL10nResolveInEveryLanguage() throws {
+        for language in VocabularyLanguage.allCases {
+            let path = try XCTUnwrap(appBundle.path(forResource: language.rawValue, ofType: "lproj"))
+            let bundle = try XCTUnwrap(Bundle(path: path))
+            let text = L10n.brewRatioValue("16.2", bundle: bundle)
+            XCTAssertTrue(text.contains("16.2"), "\(language.rawValue): \(text)")
+            XCTAssertFalse(text.contains("%@"), "\(language.rawValue): \(text)")
+            XCTAssertFalse(text.hasPrefix("brew.ratio"), "\(language.rawValue) is not translated: \(text)")
+        }
+    }
+
     func testEveryCatalogKeyHasANonEmptyValueInEveryLanguage() throws {
         let source = try table(VocabularyLanguage.fallback.rawValue)
         XCTAssertFalse(source.isEmpty)

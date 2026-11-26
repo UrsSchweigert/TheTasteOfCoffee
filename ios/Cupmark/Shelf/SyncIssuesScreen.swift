@@ -144,7 +144,7 @@ struct SyncIssueSubjectView: View {
                 BeanSummaryView(summary: summary, vocabulary: vocabulary, language: language)
                 if let purchaseDate, let date = ShelfDates.date(of: purchaseDate) {
                     LabeledContent {
-                        Text(date, format: .dateTime.day().month().year())
+                        Text(date, format: DisplayDate.day)
                     } label: {
                         Text(L10n.shelfPurchaseDate)
                     }
@@ -154,7 +154,7 @@ struct SyncIssueSubjectView: View {
             .accessibilityElement(children: .combine)
         case .brew(let methodID, let brewedAt):
             LabeledContent {
-                Text(brewedAt, format: .dateTime.day().month().year().hour().minute())
+                Text(brewedAt, format: DisplayDate.dayAndTime)
             } label: {
                 VStack(alignment: .leading) {
                     Text(L10n.syncIssuesBrew)
