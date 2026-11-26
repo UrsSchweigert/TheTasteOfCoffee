@@ -43,6 +43,17 @@ enum UITestFixtures {
         return BrewPhotoBackupSetting(defaults: defaults)
     }()
 
+    /// The statistics method choice of a UI-test launch (M2-T50): its own `UserDefaults` suite,
+    /// emptied at the first use in the process, so every launch starts on "all methods".
+    static let statisticsMethodSetting: StatisticsMethodSetting = {
+        let suite = "cupmark-ui-test-statistics-method"
+        UserDefaults.standard.removePersistentDomain(forName: suite)
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            preconditionFailure("The UI-test UserDefaults suite could not be made.")
+        }
+        return StatisticsMethodSetting(defaults: defaults)
+    }()
+
     static var account: AccountID {
         AccountID(subject: subject)
     }

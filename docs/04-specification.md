@@ -85,6 +85,8 @@ The user's own statistics are computed on the device from the local store and wo
 
 Means have one decimal in the device locale. Without rated brews a section shows an empty state, not zeros.
 
+A menu picker at the top (M2-T50, ADR 0027 addendum) chooses "All methods" or one method that has rated brews; every number on the screen is then that of the chosen method only, and a method below the 2-rated-brew threshold shows the empty state of its taste profile. The choice is kept on the device as one method id or "all"; an unknown or no longer offered id means "All methods".
+
 #### My brews of this coffee (free)
 
 The shelf entry screen (one bag) shows "My brews of this coffee" (M2-T44, ADR 0027 addendum), computed on the device and offline:

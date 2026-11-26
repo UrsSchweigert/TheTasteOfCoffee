@@ -1106,7 +1106,7 @@ Planning notes (planned 2026-11-25):
   - Tests: unit tests of the pure function and of the shelf model rows (none, one rated brew, two bags of one bean, a removed brew, an older vocabulary version); a UI test with the harness for the row text. Mac: the `ios` job; `needs-mac-verification` until it passes.
 
 ### M2-T50 Statistics: a method drop-down instead of one long screen
-- status: todo
+- status: needs-mac-verification
 - owner: ios-engineer
 - depends: M2-T28
 - implements: owner feedback of 2026-11-26 ("build a drop down switcher for the preparation types, the screen scrolls far too long"; chosen screen: Statistics); ADR 0027

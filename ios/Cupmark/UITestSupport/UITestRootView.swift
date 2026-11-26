@@ -160,7 +160,12 @@ final class UITestHarness {
             }
         case .statistics:
             NavigationStack {
-                StatisticsScreen(store: seeded.store, vocabulary: vocabulary, language: language)
+                StatisticsScreen(
+                    store: seeded.store,
+                    vocabulary: vocabulary,
+                    language: language,
+                    setting: UITestFixtures.statisticsMethodSetting
+                )
             }
         case .settings:
             NavigationStack {

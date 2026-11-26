@@ -53,6 +53,15 @@ After testing the TestFlight build the owner asked to see the averages "right ne
 - **Brew list:** a rated row shows its own overall score and, next to it, the coffee's average overall ("avg 7.4"). An unrated row shows neither; with one rated brew there is no average (it would be the brew's own number). VoiceOver reads "Overall 8.0, coffee average 7.4".
 
 
+## Addendum M2-T50: a method switcher (lead, ADR 0014)
+
+The owner found the statistics screen, which listed every method one after another, far too long (2026-11-26). A menu picker at the top replaces those sections. On the device, offline, no route, no cost. The rules:
+
+- **Options:** "All methods" and each method with at least one rated, not removed brew, in vocabulary order, labelled from the vocabulary.
+- **Effect:** with one method chosen every section (brews, weeks, taste profile, flavour notes, best bean, buy again) shows the numbers of that method's brews only, from the same `PersonalStatistics.compute` with a method filter. "All methods" is the output as before. "Best method" compares methods and is hidden while one is chosen.
+- **Threshold:** unchanged. A chosen method with fewer than `StatisticsRules.minimumRatedBrews` rated brews shows the empty state of the taste profile, not zeros.
+- **Kept:** per device in `UserDefaults` (privacy reason CA92.1) as one method id or "all". An unknown id, or a method that has no rated brew any more, shows "All methods"; the kept value is not overwritten until the user picks again.
+
 ## Addendum M2-T49: averages on the shelf list, per bag and per product (lead, ADR 0014)
 
 The owner asked (2026-11-26) for the averages of a bag on each row of the shelf, and across all bags of the same product.
