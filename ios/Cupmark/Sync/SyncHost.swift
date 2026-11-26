@@ -32,6 +32,18 @@ final class SyncHost {
     /// The last pull that completed for the current account, nil before. `skippedItems`
     /// counts the items it left out (a later screen shows a note for them).
     private(set) var lastPull: PullReport?
+    /// True when the last pull for the current account failed (offline, a server error, the
+    /// store), false after one completed. Onboarding (M2-T29) uses it not to wait forever.
+    private(set) var lastPullFailed = false
+
+    /// What the current account's pulls said about `GET /profile` (M2-T29): the last completed
+    /// pull's answer, else `unreachable` after a failed one, else `notYet`.
+    var serverProfile: ServerProfileAnswer {
+        if let lastPull {
+            return lastPull.profileFound ? .found : .missing
+        }
+        return lastPullFailed ? .unreachable : .notYet
+    }
 
     /// The signed-in account's store. Screens (M2-T18) read and write through it.
     @ObservationIgnored private(set) var store: AccountStore?
@@ -124,6 +136,7 @@ final class SyncHost {
         account = next
         signInRequired = false
         lastPull = nil
+        lastPullFailed = false
         finishedAtLastPull = 0
         lastPullCompletedAt = nil
         // A sign-in (or a new account) pulls once the outbox is empty.
@@ -222,12 +235,17 @@ final class SyncHost {
         switch result {
         case .completed(let report):
             lastPull = report
+            lastPullFailed = false
             lastPullCompletedAt = now()
             return .done
         case .signInRequired:
             pullRequested = true
             return .signInRequired
-        case .failed, .storeFailed, .cancelled:
+        case .failed, .storeFailed:
+            pullRequested = true
+            lastPullFailed = true
+            return .done
+        case .cancelled:
             pullRequested = true
             return .done
         }

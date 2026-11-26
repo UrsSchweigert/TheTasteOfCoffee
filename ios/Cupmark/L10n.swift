@@ -252,6 +252,8 @@ enum L10n {
     static var shelfRowBeanAwaitingDescription: LocalizedStringKey { "shelf.row.bean_awaiting_description" }
     static var beanEntryPhotoNotSavedTitle: LocalizedStringKey { "bean_entry.photo_not_saved.title" }
     static var beanEntryPhotoNotSavedMessage: LocalizedStringKey { "bean_entry.photo_not_saved.message" }
+    static var beanEntryNoStoreTitle: LocalizedStringKey { "bean_entry.no_store.title" }
+    static var beanEntryNoStoreMessage: LocalizedStringKey { "bean_entry.no_store.message" }
     static var beanEntryPicksNotKept: LocalizedStringKey { "bean_entry.picks_not_kept" }
     static var lookupKeepForLater: LocalizedStringKey { "lookup.keep_for_later" }
     static var lookupKeepForLaterHint: LocalizedStringKey { "lookup.keep_for_later.hint" }
@@ -329,4 +331,30 @@ enum L10n {
     static var brewRecipeAlreadyKept: LocalizedStringKey { "brew.recipe.already_kept" }
     static var ratingUseLastSameBean: LocalizedStringKey { "rating.use_last.same_bean" }
     static var ratingUseLastRepeatedBrew: LocalizedStringKey { "rating.use_last.repeated_brew" }
+    // Onboarding and consent (M2-T29, docs/07 D1, ADR 0017).
+    static var onboardingChecking: LocalizedStringKey { "onboarding.checking" }
+    /// "Step 1 of 3"; the catalog value places the step and the count, both `%@`.
+    static func onboardingStep(_ current: String, of total: String) -> String { String(localized: "onboarding.step \(current) \(total)") }
+    static var onboardingLogTitle: LocalizedStringKey { "onboarding.log.title" }
+    static var onboardingLogMessage: LocalizedStringKey { "onboarding.log.message" }
+    static var onboardingPrivateTitle: LocalizedStringKey { "onboarding.private.title" }
+    static var onboardingPrivateMessage: LocalizedStringKey { "onboarding.private.message" }
+    static var onboardingConsentTitle: LocalizedStringKey { "onboarding.consent.title" }
+    static var onboardingConsentMessage: LocalizedStringKey { "onboarding.consent.message" }
+    static var onboardingConsentNotShared: LocalizedStringKey { "onboarding.consent.not_shared" }
+    static var onboardingConsentAgree: LocalizedStringKey { "onboarding.consent.agree" }
+    static var onboardingConsentChangeLater: LocalizedStringKey { "onboarding.consent.change_later" }
+    static var onboardingNext: LocalizedStringKey { "onboarding.next" }
+    static var onboardingFinish: LocalizedStringKey { "onboarding.finish" }
+    static var onboardingSkip: LocalizedStringKey { "onboarding.skip" }
+    static var onboardingSkipHint: LocalizedStringKey { "onboarding.skip.hint" }
+    static var onboardingSaveFailed: LocalizedStringKey { "onboarding.save_failed" }
+    // Settings (M2-T29; export M2-T30 and account deletion M2-T31 add theirs).
+    static var settingsTitle: LocalizedStringKey { "settings.title" }
+    static var settingsLoadFailed: LocalizedStringKey { "settings.load_failed" }
+    static var settingsPrivacyHeader: LocalizedStringKey { "settings.privacy.header" }
+    static var settingsConsentToggle: LocalizedStringKey { "settings.consent.toggle" }
+    static var settingsConsentHint: LocalizedStringKey { "settings.consent.hint" }
+    static var settingsConsentFooter: LocalizedStringKey { "settings.consent.footer" }
+    static var settingsConsentSaveFailed: LocalizedStringKey { "settings.consent.save_failed" }
 }

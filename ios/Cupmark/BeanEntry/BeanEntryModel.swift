@@ -34,6 +34,10 @@ final class BeanEntryModel {
         /// The label photo could not be written to the device (M2-T25): nothing was saved, the
         /// photo is kept, and saving again (or removing the photo) is offered.
         case photoNotSaved
+        /// A pending bean's description, made without a store (M2-T36): it is only ever written
+        /// to the local store, never sent, so saving again cannot help and is not offered. The
+        /// bean is described from the shelf, whose screen has the store.
+        case noStore
     }
 
     enum State: Equatable, Sendable {
@@ -128,7 +132,8 @@ final class BeanEntryModel {
     /// Whether `save()` would send a request now: not while saving, not once saved, not
     /// while the label photo is being encoded, and not the body a 400 answered.
     var canSave: Bool {
-        isEditable && request != rejectedRequest && state != .failed(.signInRequired) && !labelPhoto.isPreparing
+        isEditable && request != rejectedRequest && state != .failed(.signInRequired) && state != .failed(.noStore)
+            && !labelPhoto.isPreparing
     }
 
     /// Sends `POST /beans`, or, when describing a pending bean, writes the description to the
@@ -141,9 +146,10 @@ final class BeanEntryModel {
         state = .saving
         if let describing {
             // A description of a pending bean is only ever written to the local store: the
-            // outbox creates the bean. Without a store it is not sent either.
+            // outbox creates the bean. Without a store it is not sent either, and no retry is
+            // offered: another try would have no store either.
             guard let offlineStore else {
-                state = .failed(.retryable)
+                state = .failed(.noStore)
                 return
             }
             await saveDescription(of: describing, in: offlineStore)

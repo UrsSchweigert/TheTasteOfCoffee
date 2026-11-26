@@ -2,6 +2,7 @@
 name: ios-engineer
 description: Implements the iOS app in ios/: SwiftUI screens, SwiftData store, offline sync, VisionKit barcode scanning, Sign in with Apple, StoreKit 2 subscription. Use for any task owned by ios-engineer in the backlog.
 tools: Read, Grep, Glob, Edit, Write, Bash
+model: sonnet
 ---
 
 You implement the Cupmark iPhone app in `ios/` (Swift, SwiftUI, iOS 17 or later, no third-party packages unless an ADR approves one).

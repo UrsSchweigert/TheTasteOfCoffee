@@ -2,6 +2,7 @@
 name: contract-keeper
 description: Owns contracts/: the closed vocabulary (methods, criteria, flavour notes, ranges) and the OpenAPI definition. Use first for any task that adds or changes an API route, a request or response field, or a pick-list value.
 tools: Read, Grep, Glob, Edit, Write, Bash
+model: sonnet
 ---
 
 You own `contracts/` for the Cupmark project. Everything the app and the backend agree on is defined here and nowhere else.

@@ -177,7 +177,7 @@ struct BeanEntryScreen: View {
                                 .font(.footnote)
                         }
                     } icon: {
-                        Image(systemName: failure == .rejected ? "exclamationmark.triangle" : "icloud.slash")
+                        Image(systemName: failure == .rejected || failure == .noStore ? "exclamationmark.triangle" : "icloud.slash")
                             .accessibilityHidden(true)
                     }
                     .accessibilityElement(children: .combine)
@@ -216,7 +216,7 @@ struct BeanEntryScreen: View {
         switch model.state {
         case .saving: L10n.lookupSaving
         case .failed(.retryable), .failed(.photoNotSaved): L10n.lookupRetry
-        case .editing, .saved, .savedOffline, .failed(.rejected), .failed(.signInRequired): L10n.beanEntrySave
+        case .editing, .saved, .savedOffline, .failed(.rejected), .failed(.signInRequired), .failed(.noStore): L10n.beanEntrySave
         }
     }
 
@@ -235,6 +235,7 @@ struct BeanEntryScreen: View {
         switch failure {
         case .rejected: L10n.beanEntryRejectedTitle
         case .photoNotSaved: L10n.beanEntryPhotoNotSavedTitle
+        case .noStore: L10n.beanEntryNoStoreTitle
         case .retryable: L10n.beanEntryFailedTitle
         case .signInRequired: L10n.signInAgainTitle
         }
@@ -244,6 +245,7 @@ struct BeanEntryScreen: View {
         switch failure {
         case .rejected: L10n.beanEntryRejectedMessage
         case .photoNotSaved: L10n.beanEntryPhotoNotSavedMessage
+        case .noStore: L10n.beanEntryNoStoreMessage
         case .retryable: L10n.beanEntryFailedMessage
         case .signInRequired: L10n.signInAgainMessage
         }
