@@ -41,7 +41,7 @@ import {
   GITHUB_OIDC_AUDIENCE,
   GITHUB_OIDC_HOST,
   GITHUB_OIDC_STACK_NAME,
-  GITHUB_REPOSITORY,
+  GITHUB_SUBJECT_PREFIX,
 } from './github-oidc.ts';
 import { CupmarkStack } from './stage.ts';
 
@@ -541,7 +541,7 @@ function trustProblems(doc: unknown, resources: Json, githubOidc: boolean): stri
       // Only the environment subjects (ADR 0018): a `ref:` subject would also match jobs
       // without an environment, such as claude.yml's issue_comment job on main.
       if (typeof sub !== 'string' || !GITHUB_DEPLOY_SUBJECTS.includes(sub)) {
-        found.push(`${at}: sub ${JSON.stringify(sub)} must be one of ${GITHUB_DEPLOY_SUBJECTS.join(', ')} (environment subjects of repo:${GITHUB_REPOSITORY} only)`);
+        found.push(`${at}: sub ${JSON.stringify(sub)} must be one of ${GITHUB_DEPLOY_SUBJECTS.join(', ')} (environment subjects of ${GITHUB_SUBJECT_PREFIX} only)`);
       }
     }
   }

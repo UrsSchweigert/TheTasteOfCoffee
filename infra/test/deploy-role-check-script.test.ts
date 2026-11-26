@@ -136,6 +136,13 @@ describe('check-github-deploy-role.sh', () => {
     ['the old ref:refs/heads/main subject', (f) => {
       f.trust = JSON.parse(JSON.stringify(f.trust).replace(':environment:prod', ':ref:refs/heads/main')) as unknown;
     }, 'trust policy'],
+    ['the live immutable subjects in StringLike (the setup script rewrites that, this check stays strict)', (f) => {
+      const doc = f.trust as { Statement: { Condition: Record<string, Record<string, unknown>> }[] };
+      const statement = doc.Statement[0];
+      if (statement?.Condition.StringEquals === undefined) throw new Error('no condition');
+      const { 'token.actions.githubusercontent.com:sub': sub, ...rest } = statement.Condition.StringEquals;
+      statement.Condition = { StringEquals: rest, StringLike: { 'token.actions.githubusercontent.com:sub': sub } };
+    }, 'trust policy'],
     ['StringLike instead of StringEquals', (f) => {
       f.trust = JSON.parse(JSON.stringify(f.trust).replace('StringEquals', 'StringLike')) as unknown;
     }, 'trust policy'],
