@@ -3,7 +3,9 @@
 // Run: node --test scripts/ios-scripts.test.mjs (needs `npm ci` in contracts/).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LANGUAGES, loadVocabulary } from '../contracts/lib/vocabulary.mjs';
@@ -2027,4 +2029,52 @@ test('brew photos: the stand-in for the picker is Debug-only and the section rea
     const closes = (before.match(/^#(?:endif|else)$/gm) ?? []).length;
     assert.ok(opens > closes, `${match[0]} at ${match.index} is outside #if DEBUG`);
   }
+});
+
+// M2-T12: Xcode Cloud sets the build number; the team is set; nothing secret.
+test('Xcode Cloud: ci_pre_xcodebuild.sh is executable, strict, offline, secret-free and a no-op outside Xcode Cloud', () => {
+  const file = join(repoRoot, 'ios/ci_scripts/ci_pre_xcodebuild.sh');
+  assert.ok(statSync(file).mode & 0o100, 'owner execute bit');
+  const text = readFileSync(file, 'utf8');
+  assert.match(text, /^#!\/bin\/bash\n/);
+  assert.match(text, /^set -euo pipefail$/m);
+  assert.match(text, /CI_BUILD_NUMBER/);
+  assert.match(text, /CI_XCODE_CLOUD/);
+  const code = text.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n');
+  assert.doesNotMatch(code, /\b(curl|wget|nc|ssh|scp|aws|git)\b/, 'no network or other tools than sed');
+  assert.doesNotMatch(code, /(AKIA|BEGIN [A-Z ]*PRIVATE KEY|secret|password|token|api[_-]?key)/i);
+  const run = spawnSync('bash', [file], { env: { PATH: process.env.PATH, CI_BUILD_NUMBER: '9' }, encoding: 'utf8' });
+  assert.equal(run.status, 0);
+  assert.match(run.stdout, /not running in Xcode Cloud/);
+});
+
+test('Xcode Cloud: the script sets every CURRENT_PROJECT_VERSION in a copy of the project and refuses a bad number', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cupmark-ci-'));
+  try {
+    mkdirSync(join(dir, 'ci_scripts'));
+    mkdirSync(join(dir, 'Cupmark.xcodeproj'));
+    const script = join(dir, 'ci_scripts/ci_pre_xcodebuild.sh');
+    copyFileSync(join(repoRoot, 'ios/ci_scripts/ci_pre_xcodebuild.sh'), script);
+    const pbx = readFileSync(join(repoRoot, 'ios/Cupmark.xcodeproj/project.pbxproj'), 'utf8');
+    writeFileSync(join(dir, 'Cupmark.xcodeproj/project.pbxproj'), pbx);
+    const run = (n) =>
+      spawnSync('bash', [script], { env: { PATH: process.env.PATH, CI_XCODE_CLOUD: 'TRUE', CI_BUILD_NUMBER: n }, encoding: 'utf8' });
+    assert.notEqual(run('x1').status, 0);
+    const ok = run('42');
+    assert.equal(ok.status, 0, ok.stderr);
+    const after = readFileSync(join(dir, 'Cupmark.xcodeproj/project.pbxproj'), 'utf8');
+    const count = (pbx.match(/CURRENT_PROJECT_VERSION = \d+;/g) ?? []).length;
+    assert.ok(count > 0);
+    assert.equal((after.match(/CURRENT_PROJECT_VERSION = 42;/g) ?? []).length, count);
+    assert.equal(existsSync(join(dir, 'Cupmark.xcodeproj/project.pbxproj.bak')), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('the app and both test targets set the development team with automatic signing', () => {
+  const project = readFileSync(join(repoRoot, 'ios/Cupmark.xcodeproj/project.pbxproj'), 'utf8');
+  assert.equal((project.match(/DEVELOPMENT_TEAM = 2F695PTZC6;/g) ?? []).length, 6, 'Debug and Release of three targets');
+  assert.equal((project.match(/DEVELOPMENT_TEAM = /g) ?? []).length, 6);
+  assert.equal((project.match(/CODE_SIGN_STYLE = Automatic;/g) ?? []).length, 6);
 });
