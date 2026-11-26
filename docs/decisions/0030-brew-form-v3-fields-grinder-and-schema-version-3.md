@@ -23,5 +23,8 @@ M2-T26 applies ADR 0021 in the app. The backend (M2-T5) answers 400 for a field 
 
 ## Consequences
 
+- **Brews saved before this change.** Since M2-T4 the app has saved brews at vocabulary 3, and until this change the form offered every field with every method. A development device can therefore hold version 3 brews or recipes with a field the v3 rules forbid (`water_temp_c` with moka pot, cezve or cold brew, or `cold` with any other method than cold brew). The sync sends such an item unchanged, so the backend (#71) answers 400 and the operation is parked. Only development stores are affected: nothing is deployed yet. Grinder fields cannot be involved, since no earlier brew has one.
+- **Migration tested only in the simulator.** The V1 to V3 and V2 to V3 migrations are tested with real store files in `StoreMigrationTests` on the macOS runner, not on a device store.
+
 - A repeat of an old brew with a field its method now disallows loses that field in the new brew, by design.
 - Switching the method and back loses the cleared values.

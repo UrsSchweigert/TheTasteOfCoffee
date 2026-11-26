@@ -89,7 +89,8 @@ extension AccountStore {
     @discardableResult
     func saveRecipe(_ parameters: API.BrewParameters, createdAt: Date = Date.now) throws -> StoredRecipe {
         // A recipe is stored at the bundled version, so it never keeps a field its method does
-        // not allow (a brew of vocabulary 1 or 2 may have one), which the server would refuse.
+        // not allow (a brew of vocabulary 1 or 2 may have one, and so may a brew saved at
+        // version 3 before the form applied the rules), which the server would refuse.
         let parameters = parameters.conformingToMethodRules()
         if let existing = try recipe(matching: parameters) {
             return existing

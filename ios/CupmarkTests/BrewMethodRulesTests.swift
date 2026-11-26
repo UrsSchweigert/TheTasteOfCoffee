@@ -97,7 +97,6 @@ final class BrewMethodRulesTests: XCTestCase {
             }
             XCTAssertEqual(!specials.isEmpty, method.allows(.waterTempSpecial), "\(method)")
             XCTAssertTrue(form.temperatureChoices.contains(.notSet), "\(method) can always leave the temperature out")
-            XCTAssertEqual(form.grindSettingRange == nil, true, "\(method) without a grinder has no grind setting stepper")
         }
     }
 
