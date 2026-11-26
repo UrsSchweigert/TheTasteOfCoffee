@@ -1,6 +1,10 @@
 import Combine
 import SwiftUI
 
+/// Pushes the statistics (value route, so the screen and its model are made only when it
+/// opens, not on every evaluation of the shelf).
+struct StatisticsRoute: Hashable {}
+
 /// The personal statistics (M2-T28, ADR 0027), opened from the shelf. Read-only: it has no
 /// input, writes nothing and calls no route, so it works offline.
 ///
@@ -60,7 +64,8 @@ struct StatisticsScreen: View {
             model.reload()
         }
         .onReceive(NotificationCenter.default.publisher(for: AccountStore.didSaveNotification, object: store)) { _ in
-            model.reload()
+            // The sync drain saves once per operation: one read after a run of saves.
+            model.scheduleReload()
         }
         .onChange(of: scenePhase) { _, phase in
             // The current week moves on with the calendar.
@@ -114,8 +119,11 @@ struct StatisticsScreen: View {
     @ViewBuilder
     private func tasteProfileSection(_ statistics: PersonalStatistics) -> some View {
         Section {
-            if statistics.tasteProfile.isEmpty {
+            if !statistics.hasRatedBrews {
                 emptyText(L10n.statisticsNoRatings)
+            } else if statistics.tasteProfile.isEmpty {
+                // Rated, but only on criteria a newer vocabulary has.
+                emptyText(L10n.statisticsNoKnownScores)
             } else {
                 criterionRows(statistics.tasteProfile)
             }

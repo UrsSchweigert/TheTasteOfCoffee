@@ -33,8 +33,10 @@ extension StatisticsBrew {
 }
 
 /// The statistics screen's state (M2-T28, ADR 0027): the account's own brews read from the
-/// local store, so it works offline. Read-only on the store. `reload()` reads it again; the
-/// screen calls it on appearing and after every save of the store.
+/// local store, so it works offline. Read-only on the store. `reload()` reads it again at
+/// once; the screen calls it on appearing. After a save of the store the screen calls
+/// `scheduleReload()` instead: the sync drain saves once per operation, so saves in quick
+/// succession are coalesced into one read after `reloadDelay`.
 @MainActor
 @Observable
 final class StatisticsModel {
@@ -48,14 +50,47 @@ final class StatisticsModel {
     /// Nil in the app: an ISO week calendar in the device's current time zone, made at each
     /// read, so a time zone change takes effect.
     private let calendar: Calendar?
+    /// How long `scheduleReload()` waits for more saves before it reads.
+    let reloadDelay: Duration
+    /// The read `scheduleReload()` is waiting to make, nil when none is pending.
+    private var pendingReload: Task<Void, Never>?
+    /// Reads of the store so far; the tests count coalesced reloads with it.
+    private(set) var reloadCount = 0
 
-    init(store: AccountStore, now: @escaping () -> Date = { Date() }, calendar: Calendar? = nil) {
+    /// The default wait of `scheduleReload()`.
+    static let defaultReloadDelay = Duration.milliseconds(250)
+
+    init(
+        store: AccountStore,
+        now: @escaping () -> Date = { Date() },
+        calendar: Calendar? = nil,
+        reloadDelay: Duration = StatisticsModel.defaultReloadDelay
+    ) {
         self.store = store
         self.now = now
         self.calendar = calendar
+        self.reloadDelay = reloadDelay
     }
 
+    /// Reads the store after `reloadDelay`. A call while a read is waiting replaces it, so a
+    /// run of saves leads to one read after the last of them.
+    func scheduleReload() {
+        pendingReload?.cancel()
+        let delay = reloadDelay
+        pendingReload = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled else {
+                return
+            }
+            self?.reload()
+        }
+    }
+
+    /// Reads the store now, and drops a waiting scheduled read, which would read the same.
     func reload() {
+        pendingReload?.cancel()
+        pendingReload = nil
+        reloadCount += 1
         do {
             let brews = StatisticsBrew.values(of: try store.brewsNewestFirst())
             let weekCalendar = calendar ?? PersonalStatistics.isoWeekCalendar(timeZone: TimeZone.current)

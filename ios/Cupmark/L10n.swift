@@ -280,6 +280,7 @@ enum L10n {
     /// The weeks footer; the catalog value places `%@`, the number of weeks.
     static func statisticsWeeksFooter(weeks: String) -> String { String(localized: "statistics.weeks.footer \(weeks)") }
     static var statisticsNoRatings: LocalizedStringKey { "statistics.no_ratings" }
+    static var statisticsNoKnownScores: LocalizedStringKey { "statistics.no_known_scores" }
     static var statisticsTasteProfileHeader: LocalizedStringKey { "statistics.taste_profile.header" }
     static var statisticsTasteProfileFooter: LocalizedStringKey { "statistics.taste_profile.footer" }
     static var statisticsMethodsHeader: LocalizedStringKey { "statistics.methods.header" }

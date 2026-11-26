@@ -4861,6 +4861,24 @@
         }
       }
     },
+    "statistics.no_known_scores" : {
+      "comment" : "Taste profile empty state when brews are rated, but only on criteria this version of the app does not know.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Bewertungen nutzen Kriterien, die diese Version der App noch nicht kennt. Aktualisiere die App, um sie zu sehen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your ratings use criteria this version of the app does not know yet. Update the app to see them."
+          }
+        }
+      }
+    },
     "statistics.no_ratings" : {
       "comment" : "Empty state of a statistics section while no brew is rated.",
       "extractionState" : "manual",

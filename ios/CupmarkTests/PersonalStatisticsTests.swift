@@ -370,6 +370,47 @@ final class PersonalStatisticsTests: XCTestCase {
         XCTAssertEqual(statistics.weeks.first?.start, try date("2026-11-15T23:00:00Z"))
         XCTAssertEqual(statistics.weeks.last?.start, try date("2027-01-03T23:00:00Z"), "Monday 00:00 in Berlin")
     }
+
+    func testWeeksAcrossTheEndOfDaylightSavingTimeStartOnMondayAtMidnightLocal() throws {
+        let calendar = try self.calendar()
+        let first = try method(0)
+        // Berlin leaves summer time on Sunday 2026-10-25 (03:00 CEST becomes 02:00 CET), so
+        // week 43 is 169 hours long and Mondays move from 22:00Z to 23:00Z.
+        let statistics = try compute([
+            // Sunday 2026-10-18, 23:30 CEST: week 42.
+            try brew("2026-10-18T21:30:00Z", method: first),
+            // Sunday 2026-10-25, 23:30 CET, after the change: still week 43.
+            try brew("2026-10-25T22:30:00Z", method: first),
+            // Monday 2026-10-26, 00:00 CET: week 44.
+            try brew("2026-10-25T23:00:00Z", method: first),
+        ], now: "2026-11-04T12:00:00Z")
+
+        guard statistics.weeks.count == StatisticsRules.weekCount else {
+            return XCTFail("expected \(StatisticsRules.weekCount) weeks, got \(statistics.weeks.count)")
+        }
+        XCTAssertEqual(statistics.weeks.map(\.weekOfYear), [38, 39, 40, 41, 42, 43, 44, 45])
+        XCTAssertEqual(statistics.weeks.map(\.count), [0, 0, 0, 0, 1, 1, 1, 0])
+        for week in statistics.weeks {
+            let parts = calendar.dateComponents([.weekday, .hour, .minute, .second], from: week.start)
+            XCTAssertEqual(parts.weekday, 2, "week \(week.weekOfYear) starts on a Monday")
+            XCTAssertEqual(parts.hour, 0, "week \(week.weekOfYear) starts at midnight local")
+            XCTAssertEqual(parts.minute, 0)
+            XCTAssertEqual(parts.second, 0)
+        }
+        XCTAssertEqual(statistics.weeks[5].start, try date("2026-10-18T22:00:00Z"), "Monday 00:00 CEST")
+        XCTAssertEqual(statistics.weeks[6].start, try date("2026-10-25T23:00:00Z"), "Monday 00:00 CET")
+    }
+
+    func testRatingsWithOnlyUnknownCriteriaAreRatedButGiveNoTasteProfile() throws {
+        let unknown = RatingValues(scores: ["criterion_of_a_newer_vocabulary": 8])
+        let statistics = try compute([
+            try brew(method: try method(0), rating: unknown),
+            try brew(method: try method(0), rating: unknown),
+        ])
+        XCTAssertTrue(statistics.hasRatedBrews, "the screen shows its own text, not \"no rated brews\"")
+        XCTAssertEqual(statistics.tasteProfile, [])
+        XCTAssertNil(statistics.bestMethod, "no overall score this build knows")
+    }
 }
 
 /// The statistics read from a real (in-memory) store: removed brews are left out, the bean
@@ -407,5 +448,32 @@ final class StatisticsModelTests: XCTestCase {
         let values = StatisticsBrew.values(of: try store.brewsNewestFirst())
         XCTAssertEqual(values.compactMap(\.bean).map(\.id), [entry.bean?.localID, entry.bean?.localID].compactMap { id in id })
         XCTAssertEqual(values.first?.bean?.summary, ShelfBeanSummary(entry.bean))
+    }
+
+    func testSavesInQuickSuccessionAreCoalescedIntoOneRead() async throws {
+        let store = try AccountStore.inMemory()
+        let entry = try StoreFixtures.syncedShelfEntry(in: store)
+        let model = StatisticsModel(store: store, reloadDelay: .milliseconds(50))
+        model.scheduleReload()
+        model.scheduleReload()
+        model.scheduleReload()
+        XCTAssertEqual(model.reloadCount, 0, "nothing is read before the delay")
+        let brew = try StoredBrew(try StoreFixtures.brewInput(), serverID: StoreFixtures.brewID)
+        try store.addBrew(brew, shelfEntry: entry, syncState: .synced)
+        model.scheduleReload()
+
+        try await Task.sleep(for: .milliseconds(500))
+        XCTAssertEqual(model.reloadCount, 1, "four scheduled reads in a row, one read")
+        XCTAssertEqual(model.statistics?.totalBrews, 1, "the read sees the last save")
+    }
+
+    func testAnImmediateReloadDropsAWaitingOne() async throws {
+        let store = try AccountStore.inMemory()
+        let model = StatisticsModel(store: store, reloadDelay: .milliseconds(50))
+        model.scheduleReload()
+        model.reload()
+        XCTAssertEqual(model.reloadCount, 1)
+        try await Task.sleep(for: .milliseconds(500))
+        XCTAssertEqual(model.reloadCount, 1, "the scheduled read was dropped")
     }
 }

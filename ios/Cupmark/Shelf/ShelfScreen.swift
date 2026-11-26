@@ -128,10 +128,9 @@ struct ShelfScreen: View {
                     }
                 }
                 .accessibilityIdentifier("shelf-scan")
-                // Personal statistics (M2-T28), read from this store, offline.
-                NavigationLink {
-                    StatisticsScreen(store: store, vocabulary: vocabulary, language: language)
-                } label: {
+                // Personal statistics (M2-T28), read from this store, offline. A value route,
+                // so the screen and its model are made only when it opens.
+                NavigationLink(value: StatisticsRoute()) {
                     Label {
                         Text(L10n.statisticsTitle)
                     } icon: {
@@ -194,6 +193,9 @@ struct ShelfScreen: View {
         }
         .navigationDestination(for: ShelfEntryRoute.self) { route in
             ShelfEntryEditorScreen(store: store, mode: .edit(route.localID), vocabulary: vocabulary, language: language)
+        }
+        .navigationDestination(for: StatisticsRoute.self) { _ in
+            StatisticsScreen(store: store, vocabulary: vocabulary, language: language)
         }
         .navigationDestination(isPresented: $isScanning) {
             if let apiClient {
