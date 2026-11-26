@@ -19,6 +19,9 @@ final class AccountStore {
     /// Called before every save, with the changes still unsaved; a throw fails the save as a
     /// failed `ModelContext.save()` would. Nil in the app: tests use it to make a write fail.
     var willSave: (() throws -> Void)?
+    /// The writes under way (`write { }`, `Store/AccountStore+Write.swift`). Only `write`
+    /// changes it.
+    var writeNesting = WriteNesting()
 
     init(container: ModelContainer) {
         self.container = container
@@ -78,31 +81,38 @@ final class AccountStore {
         try save()
     }
 
-    /// Adds a shelf entry for `bean`, which must be in this store.
+    /// Adds a shelf entry for `bean`, which must be in this store. A write (`write { }`): on
+    /// failure the bean's `shelfEntries` are put back too, also inside a caller's write.
     func addShelfEntry(_ entry: StoredShelfEntry, bean: StoredBean, syncState: SyncState = .pendingCreate) throws {
-        entry.syncState = syncState
-        // Insert first, then link: both ends are then in the same context.
-        context.insert(entry)
-        entry.bean = bean
-        try enqueueCreate(of: entry)
-        try save()
+        try write {
+            entry.syncState = syncState
+            // Insert first, then link: both ends are then in the same context.
+            context.insert(entry)
+            entry.bean = bean
+            try enqueueCreate(of: entry)
+            try save()
+        }
     }
 
     /// Adds a brew on `shelfEntry`, which must be in this store. `stageMore` runs after the
     /// brew's create is queued and before the one save, so a write staged there (the recipe
-    /// kept with a brew, M2-T27) is saved with it and queued after it.
+    /// kept with a brew, M2-T27) is saved with it and queued after it. A write (`write { }`):
+    /// when `stageMore` or the save throws, the brew is dropped and what `stageMore` changed is
+    /// put back, also inside a caller's write.
     func addBrew(
         _ brew: StoredBrew,
         shelfEntry: StoredShelfEntry,
         syncState: SyncState = .pendingCreate,
         then stageMore: () throws -> Void = {}
     ) throws {
-        brew.syncState = syncState
-        context.insert(brew)
-        brew.shelfEntry = shelfEntry
-        try enqueueCreate(of: brew)
-        try stageMore()
-        try save()
+        try write {
+            brew.syncState = syncState
+            context.insert(brew)
+            brew.shelfEntry = shelfEntry
+            try enqueueCreate(of: brew)
+            try stageMore()
+            try save()
+        }
     }
 
     func addRecipe(_ recipe: StoredRecipe, syncState: SyncState = .pendingCreate) throws {
@@ -222,6 +232,7 @@ final class AccountStore {
     /// read again.
     func save() throws {
         do {
+            try refuseSaveAfterFailedInnerWrite()
             try willSave?()
             try context.save()
         } catch {

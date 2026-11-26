@@ -809,7 +809,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T29 Onboarding with consent (D1)
-- status: todo
+- status: done (built and tested by the macOS `ios` job in #66; ADR 0025 addendum M2-T29)
 - owner: ios-engineer
 - depends: M2-T1, M2-T11, M2-T16
 - implements: docs/07 D1; ADR 0017 (opt-in); docs/03-project-brief.md, Risks ("Plain consent at onboarding; an opt-out that keeps the personal log working"); contracts `Profile`
@@ -952,7 +952,14 @@ Scope: App Store listing, screenshots, privacy nutrition labels, privacy policy 
   - Mac: the `ios` job.
 
 ### M2-T36 Harden the failed-write mechanism
-- status: todo
+- status: done (#66; the macOS `ios` job passed on 6574b43, including the real save-failure test)
+- handover (2026-11-26, lead): `FailedWriteTests.testASaveThatFailsInTheStoreUndoesADeletionWithRelationships` fails at line 509, every run since `d7df43e`.
+  - The setup is now deterministic. The store is written, the writable container is released, the store is copied, its WAL is checkpointed with `sqlite3_wal_checkpoint_v2`, and the copy is opened with `allowsSave: false`. Part 1 passes: a deleted brew is restored.
+  - Part 2 deletes a scanned bag's shelf entry and, with it, its pending bean. The real `ModelContext.save()` fails (Code 513). After `discardUnsavedChanges()`, `store.bean(localID: pendingBeanID)` returns nil, although no inserted or deleted models are left and the following assertions pass.
+  - So SwiftData's rollback after a real failed save does not bring back a deleted model whose inverse relationship was also deleted. The repair pass (`AccountStore+Write.swift`) cannot resurrect it.
+  - Only a real store write failure (disk full, read-only store) triggers it. The `willSave` path and every other test pass (712 of 713).
+  - Next step, an iOS store task (run `ios-engineer` on Opus): for such a write, either re-insert a deleted model from its saved copy when it is gone after the rollback, or reload the context from disk after a failed `save()`, e.g. throw the context away and open a new `ModelContext` on the container. Then rerun the job at least twice.
+  - Fix (2026-11-26, ios-engineer): the job's log shows only line 509 failing; the same fetch at line 513 finds the bean, and the held instances are right, so the bean is not lost, only the first fetch after the repair misses it. `discardUnsavedChanges()` now ends each repair pass with `processPendingChanges()` and fetches every restored model again by its key (a miss is tried once more, then an `assertionFailure` and a fault). Re-insert and a new context were not taken (ADR 0025 Addendum M2-T36). Unverified: rerun the `ios` job at least twice.
 - owner: ios-engineer
 - depends: M2-T35
 - implements: ADR 0025 (addendum M2-T35)
@@ -964,4 +971,21 @@ Scope: App Store listing, screenshots, privacy nutrition labels, privacy policy 
   - A comment in `LabelPhotoQueue` says that a failed save after an upload repeats the S3 POST, and why that is safe.
   - Describing without a store shows a state that does not offer a retry.
   - The schema test also compares each property's key path, not only its name.
+  - Mac: the `ios` job.
+
+### M2-T37 Failed-write repair: the remaining review notes
+- status: todo
+- owner: ios-engineer
+- depends: M2-T36
+- implements: ADR 0025 (addenda M2-T35 and M2-T36)
+- acceptance:
+  - These come from the reviews of PR #66, none of them blocking.
+  - An `.attribute` restore reports whether it changed anything, by comparing values where they are `Equatable`, or the doc says it always reports a change.
+  - Done in #66: the "not settled" and "unresolved" outcomes log a fixed fault and raise an `assertionFailure`; a fetch error is logged apart from "not on disk". What remains: a test of the "not settled" path needs the assertion to be injectable, or it crashes Debug test runs.
+  - In the real save-failure test, `changedModelsArray` holds only the models of the failed write, and each equals its copy on disk.
+  - Tests cover the "not settled" path (see above) and a repair run twice: an engine discard after a repaired discard.
+  - An unresolved relationship left as the failed save's delete rule set it stays a pending change, and the next save would store it. Consider refusing `save()` until the context is reloaded, as `innerWriteFailed` does.
+  - Two consent footer notes from the M2-T29 round 2 review:
+    - the ADR 0025 addendum M2-T29 and the code agree on parked profile operations in the merge and adopt branches;
+    - a test covers an edit made during the GET while `sentWithoutAnswer` is already true.
   - Mac: the `ios` job.

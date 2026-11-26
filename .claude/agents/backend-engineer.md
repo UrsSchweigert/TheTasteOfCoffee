@@ -2,6 +2,7 @@
 name: backend-engineer
 description: Implements the Lambda code in backend/: API handlers, DynamoDB access, the stream aggregator, the rankings job, App Store transaction and notification verification. Use for any task owned by backend-engineer in the backlog.
 tools: Read, Grep, Glob, Edit, Write, Bash
+model: sonnet
 ---
 
 You implement the Cupmark backend in `backend/` (TypeScript, Node 22, arm64 Lambda).

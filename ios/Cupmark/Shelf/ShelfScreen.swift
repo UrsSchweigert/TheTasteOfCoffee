@@ -19,8 +19,11 @@ struct ShelfRoot: View {
             // `account` is observed; the store is set in the same step as it (SyncHost.switchTo).
             if sync.account == account {
                 if let store = sync.store {
-                    ShelfScreen(store: store, vocabulary: vocabulary, language: language)
-                        .id(ObjectIdentifier(store))
+                    // Onboarding first while the account has no profile (M2-T29).
+                    OnboardingGate(store: store, sync: sync) {
+                        ShelfScreen(store: store, vocabulary: vocabulary, language: language)
+                    }
+                    .id(ObjectIdentifier(store))
                 } else {
                     ContentUnavailableView {
                         Label {
@@ -140,7 +143,7 @@ struct ShelfScreen: View {
                     }
                 }
                 .accessibilityIdentifier("shelf-statistics")
-                // Export and the local data setting (M2-T30).
+                // Settings: the consent (M2-T29), export and local data (M2-T30); deletion follows (M2-T31).
                 NavigationLink(value: SettingsRoute()) {
                     Label {
                         Text(L10n.settingsTitle)
@@ -209,11 +212,7 @@ struct ShelfScreen: View {
             StatisticsScreen(store: store, vocabulary: vocabulary, language: language)
         }
         .navigationDestination(for: SettingsRoute.self) { _ in
-            if let account = sync?.account {
-                SettingsScreen(account: account, store: store)
-            } else {
-                NotConfiguredView()
-            }
+            SettingsScreen(account: sync?.account, store: store)
         }
         .navigationDestination(isPresented: $isScanning) {
             if let apiClient {

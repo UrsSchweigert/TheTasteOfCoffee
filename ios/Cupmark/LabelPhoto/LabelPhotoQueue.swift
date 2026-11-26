@@ -109,6 +109,26 @@ final class LabelPhotoQueue {
 
             let result = await uploader.run(job)
 
+            // The job's new stage is only kept once a save below stores it. When that save
+            // fails, `AccountStore.save()` puts the photo's saved values back (ADR 0025, Addendum
+            // M2-T35): the stage from before this run, `notStarted` for a photo that never ran.
+            // The next run then repeats the S3 POST that already succeeded, and from
+            // `notStarted` asks for a new presigned POST first. That is safe:
+            // - A presigned POST names one exact key, `uploads/<photo_id>.jpg` (ADR 0016). The
+            //   same POST again writes the same bytes to the same key; a new one writes a new
+            //   key. Nothing reads a raw upload but its completion call, and a lifecycle rule
+            //   deletes every raw upload (and its old version) a day later, so an upload that is
+            //   never completed leaves nothing behind.
+            // - A photo is only stored by `POST /label_photos/{photo_id}/complete`, once per
+            //   photo id: completing the same id again answers 409 and stores nothing.
+            // - A new presigned POST counts against the daily cap of 20, and a run asks for at
+            //   most `LabelPhotoUploader.maxUploadsPerRun`, so a save that keeps failing costs
+            //   uploads of the day, never an unbounded number of requests.
+            // After a 204 of completion the uploader has already deleted the file. If removing
+            // the photo from the queue then fails, the next run sends no bytes: it finds no file,
+            // S3 is never posted to (`refused`), and the photo ends as rejected. One presigned
+            // POST of the day is the cost (none if the saved stage was `issued`), and the photo
+            // stored by the 204 stays stored.
             guard let current = try? store.queuedLabelPhoto(localID: id) else {
                 // Removed meanwhile (the bean was discarded): its file goes too.
                 files.delete(file)

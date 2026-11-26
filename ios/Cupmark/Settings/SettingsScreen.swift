@@ -1,39 +1,112 @@
 import SwiftUI
 
-/// Pushes the settings screen.
+/// Pushes Settings from the shelf (a value route, so the screen and its model are made only
+/// when it opens).
 struct SettingsRoute: Hashable {}
 
-/// Settings (M2-T30): Export, and the removal of other accounts' data on this device. Later
-/// tasks add the consent toggle (M2-T29) and account deletion (M2-T31).
+/// Settings, one tap from the shelf. Each topic is its own section, built by its own
+/// function: Privacy (the consent, M2-T29), Export (M2-T30), the removal of other accounts'
+/// data on this device (M2-T30); account deletion (M2-T31) adds a section below. No control
+/// takes typed text.
 struct SettingsScreen: View {
-    let account: AccountID
+    let account: AccountID?
     let store: AccountStore
-    @Environment(\.apiClient) private var apiClient
     @Environment(SyncHost.self) private var sync: SyncHost?
-    @State private var localData: LocalDataModel
+    @State private var model: SettingsModel
+    @State private var localData: LocalDataModel?
     @State private var isConfirmingRemoval = false
 
-    init(account: AccountID, store: AccountStore) {
+    /// `account` is the signed-in account; without it the export and local data sections are
+    /// left out and the consent still works.
+    init(account: AccountID? = nil, store: AccountStore) {
         self.account = account
         self.store = store
-        _localData = State(initialValue: LocalDataModel(account: account))
+        _model = State(initialValue: SettingsModel(store: store))
+        _localData = State(initialValue: account.map { LocalDataModel(account: $0) })
     }
 
     var body: some View {
         List {
-            Section {
-                NavigationLink {
-                    exportDestination
-                } label: {
-                    Label {
-                        Text(L10n.exportTitle)
-                    } icon: {
-                        Image(systemName: "square.and.arrow.up")
-                            .accessibilityHidden(true)
-                    }
-                }
-                .accessibilityIdentifier("settings-export")
+            privacySection
+            exportSection
+            localDataSection
+        }
+        .navigationTitle(Text(L10n.settingsTitle))
+        .accessibilityIdentifier("settings")
+        .confirmationDialog(L10n.localDataConfirmTitle, isPresented: $isConfirmingRemoval, titleVisibility: .visible) {
+            Button(role: .destructive) {
+                localData?.removeOtherAccounts()
+            } label: {
+                Text(L10n.localDataRemoveConfirm)
             }
+        } message: {
+            Text(L10n.localDataConfirmMessage)
+        }
+        .onAppear {
+            model.reload()
+            localData?.reload()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AccountStore.didSaveNotification, object: store)) { _ in
+            // A pull may bring the consent chosen on another device.
+            model.reload()
+        }
+    }
+
+    // MARK: - Sections
+
+    /// The consent (D1, ADR 0017): opt-in, and turning it off keeps every personal feature.
+    private var privacySection: some View {
+        Section {
+            Toggle(isOn: Binding(
+                get: { model.contributesToAggregates },
+                set: { value in model.setContributesToAggregates(value) }
+            )) {
+                Text(L10n.settingsConsentToggle)
+            }
+            .disabled(model.loadFailed)
+            .accessibilityHint(Text(L10n.settingsConsentHint))
+            .accessibilityIdentifier("settings-consent")
+            if model.loadFailed {
+                Text(L10n.settingsLoadFailed)
+                    .foregroundStyle(.secondary)
+            }
+            if model.saveFailed {
+                Label {
+                    Text(L10n.settingsConsentSaveFailed)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle")
+                        .accessibilityHidden(true)
+                }
+                .foregroundStyle(.red)
+            }
+        } header: {
+            Text(L10n.settingsPrivacyHeader)
+        } footer: {
+            Text(L10n.settingsConsentFooter)
+        }
+    }
+
+    /// CSV export (M2-T30).
+    private var exportSection: some View {
+        Section {
+            NavigationLink {
+                ExportDestination(store: store)
+            } label: {
+                Label {
+                    Text(L10n.exportTitle)
+                } icon: {
+                    Image(systemName: "square.and.arrow.up")
+                        .accessibilityHidden(true)
+                }
+            }
+            .accessibilityIdentifier("settings-export")
+        }
+    }
+
+    /// Removal of other accounts' data on this device (M2-T30).
+    @ViewBuilder
+    private var localDataSection: some View {
+        if let localData {
             Section {
                 Button(role: .destructive) {
                     isConfirmingRemoval = true
@@ -60,28 +133,6 @@ struct SettingsScreen: View {
             } footer: {
                 Text(localData.otherAccountCount == 0 ? L10n.localDataNone : L10n.localDataFooter)
             }
-        }
-        .navigationTitle(Text(L10n.settingsTitle))
-        .confirmationDialog(L10n.localDataConfirmTitle, isPresented: $isConfirmingRemoval, titleVisibility: .visible) {
-            Button(role: .destructive) {
-                localData.removeOtherAccounts()
-            } label: {
-                Text(L10n.localDataRemoveConfirm)
-            }
-        } message: {
-            Text(L10n.localDataConfirmMessage)
-        }
-        .onAppear {
-            localData.reload()
-        }
-    }
-
-    @ViewBuilder
-    private var exportDestination: some View {
-        if let apiClient, let engine = sync?.engine {
-            ExportScreen(model: ExportModel(source: apiClient, outbox: .live(engine: engine, store: store)))
-        } else {
-            NotConfiguredView()
         }
     }
 }

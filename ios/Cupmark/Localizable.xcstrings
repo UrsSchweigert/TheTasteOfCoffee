@@ -379,6 +379,42 @@
         }
       }
     },
+    "bean_entry.no_store.message" : {
+      "comment" : "Message when a scanned bag's description was made where it cannot be saved; saving again is not offered.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Beschreibung einer gescannten Packung wird mit deinem Regal gespeichert, das hier nicht geöffnet ist. Schließe diese Ansicht und beschreibe die Packung aus deinem Regal heraus."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The description of a scanned bag is saved with your shelf, which is not open here. Close this screen and describe the bag from your shelf."
+          }
+        }
+      }
+    },
+    "bean_entry.no_store.title" : {
+      "comment" : "Title when a scanned bag's description was made where it cannot be saved.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hier nicht speicherbar"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cannot Be Saved Here"
+          }
+        }
+      }
+    },
     "bean_entry.photo_not_saved.message" : {
       "comment" : "Message when the label photo could not be stored on the device while saving offline.",
       "extractionState" : "manual",
@@ -2935,6 +2971,294 @@
         }
       }
     },
+    "onboarding.checking" : {
+      "comment" : "Accessibility label of the short wait while the app asks the server whether the account has a profile (onboarding).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dein Konto wird geladen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading your account"
+          }
+        }
+      }
+    },
+    "onboarding.consent.agree" : {
+      "comment" : "Label of the agree switch on the consent page. Off by default.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ich stimme zu, meine Bewertungen anonym zu teilen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I agree to share my ratings anonymously"
+          }
+        }
+      }
+    },
+    "onboarding.consent.change_later" : {
+      "comment" : "Note below the agree switch on the consent page.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aus, solange du es nicht einschaltest. Du kannst es jederzeit in den Einstellungen ändern."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Off unless you turn it on. You can change it at any time in Settings."
+          }
+        }
+      }
+    },
+    "onboarding.consent.message" : {
+      "comment" : "Consent page: what is shared if the user agrees. Must stay plain and exact: ratings with method and recipe values, no identity, shown only from 5 raters.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cupmark kann für jeden Kaffee Werte der Community zeigen, etwa durchschnittliche Bewertungen und die häufigsten Aromen. Diese Werte sehen Abonnentinnen und Abonnenten sowie Personen, die denselben Kaffee bewertet haben. Wenn du zustimmst, fließen deine Bewertungen in diese Werte ein, solange das Teilen an ist, zusammen mit der Zubereitungsart und den Rezeptwerten, aber nie mit deinem Namen oder deinem Konto. Die Werte eines Kaffees werden erst gezeigt, wenn ihn mindestens 5 verschiedene Personen bewertet haben."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cupmark can show community figures for each coffee, such as average scores and the most common flavour notes. Subscribers, and people who rated the same coffee, see these figures. If you agree, your ratings are counted into them while sharing is on, together with the brew method and recipe values, but never with your name or account. A coffee's figures are shown only once at least 5 different people have rated it."
+          }
+        }
+      }
+    },
+    "onboarding.consent.not_shared" : {
+      "comment" : "Consent page: what is not shared, and that declining changes nothing in the personal log.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sonst wird nichts geteilt: weder dein Regal noch deine Rezepte, deine Statistik oder etwas über dich. Wenn du nicht zustimmst, wird nichts von dir gezählt, und dein eigenes Tagebuch funktioniert genauso."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing else is shared: not your shelf, your recipes, your statistics or anything about you. If you do not agree, nothing of yours is counted, and your own log works exactly the same."
+          }
+        }
+      }
+    },
+    "onboarding.consent.title" : {
+      "comment" : "Title of the consent page of onboarding (opt-in to community aggregates).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bewertungen anonym teilen?"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Share Your Ratings Anonymously?"
+          }
+        }
+      }
+    },
+    "onboarding.finish" : {
+      "comment" : "Button on the last onboarding page that saves the choice and opens the shelf.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los geht’s"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Get Started"
+          }
+        }
+      }
+    },
+    "onboarding.log.message" : {
+      "comment" : "Text of the first onboarding page: what the app does.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scanne eine Packung oder wähle ihre Angaben aus Listen, stelle sie in dein Regal und erfasse jede Zubereitung mit einer Bewertung. Du wählst alles aus, eintippen musst du nichts."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan a bag or pick its details from lists, keep it on your shelf, and log each brew with a rating. You pick and tap everything; there is nothing to type."
+          }
+        }
+      }
+    },
+    "onboarding.log.title" : {
+      "comment" : "Title of the first onboarding page.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dein Kaffee-Tagebuch"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your Coffee Log"
+          }
+        }
+      }
+    },
+    "onboarding.next" : {
+      "comment" : "Button that moves to the next onboarding page.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weiter"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next"
+          }
+        }
+      }
+    },
+    "onboarding.private.message" : {
+      "comment" : "Text of the second onboarding page.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dein Tagebuch wird zuerst auf diesem iPhone gespeichert, funktioniert also ohne Verbindung und wird mit deinem Konto abgeglichen, sobald du online bist. Cupmark kennt dich nur über „Mit Apple anmelden“, ohne deinen Namen und ohne deine E-Mail-Adresse. Andere sehen dein Tagebuch nie."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your log is saved on this iPhone first, so it works without a connection, and it syncs to your account when you are online. Cupmark knows you only through Sign in with Apple, without your name or email address. Other people never see your log."
+          }
+        }
+      }
+    },
+    "onboarding.private.title" : {
+      "comment" : "Title of the second onboarding page: the personal log is private.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Privat und offline"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Private and Offline"
+          }
+        }
+      }
+    },
+    "onboarding.save_failed" : {
+      "comment" : "Shown when the onboarding choice could not be saved on the device.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Auswahl konnte nicht gespeichert werden. Bitte versuche es noch einmal."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your choice could not be saved. Please try again."
+          }
+        }
+      }
+    },
+    "onboarding.skip" : {
+      "comment" : "Button that ends onboarding without agreeing to share.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Überspringen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skip"
+          }
+        }
+      }
+    },
+    "onboarding.skip.hint" : {
+      "comment" : "Accessibility hint of the Skip button in onboarding.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beendet die Einführung, ohne deine Bewertungen zu teilen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ends the introduction without sharing your ratings."
+          }
+        }
+      }
+    },
+    "onboarding.step %@ %@" : {
+      "comment" : "Onboarding progress; the first %@ is the current page number, the second the number of pages, for example \"Step 1 of 3\".",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schritt %1$@ von %2$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Step %1$@ of %2$@"
+          }
+        }
+      }
+    },
     "open_food_facts.attribution" : {
       "comment" : "ODbL attribution under Open Food Facts data. Keep the names Open Food Facts and Open Database License.",
       "extractionState" : "manual",
@@ -4177,8 +4501,116 @@
         }
       }
     },
+    "settings.consent.footer" : {
+      "comment" : "Footer below the consent switch in Settings: what is shared, who sees it, that counted ratings stay counted when turned off, that deletion removes them (D2), and that the personal log keeps working.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solange eingeschaltet, fließen deine Bewertungen mit Zubereitungsart und Rezeptwerten ohne deinen Namen und ohne dein Konto in die Werte der Community für jeden Kaffee ein. Diese Werte sehen Abonnentinnen und Abonnenten sowie Personen, die denselben Kaffee bewertet haben. Die Werte eines Kaffees werden erst gezeigt, wenn ihn mindestens 5 verschiedene Personen bewertet haben. Sonst wird nichts geteilt. Wenn du das Teilen ausschaltest, werden deine Bewertungen nicht mehr gezählt; bereits gezählte bleiben gezählt. Wenn du eine Zubereitung oder dein Konto löschst, werden die zugehörigen Bewertungen aus den Werten entfernt. Regal, Zubereitungen, Rezepte und Statistik funktionieren in beiden Fällen gleich."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "While on, your ratings, with their brew method and recipe values, are counted without your name or account into community figures for each coffee. Subscribers, and people who rated the same coffee, see these figures. A coffee's figures are shown only once at least 5 different people have rated it. Nothing else is shared. Turning sharing off stops your ratings from being counted; ratings already counted stay counted. Deleting a brew, or your account, removes its ratings from the figures. Your shelf, brews, recipes and statistics work the same either way."
+          }
+        }
+      }
+    },
+    "settings.consent.hint" : {
+      "comment" : "Accessibility hint of the consent switch in Settings.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solange eingeschaltet, fließen deine Bewertungen ohne deinen Namen in die Werte der Community ein."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "While on, your ratings are counted into community figures, without your name."
+          }
+        }
+      }
+    },
+    "settings.consent.save_failed" : {
+      "comment" : "Shown in Settings when the consent change could not be saved on the device.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Änderung konnte nicht gespeichert werden. Bitte versuche es noch einmal."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The change could not be saved. Please try again."
+          }
+        }
+      }
+    },
+    "settings.consent.toggle" : {
+      "comment" : "Switch in Settings for contributing to community aggregates (opt-in).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bewertungen anonym teilen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Share Ratings Anonymously"
+          }
+        }
+      }
+    },
+    "settings.load_failed" : {
+      "comment" : "Shown in Settings when the local store could not be read.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Einstellungen konnten nicht gelesen werden."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your settings could not be read."
+          }
+        }
+      }
+    },
+    "settings.privacy.header" : {
+      "comment" : "Header of the privacy section in Settings.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datenschutz"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Privacy"
+          }
+        }
+      }
+    },
     "settings.title" : {
-      "comment" : "Title of the settings screen.",
+      "comment" : "Title of the Settings screen and of its row on the shelf.",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {

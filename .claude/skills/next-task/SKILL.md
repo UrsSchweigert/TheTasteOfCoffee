@@ -25,6 +25,8 @@ You are the lead. You coordinate; the specialist agents do the work. Argument: a
 - If the task changes an API route, a field or a list, run `contract-keeper` first.
 - Run the owner agent named in the task. Give it: the task block verbatim, the doc sections it cites, and what earlier tasks already built that it depends on.
 - When it returns, run the tests yourself. Do not accept "tests pass" without seeing it.
+- Models (owner, 2026-11-26, for cost): the engineers and the planner run on Sonnet (`model: sonnet` in their agent files), the `reviewer` on Opus. For an iOS task that changes the local store, the outbox, sync or the failed-write mechanism (`ios/Cupmark/Store/*`, `ios/Cupmark/Sync/*`), start `ios-engineer` with the model override `opus`: those tasks produced the subtle bugs. Agents that only read CI logs and copy out the errors run on `haiku`.
+- Keep the lead session short: start a new session after a pull request merges, rather than carrying a long history into the next task.
 
 ## 4. Review
 

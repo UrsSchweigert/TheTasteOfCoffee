@@ -1,3 +1,4 @@
+import SQLite3
 import SwiftData
 import XCTest
 @testable import Cupmark
@@ -144,6 +145,26 @@ final class FailedWriteTests: XCTestCase {
         }
     }
 
+    /// No name and no key path is listed twice (M2-T36), so two entries cannot both restore one
+    /// field while another is left out. SwiftData does not make `Schema.PropertyMetadata`'s name
+    /// or key path public (the first macOS run of this test did not compile), so the key path
+    /// itself cannot be matched to the schema here; the per-site tests below restore every field
+    /// and compare the result.
+    func testEveryRestoredPropertyHasItsOwnNameAndKeyPath() {
+        func check<Model: SavedValuesRestorable>(_ type: Model.Type, file: StaticString = #filePath, line: UInt = #line) {
+            let restored = Model.restoredProperties
+            XCTAssertEqual(Set(restored.map(\.name)).count, restored.count, "\(Model.self): a name is listed twice", file: file, line: line)
+            XCTAssertEqual(Set(restored.map { property in property.keyPath as AnyKeyPath }).count, restored.count, "\(Model.self): a key path is listed twice", file: file, line: line)
+        }
+        check(StoredBean.self)
+        check(StoredShelfEntry.self)
+        check(StoredBrew.self)
+        check(StoredRecipe.self)
+        check(StoredProfile.self)
+        check(OutboxOperation.self)
+        check(QueuedLabelPhoto.self)
+    }
+
     func testAWriteThatThrowsPutsBackEveryChangedFieldOfASavedBrew() throws {
         let store = try AccountStore.inMemory()
         let brew = try syncedBrew(in: store)
@@ -178,6 +199,356 @@ final class FailedWriteTests: XCTestCase {
         XCTAssertEqual(try savedQueue(store), ["create recipe"])
         let savedDose = try saved(StoredBrew.self, in: store) { brews in brews.first?.doseDg }
         XCTAssertEqual(savedDose, before.parameters.doseDg)
+    }
+
+    // MARK: - Nested writes (M2-T36)
+
+    func testAnInnerWriteThatThrowsPutsBackWhatTheOuterWriteChanged() throws {
+        let store = try AccountStore.inMemory()
+        let brew = try syncedBrew(in: store)
+        let before = try brew.apiInput()
+
+        XCTAssertThrowsError(try store.write {
+            brew.doseDg = 222
+            try store.write { () throws -> Void in
+                brew.methodID = try StoreFixtures.last(Vocabulary.Method.self).rawValue
+                brew.syncState = .pendingUpdate
+                try store.enqueue(.update, .brew, localID: brew.localID)
+                throw WriteFailed()
+            }
+        }) { error in
+            XCTAssertTrue(error is WriteFailed, "the inner write's own error reaches the caller")
+        }
+
+        XCTAssertFalse(store.context.hasChanges)
+        XCTAssertEqual(try brew.apiInput(), before)
+        XCTAssertEqual(brew.syncState, .synced)
+        XCTAssertEqual(try queue(store), [])
+        try unrelatedSave(store)
+        XCTAssertEqual(try savedQueue(store), ["create recipe"])
+        XCTAssertEqual(try saved(StoredBrew.self, in: store) { brews in brews.first?.doseDg }, before.parameters.doseDg)
+    }
+
+    func testAShelfEntryAddedInsideAFailedWriteLeavesTheBeanAndTheOuterChangesAsTheyWere() throws {
+        let store = try AccountStore.inMemory()
+        let bean = try otherBean(in: store)
+        let process = bean.pickedProcessID
+        let added = StoredShelfEntry(try StoreFixtures.shelfEntryInput())
+        failSaves(store)
+
+        XCTAssertThrowsError(try store.write {
+            bean.pickedProcessID = try StoreFixtures.last(Vocabulary.Process.self).rawValue
+            try store.addShelfEntry(added, bean: bean)
+        })
+
+        store.willSave = nil
+        XCTAssertFalse(store.context.hasChanges)
+        XCTAssertEqual(bean.pickedProcessID, process)
+        XCTAssertTrue(bean.shelfEntries.isEmpty)
+        XCTAssertTrue(try store.shelfEntries().isEmpty)
+        XCTAssertEqual(try queue(store), [])
+        try unrelatedSave(store)
+        XCTAssertEqual(try savedQueue(store), ["create recipe"])
+        XCTAssertEqual(try saved(StoredShelfEntry.self, in: store) { entries in entries.count }, 0)
+        XCTAssertEqual(try saved(StoredBean.self, in: store) { beans in beans.first?.pickedProcessID }, process)
+    }
+
+    func testAFailedShelfEntryAddOnItsOwnLeavesTheBeanAsItWas() throws {
+        let store = try AccountStore.inMemory()
+        let bean = try otherBean(in: store)
+        let added = StoredShelfEntry(try StoreFixtures.shelfEntryInput())
+        failSaves(store)
+
+        XCTAssertThrowsError(try store.addShelfEntry(added, bean: bean))
+
+        store.willSave = nil
+        XCTAssertFalse(store.context.hasChanges)
+        XCTAssertTrue(bean.shelfEntries.isEmpty)
+        XCTAssertEqual(try queue(store), [])
+        try unrelatedSave(store)
+        XCTAssertEqual(try savedQueue(store), ["create recipe"])
+        XCTAssertEqual(try saved(StoredShelfEntry.self, in: store) { entries in entries.count }, 0)
+    }
+
+    /// `addBrew` on its own: a throw of its staged step (before any save) drops the brew and
+    /// puts back what the step changed on a saved model.
+    func testABrewAddWhoseStagedStepThrowsLeavesNothingBehind() throws {
+        let store = try AccountStore.inMemory()
+        let entry = try StoreFixtures.syncedShelfEntry(in: store)
+        let before = try entry.apiInput()
+        let brew = try StoredBrew(try StoreFixtures.brewInput())
+
+        XCTAssertThrowsError(try store.addBrew(brew, shelfEntry: entry) {
+            entry.bagSizeID = try StoreFixtures.last(Vocabulary.BagSize.self).rawValue
+            throw WriteFailed()
+        })
+
+        XCTAssertFalse(store.context.hasChanges)
+        XCTAssertEqual(try entry.apiInput(), before)
+        XCTAssertTrue(entry.brews.isEmpty)
+        XCTAssertTrue(try store.brewsNewestFirst().isEmpty)
+        XCTAssertEqual(try queue(store), [])
+        try unrelatedSave(store)
+        XCTAssertEqual(try savedQueue(store), ["create recipe"])
+        XCTAssertEqual(try saved(StoredBrew.self, in: store) { brews in brews.count }, 0)
+        XCTAssertEqual(try saved(StoredShelfEntry.self, in: store) { entries in entries.first?.bagSizeID }, before.bagSize?.rawValue)
+    }
+
+    func testABrewAddedInsideAFailedWriteLeavesTheOuterChangesAsTheyWere() throws {
+        let store = try AccountStore.inMemory()
+        let entry = try StoreFixtures.syncedShelfEntry(in: store)
+        let before = try entry.apiInput()
+        let brew = try StoredBrew(try StoreFixtures.brewInput())
+        failSaves(store)
+
+        XCTAssertThrowsError(try store.write {
+            entry.roastDateRaw = nil
+            try store.addBrew(brew, shelfEntry: entry)
+        })
+
+        store.willSave = nil
+        XCTAssertFalse(store.context.hasChanges)
+        XCTAssertEqual(try entry.apiInput(), before)
+        XCTAssertTrue(entry.brews.isEmpty)
+        XCTAssertEqual(try queue(store), [])
+        try unrelatedSave(store)
+        XCTAssertEqual(try savedQueue(store), ["create recipe"])
+        XCTAssertEqual(try saved(StoredShelfEntry.self, in: store) { entries in entries.first?.roastDateRaw }, before.roastDate?.description)
+    }
+
+    /// An outer write that catches its inner write's error cannot store a part of it: its next
+    /// save is refused, and its end discards and throws.
+    func testAnOuterWriteThatCatchesAnInnerFailureStoresNothing() throws {
+        let store = try AccountStore.inMemory()
+        let brew = try syncedBrew(in: store)
+        let before = try brew.apiInput()
+
+        XCTAssertThrowsError(try store.write {
+            brew.doseDg = 222
+            _ = try? store.write { () throws -> Void in
+                brew.waterG = 999
+                throw WriteFailed()
+            }
+            brew.syncState = .pendingUpdate
+            try store.enqueue(.update, .brew, localID: brew.localID)
+            try store.save()
+        }) { error in
+            XCTAssertEqual(error as? WriteNestingError, .innerWriteFailed)
+        }
+
+        XCTAssertFalse(store.context.hasChanges)
+        XCTAssertEqual(try brew.apiInput(), before)
+        XCTAssertEqual(try queue(store), [])
+
+        // Without a save in the outer write: its end throws, and nothing is left unsaved.
+        XCTAssertThrowsError(try store.write {
+            brew.doseDg = 222
+            _ = try? store.write { () throws -> Void in
+                throw WriteFailed()
+            }
+        }) { error in
+            XCTAssertEqual(error as? WriteNestingError, .innerWriteFailed)
+        }
+
+        XCTAssertFalse(store.context.hasChanges)
+        XCTAssertEqual(try brew.apiInput(), before)
+        try unrelatedSave(store)
+        XCTAssertEqual(try savedQueue(store), ["create recipe"])
+        XCTAssertEqual(try saved(StoredBrew.self, in: store) { brews in brews.first?.doseDg }, before.parameters.doseDg)
+
+        // The next write starts clean.
+        try store.write {
+            brew.doseDg = 222
+            try store.markUpdated(brew)
+        }
+        XCTAssertEqual(brew.doseDg, 222)
+        XCTAssertEqual(try savedQueue(store), ["create recipe", "update brew"])
+    }
+
+    // MARK: - A failure of ModelContext.save() itself (M2-T36)
+
+    /// `ModelContext.save()` fails here without the `willSave` hook: the store is opened again
+    /// read-only (`allowsSave: false`), so SwiftData refuses the save. A uniqueness violation
+    /// on `localID` cannot be used for this: SwiftData answers a second model with the same
+    /// unique value with an upsert, not with a failed save (ADR 0025, Addendum M2-T36). Both
+    /// removals delete models with relationships: a brew on its entry, and a scanned bag's
+    /// entry with the pending bean it leaves.
+    func testASaveThatFailsInTheStoreUndoesADeletionWithRelationships() throws {
+        // Two folders: the writable store fills the first and is closed; the read-only store
+        // opens a copy in the second, so no other connection ever shares its SQLite files (a
+        // writable container closed late checkpoints and unlinks the -wal and -shm files under
+        // the read-only one, and its reads then miss rows; ADR 0025, Addendum M2-T36).
+        let root = FileManager.default.temporaryDirectory.appending(
+            path: "FailedWriteTests-\(UUID().uuidString)",
+            directoryHint: .isDirectory
+        )
+        let written = root.appending(path: "written", directoryHint: .isDirectory)
+        let readOnly = root.appending(path: "read-only", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: written, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: readOnly, withIntermediateDirectories: true)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: root)
+        }
+        let fileName = "account.store"
+        func openStore(in directory: URL, allowsSave: Bool) throws -> AccountStore {
+            let schema = AccountStore.schema
+            let url = directory.appending(path: fileName, directoryHint: .notDirectory)
+            let configuration = ModelConfiguration("FailedWriteTests", schema: schema, url: url, allowsSave: allowsSave, cloudKitDatabase: .none)
+            return AccountStore(container: try ModelContainer(for: schema, migrationPlan: CupmarkMigrationPlan.self, configurations: configuration))
+        }
+
+        var entryID = UUID()
+        var brewID = UUID()
+        var scannedEntryID = UUID()
+        var pendingBeanID = UUID()
+        weak var writableContainer: ModelContainer?
+        try autoreleasepool {
+            let writable = try openStore(in: written, allowsSave: true)
+            writableContainer = writable.container
+            let entry = try StoreFixtures.syncedShelfEntry(in: writable)
+            let brew = try StoredBrew(try StoreFixtures.brewInput())
+            try writable.addBrew(brew, shelfEntry: entry)
+            let scannedEntry = try XCTUnwrap(ShelfEntryEditorModel(mode: .addScanned(try scanned), store: writable).save())
+            entryID = entry.localID
+            brewID = brew.localID
+            scannedEntryID = scannedEntry
+            pendingBeanID = try XCTUnwrap(writable.shelfEntry(localID: scannedEntry)?.bean?.localID)
+        }
+        // The writable container must be gone before the copy: a close during the copy could
+        // checkpoint its WAL between the two files and lose the newest rows. A timeout fails here,
+        // as a setup problem, rather than later as a missing bean.
+        XCTAssertTrue(waitUntilReleased { writableContainer != nil }, "the writable container is still open")
+        for name in [fileName, "\(fileName)-wal"] {
+            let source = written.appending(path: name, directoryHint: .notDirectory)
+            if FileManager.default.fileExists(atPath: source.path(percentEncoded: false)) {
+                try FileManager.default.copyItem(at: source, to: readOnly.appending(path: name, directoryHint: .notDirectory))
+            }
+        }
+        // A read-only connection does not reliably read rows that are still only in the copied
+        // write-ahead log (it cannot rebuild the -shm index it needs), which lost the newest rows
+        // on the macOS job. Fold the log into the main file of the copy first, so the read-only
+        // store reads one self-contained file.
+        try checkpointAndCloseWriteAheadLog(of: readOnly.appending(path: fileName, directoryHint: .notDirectory))
+        weak var readOnlyContainer: ModelContainer?
+        // The read-only store is closed, as far as SwiftData lets go of it, before the teardown
+        // removes its folder.
+        defer {
+            _ = waitUntilReleased { readOnlyContainer != nil }
+        }
+        try autoreleasepool {
+            let store = try openStore(in: readOnly, allowsSave: false)
+            readOnlyContainer = store.container
+            try checkFailedSaves(in: store, entryID: entryID, brewID: brewID, scannedEntryID: scannedEntryID, pendingBeanID: pendingBeanID)
+        }
+    }
+
+    /// Writes every frame of the SQLite write-ahead log at `url` into the main file, truncates the
+    /// log and closes the connection, through the SQLite C API (SwiftData has no checkpoint call).
+    private func checkpointAndCloseWriteAheadLog(of url: URL) throws {
+        var database: OpaquePointer?
+        let path = url.path(percentEncoded: false)
+        guard sqlite3_open_v2(path, &database, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK, let database else {
+            sqlite3_close(database)
+            throw StoreCopyError.open
+        }
+        defer { sqlite3_close(database) }
+        var logFrames: Int32 = 0
+        var checkpointed: Int32 = 0
+        guard sqlite3_wal_checkpoint_v2(database, nil, SQLITE_CHECKPOINT_TRUNCATE, &logFrames, &checkpointed) == SQLITE_OK else {
+            throw StoreCopyError.checkpoint
+        }
+        XCTAssertEqual(logFrames, checkpointed, "every log frame is in the main file")
+    }
+
+    private enum StoreCopyError: Error {
+        case open
+        case checkpoint
+    }
+
+    /// Spins the run loop for up to 5 s while `isAlive` holds; true once it no longer does.
+    private func waitUntilReleased(_ isAlive: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(5)
+        while isAlive(), Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        return !isAlive()
+    }
+
+    /// The removals of `testASaveThatFailsInTheStoreUndoesADeletionWithRelationships` on the
+    /// read-only store.
+    private func checkFailedSaves(in store: AccountStore, entryID: UUID, brewID: UUID, scannedEntryID: UUID, pendingBeanID: UUID) throws {
+        let expectedQueue = ["create brew", "look_up bean", "create shelf_entry"]
+
+        XCTAssertNil(store.willSave, "the store itself fails, not the hook")
+        let entry = try XCTUnwrap(store.shelfEntry(localID: entryID))
+        let brew = try XCTUnwrap(store.brew(localID: brewID))
+        XCTAssertEqual(try queue(store), expectedQueue)
+
+        // A brew the server never had is deleted at once, with its create.
+        XCTAssertThrowsError(try store.markDeleted(brew))
+
+        XCTAssertFalse(store.context.hasChanges)
+        XCTAssertEqual(try store.brew(localID: brewID)?.localID, brewID)
+        XCTAssertEqual(brew.shelfEntry?.localID, entryID)
+        XCTAssertEqual(entry.brews.map(\.localID), [brewID])
+        XCTAssertEqual(try store.brewsNewestFirst().map(\.localID), [brewID])
+        XCTAssertEqual(try queue(store), expectedQueue)
+
+        // A scanned bag's entry the server never had goes at once, and its pending bean with it.
+        let scannedEntry = try XCTUnwrap(store.shelfEntry(localID: scannedEntryID))
+        let pendingBean = try XCTUnwrap(store.bean(localID: pendingBeanID))
+        XCTAssertThrowsError(try store.markDeleted(scannedEntry))
+
+        // Both ends of the relationship were deleted, and the failed save had already nullified
+        // it: the rollback alone brought the entry back without its bean and twice in the bean's
+        // list (the first macOS run, while the files were still shared with the writable store).
+        // The pass after the rollback sets them to the store's values, which may leave them as
+        // changes of the context, equal to the disk; nothing inserted or deleted is left.
+        // The first fetch of the pending bean after that repair once found nothing (only here,
+        // the same fetch a moment later found it); the discard now processes the pending
+        // changes and fetches every saved model again before it returns, so the first fetch
+        // here must find it.
+        XCTAssertTrue(store.context.insertedModelsArray.isEmpty)
+        XCTAssertTrue(store.context.deletedModelsArray.isEmpty)
+        XCTAssertEqual(try store.bean(localID: pendingBeanID)?.localID, pendingBeanID)
+        // Read through fresh fetches first (what the app's screens do: they keep local ids and
+        // fetch again), then through the instances held from before the failed write.
+        XCTAssertEqual(try store.shelfEntry(localID: scannedEntryID)?.bean?.localID, pendingBeanID, "fetched entry")
+        XCTAssertEqual(try store.bean(localID: pendingBeanID)?.shelfEntries.map(\.localID), [scannedEntryID], "fetched bean")
+        XCTAssertEqual(scannedEntry.bean?.localID, pendingBeanID, "held entry")
+        XCTAssertEqual(pendingBean.shelfEntries.map(\.localID), [scannedEntryID], "held bean")
+        XCTAssertEqual(Set(try store.shelfEntries().map(\.localID)), [entryID, scannedEntryID])
+        XCTAssertEqual(try queue(store), expectedQueue)
+        XCTAssertEqual(try store.pendingBeanStates()[pendingBeanID], .lookingUp)
+        XCTAssertEqual(try savedQueue(store), expectedQueue)
+    }
+
+    /// The same removal as above through the `willSave` hook: a scanned bag's entry and the
+    /// pending bean it leaves, both deleted in one write, come back pointing to each other.
+    func testAFailedRemovalOfAScannedBagsEntryBringsBackTheEntryAndItsPendingBean() throws {
+        let store = try AccountStore.inMemory()
+        let bean = try pendingScan(store)
+        let entry = try XCTUnwrap(bean.shelfEntries.first)
+        failSaves(store)
+
+        XCTAssertThrowsError(try store.markDeleted(entry))
+
+        store.willSave = nil
+        XCTAssertTrue(store.context.insertedModelsArray.isEmpty)
+        XCTAssertTrue(store.context.deletedModelsArray.isEmpty)
+        XCTAssertEqual(try store.bean(localID: bean.localID)?.localID, bean.localID)
+        XCTAssertEqual(entry.bean?.localID, bean.localID)
+        XCTAssertEqual(bean.shelfEntries.map(\.localID), [entry.localID])
+        XCTAssertEqual(try store.shelfEntries().map(\.localID), [entry.localID])
+        XCTAssertEqual(try queue(store), ["look_up bean", "create shelf_entry"])
+
+        try unrelatedSave(store)
+        XCTAssertFalse(store.context.hasChanges)
+        XCTAssertEqual(entry.bean?.localID, bean.localID)
+        XCTAssertEqual(bean.shelfEntries.map(\.localID), [entry.localID])
+        XCTAssertEqual(try savedQueue(store), ["look_up bean", "create shelf_entry", "create recipe"])
+        let savedBean = try saved(StoredShelfEntry.self, in: store) { entries in entries.first?.bean?.localID }
+        XCTAssertEqual(savedBean, bean.localID)
     }
 
     // MARK: - AccountStore writes
@@ -618,7 +989,16 @@ final class FailedWriteTests: XCTestCase {
         await entry.save()
 
         XCTAssertTrue(server.requests.isEmpty, "no POST /beans for a pending bean")
-        XCTAssertEqual(entry.state, .failed(.retryable))
+        XCTAssertEqual(entry.state, .failed(.noStore))
+        XCTAssertFalse(entry.canSave, "no retry: another try would have no store either")
+        XCTAssertNotEqual(BeanEntryScreen.title(for: .noStore), BeanEntryScreen.title(for: .retryable))
+
+        // Changing a pick does not offer it again either, and still sends nothing.
+        entry.picks.process = try StoreFixtures.last(Vocabulary.Process.self)
+        XCTAssertFalse(entry.canSave)
+        await entry.save()
+        XCTAssertTrue(server.requests.isEmpty)
+        XCTAssertEqual(entry.state, .failed(.noStore))
         withExtendedLifetime(server) {}
     }
 
