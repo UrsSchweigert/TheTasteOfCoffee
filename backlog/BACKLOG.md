@@ -955,7 +955,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job. Marked `needs-mac-verification` until it passes; the look on a device is judged by the owner in M2-T34.
 
 ### M2-T42 Brew photos: the local model, the files and their deletion
-- status: todo
+- status: in-progress
 - owner: ios-engineer (run on the opus model: it touches `ios/Cupmark/Store`)
 - depends: M2-T40, M2-T31, M2-T23
 - implements: owner decision of 2026-11-26 (brew photos stay on the device); docs/05-system-design.md, Security and Data (local store); docs/04-specification.md, Non-functional (account deletion in the app); ADR 0030 (how a local schema version is added); ADR 0031 (the account deletion cleanup, point 6); invariants 1 and 6
