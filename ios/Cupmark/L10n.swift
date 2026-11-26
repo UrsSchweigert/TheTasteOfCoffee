@@ -197,6 +197,20 @@ enum L10n {
     static var brewOfflineNote: LocalizedStringKey { "brew.offline_note" }
     static var brewNotFound: LocalizedStringKey { "brew.not_found" }
     static var brewSaveFailed: LocalizedStringKey { "brew.save_failed" }
+    static var brewTimer: LocalizedStringKey { "brew.timer" }
+    static var brewTimerHeader: LocalizedStringKey { "brew.timer.header" }
+    static var brewTimerFooter: LocalizedStringKey { "brew.timer.footer" }
+    static var brewTimerStart: LocalizedStringKey { "brew.timer.start" }
+    static var brewTimerStartHint: LocalizedStringKey { "brew.timer.start.hint" }
+    static var brewTimerStop: LocalizedStringKey { "brew.timer.stop" }
+    static var brewTimerStopHint: LocalizedStringKey { "brew.timer.stop.hint" }
+    static var brewTimerReset: LocalizedStringKey { "brew.timer.reset" }
+    static var brewTimerResetHint: LocalizedStringKey { "brew.timer.reset.hint" }
+    // VoiceOver announcements are posted as text, so these are looked up as a String.
+    static var brewTimerAnnounceStarted: String { String(localized: "brew.timer.announce.started") }
+    /// The stop announcement with the brew time in words; the catalog value places `%@`.
+    static func brewTimerAnnounceStopped(time: String) -> String { String(localized: "brew.timer.announce.stopped_with_time \(time)") }
+    static var brewTimerAnnounceReset: String { String(localized: "brew.timer.announce.reset") }
     // Brew list and rating (M2-T20).
     static var brewListTitle: LocalizedStringKey { "brew_list.title" }
     static var brewListEmpty: LocalizedStringKey { "brew_list.empty" }

@@ -268,7 +268,11 @@ final class SyncEngine {
             do {
                 outcome = try await process(current)
             } catch {
-                // The store failed (fetch or save): try again later.
+                // The store failed (fetch or save): try again later. What the operation changed
+                // and did not save is undone first, saved models included
+                // (`AccountStore.discardUnsavedChanges()`), so the retry's save below stores none
+                // of it.
+                store.discardUnsavedChanges()
                 outcome = .retry
             }
             switch outcome {
@@ -648,11 +652,13 @@ final class SyncEngine {
                   let operation = try store.outboxOperation(sequence: sequence) else {
                 return try drop(sequence)
             }
-            current.holdOpenFoodFactsProduct(product)
-            operation.actionRaw = OutboxAction.awaitConfirmation.rawValue
-            operation.attemptCount = 0
-            operation.nextAttemptAt = Date.distantPast
-            try store.save()
+            try store.write {
+                current.holdOpenFoodFactsProduct(product)
+                operation.actionRaw = OutboxAction.awaitConfirmation.rawValue
+                operation.attemptCount = 0
+                operation.nextAttemptAt = Date.distantPast
+                try store.save()
+            }
             return .deferred
         case .cancelled:
             return .cancelled
@@ -673,23 +679,29 @@ final class SyncEngine {
         guard let operation = try store.outboxOperation(sequence: sequence) else {
             return .next
         }
-        operation.actionRaw = OutboxAction.create.rawValue
-        operation.attemptCount = 0
-        operation.nextAttemptAt = Date.distantPast
-        try store.save()
+        try store.write {
+            operation.actionRaw = OutboxAction.create.rawValue
+            operation.attemptCount = 0
+            operation.nextAttemptAt = Date.distantPast
+            try store.save()
+        }
         return try await createBean(sequence, localID)
     }
 
-    /// The operation waits for the user's description (`awaitDescription`).
+    /// The operation waits for the user's description (`awaitDescription`). When the save
+    /// fails the operation stays the look-up it was (`AccountStore.write`), so no question is
+    /// shown that the store does not hold, and the look-up is tried again.
     private func askForDescription(_ sequence: Int) throws -> Outcome {
-        guard let operation = try store.outboxOperation(sequence: sequence) else {
-            return .next
+        try store.write { () throws -> Outcome in
+            guard let operation = try store.outboxOperation(sequence: sequence) else {
+                return .next
+            }
+            operation.actionRaw = OutboxAction.awaitDescription.rawValue
+            operation.attemptCount = 0
+            operation.nextAttemptAt = Date.distantPast
+            try store.save()
+            return .deferred
         }
-        operation.actionRaw = OutboxAction.awaitDescription.rawValue
-        operation.attemptCount = 0
-        operation.nextAttemptAt = Date.distantPast
-        try store.save()
-        return .deferred
     }
 
     /// A failed catalogue or Open Food Facts lookup. Nothing was written on the server, so

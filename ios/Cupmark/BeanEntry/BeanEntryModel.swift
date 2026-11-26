@@ -139,7 +139,13 @@ final class BeanEntryModel {
         }
         let body = self.request
         state = .saving
-        if let describing, let offlineStore {
+        if let describing {
+            // A description of a pending bean is only ever written to the local store: the
+            // outbox creates the bean. Without a store it is not sent either.
+            guard let offlineStore else {
+                state = .failed(.retryable)
+                return
+            }
             await saveDescription(of: describing, in: offlineStore)
             return
         }

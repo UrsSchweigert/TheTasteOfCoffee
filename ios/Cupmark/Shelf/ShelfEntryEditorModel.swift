@@ -229,31 +229,33 @@ final class ShelfEntryEditorModel {
             return nil
         }
         do {
-            let localID: UUID
-            switch mode {
-            case .add(let apiBean):
-                localID = try add(apiBean)
-            case .addScanned(let barcode):
-                localID = try add(try store.pendingBean(barcode: barcode))
-            case .addStored(let beanID):
-                guard let stored = try store.bean(localID: beanID) else {
-                    failure = .notFound
-                    return nil
+            // One write: when it throws, every model it changed gets its saved values back and
+            // its inserts are dropped (`AccountStore.write`), so nothing half-made stays in the
+            // shared context for the engine to save.
+            let written = try store.write { () throws -> UUID? in
+                switch mode {
+                case .add(let apiBean):
+                    return try add(apiBean)
+                case .addScanned(let barcode):
+                    return try add(try store.pendingBean(barcode: barcode))
+                case .addStored(let beanID):
+                    guard let stored = try store.bean(localID: beanID) else {
+                        failure = .notFound
+                        return nil
+                    }
+                    return try add(stored)
+                case .edit(let entryID):
+                    return try update(entryID)
                 }
-                localID = try add(stored)
-            case .edit(let entryID):
-                guard let saved = try update(entryID) else {
-                    return nil
-                }
-                localID = saved
+            }
+            guard let localID = written else {
+                return nil
             }
             failure = nil
             savedDraft = draft
             savedBeanLocalID = beanLocalID
             return localID
         } catch {
-            // Nothing half-made stays in the shared context for the engine to save.
-            store.context.rollback()
             failure = .saveFailed
             return nil
         }
@@ -288,7 +290,7 @@ final class ShelfEntryEditorModel {
             failure = .hasBrews
             return false
         } catch {
-            store.context.rollback()
+            // `markDeleted` already put back what it changed (`AccountStore.write`).
             failure = .saveFailed
             return false
         }
@@ -322,7 +324,10 @@ final class ShelfEntryEditorModel {
         return entry.localID
     }
 
-    /// Nil, with `failure` set, when the entry is gone or the bean change is refused.
+    /// Nil, with `failure` set, when the entry is gone or the bean change is refused. A pending
+    /// scan (M2-T25) that the entry was the last live entry of is dropped with the move, as
+    /// `AccountStore.markDeleted` drops it with the removal, so a bean waiting for an answer
+    /// cannot stay in the outbox with nothing on the shelf. Runs inside `save()`'s write.
     private func update(_ entryID: UUID) throws -> UUID? {
         guard let entry = try store.shelfEntry(localID: entryID), entry.syncState != .pendingDelete else {
             failure = .notFound
@@ -338,7 +343,14 @@ final class ShelfEntryEditorModel {
                 failure = .notFound
                 return nil
             }
+            var orphanedScan: StoredBean?
+            if let previous = entry.bean, try store.isOrphanedScan(previous, without: entry) {
+                orphanedScan = previous
+            }
             entry.bean = chosen
+            if let orphanedScan {
+                try store.dropPendingBean(orphanedScan)
+            }
         }
         draft.apply(to: entry)
         try store.markUpdated(entry)

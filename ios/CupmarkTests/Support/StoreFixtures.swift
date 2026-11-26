@@ -4,11 +4,15 @@ import XCTest
 
 /// Values for the store tests. Vocabulary values come from the generated enums (first or
 /// last entry of a list), never from a list typed here, so the tests follow the vocabulary.
+///
+/// Every id is a valid contract id (`Id`: a ULID, Crockford base32 without I, L, O and U), so
+/// the engine sends an operation that names one instead of parking it as not sendable.
+/// `FailedWriteTests.testEveryFixtureIDIsAValidContractID` checks them.
 enum StoreFixtures {
     static let beanID = "01JD000000000000000000BEAN"
-    static let shelfEntryID = "01JD0000000000000000SHELF1"
+    static let shelfEntryID = "01JD00000000000000000SHEF1"
     static let brewID = "01JD00000000000000000BREW1"
-    static let recipeID = "01JD000000000000000RECIPE1"
+    static let recipeID = "01JD000000000000000000RCP1"
 
     static func first<Item: VocabularyItem>(_ type: Item.Type) throws -> Item {
         try XCTUnwrap(Item.allCases.first, "\(Item.namespace.rawValue) is empty")
@@ -101,7 +105,7 @@ enum StoreFixtures {
             verified: true,
             barcode: "4006381333931",
             openFoodFactsMatch: true,
-            openFoodFacts: API.OpenFoodFactsProduct(name: "Bohne", brand: "Röster", imageId: "01JD00000000000000000IMAGE"),
+            openFoodFacts: API.OpenFoodFactsProduct(name: "Bohne", brand: "Röster", imageId: "01JD000000000000000000MAGE"),
             pickedAttributes: API.BeanAttributes(
                 process: try first(Vocabulary.Process.self),
                 roastLevel: try first(Vocabulary.RoastLevel.self)

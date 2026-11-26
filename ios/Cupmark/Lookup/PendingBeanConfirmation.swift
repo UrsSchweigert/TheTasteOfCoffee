@@ -82,7 +82,9 @@ final class PendingBeansModel {
             picks = API.BeanAttributes()
             reload()
         } catch {
-            // `AccountStore.save()` rolled the change back.
+            // The write changed nothing: `AccountStore.write` put the bean and its question back
+            // to their saved values and dropped what it inserted, so the same answer can be
+            // given again.
             failed = true
         }
     }

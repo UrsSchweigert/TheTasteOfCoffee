@@ -33,6 +33,8 @@ final class BrewFormModel {
     private(set) var savedBrewID: UUID?
 
     let store: AccountStore
+    /// The brew timer (M2-T21); stopping it fills `draft.brewTimeS`.
+    let timer: BrewTimerModel
     private let now: () -> Date
     private let calendar: Calendar
     /// The latest brews on the device, newest first.
@@ -46,6 +48,7 @@ final class BrewFormModel {
         store: AccountStore,
         now: @escaping () -> Date = { Date() },
         calendar: Calendar = .current,
+        timer: BrewTimerModel? = nil,
         addBrew: @escaping (AccountStore, StoredBrew, StoredShelfEntry) throws -> Void = { store, brew, entry in
             try store.addBrew(brew, shelfEntry: entry)
         }
@@ -54,6 +57,7 @@ final class BrewFormModel {
         self.store = store
         self.now = now
         self.calendar = calendar
+        self.timer = timer ?? BrewTimerModel()
         self.addBrew = addBrew
         let brews = (try? store.brewsNewestFirst()) ?? []
         recentBrews = brews.prefix(BrewFormModel.recentBrewLimit).map { brew in BrewDraft(brew) }
@@ -129,13 +133,43 @@ final class BrewFormModel {
         BrewDerivedValues.daysSinceRoast(roastDate: roastDate, brewedAt: now(), calendar: calendar)
     }
 
+    // MARK: - Brew timer (M2-T21)
+
+    /// Starts the brew timer. The brew time already set stays until the timer is stopped.
+    func startTimer() {
+        timer.start()
+    }
+
+    /// Stops the brew timer and sets `brew_time_s` to the time it ran, clamped to its
+    /// vocabulary range.
+    func stopTimer(locale: Locale = .current) {
+        guard let seconds = timer.stop(locale: locale) else {
+            return
+        }
+        draft.setBrewTime(seconds: seconds)
+    }
+
+    /// Resets the brew timer and clears `brew_time_s`, so the readout and the saved value
+    /// never disagree.
+    func resetTimer() {
+        timer.reset()
+        draft.setBrewTime(nil)
+    }
+
     // MARK: - Writes
 
     /// Saves the brew on the entry, with `brewed_at` now, and queues its create. Returns the
     /// brew's local id, nil when nothing was written (`failure` says why).
     @discardableResult
     func save() -> UUID? {
-        guard canSave, let parameters = draft.parameters else {
+        guard canSave else {
+            return nil
+        }
+        if timer.isRunning {
+            // A running timer is stopped by the save, so its time is not lost.
+            stopTimer()
+        }
+        guard let parameters = draft.parameters else {
             return nil
         }
         do {
@@ -152,13 +186,15 @@ final class BrewFormModel {
                 methodID: parameters.method.rawValue
             )
             brew.setParameters(parameters)
-            try addBrew(store, brew, entry)
+            // A failed write puts the entry's saved fields back (`AccountStore.write`), so
+            // nothing half-made stays in the shared context for the engine to save.
+            try store.write {
+                try addBrew(store, brew, entry)
+            }
             failure = nil
             savedBrewID = brew.localID
             return brew.localID
         } catch {
-            // Nothing half-made stays in the shared context for the engine to save.
-            store.context.rollback()
             failure = .saveFailed
             return nil
         }

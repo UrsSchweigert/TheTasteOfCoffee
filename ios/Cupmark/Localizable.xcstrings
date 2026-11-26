@@ -1027,6 +1027,222 @@
         }
       }
     },
+    "brew.timer" : {
+      "comment" : "Accessibility label of the brew timer's readout, read before the time.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brühzeit"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brew time"
+          }
+        }
+      }
+    },
+    "brew.timer.announce.reset" : {
+      "comment" : "VoiceOver announcement when the brew timer is reset and the brew time cleared.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Timer zurückgesetzt, Brühzeit gelöscht"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Timer reset, brew time cleared"
+          }
+        }
+      }
+    },
+    "brew.timer.announce.started" : {
+      "comment" : "VoiceOver announcement when the brew timer starts.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Timer gestartet"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Timer started"
+          }
+        }
+      }
+    },
+    "brew.timer.announce.stopped_with_time %@" : {
+      "comment" : "VoiceOver announcement when the brew timer stops; %@ is the brew time in words, for example \"2 minutes, 30 seconds\".",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Timer gestoppt, %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Timer stopped, %@"
+          }
+        }
+      }
+    },
+    "brew.timer.footer" : {
+      "comment" : "Footer of the brew timer: it keeps counting in the background, and Stop fills in the brew time.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Timer läuft weiter, auch wenn die App im Hintergrund oder das iPhone gesperrt ist. Stoppen trägt die Brühzeit ein."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The timer keeps counting while the app is in the background or the phone is locked. Stop fills in the brew time."
+          }
+        }
+      }
+    },
+    "brew.timer.header" : {
+      "comment" : "Header of the brew timer section of the brew form.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brühzeit"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brew Time"
+          }
+        }
+      }
+    },
+    "brew.timer.reset" : {
+      "comment" : "Resets the brew timer and clears the brew time.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zurücksetzen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reset"
+          }
+        }
+      }
+    },
+    "brew.timer.reset.hint" : {
+      "comment" : "Accessibility hint of the brew timer's reset button.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Setzt den Timer auf null und löscht die Brühzeit."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sets the timer to zero and clears the brew time."
+          }
+        }
+      }
+    },
+    "brew.timer.start" : {
+      "comment" : "Starts the brew timer.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starten"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start"
+          }
+        }
+      }
+    },
+    "brew.timer.start.hint" : {
+      "comment" : "Accessibility hint of the brew timer's start button.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Startet die Zeitmessung der Zubereitung."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starts timing the brew."
+          }
+        }
+      }
+    },
+    "brew.timer.stop" : {
+      "comment" : "Stops the brew timer.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stoppen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop"
+          }
+        }
+      }
+    },
+    "brew.timer.stop.hint" : {
+      "comment" : "Accessibility hint of the brew timer's stop button.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stoppt den Timer und trägt die Brühzeit ein."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stops the timer and fills in the brew time."
+          }
+        }
+      }
+    },
     "brew.title" : {
       "comment" : "Title of the form that logs a brew.",
       "extractionState" : "manual",

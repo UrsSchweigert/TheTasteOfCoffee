@@ -120,6 +120,13 @@ extension AccountStore {
     /// operations (a refused update or delete) stay parked with their flag: they are its own
     /// issues. The flags of the redone items are cleared. For a flag only, clearing it is all.
     func redo(_ issue: SyncIssueItem) throws {
+        // On failure every operation and flag goes back to its saved value (`write`).
+        try write {
+            try redoParked(issue)
+        }
+    }
+
+    private func redoParked(_ issue: SyncIssueItem) throws {
         // The item itself, then the items it references.
         var targets: [(resource: OutboxResource, localID: UUID)] = [(issue.resource, issue.localID)]
         if issue.isParked {
@@ -171,6 +178,14 @@ extension AccountStore {
     /// - A flag only, or a row read before its operation was redone elsewhere (nothing of the
     ///   item is parked any more): the flag is cleared and nothing is removed.
     func discard(_ issue: SyncIssueItem) throws {
+        // On failure every operation, flag and sync state goes back to its saved value, and
+        // removed items come back (`write`).
+        try write {
+            try discardParked(issue)
+        }
+    }
+
+    private func discardParked(_ issue: SyncIssueItem) throws {
         // Read again: the row may be stale (redone meanwhile), and then nothing is dropped.
         let parked = try outboxOperations(for: issue.localID).filter { operation in operation.parked }
         guard issue.isParked, let first = parked.first else {

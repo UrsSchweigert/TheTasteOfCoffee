@@ -71,8 +71,10 @@ struct BrewDraft: Equatable, Sendable {
     private(set) var waterG: API.WaterG?
     /// `water_temp_c` or `water_temp_special`, optional, never both.
     private(set) var waterTemperature: API.WaterTemperature?
-    /// `brew_time_s`, optional. The brew timer (M2-T21) sets it; the form has no control for it.
-    var brewTimeS: API.BrewTimeS?
+    /// `brew_time_s`, optional. Copied from a stored brew by `init(_:)`, otherwise set only
+    /// through `setBrewTime(seconds:)` or the brew timer's `setBrewTime(_:)` (M2-T21), which
+    /// clamp it to `Vocabulary.Ranges.brewTimeS`.
+    private(set) var brewTimeS: API.BrewTimeS?
     /// `grind_normalised`, optional.
     private(set) var grindNormalised: API.GrindNormalised?
     /// `water_type`, optional.
@@ -102,6 +104,15 @@ struct BrewDraft: Equatable, Sendable {
         grindNormalised = brew.grindNormalised
         waterType = brew.waterType
         milk = brew.milk
+    }
+
+    /// Sets `brew_time_s` to `seconds`, moved into its vocabulary range and onto its step
+    /// (`BrewDraft.brewTimeRange`), or clears it for nil. A value already in the range is
+    /// kept as it is.
+    mutating func setBrewTime(seconds: API.BrewTimeS?) {
+        brewTimeS = seconds
+            .flatMap { value in BrewDraft.brewTimeRange.snapped(Double(value)) }
+            .flatMap { value in API.scaledInteger(value, scale: 1) }
     }
 
     /// Whether the draft can be saved: it has a method.

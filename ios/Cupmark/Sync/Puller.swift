@@ -96,12 +96,12 @@ final class Puller {
             return .cancelled
         }
         do {
-            return .completed(try merge(fetched))
+            // A failed merge is undone, the server values it set on synced items too
+            // (`AccountStore.write`). That discards only the merge's own unsaved changes:
+            // screens never leave a model changed and unsaved, they write drafts through
+            // `AccountStore`, which saves at once (ADR 0025). So nothing of the user's is lost.
+            return .completed(try store.write { try merge(fetched) })
         } catch {
-            // Discards only the merge's own unsaved changes: screens never leave a model
-            // changed and unsaved, they write drafts through `AccountStore`, which saves at once
-            // (ADR 0025). So nothing of the user's is lost here.
-            store.context.rollback()
             return .storeFailed
         }
     }

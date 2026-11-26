@@ -678,7 +678,8 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T21 Brew timer
-- status: todo
+- status: done (built and tested by the macOS `ios` job in #64)
+- note: from the review, the start instant lives only in memory, so a long timing (cold brew) is lost if iOS ends the app or the phone restarts. Persisting a wall-clock start is a possible follow-up after the M6 TestFlight round.
 - owner: ios-engineer
 - depends: M2-T19
 - implements: docs/04-specification.md, Input model (Timer), F2 (brew time)
@@ -933,7 +934,7 @@ Goal: TestFlight, then App Store. Not yet planned. Mostly human tasks.
 Scope: App Store listing, screenshots, privacy nutrition labels, privacy policy and terms, TestFlight round with the persona interviews, production deployment, launch checklist.
 
 ### M2-T35 Failed saves put edited fields back
-- status: todo
+- status: done (built and tested by the macOS `ios` job in #64; ADR 0025 addendum M2-T35)
 - owner: ios-engineer
 - depends: M2-T25
 - implements: docs/04-specification.md, Non-functional (Durability: no loss of a confirmed write, and no write sent that was not confirmed); ADR 0025
@@ -948,4 +949,19 @@ Scope: App Store listing, screenshots, privacy nutrition labels, privacy policy 
   - From PR #63: some `StoreFixtures` ids are not valid contract ids (`shelfEntryID` has an `L`, `recipeID` an `I`), so the engine parks any operation that names them. Make every fixture id a valid ULID.
   - Prefer one shared mechanism in `AccountStore` (for example, a write that snapshots the changed models' sync state and fields and restores them on failure) over a snapshot per screen.
   - Each site has a test like `RatingTests.testAFailedSaveLeavesNothingBehind`: a write that throws after changing a saved model leaves the model as it was and queues nothing.
+  - Mac: the `ios` job.
+
+### M2-T36 Harden the failed-write mechanism
+- status: todo
+- owner: ios-engineer
+- depends: M2-T35
+- implements: ADR 0025 (addendum M2-T35)
+- acceptance:
+  - These come from the M2-T35 review (PR #64), none of them blocking.
+  - A test where `ModelContext.save()` itself fails on a deletion with relationships, not just the `willSave` hook. If that cannot be forced, the limit is documented.
+  - `addShelfEntry` and `addBrew` run inside `write { }`, as `markUpdated` does.
+  - When `savedCopy` cannot read the store, `discardUnsavedChanges` falls back to a bare `rollback()` without saying so. It should raise a debug assertion and log a fixed message.
+  - A comment in `LabelPhotoQueue` says that a failed save after an upload repeats the S3 POST, and why that is safe.
+  - Describing without a store shows a state that does not offer a retry.
+  - The schema test also compares each property's key path, not only its name.
   - Mac: the `ios` job.

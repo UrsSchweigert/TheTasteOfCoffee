@@ -71,11 +71,23 @@ export function checkCatalog(catalog, languages = LANGUAGES) {
   return problems;
 }
 
-/** The string literals of `LocalizedStringKey` members in L10n.swift. */
+/**
+ * The keys of L10n.swift, in source order: the literal of each
+ * `LocalizedStringKey` member (`{ "a.b" }`), and of each `String` member that
+ * looks its key up with `String(localized:)` (`{ String(localized: "a.b") }`,
+ * for text that is not shown through SwiftUI, such as VoiceOver announcements),
+ * also as a function whose String parameters are interpolated, each `%@` in the
+ * key (`func f(time: String) -> String { String(localized: "a.b \(time)") }`
+ * is `a.b %@`).
+ */
 export function keysInL10n(source) {
   const keys = [];
-  const pattern = /:\s*LocalizedStringKey\s*\{\s*"([^"\\]+)"\s*\}/g;
-  for (const match of source.matchAll(pattern)) keys.push(match[1]);
+  // A `String` member's literal may interpolate String parameters
+  // (`String(localized: "a.b \(time)")`); each one is `%@` in the catalog key.
+  const pattern = /(?::|->)\s*(?:LocalizedStringKey\s*\{\s*"([^"\\]+)"|String\s*\{\s*String\(localized:\s*"((?:[^"\\]|\\\([A-Za-z_][A-Za-z0-9_]*\))+)"\s*\))\s*\}/g;
+  for (const match of source.matchAll(pattern)) {
+    keys.push(match[1] ?? match[2].replace(/\\\([A-Za-z_][A-Za-z0-9_]*\)/g, '%@'));
+  }
   return keys;
 }
 

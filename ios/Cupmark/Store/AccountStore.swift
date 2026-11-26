@@ -16,6 +16,9 @@ final class AccountStore {
     let context: ModelContext
     /// Called after every successful save. `SyncHost` uses it to wake the sync engine.
     var onSave: (@Sendable () -> Void)?
+    /// Called before every save, with the changes still unsaved; a throw fails the save as a
+    /// failed `ModelContext.save()` would. Nil in the app: tests use it to make a write fail.
+    var willSave: (() throws -> Void)?
 
     init(container: ModelContainer) {
         self.container = container
@@ -105,27 +108,33 @@ final class AccountStore {
     /// profile the server has is `pendingUpdate`. Either is sent as `PUT /profile`.
     @discardableResult
     func setProfile(_ values: API.Profile) throws -> StoredProfile {
-        if let existing = try profile() {
-            existing.apply(values)
-            existing.syncState = existing.syncState.afterLocalEdit
-            try enqueueEdit(of: existing)
+        try write { () throws -> StoredProfile in
+            if let existing = try profile() {
+                existing.apply(values)
+                existing.syncState = existing.syncState.afterLocalEdit
+                try enqueueEdit(of: existing)
+                try save()
+                return existing
+            }
+            let created = StoredProfile(values)
+            created.syncState = .pendingCreate
+            context.insert(created)
+            try enqueueEdit(of: created)
             try save()
-            return existing
+            return created
         }
-        let created = StoredProfile(values)
-        created.syncState = .pendingCreate
-        context.insert(created)
-        try enqueueEdit(of: created)
-        try save()
-        return created
     }
 
     /// Records a local edit of `item`, made by the caller before this call, and queues it
-    /// (`enqueueEdit(of:)`). A bean edit is not sent: the API has no bean update.
+    /// (`enqueueEdit(of:)`). A bean edit is not sent: the API has no bean update. On failure
+    /// the edit is undone too (`write`); a caller that throws between its edit and this call
+    /// wraps both in `write` itself.
     func markUpdated<Model: PersistentModel & SyncTracked>(_ item: Model) throws {
-        item.syncState = item.syncState.afterLocalEdit
-        try enqueueEdit(of: item)
-        try save()
+        try write {
+            item.syncState = item.syncState.afterLocalEdit
+            try enqueueEdit(of: item)
+            try save()
+        }
     }
 
     /// Removes `item` on the device. Only `LocalDeletable` models can be removed: the profile
@@ -139,6 +148,12 @@ final class AccountStore {
     ///   with any queued create, but never while any shelf entry still names it:
     ///   `beanHasShelfEntries`.
     func markDeleted<Model: PersistentModel & LocalDeletable>(_ item: Model) throws {
+        try write {
+            try removeLocally(item)
+        }
+    }
+
+    private func removeLocally<Model: PersistentModel & LocalDeletable>(_ item: Model) throws {
         if let entry = item as? StoredShelfEntry, !entry.liveBrewsNewestFirst.isEmpty {
             throw LocalStoreError.shelfEntryHasBrews
         }
@@ -156,8 +171,7 @@ final class AccountStore {
         }
         // A pending scan (M2-T25) lives for its shelf entries: removing the last one removes it.
         var orphanedScan: StoredBean?
-        if let entry = item as? StoredShelfEntry, let bean = entry.bean, try isPendingScan(bean),
-           !bean.shelfEntries.contains(where: { other in other.localID != entry.localID && other.syncState != .pendingDelete }) {
+        if let entry = item as? StoredShelfEntry, let bean = entry.bean, try isOrphanedScan(bean, without: entry) {
             orphanedScan = bean
         }
         var decision = item.syncState.localDelete
@@ -193,14 +207,17 @@ final class AccountStore {
         }
     }
 
-    /// Saves the context; on failure, the unsaved changes are rolled back and the error thrown.
-    /// After a save `onSave` is called, so the sync engine can look at the outbox, and
-    /// `didSaveNotification` is posted with this store as its object, so screens read again.
+    /// Saves the context; on failure, every unsaved change is undone (`discardUnsavedChanges()`:
+    /// changed models take their saved values again, inserts and deletes are rolled back) and
+    /// the error thrown. After a save `onSave` is called, so the sync engine can look at the
+    /// outbox, and `didSaveNotification` is posted with this store as its object, so screens
+    /// read again.
     func save() throws {
         do {
+            try willSave?()
             try context.save()
         } catch {
-            context.rollback()
+            discardUnsavedChanges()
             throw error
         }
         onSave?()
