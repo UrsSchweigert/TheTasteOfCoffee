@@ -156,7 +156,8 @@ final class RatingFormModel {
     }
 
     /// Whether "Start from the last rating" is offered: the brew has no rating of its own
-    /// yet and an earlier brew of the bag has one.
+    /// yet and one of the three sources has one (the bag, the same coffee on any bag, or the
+    /// repeated brew; ADR 0026, addendum M2-T27).
     var offersLastRating: Bool {
         lastRating != nil && failure != .notFound && !isReadOnly
     }

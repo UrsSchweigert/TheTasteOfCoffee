@@ -306,13 +306,16 @@ final class RecipeTests: XCTestCase {
             shelfEntry: entry.localID,
             store: store,
             now: { now },
-            calendar: try StoreFixtures.calendar("Europe/Berlin"),
-            addBrew: { _, _, _, _ in throw WriteFailed() }
+            calendar: try StoreFixtures.calendar("Europe/Berlin")
         )
         model.draft.method = try StoreFixtures.first(Vocabulary.Method.self)
         model.keepsAsRecipe = true
+        // The real write stages the brew and then the recipe; only its one save fails, so the
+        // rollback has to drop both, and both of their queued creates.
+        store.willSave = { throw WriteFailed() }
 
         XCTAssertNil(model.save())
+        store.willSave = nil
 
         XCTAssertEqual(model.failure, .saveFailed)
         XCTAssertNil(model.savedRecipeID)
