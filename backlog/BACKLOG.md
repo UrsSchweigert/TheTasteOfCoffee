@@ -908,6 +908,29 @@ Planning notes (planned 2026-11-25):
   - A VoiceOver and largest-text walk-through of the main flow passes.
   - When their parts pass, M2-T11, M2-T13, M2-T23 and M2-T24 move from `needs-mac-verification` to `done`.
 
+### M2-T38 Companion page: overview, tester call, terms and privacy (draft in the repo)
+- status: done (the draft is in `site/`; publishing is M2-T39)
+- owner: lead
+- depends: M2-T29
+- implements: docs/07-open-questions.md D1, D2, D10, D11, D12; issue #37
+- acceptance:
+  - `site/index.html` (English) and `site/de/index.html` (German) with the sections overview, become a tester, privacy policy and terms of use, and `site/style.css`.
+  - Static only: no script, no form, no font or file loaded from another host, no analytics (invariant 7). A test (`scripts/site.test.mjs`) keeps it so, and keeps the two languages in step.
+  - The privacy text follows the decisions: opt-in contribution (D1), subtraction on deletion (D2), photo deletion (D10), backups of 35 days and about 13 months with the deletion log (D11), metadata stripped (D12), EU region, no name and no email, no tracking, two weeks of server logs. It is marked as a draft.
+  - Open items are marked `TODO` in the page and listed in M2-T39: operator name and address, contact email, publication date, TestFlight link, governing law and Impressum.
+
+### M2-T39 Publish the companion page at derschweigert/cupmark
+- status: blocked (needs the owner)
+- owner: human
+- needs: human. The page lives on the owner's existing DerSchweigert site, which this repo must not touch (CLAUDE.md invariant 9: no change to any resource this repo did not create, no new Route 53 zone). So the owner copies `site/` into the DerSchweigert site themselves, from their own checkout, and deploys it there.
+- depends: M2-T38
+- acceptance:
+  - The owner fills in every `TODO` of the page (operator name and address, contact email, publication date, TestFlight link, what the host of the page logs, governing law, Impressum) and has a lawyer review the privacy text and the terms, in particular the liability clause (issue #37, issue #38 for the Open Food Facts licence).
+  - The page is reachable at derschweigert/cupmark with its German version. The relative links `de/` and `../` still work at that path.
+  - The URL (with `#privacy`) is entered as the privacy policy URL in App Store Connect before App Review. TestFlight external testing also asks for it.
+  - If the owner would rather have a Cupmark-owned site (S3 and CloudFront named `cupmark-`), that is a cost and DNS decision: ask first, record an ADR.
+  - When M4 adds the paid tier, its terms are added to the page first.
+
 ## M3 Aggregation
 
 Goal: aggregates per bean and per method stay correct under create, edit, delete and replay. Not yet planned.
