@@ -1019,6 +1019,21 @@ Planning notes (planned 2026-11-25):
   - Tests: unit tests of the viewer model (details, the three links present and absent, the recipe match by parameters and no match, delete); UI tests with the harness for each link (brew, bag, recipe) landing on the right screen, and for delete with its confirmation.
   - Mac: the `ios` job. Marked `needs-mac-verification` until it passes.
 
+### M2-T44 My averages for one coffee: the dimensions over all my brews of it
+- status: todo
+- owner: ios-engineer
+- depends: M2-T28, M2-T40
+- implements: owner request of 2026-11-26 ("if I click on a coffee, I want to see the averages of all my brews, the dimensions, for that coffee, and later also the community ones"); docs/04-specification.md, F2 and F3; ADR 0027 (personal statistics, computed on the device)
+- note: ADR 0027 gives the taste profile overall and per method, but not per bean. This task adds the per-bean view. "A coffee" is the bean (the product), so the average covers every bag of it the user has on the shelf, not one bag; the screen says how many rated brews and bags it rests on. No cloud cost: computed on the device from the local store, offline, like the other statistics. The community numbers come with M4 and are not part of this task, but the screen is laid out so they can sit next to the user's own.
+- acceptance:
+  - Tapping a coffee on the shelf opens its screen (the bean's details and its bags, as today); it gains a "My brews of this coffee" section: the mean of each rating criterion (the dimensions from the vocabulary, in their vocabulary order) over the user's rated, not removed brews of that bean, plus the mean overall score and the number of rated brews and of bags. One decimal, device locale. An optional breakdown by method, shown once a method has at least 2 rated brews (the same threshold as ADR 0027).
+  - The rule set is added to ADR 0027 as an addendum (lead, ADR 0014) and to docs/04 and ios/README.md: which brews count (rated, not removed, all bags of the bean), the threshold, the rounding, the empty state ("Rate a brew to see your averages here", no zeros), and what a single rated brew shows (the values, labelled as one brew, no "average").
+  - The averages come from one function in the statistics code (`StatisticsRules`), with tests on fixtures: several bags of one bean; a removed brew; an unrated brew excluded; a brew rated with an older vocabulary version (read-only, still counted); one rated brew; none; the order of the dimensions; the method breakdown threshold.
+  - The view shows the dimensions as rows with the value and a simple bar (no chart library; SwiftUI shapes in the theme's accent colour). VoiceOver reads "Aroma, 7.5 of 10" through the existing value formatting; 44-point targets and Dynamic Type hold; strings through the catalogue (en and de).
+  - The layout leaves room for a second value per dimension (the community mean and its number of raters, M4): the row's model has an optional community value and the view hides it while it is nil. No server call and no contract change here.
+  - Tests: unit tests of the rules and the row model; a UI test with the harness (M2-T33) that opens a coffee with brews and sees the dimension rows and the count.
+  - Mac: the `ios` job. Marked `needs-mac-verification` until it passes.
+
 ## M3 Aggregation
 
 Goal: aggregates per bean and per method stay correct under create, edit, delete and replay. Not yet planned.
@@ -1029,7 +1044,7 @@ Scope: stream aggregator, rater markers, recipe histogram buckets, nightly ranki
 
 Goal: subscribers see Explore; free users see the give-to-get teaser. Not yet planned.
 
-Scope: StoreKit 2 purchase and restore, transaction verification, App Store Server Notifications route, entitlement on the profile, paid API routes, Explore screens (bean page, method breakdown, top recipes, rankings), paywall, paywall; the privacy manifest gains a purchase-history entry when StoreKit 2 lands (from the review of #84).
+Scope: StoreKit 2 purchase and restore, transaction verification, App Store Server Notifications route, entitlement on the profile, paid API routes, Explore screens (bean page, method breakdown, top recipes, rankings), paywall; the community mean and number of raters per dimension appear next to the user's own averages on the coffee screen of M2-T44 (free users see the community overall only for beans they rated, the rest is paid); the privacy manifest gains a purchase-history entry when StoreKit 2 lands (from the review of #84).
 
 ## M5 Hardening
 
