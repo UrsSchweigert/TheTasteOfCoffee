@@ -1155,6 +1155,13 @@ test('the brew form has no typed text, takes its ranges from the vocabulary and 
   const literals = [...screen.matchAll(/(?<![\w.])\d+(?:\.\d+)?(?![\w.])/g)].map((match) => Number(match[0]));
   assert.deepEqual(literals.filter((value) => rangeNumbers.has(value)), [], 'no range bound or step in the view');
 
+  // Method rules and the grinder (M2-T26): the generated rules and scales, an A to Z list, no search.
+  assert.match(draft, /method\.allows\(field\)/, 'the draft reads the generated method rules');
+  assert.match(draft, /grinder\?\.scale/, 'the grind setting range is the grinder\'s generated scale');
+  assert.match(screen, /IndexedPickListRow\(\s*title: L10n\.brewGrinder/, 'the grinder is an A to Z pick list');
+  assert.match(screen, /model\.shows\(\.grinder\)/, 'the grinder is shown only where the method allows it');
+  assert.doesNotMatch(screen, /\.preGround\b|"pre_ground"|\.coldBrew\b|\.fullyAutomatic\b/, 'no method or grinder is named in the view');
+
   // The brew starts from a shelf entry, in the sheet that then offers its rating (M2-T20).
   const shelf = lexSwift(readFileSync(join(repoRoot, 'ios/Cupmark/Shelf/ShelfScreen.swift'), 'utf8')).masked;
   assert.match(shelf, /BrewSheet\(store: store, route: route/);

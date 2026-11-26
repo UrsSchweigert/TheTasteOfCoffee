@@ -19,7 +19,10 @@ struct BrewListRow: Identifiable, Equatable, Sendable {
         method = brew.method
         isRated = brew.rating != nil
         issue = brew.syncIssue
-        isRecipe = (try? brew.apiParameters()).map { parameters in recipes.contains(parameters) } ?? false
+        // A recipe kept from the brew leaves out what the method does not allow (M2-T26).
+        isRecipe = (try? brew.apiParameters()).map { parameters in
+            recipes.contains(parameters) || recipes.contains(parameters.conformingToMethodRules())
+        } ?? false
     }
 }
 

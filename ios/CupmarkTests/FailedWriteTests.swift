@@ -133,7 +133,7 @@ final class FailedWriteTests: XCTestCase {
         ]
         let entities = AccountStore.schema.entities
         XCTAssertEqual(Set(entities.map(\.name)), Set(expected.keys))
-        XCTAssertTrue(CupmarkSchemaV2.models.allSatisfy { model in model is any SavedValuesRestorable.Type })
+        XCTAssertTrue(CupmarkSchemaV3.models.allSatisfy { model in model is any SavedValuesRestorable.Type })
         for entity in entities {
             guard let names = expected[entity.name] else {
                 XCTFail("no restore for \(entity.name)")

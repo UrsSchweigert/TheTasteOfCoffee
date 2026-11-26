@@ -45,6 +45,8 @@ enum L10n {
     static var lookupConfirmMessage: LocalizedStringKey { "lookup.confirm.message" }
     static var lookupPicksHeader: LocalizedStringKey { "lookup.picks.header" }
     static var lookupPickNotSet: LocalizedStringKey { "lookup.pick.not_set" }
+    /// Header of the entries a long pick list offers first (the grinders of recent brews).
+    static var pickListRecent: LocalizedStringKey { "pick_list.recent" }
     static var lookupRetry: LocalizedStringKey { "lookup.retry" }
     static var lookupRejectedTitle: LocalizedStringKey { "lookup.rejected.title" }
     static var lookupRejectedMessage: LocalizedStringKey { "lookup.rejected.message" }
@@ -193,6 +195,9 @@ enum L10n {
     static var brewMoreHeader: LocalizedStringKey { "brew.more_header" }
     static var brewGrind: LocalizedStringKey { "brew.grind" }
     static var brewGrindClear: LocalizedStringKey { "brew.grind.clear" }
+    static var brewGrinder: LocalizedStringKey { "brew.grinder" }
+    static var brewGrindSetting: LocalizedStringKey { "brew.grind_setting" }
+    static var brewGrindSettingClear: LocalizedStringKey { "brew.grind_setting.clear" }
     static var brewMilk: LocalizedStringKey { "brew.milk" }
     static var brewOfflineNote: LocalizedStringKey { "brew.offline_note" }
     static var brewNotFound: LocalizedStringKey { "brew.not_found" }

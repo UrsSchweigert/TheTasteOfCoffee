@@ -15,6 +15,8 @@ import SwiftData
 //
 // - `syncIssueRaw` holds a `SyncIssue` raw value, nil while nothing went wrong (M2-T16).
 //
+// Version 3 (M2-T26) adds the grinder and its setting to brews and recipes.
+//
 // `OutboxOperation` (M2-T16, ADR 0025) joined version 1 before any release: no store with
 // the shorter model list exists outside development, so no migration stage is needed.
 // Later versions add a `CupmarkSchemaV<N>` and a stage in `CupmarkMigrationPlan`; version 2
@@ -388,23 +390,292 @@ enum CupmarkSchemaV2: VersionedSchema {
     }
 }
 
-/// Migrations between local schema versions. A new version adds its schema to `schemas` and
-/// a `MigrationStage` here.
-enum CupmarkMigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [CupmarkSchemaV1.self, CupmarkSchemaV2.self] }
+/// Version 3 of the local schema (M2-T26, vocabulary v3): `StoredBrew` and `StoredRecipe` gain
+/// `grinderID` and `grindSetting`, both optional, so a store of version 2 migrates with one
+/// lightweight stage (existing brews and recipes read as "no grinder").
+///
+/// `StoredBean` and `StoredShelfEntry` change nothing, but their relationships name
+/// `StoredBrew`, so they are listed again here with it; the other models are version 1's and
+/// version 2's, unchanged.
+enum CupmarkSchemaV3: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(3, 0, 0) }
 
-    /// Version 1 to 2 adds an entity and changes none: lightweight.
-    static var stages: [MigrationStage] {
-        [MigrationStage.lightweight(fromVersion: CupmarkSchemaV1.self, toVersion: CupmarkSchemaV2.self)]
+    static var models: [any PersistentModel.Type] {
+        [
+            StoredBean.self, StoredShelfEntry.self, StoredBrew.self, StoredRecipe.self,
+            CupmarkSchemaV1.StoredProfile.self, CupmarkSchemaV1.OutboxOperation.self, CupmarkSchemaV2.QueuedLabelPhoto.self,
+        ]
+    }
+
+    /// A catalogue bean the user has on a shelf entry or has scanned (API `Bean`), or a bean
+    /// picked from lists on the device and not yet created (API `BeanCreate`).
+    @Model
+    final class StoredBean {
+        /// The only unique attribute: the outbox (M2-T16) finds items by it.
+        @Attribute(.unique) var localID: UUID = UUID()
+        /// `bean_id`.
+        var serverID: String?
+        var vocabularyVersion: Int = Vocabulary.version
+        var syncStateRaw: String = SyncState.pendingCreate.rawValue
+        /// A `SyncIssue` raw value, nil while the item has none.
+        var syncIssueRaw: String?
+
+        /// 13-digit `barcode`, as the server stores it.
+        var barcode: String?
+        var verified: Bool = false
+        /// `open_food_facts_match`.
+        var openFoodFactsMatch: Bool = false
+        /// `open_food_facts_confirmed` of a bean created on the device.
+        var openFoodFactsConfirmed: Bool = false
+        /// Whether the server sent an `open_food_facts` object.
+        var hasOpenFoodFactsProduct: Bool = false
+        /// Untrusted text from the server's Open Food Facts copy (ADR 0005). Shown as plain
+        /// text only, never logged, never sent back.
+        var openFoodFactsName: String?
+        var openFoodFactsBrand: String?
+        var openFoodFactsImageID: String?
+
+        /// `picked_attributes`, as contract ids.
+        var pickedProcessID: String?
+        var pickedRoastLevelID: String?
+        var pickedOriginID: String?
+        var pickedSpeciesID: String?
+        var pickedVarietyID: String?
+
+        /// `operator_attributes`, as contract ids.
+        var operatorProcessID: String?
+        var operatorRoastLevelID: String?
+        var operatorOriginID: String?
+        var operatorSpeciesID: String?
+        var operatorVarietyID: String?
+
+        @Relationship(deleteRule: .nullify, inverse: \StoredShelfEntry.bean)
+        var shelfEntries: [StoredShelfEntry] = []
+
+        init(
+            localID: UUID = UUID(),
+            serverID: String? = nil,
+            vocabularyVersion: Int = Vocabulary.version,
+            barcode: String? = nil
+        ) {
+            self.localID = localID
+            self.serverID = serverID
+            self.vocabularyVersion = vocabularyVersion
+            self.syncStateRaw = SyncState.pendingCreate.rawValue
+            self.syncIssueRaw = nil
+            self.barcode = barcode
+            self.verified = false
+            self.openFoodFactsMatch = false
+            self.openFoodFactsConfirmed = false
+            self.hasOpenFoodFactsProduct = false
+            self.openFoodFactsName = nil
+            self.openFoodFactsBrand = nil
+            self.openFoodFactsImageID = nil
+            self.pickedProcessID = nil
+            self.pickedRoastLevelID = nil
+            self.pickedOriginID = nil
+            self.pickedSpeciesID = nil
+            self.pickedVarietyID = nil
+            self.operatorProcessID = nil
+            self.operatorRoastLevelID = nil
+            self.operatorOriginID = nil
+            self.operatorSpeciesID = nil
+            self.operatorVarietyID = nil
+            self.shelfEntries = []
+        }
+    }
+
+    /// A bag on the user's shelf (API `ShelfEntryInput` / `ShelfEntry`).
+    @Model
+    final class StoredShelfEntry {
+        @Attribute(.unique) var localID: UUID = UUID()
+        /// `shelf_entry_id`.
+        var serverID: String?
+        var vocabularyVersion: Int = Vocabulary.version
+        var syncStateRaw: String = SyncState.pendingCreate.rawValue
+        /// A `SyncIssue` raw value, nil while the item has none.
+        var syncIssueRaw: String?
+        /// When the item was made on this device; orders entries with the same purchase date.
+        var createdAt: Date = Date.now
+
+        /// The bean; its `serverID` is the entry's `bean_id`.
+        var bean: StoredBean?
+        /// `purchase_date`, `YYYY-MM-DD`. Sorts as a string.
+        var purchaseDateRaw: String = ""
+        /// `roast_date`, `YYYY-MM-DD`.
+        var roastDateRaw: String?
+        /// `bag_size`, a contract id.
+        var bagSizeID: String?
+        /// `price_band`, a contract id.
+        var priceBandID: String?
+
+        @Relationship(deleteRule: .nullify, inverse: \StoredBrew.shelfEntry)
+        var brews: [StoredBrew] = []
+
+        init(
+            localID: UUID = UUID(),
+            serverID: String? = nil,
+            vocabularyVersion: Int = Vocabulary.version,
+            purchaseDate: API.CalendarDate,
+            createdAt: Date = Date.now
+        ) {
+            self.localID = localID
+            self.serverID = serverID
+            self.vocabularyVersion = vocabularyVersion
+            self.syncStateRaw = SyncState.pendingCreate.rawValue
+            self.syncIssueRaw = nil
+            self.createdAt = createdAt
+            self.bean = nil
+            self.purchaseDateRaw = purchaseDate.description
+            self.roastDateRaw = nil
+            self.bagSizeID = nil
+            self.priceBandID = nil
+            self.brews = []
+        }
+    }
+
+    /// One brew with its optional rating (API `BrewInput` / `Brew`).
+    @Model
+    final class StoredBrew {
+        @Attribute(.unique) var localID: UUID = UUID()
+        /// `brew_id`.
+        var serverID: String?
+        var vocabularyVersion: Int = Vocabulary.version
+        var syncStateRaw: String = SyncState.pendingCreate.rawValue
+        /// A `SyncIssue` raw value, nil while the item has none.
+        var syncIssueRaw: String?
+
+        /// The shelf entry; its `serverID` is the brew's `shelf_entry_id`.
+        var shelfEntry: StoredShelfEntry?
+        /// `brewed_at` in whole milliseconds since 1970, exactly as `API.Timestamp` holds it.
+        var brewedAtMilliseconds: Int64 = 0
+
+        /// `parameters` (see `BrewParameterColumns`).
+        var methodID: String = ""
+        var doseDg: Int?
+        var waterG: Int?
+        var waterTempC: Int?
+        var waterTempSpecialID: String?
+        var brewTimeS: Int?
+        var grindNormalised: Double?
+        var waterTypeID: String?
+        var milkID: String?
+        /// `grinder`, a contract id (vocabulary v3 on, M2-T26).
+        var grinderID: String?
+        /// `grind_setting`, on the scale of the grinder.
+        var grindSetting: Double?
+
+        /// `rating`, a JSON-encoded `RatingValues` (criterion, dimension and note ids as
+        /// keys and values), nil for an unrated brew. Read it through `rating`.
+        var ratingData: Data?
+
+        init(
+            localID: UUID = UUID(),
+            serverID: String? = nil,
+            vocabularyVersion: Int = Vocabulary.version,
+            brewedAtMilliseconds: Int64,
+            methodID: String
+        ) {
+            self.localID = localID
+            self.serverID = serverID
+            self.vocabularyVersion = vocabularyVersion
+            self.syncStateRaw = SyncState.pendingCreate.rawValue
+            self.syncIssueRaw = nil
+            self.shelfEntry = nil
+            self.brewedAtMilliseconds = brewedAtMilliseconds
+            self.methodID = methodID
+            self.doseDg = nil
+            self.waterG = nil
+            self.waterTempC = nil
+            self.waterTempSpecialID = nil
+            self.brewTimeS = nil
+            self.grindNormalised = nil
+            self.waterTypeID = nil
+            self.milkID = nil
+            self.grinderID = nil
+            self.grindSetting = nil
+            self.ratingData = nil
+        }
+    }
+
+    /// A saved set of brew parameters (API `RecipeInput` / `Recipe`).
+    @Model
+    final class StoredRecipe {
+        @Attribute(.unique) var localID: UUID = UUID()
+        /// `recipe_id`.
+        var serverID: String?
+        var vocabularyVersion: Int = Vocabulary.version
+        var syncStateRaw: String = SyncState.pendingCreate.rawValue
+        /// A `SyncIssue` raw value, nil while the item has none.
+        var syncIssueRaw: String?
+        /// When the recipe was made on this device; recipes list newest first.
+        var createdAt: Date = Date.now
+
+        var methodID: String = ""
+        var doseDg: Int?
+        var waterG: Int?
+        var waterTempC: Int?
+        var waterTempSpecialID: String?
+        var brewTimeS: Int?
+        var grindNormalised: Double?
+        var waterTypeID: String?
+        var milkID: String?
+        /// `grinder`, a contract id (vocabulary v3 on, M2-T26).
+        var grinderID: String?
+        /// `grind_setting`, on the scale of the grinder.
+        var grindSetting: Double?
+
+        init(
+            localID: UUID = UUID(),
+            serverID: String? = nil,
+            vocabularyVersion: Int = Vocabulary.version,
+            methodID: String,
+            createdAt: Date = Date.now
+        ) {
+            self.localID = localID
+            self.serverID = serverID
+            self.vocabularyVersion = vocabularyVersion
+            self.syncStateRaw = SyncState.pendingCreate.rawValue
+            self.syncIssueRaw = nil
+            self.createdAt = createdAt
+            self.methodID = methodID
+            self.doseDg = nil
+            self.waterG = nil
+            self.waterTempC = nil
+            self.waterTempSpecialID = nil
+            self.brewTimeS = nil
+            self.grindNormalised = nil
+            self.waterTypeID = nil
+            self.milkID = nil
+            self.grinderID = nil
+            self.grindSetting = nil
+        }
     }
 }
 
-// The current models. A new schema version moves these aliases; version 2 kept every
-// model of version 1 as it was.
-typealias StoredBean = CupmarkSchemaV1.StoredBean
-typealias StoredShelfEntry = CupmarkSchemaV1.StoredShelfEntry
-typealias StoredBrew = CupmarkSchemaV1.StoredBrew
-typealias StoredRecipe = CupmarkSchemaV1.StoredRecipe
+/// Migrations between local schema versions. A new version adds its schema to `schemas` and
+/// a `MigrationStage` here.
+enum CupmarkMigrationPlan: SchemaMigrationPlan {
+    static var schemas: [any VersionedSchema.Type] { [CupmarkSchemaV1.self, CupmarkSchemaV2.self, CupmarkSchemaV3.self] }
+
+    /// Version 1 to 2 adds an entity and changes none: lightweight. Version 2 to 3 adds two
+    /// optional attributes to two entities: lightweight.
+    static var stages: [MigrationStage] {
+        [
+            MigrationStage.lightweight(fromVersion: CupmarkSchemaV1.self, toVersion: CupmarkSchemaV2.self),
+            MigrationStage.lightweight(fromVersion: CupmarkSchemaV2.self, toVersion: CupmarkSchemaV3.self),
+        ]
+    }
+}
+
+// The current models. A new schema version moves these aliases; version 3 (M2-T26) changed
+// `StoredBrew` and `StoredRecipe`, and listed `StoredBean` and `StoredShelfEntry` again for
+// their relationships. The profile and the outbox are still version 1's, the label photo
+// queue version 2's.
+typealias StoredBean = CupmarkSchemaV3.StoredBean
+typealias StoredShelfEntry = CupmarkSchemaV3.StoredShelfEntry
+typealias StoredBrew = CupmarkSchemaV3.StoredBrew
+typealias StoredRecipe = CupmarkSchemaV3.StoredRecipe
 typealias StoredProfile = CupmarkSchemaV1.StoredProfile
 typealias OutboxOperation = CupmarkSchemaV1.OutboxOperation
 typealias QueuedLabelPhoto = CupmarkSchemaV2.QueuedLabelPhoto

@@ -17,6 +17,10 @@ struct BrewRoute: Identifiable, Hashable {
 ///   steppers whose bounds and steps come from `Vocabulary.Ranges` through `BrewNumberField`.
 ///   Temperature is a temperature in °C or `cold`, never both. Water type and milk: pick lists.
 ///   Nothing is typed (invariant 1), and everything but the method is optional.
+/// - Only the fields the method allows are shown (M2-T26, the generated rules of vocabulary
+///   v3 through `BrewFormModel.shows(_:)`); picking another method clears the others. The
+///   grinder is a pick list with an A to Z index and the grinders of recent brews; the grind
+///   setting is a stepper on the grinder's own scale and is hidden for a grinder without one.
 /// - Brew time: the brew timer (M2-T21, `BrewTimerRow`); Stop fills `brew_time_s`.
 /// - The ratio and days since roast follow the values as they change.
 /// - Save writes through `BrewFormModel` to `AccountStore`, which queues the create in the
@@ -72,7 +76,9 @@ struct BrewFormScreen: View {
             beanSection
             methodSection
             amountsSection
-            timerSection
+            if model.shows(.brewTimeS) {
+                timerSection
+            }
             waterSection
             grindAndMilkSection
             recipeSection
@@ -164,8 +170,22 @@ struct BrewFormScreen: View {
 
     private var amountsSection: some View {
         Section {
-            stepperRow(.dose, title: L10n.brewDose, clearLabel: L10n.brewDoseClear, identifier: "brew-dose")
-            stepperRow(.water, title: L10n.brewWater, clearLabel: L10n.brewWaterClear, identifier: "brew-water")
+            if model.shows(.doseDg) {
+                stepperRow(.dose, title: L10n.brewDose, clearLabel: L10n.brewDoseClear, identifier: "brew-dose")
+            }
+            if model.shows(.waterG) {
+                stepperRow(.water, title: L10n.brewWater, clearLabel: L10n.brewWaterClear, identifier: "brew-water")
+            }
+            if model.shows(.doseDg) && model.shows(.waterG) {
+                ratioRow
+            }
+        } header: {
+            Text(L10n.brewAmountsHeader)
+        }
+    }
+
+    private var ratioRow: some View {
+        Group {
             LabeledContent {
                 if let ratio = model.ratioText(locale: locale) {
                     Text(verbatim: ratio)
@@ -181,8 +201,6 @@ struct BrewFormScreen: View {
             .accessibilityLabel(Text(L10n.brewRatioAccessibility))
             .accessibilityValue(ratioAccessibilityValue)
             .accessibilityIdentifier("brew-ratio")
-        } header: {
-            Text(L10n.brewAmountsHeader)
         }
     }
 
@@ -204,20 +222,26 @@ struct BrewFormScreen: View {
 
     private var waterSection: some View {
         Section {
-            Picker(selection: $model.temperatureChoice) {
-                ForEach(BrewDraft.TemperatureChoice.all, id: \.self) { choice in
-                    temperatureLabel(choice)
-                        .tag(choice)
+            // The choices are those of the method: a temperature in °C, `cold` (cold brew), both
+            // or neither (moka pot, cezve). With nothing to choose, the picker is not shown.
+            if model.offersTemperatureChoice {
+                Picker(selection: $model.temperatureChoice) {
+                    ForEach(model.temperatureChoices, id: \.self) { choice in
+                        temperatureLabel(choice)
+                            .tag(choice)
+                    }
+                } label: {
+                    Text(L10n.brewTemperature)
                 }
-            } label: {
-                Text(L10n.brewTemperature)
+                .accessibilityIdentifier("brew-temperature-choice")
             }
-            .accessibilityIdentifier("brew-temperature-choice")
-            if model.temperatureChoice == .celsius {
+            if model.shows(.waterTempC) && model.temperatureChoice == .celsius {
                 stepperRow(.temperature, title: L10n.brewTemperatureValue, clearLabel: L10n.brewTemperatureClear, identifier: "brew-temperature")
             }
-            OptionalVocabularyPicker(title: L10n.brewWaterType, selection: $model.draft.waterType, vocabulary: vocabulary, language: language)
-                .accessibilityIdentifier("brew-water-type")
+            if model.shows(.waterType) {
+                OptionalVocabularyPicker(title: L10n.brewWaterType, selection: $model.draft.waterType, vocabulary: vocabulary, language: language)
+                    .accessibilityIdentifier("brew-water-type")
+            }
         } header: {
             Text(L10n.brewWaterHeader)
         }
@@ -225,9 +249,19 @@ struct BrewFormScreen: View {
 
     private var grindAndMilkSection: some View {
         Section {
-            stepperRow(.grind, title: L10n.brewGrind, clearLabel: L10n.brewGrindClear, identifier: "brew-grind")
-            OptionalVocabularyPicker(title: L10n.brewMilk, selection: $model.draft.milk, vocabulary: vocabulary, language: language)
-                .accessibilityIdentifier("brew-milk")
+            if model.shows(.grinder) {
+                grinderRow
+            }
+            if let range = model.grindSettingRange {
+                grindSettingRow(range)
+            }
+            if model.shows(.grindNormalised) {
+                stepperRow(.grind, title: L10n.brewGrind, clearLabel: L10n.brewGrindClear, identifier: "brew-grind")
+            }
+            if model.shows(.milk) {
+                OptionalVocabularyPicker(title: L10n.brewMilk, selection: $model.draft.milk, vocabulary: vocabulary, language: language)
+                    .accessibilityIdentifier("brew-milk")
+            }
         } header: {
             Text(L10n.brewMoreHeader)
         } footer: {
@@ -270,6 +304,38 @@ struct BrewFormScreen: View {
     }
 
     // MARK: - Rows
+
+    /// The grinder: a pushed list with an A to Z index and "Recent", no search field. Includes
+    /// `pre_ground` and the grinders without a scale; the labels are the contract's.
+    private var grinderRow: some View {
+        IndexedPickListRow(
+            title: L10n.brewGrinder,
+            selection: $model.grinder,
+            vocabulary: vocabulary,
+            language: language,
+            sections: { [vocabulary, language] in
+                PickListSections.alphabetical(Vocabulary.Grinder.self, locale: BeanEntryScreen.locale(for: language)) { grinder in
+                    VocabularyLabels.label(for: grinder, in: vocabulary, language: language)
+                }
+            },
+            recents: model.recentGrinders
+        )
+        .accessibilityIdentifier("brew-grinder")
+    }
+
+    /// The grind setting on the grinder's own scale (range and step from the vocabulary). Only
+    /// shown for a grinder with a scale.
+    private func grindSettingRow(_ range: VocabularyRange) -> some View {
+        BrewStepperRow(
+            title: L10n.brewGrindSetting,
+            clearLabel: L10n.brewGrindSettingClear,
+            valueText: model.grindSettingText(locale: locale),
+            onIncrement: { model.incrementGrindSetting() },
+            onDecrement: { model.decrementGrindSetting() },
+            onClear: { model.clearGrindSetting() }
+        )
+        .accessibilityIdentifier("brew-grind-setting")
+    }
 
     private func stepperRow(
         _ field: BrewNumberField,

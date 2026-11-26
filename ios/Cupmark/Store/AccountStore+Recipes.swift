@@ -88,6 +88,9 @@ extension AccountStore {
     /// so saving the same brew twice keeps one recipe.
     @discardableResult
     func saveRecipe(_ parameters: API.BrewParameters, createdAt: Date = Date.now) throws -> StoredRecipe {
+        // A recipe is stored at the bundled version, so it never keeps a field its method does
+        // not allow (a brew of vocabulary 1 or 2 may have one), which the server would refuse.
+        let parameters = parameters.conformingToMethodRules()
         if let existing = try recipe(matching: parameters) {
             return existing
         }
@@ -127,6 +130,7 @@ extension AccountStore {
     /// form saves it in the same save as the brew. Returns the recipe with the same parameters
     /// instead, if the device has one, and stages nothing.
     func stageNewRecipe(_ parameters: API.BrewParameters, createdAt: Date = Date.now) throws -> StoredRecipe {
+        let parameters = parameters.conformingToMethodRules()
         if let existing = try recipe(matching: parameters) {
             return existing
         }
@@ -141,6 +145,7 @@ extension AccountStore {
     /// Changes `recipe` to `parameters` and queues the update, without saving. Changes nothing
     /// when the parameters are already the recipe's or another recipe's.
     func stageRecipeReplacement(_ recipe: StoredRecipe, with parameters: API.BrewParameters) throws -> RecipeReplacement {
+        let parameters = parameters.conformingToMethodRules()
         guard recipe.syncState != .pendingDelete else {
             throw RecipeWriteError.notFound
         }

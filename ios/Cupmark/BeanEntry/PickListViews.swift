@@ -7,8 +7,17 @@ struct IndexedPickList<Item: VocabularyItem>: View {
     let title: LocalizedStringKey
     let sections: [PickListSection<Item>]
     @Binding var selection: Item?
+    /// Entries to offer first, under "Recent" (the grinders of the latest brews, M2-T26), in
+    /// the order given. Empty for no such section.
+    var recents: [Item] = []
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// The rows of `recents`, with the labels the sections already hold.
+    private var recentRows: [PickListRow<Item>] {
+        let rows = sections.flatMap(\.rows)
+        return recents.compactMap { item in rows.first { row in row.item == item } }
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -22,6 +31,22 @@ struct IndexedPickList<Item: VocabularyItem>: View {
                         }
                     }
                     .accessibilityAddTraits(selection == nil ? [.isSelected] : [])
+                }
+                if !recentRows.isEmpty {
+                    Section {
+                        ForEach(recentRows) { row in
+                            Button {
+                                pick(row.item)
+                            } label: {
+                                PickListRowLabel(isSelected: selection == row.item, isRegion: false) {
+                                    Text(verbatim: row.label)
+                                }
+                            }
+                            .accessibilityAddTraits(selection == row.item ? [.isSelected] : [])
+                        }
+                    } header: {
+                        Text(L10n.pickListRecent)
+                    }
                 }
                 ForEach(sections) { section in
                     Section {
@@ -114,10 +139,12 @@ struct IndexedPickListRow<Item: VocabularyItem>: View {
     let language: VocabularyLanguage
     /// Builds the sections when the list opens.
     let sections: @MainActor () -> [PickListSection<Item>]
+    /// Entries offered first under "Recent" (see `IndexedPickList`).
+    var recents: [Item] = []
 
     var body: some View {
         NavigationLink {
-            IndexedPickList(title: title, sections: sections(), selection: $selection)
+            IndexedPickList(title: title, sections: sections(), selection: $selection, recents: recents)
         } label: {
             LabeledContent {
                 if let selection {

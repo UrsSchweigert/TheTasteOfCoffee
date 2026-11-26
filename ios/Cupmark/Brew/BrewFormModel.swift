@@ -11,6 +11,10 @@ import Observation
 /// - The method starts as the one of the entry's latest brew, so a repeat brew needs no pick.
 ///   A stepper that is not set yet starts at the latest brew's value of that field (same
 ///   method first, then any), or the middle of its vocabulary range.
+/// - The form shows only the fields the method allows (M2-T26, `BrewDraft.allows(_:)`, the
+///   generated rules of vocabulary v3); changing the method clears the others. The grinder is
+///   a pick list with an A to Z index and the grinders of recent brews; the grind setting is a
+///   stepper on the grinder's own scale, hidden for a grinder without one.
 /// - A repeat (M2-T27, `BrewStart`) starts with every parameter of the last brew or of a
 ///   recipe and the timer ready, so it can be saved with no further input. Saving can also
 ///   keep the parameters as a recipe (`keepsAsRecipe`): a new one, or, for a form started from
@@ -30,6 +34,8 @@ final class BrewFormModel {
 
     /// How many of the latest brews on the device are read for the steppers' start values.
     static let recentBrewLimit = 50
+    /// How many grinders the pick list offers as "Recent".
+    static let recentGrinderLimit = 3
 
     let shelfEntryLocalID: UUID
     var draft: BrewDraft
@@ -165,6 +171,82 @@ final class BrewFormModel {
     var temperatureChoice: BrewDraft.TemperatureChoice {
         get { draft.temperatureChoice }
         set { draft.chooseTemperature(newValue, seed: seed(for: .temperature)) }
+    }
+
+    // MARK: - Method rules, grinder and grind setting (M2-T26)
+
+    /// Whether the form shows `field`: the method allows it (`BrewDraft.allows(_:)`).
+    func shows(_ field: Vocabulary.BrewField) -> Bool {
+        draft.allows(field)
+    }
+
+    /// The temperature choices of the method (`BrewDraft.temperatureChoices`).
+    var temperatureChoices: [BrewDraft.TemperatureChoice] {
+        draft.temperatureChoices
+    }
+
+    /// Whether the method leaves a choice for the temperature: more than "not set".
+    var offersTemperatureChoice: Bool {
+        temperatureChoices.count > 1
+    }
+
+    /// The picked grinder; setting it clears the grind setting of another grinder.
+    var grinder: Vocabulary.Grinder? {
+        get { draft.grinder }
+        set { draft.setGrinder(newValue) }
+    }
+
+    /// The grinders of the latest brews on the device, newest first, each once, for the pick
+    /// list's "Recent" section. Only while the method allows a grinder.
+    var recentGrinders: [Vocabulary.Grinder] {
+        guard draft.allows(.grinder) else {
+            return []
+        }
+        var grinders: [Vocabulary.Grinder] = []
+        for brew in recentBrews {
+            if let grinder = brew.grinder, !grinders.contains(grinder) {
+                grinders.append(grinder)
+            }
+            if grinders.count == BrewFormModel.recentGrinderLimit {
+                break
+            }
+        }
+        return grinders
+    }
+
+    /// The scale the grind setting stepper uses (`BrewDraft.grindSettingRange`), nil when the
+    /// stepper is hidden.
+    var grindSettingRange: VocabularyRange? {
+        draft.grindSettingRange
+    }
+
+    /// Where the grind setting stepper starts when it is not set: the setting of the latest
+    /// brew with the same grinder, else nil (the middle of the grinder's scale).
+    private var grindSettingSeed: Double? {
+        guard let grinder = draft.grinder else {
+            return nil
+        }
+        return recentBrews.first { brew in brew.grinder == grinder && brew.grindSetting != nil }?.grindSetting
+    }
+
+    func incrementGrindSetting() {
+        draft.stepGrindSetting(by: 1, seed: grindSettingSeed)
+    }
+
+    func decrementGrindSetting() {
+        draft.stepGrindSetting(by: -1, seed: grindSettingSeed)
+    }
+
+    func clearGrindSetting() {
+        draft.setGrindSetting(nil)
+    }
+
+    /// The text of the grind setting stepper, nil while it is not set (or hidden).
+    func grindSettingText(locale: Locale = .current) -> String? {
+        guard let range = draft.grindSettingRange, let setting = draft.grindSetting else {
+            return nil
+        }
+        return BrewFormat.grindSetting(setting, on: range, locale: locale)
     }
 
     // MARK: - Derived values, shown as values change

@@ -284,6 +284,9 @@ protocol BrewParameterColumns: AnyObject {
     var grindNormalised: Double? { get set }
     var waterTypeID: String? { get set }
     var milkID: String? { get set }
+    /// `grinder` and `grind_setting` (vocabulary v3 on, M2-T26).
+    var grinderID: String? { get set }
+    var grindSetting: Double? { get set }
 }
 
 extension StoredBrew: BrewParameterColumns {}
@@ -301,6 +304,11 @@ extension BrewParameterColumns {
     var milk: Vocabulary.MilkType? {
         get { StoredVocabulary.decode(milkID) }
         set { milkID = newValue?.rawValue }
+    }
+
+    var grinder: Vocabulary.Grinder? {
+        get { StoredVocabulary.decode(grinderID) }
+        set { grinderID = newValue?.rawValue }
     }
 
     /// `water_temp_c` or `water_temp_special`. Setting one clears the other. Reading prefers
@@ -341,6 +349,8 @@ extension BrewParameterColumns {
         grindNormalised = parameters.grindNormalised
         waterTypeID = parameters.waterType?.rawValue
         milkID = parameters.milk?.rawValue
+        grinderID = parameters.grinder?.rawValue
+        grindSetting = parameters.grindSetting
     }
 
     /// The parameters to send. Throws for any id the bundled vocabulary does not know, and
@@ -367,7 +377,9 @@ extension BrewParameterColumns {
             brewTimeS: brewTimeS,
             grindNormalised: grindNormalised,
             waterType: try StoredVocabulary.require(waterTypeID),
-            milk: try StoredVocabulary.require(milkID)
+            milk: try StoredVocabulary.require(milkID),
+            grinder: try StoredVocabulary.require(grinderID),
+            grindSetting: grindSetting
         )
     }
 }

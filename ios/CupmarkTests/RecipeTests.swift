@@ -30,10 +30,11 @@ final class RecipeTests: XCTestCase {
         try StoreFixtures.parameters()
     }
 
-    /// Other parameters: another method and dose, `cold` when the vocabulary has it.
+    /// Other parameters: another method and dose, `cold` when the vocabulary has it. The method
+    /// is one that allows `water_temp_special` (the generated rules), so the recipe keeps it.
     private func otherParameters() throws -> API.BrewParameters {
         var parameters = try StoreFixtures.parameters()
-        parameters.method = try StoreFixtures.last(Vocabulary.Method.self)
+        parameters.method = try XCTUnwrap(Vocabulary.Method.allCases.first { method in method.allows(.waterTempSpecial) })
         parameters.doseDg = 200
         parameters.waterTemperature = Vocabulary.WaterTempSpecial.allCases.first.map { special in API.WaterTemperature.special(special) }
         return parameters
@@ -541,7 +542,7 @@ final class RecipeTests: XCTestCase {
         XCTAssertFalse(line.contains(" and "))
 
         // Only what is set, and a special temperature by its label.
-        var sparse = BrewDraft(method: try StoreFixtures.first(Vocabulary.Method.self))
+        var sparse = BrewDraft(method: try XCTUnwrap(Vocabulary.Method.allCases.first { method in method.allows(.waterTempSpecial) }))
         if let special = Vocabulary.WaterTempSpecial.allCases.first {
             sparse.chooseTemperature(.special(special), seed: nil)
             XCTAssertEqual(BrewSummary(sparse).details(locale: english) { _ in "label" }, ["label"])
