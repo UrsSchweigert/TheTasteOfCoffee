@@ -119,6 +119,8 @@ struct OnboardingScreen: View {
                 Text(L10n.onboardingSkip)
                     .frame(maxWidth: .infinity, minHeight: 44)
                     .contentShape(Rectangle())
+                    // The accent colour on the bar's material fails the contrast audit.
+                    .foregroundStyle(.primary)
             }
             .accessibilityHint(Text(L10n.onboardingSkipHint))
             .accessibilityIdentifier("onboarding-skip")

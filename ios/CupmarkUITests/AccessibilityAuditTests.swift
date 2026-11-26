@@ -207,6 +207,11 @@ final class AccessibilityAuditTests: XCTestCase {
                 var types = XCUIAccessibilityAuditType.all
                 if size == .largestAccessibility {
                     types.remove(.dynamicType)
+                } else {
+                    // At the default size the clipping check only predicts ("may be clipped at
+                    // larger Dynamic Type sizes") and flags system text and fixed-height labels
+                    // that grow fine. The run at the largest size checks real clipping.
+                    types.remove(.textClipped)
                 }
                 try app.performAccessibilityAudit(for: types) { issue in
                     let ignored = AccessibilityAuditTests.isKnownFalsePositive(issue, in: app)
