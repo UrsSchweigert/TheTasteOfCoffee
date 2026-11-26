@@ -105,7 +105,7 @@ struct ShelfRowView: View {
 enum SyncIssueTexts {
     static func title(for kind: SyncIssueItem.Kind) -> LocalizedStringKey {
         switch kind {
-        case .parked(.some(.create), _), .parked(.some(.lookUp), _), .parked(.some(.awaitConfirmation), _): L10n.syncIssuesRejectedCreateTitle
+        case .parked(.some(.create), _), .parked(.some(.lookUp), _), .parked(.some(.awaitConfirmation), _), .parked(.some(.awaitDescription), _): L10n.syncIssuesRejectedCreateTitle
         case .parked(.some(.update), _): L10n.syncIssuesRejectedUpdateTitle
         case .parked(.some(.delete), _): L10n.syncIssuesRejectedDeleteTitle
         case .parked(.none, _), .flagged(.rejected): L10n.syncIssuesRejectedTitle
@@ -116,7 +116,7 @@ enum SyncIssueTexts {
 
     static func message(for kind: SyncIssueItem.Kind) -> LocalizedStringKey {
         switch kind {
-        case .parked(.some(.create), _), .parked(.some(.lookUp), _), .parked(.some(.awaitConfirmation), _): L10n.syncIssuesRejectedCreateMessage
+        case .parked(.some(.create), _), .parked(.some(.lookUp), _), .parked(.some(.awaitConfirmation), _), .parked(.some(.awaitDescription), _): L10n.syncIssuesRejectedCreateMessage
         case .parked(.some(.update), _): L10n.syncIssuesRejectedUpdateMessage
         case .parked(.some(.delete), _): L10n.syncIssuesRejectedDeleteMessage
         case .parked(.none, _), .flagged(.rejected): L10n.syncIssuesRejectedMessage
