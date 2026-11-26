@@ -825,7 +825,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T30 CSV export
-- status: todo
+- status: done (#67; built and tested by the macOS `ios` job. The share sheet and the temporary file are checked on a device in M2-T34)
 - owner: ios-engineer
 - depends: M2-T16
 - implements: docs/03-project-brief.md, Tiers (export own data); docs/05-system-design.md, Security (Export); ADR 0017

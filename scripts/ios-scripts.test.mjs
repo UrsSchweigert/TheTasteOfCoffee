@@ -1384,7 +1384,7 @@ test('onboarding and settings: no typed text, opt-in by default, written through
   const shelf = masked('ios/Cupmark/Shelf/ShelfScreen.swift');
   assert.match(shelf, /OnboardingGate\(store: store, sync: sync\)\s*\{\s*ShelfScreen\(/);
   assert.match(shelf, /NavigationLink\(value: SettingsRoute\(\)\)/);
-  assert.match(shelf, /SettingsScreen\(store: store\)/);
+  assert.match(shelf, /SettingsScreen\(account: sync\?\.account, store: store\)/);
   // A profile made before the server answered is checked first and merged: consent only if
   // both say yes (ADR 0025, Addendum M2-T29).
   const engine = masked('ios/Cupmark/Sync/SyncEngine.swift');

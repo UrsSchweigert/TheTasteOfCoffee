@@ -4,26 +4,47 @@ import SwiftUI
 /// when it opens).
 struct SettingsRoute: Hashable {}
 
-/// Settings (M2-T29), one tap from the shelf. Each topic is its own section, built by its own
-/// function: Privacy (the consent) now; Export (M2-T30) and account deletion (M2-T31) add a
-/// section each, with their own model, below it. No control takes typed text.
+/// Settings, one tap from the shelf. Each topic is its own section, built by its own
+/// function: Privacy (the consent, M2-T29), Export (M2-T30), the removal of other accounts'
+/// data on this device (M2-T30); account deletion (M2-T31) adds a section below. No control
+/// takes typed text.
 struct SettingsScreen: View {
+    let account: AccountID?
     let store: AccountStore
+    @Environment(SyncHost.self) private var sync: SyncHost?
     @State private var model: SettingsModel
+    @State private var localData: LocalDataModel?
+    @State private var isConfirmingRemoval = false
 
-    init(store: AccountStore) {
+    /// `account` is the signed-in account; without it the export and local data sections are
+    /// left out and the consent still works.
+    init(account: AccountID? = nil, store: AccountStore) {
+        self.account = account
         self.store = store
         _model = State(initialValue: SettingsModel(store: store))
+        _localData = State(initialValue: account.map { LocalDataModel(account: $0) })
     }
 
     var body: some View {
         List {
             privacySection
+            exportSection
+            localDataSection
         }
         .navigationTitle(Text(L10n.settingsTitle))
         .accessibilityIdentifier("settings")
+        .confirmationDialog(L10n.localDataConfirmTitle, isPresented: $isConfirmingRemoval, titleVisibility: .visible) {
+            Button(role: .destructive) {
+                localData?.removeOtherAccounts()
+            } label: {
+                Text(L10n.localDataRemoveConfirm)
+            }
+        } message: {
+            Text(L10n.localDataConfirmMessage)
+        }
         .onAppear {
             model.reload()
+            localData?.reload()
         }
         .onReceive(NotificationCenter.default.publisher(for: AccountStore.didSaveNotification, object: store)) { _ in
             // A pull may bring the consent chosen on another device.
@@ -62,6 +83,56 @@ struct SettingsScreen: View {
             Text(L10n.settingsPrivacyHeader)
         } footer: {
             Text(L10n.settingsConsentFooter)
+        }
+    }
+
+    /// CSV export (M2-T30).
+    private var exportSection: some View {
+        Section {
+            NavigationLink {
+                ExportDestination(store: store)
+            } label: {
+                Label {
+                    Text(L10n.exportTitle)
+                } icon: {
+                    Image(systemName: "square.and.arrow.up")
+                        .accessibilityHidden(true)
+                }
+            }
+            .accessibilityIdentifier("settings-export")
+        }
+    }
+
+    /// Removal of other accounts' data on this device (M2-T30).
+    @ViewBuilder
+    private var localDataSection: some View {
+        if let localData {
+            Section {
+                Button(role: .destructive) {
+                    isConfirmingRemoval = true
+                } label: {
+                    Label {
+                        Text(L10n.localDataRemove)
+                    } icon: {
+                        Image(systemName: "trash")
+                            .accessibilityHidden(true)
+                    }
+                }
+                .disabled(localData.otherAccountCount == 0)
+                .accessibilityIdentifier("settings-remove-local-data")
+                switch localData.result {
+                case .untouched:
+                    EmptyView()
+                case .removed:
+                    Text(L10n.localDataRemoved)
+                case .failed:
+                    Text(L10n.localDataFailed)
+                }
+            } header: {
+                Text(L10n.localDataHeader)
+            } footer: {
+                Text(localData.otherAccountCount == 0 ? L10n.localDataNone : L10n.localDataFooter)
+            }
         }
     }
 }

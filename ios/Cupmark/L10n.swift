@@ -349,7 +349,7 @@ enum L10n {
     static var onboardingSkip: LocalizedStringKey { "onboarding.skip" }
     static var onboardingSkipHint: LocalizedStringKey { "onboarding.skip.hint" }
     static var onboardingSaveFailed: LocalizedStringKey { "onboarding.save_failed" }
-    // Settings (M2-T29; export M2-T30 and account deletion M2-T31 add theirs).
+    // Settings (M2-T29; account deletion M2-T31 adds its own).
     static var settingsTitle: LocalizedStringKey { "settings.title" }
     static var settingsLoadFailed: LocalizedStringKey { "settings.load_failed" }
     static var settingsPrivacyHeader: LocalizedStringKey { "settings.privacy.header" }
@@ -357,4 +357,27 @@ enum L10n {
     static var settingsConsentHint: LocalizedStringKey { "settings.consent.hint" }
     static var settingsConsentFooter: LocalizedStringKey { "settings.consent.footer" }
     static var settingsConsentSaveFailed: LocalizedStringKey { "settings.consent.save_failed" }
+    // Export and local data (M2-T30).
+    static var exportTitle: LocalizedStringKey { "export.title" }
+    static var exportStart: LocalizedStringKey { "export.start" }
+    static var exportPreparing: LocalizedStringKey { "export.preparing" }
+    static var exportFooter: LocalizedStringKey { "export.footer" }
+    static var exportShare: LocalizedStringKey { "export.share" }
+    static var exportDone: LocalizedStringKey { "export.done" }
+    static var exportPendingChanges: LocalizedStringKey { "export.pending_changes" }
+    static var exportFailedOffline: LocalizedStringKey { "export.failed.offline" }
+    static var exportFailedTooLarge: LocalizedStringKey { "export.failed.too_large" }
+    static var exportFailedSignIn: LocalizedStringKey { "export.failed.sign_in" }
+    static var exportFailedTooManyRequests: LocalizedStringKey { "export.failed.too_many_requests" }
+    static var exportFailedUnavailable: LocalizedStringKey { "export.failed.unavailable" }
+    static var exportFailedFile: LocalizedStringKey { "export.failed.file" }
+    static var localDataHeader: LocalizedStringKey { "local_data.header" }
+    static var localDataRemove: LocalizedStringKey { "local_data.remove" }
+    static var localDataRemoveConfirm: LocalizedStringKey { "local_data.remove.confirm" }
+    static var localDataConfirmTitle: LocalizedStringKey { "local_data.confirm.title" }
+    static var localDataConfirmMessage: LocalizedStringKey { "local_data.confirm.message" }
+    static var localDataFooter: LocalizedStringKey { "local_data.footer" }
+    static var localDataNone: LocalizedStringKey { "local_data.none" }
+    static var localDataRemoved: LocalizedStringKey { "local_data.removed" }
+    static var localDataFailed: LocalizedStringKey { "local_data.failed" }
 }

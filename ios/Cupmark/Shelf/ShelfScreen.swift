@@ -69,6 +69,7 @@ struct ShelfScreen: View {
     /// up, this is the gate for the questions.
     @State private var isOnScreen = false
     @Environment(\.apiClient) private var apiClient
+    @Environment(SyncHost.self) private var sync: SyncHost?
     @Environment(\.scenePhase) private var scenePhase
 
     init(store: AccountStore, vocabulary: VocabularyStore, language: VocabularyLanguage) {
@@ -142,7 +143,7 @@ struct ShelfScreen: View {
                     }
                 }
                 .accessibilityIdentifier("shelf-statistics")
-                // Settings (M2-T29): the consent; export and deletion follow (M2-T30, M2-T31).
+                // Settings: the consent (M2-T29), export and local data (M2-T30); deletion follows (M2-T31).
                 NavigationLink(value: SettingsRoute()) {
                     Label {
                         Text(L10n.settingsTitle)
@@ -211,7 +212,7 @@ struct ShelfScreen: View {
             StatisticsScreen(store: store, vocabulary: vocabulary, language: language)
         }
         .navigationDestination(for: SettingsRoute.self) { _ in
-            SettingsScreen(store: store)
+            SettingsScreen(account: sync?.account, store: store)
         }
         .navigationDestination(isPresented: $isScanning) {
             if let apiClient {
