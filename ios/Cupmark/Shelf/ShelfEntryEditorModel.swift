@@ -59,6 +59,9 @@ final class ShelfEntryEditorModel {
     /// The averages of this entry's rated brews, for "My brews of this coffee" (M2-T44).
     /// Empty while adding.
     private(set) var averages = CoffeeAverages(ratedBrews: 0, rows: [], methods: [])
+    /// The mean overall score over all the user's bags of this entry's bean, nil with one bag
+    /// of it or no rated brew (M2-T49, the same rule as the shelf list).
+    private(set) var productAverage: OverallAverage?
     private(set) var issue: SyncIssue?
     private(set) var failure: Failure?
     /// True once this editor removed the entry: the screen is closing, so a read on the
@@ -116,6 +119,7 @@ final class ShelfEntryEditorModel {
                 beanLocalID = entry.bean?.localID
                 brewCount = entry.liveBrewCount
                 averages = ShelfEntryEditorModel.averages(of: entry)
+                productAverage = ShelfEntryEditorModel.productLine(of: entry, in: store)
                 issue = entry.syncIssue
             } else {
                 draft = ShelfEntryDraft(purchaseDate: nil)
@@ -311,7 +315,16 @@ final class ShelfEntryEditorModel {
         }
         brewCount = entry.liveBrewCount
         averages = ShelfEntryEditorModel.averages(of: entry)
+        productAverage = ShelfEntryEditorModel.productLine(of: entry, in: store)
         issue = entry.syncIssue
+    }
+
+    /// The product line of `entry` (`StatisticsRules.shelfAverages`): reads only.
+    private static func productLine(of entry: StoredShelfEntry, in store: AccountStore) -> OverallAverage? {
+        guard let entries = try? store.shelfEntries(), let all = try? store.shelfAverages(of: entries) else {
+            return nil
+        }
+        return all[entry.localID]?.product
     }
 
     /// The averages of `entry`'s own brews (`StatisticsRules.coffeeAverages`): reads only.

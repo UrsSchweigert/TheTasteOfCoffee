@@ -7039,6 +7039,24 @@
         }
       }
     },
+    "shelf.row.product_average %@ %@" : {
+      "comment" : "Second average line of a shelf row and of a coffee's screen when the user has more than one bag of the bean (M2-T49); the first %@ is the mean overall score over all those bags, one decimal, the second the number of rated brews.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle Packungen %1$@, bewertete Zubereitungen %2$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All bags %1$@, rated brews %2$@"
+          }
+        }
+      }
+    },
     "shelf.store_error.message" : {
       "comment" : "Message when the local store of the account cannot be opened or read.",
       "extractionState" : "manual",

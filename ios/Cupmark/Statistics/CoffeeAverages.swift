@@ -123,3 +123,78 @@ extension StatisticsRules {
         }
     }
 }
+
+// MARK: - Averages on the shelf list (M2-T49)
+
+/// A mean overall score and the number of rated brews it rests on.
+struct OverallAverage: Equatable, Sendable {
+    /// Unrounded; shown with `StatisticsRules.meanStyle()`.
+    let mean: Double
+    let ratedBrews: Int
+}
+
+/// One bag of the shelf as the averages see it: its local id and the local id of its bean.
+struct ShelfBag: Equatable, Sendable {
+    let entryID: UUID
+    /// Nil for a bag without a bean: it has a bag line and never a product line.
+    let beanID: UUID?
+}
+
+/// What one shelf row shows: the bag's own average and the product's (the bean across all the
+/// user's bags of it). Both nil while there is nothing to show; never zeros.
+struct ShelfAverages: Equatable, Sendable {
+    /// The mean over this bag's rated brews, nil with none.
+    let bag: OverallAverage?
+    /// The mean over every bag of the same bean, nil with one bag of the bean (it would repeat
+    /// the bag line) or with no rated brew in any of them.
+    let product: OverallAverage?
+
+    static let none = ShelfAverages(bag: nil, product: nil)
+}
+
+extension StatisticsRules {
+    /// The mean overall score of every bag in `bags`, and of every bean that has more than one
+    /// of them (M2-T49), in one pass over `brews`:
+    /// - a brew counts if it belongs to one of `bags`, has a rating that scores `overall`
+    ///   (a rating of an older vocabulary version that does not, counts nowhere here), and is
+    ///   not removed on the device;
+    /// - two bags of one bean combine for the product and stay apart for the bag; brews of other
+    ///   beans never count;
+    /// - means are not rounded here.
+    ///
+    /// Pure: reads nothing else. The result has a key for every bag.
+    static func shelfAverages(of brews: [StatisticsBrew], bags: [ShelfBag]) -> [UUID: ShelfAverages] {
+        var perBag: [UUID: (sum: Double, count: Int)] = [:]
+        let known = Set(bags.map(\.entryID))
+        for brew in brews where !brew.isRemoved {
+            guard let entryID = brew.shelfEntryID, known.contains(entryID),
+                let score = brew.rating?.score(for: .overall)
+            else {
+                continue
+            }
+            let soFar = perBag[entryID] ?? (0, 0)
+            perBag[entryID] = (soFar.sum + score, soFar.count + 1)
+        }
+        var bagsOfBean: [UUID: [UUID]] = [:]
+        for bag in bags {
+            if let beanID = bag.beanID {
+                bagsOfBean[beanID, default: []].append(bag.entryID)
+            }
+        }
+        var result: [UUID: ShelfAverages] = [:]
+        for bag in bags {
+            var product: OverallAverage?
+            if let beanID = bag.beanID, let siblings = bagsOfBean[beanID], siblings.count > 1 {
+                let sums = siblings.compactMap { id in perBag[id] }
+                product = average(sum: sums.reduce(0) { $0 + $1.sum }, count: sums.reduce(0) { $0 + $1.count })
+            }
+            let own = perBag[bag.entryID]
+            result[bag.entryID] = ShelfAverages(bag: own.flatMap { average(sum: $0.sum, count: $0.count) }, product: product)
+        }
+        return result
+    }
+
+    private static func average(sum: Double, count: Int) -> OverallAverage? {
+        count > 0 ? OverallAverage(mean: sum / Double(count), ratedBrews: count) : nil
+    }
+}

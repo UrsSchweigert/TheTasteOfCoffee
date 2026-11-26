@@ -1092,7 +1092,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job. Marked `needs-mac-verification` until it passes.
 
 ### M2-T49 Averages on the shelf list: per bag and per product
-- status: todo
+- status: needs-mac-verification
 - owner: ios-engineer
 - depends: M2-T44, M2-T48
 - implements: owner feedback of 2026-11-26 after testing the build ("I am missing the averages for a Packung"; chosen: on each bag in the shelf list, and across all bags of the product); ADR 0027 addenda
