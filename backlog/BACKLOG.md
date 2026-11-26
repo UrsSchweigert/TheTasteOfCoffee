@@ -931,6 +931,13 @@ Planning notes (planned 2026-11-25):
   - If the owner would rather have a Cupmark-owned site (S3 and CloudFront named `cupmark-`), that is a cost and DNS decision: ask first, record an ADR.
   - When M4 adds the paid tier, its terms are added to the page first.
 
+### M2-T40 Back from a brew's rating shows an empty screen with a warning triangle
+- status: needs-mac-verification (found on a device by the owner; the fix and its UI test first run in the `ios` job)
+- owner: ios-engineer
+- depends: M2-T20
+- acceptance: the brew list is pushed and the rating is pushed with destinations registered at the stack root; back from a rating shows the brew list; a UI test covers it; no other pushed destination registers a value destination inside a pushed view.
+- Mac: the `ios` job; the owner re-checks on the device in M2-T34.
+
 ## M3 Aggregation
 
 Goal: aggregates per bean and per method stay correct under create, edit, delete and replay. Not yet planned.

@@ -59,9 +59,9 @@ struct BrewListScreen: View {
                 }
             }
         }
-        .navigationDestination(for: BrewRatingRoute.self) { route in
-            RatingScreen(store: model.store, brew: route.brewLocalID, mode: .later, vocabulary: vocabulary, language: language)
-        }
+        // No destination is registered here (M2-T40): this view is itself pushed, and a
+        // destination declared inside a pushed view can be lost when the stack rebuilds it.
+        // `BrewRatingRoute` is registered at the stack root, by `brewNavigationDestinations`.
         .navigationTitle(Text(L10n.brewListTitle))
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
@@ -71,11 +71,6 @@ struct BrewListScreen: View {
             model.reload()
         }
     }
-}
-
-/// Pushes the rating of a brew from the brew list.
-struct BrewRatingRoute: Hashable {
-    let brewLocalID: UUID
 }
 
 /// One brew in the list: the time it was brewed, the method, rated or not, and a sync issue.

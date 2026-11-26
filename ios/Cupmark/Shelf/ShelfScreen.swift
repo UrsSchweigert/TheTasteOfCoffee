@@ -208,6 +208,8 @@ struct ShelfScreen: View {
         .navigationDestination(for: ShelfEntryRoute.self) { route in
             ShelfEntryEditorScreen(store: store, mode: .edit(route.localID), vocabulary: vocabulary, language: language)
         }
+        // The brew list of a shelf entry and the rating a brew opens (M2-T40), at the root too.
+        .brewNavigationDestinations(store: store, vocabulary: vocabulary, language: language)
         .navigationDestination(for: StatisticsRoute.self) { _ in
             StatisticsScreen(store: store, vocabulary: vocabulary, language: language)
         }
