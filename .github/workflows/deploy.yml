@@ -1,7 +1,8 @@
 # Deploys the stage stacks (backlog M1-T7, ADR 0019). infra/README.md, "Deploy
 # pipeline", has the owner's setup, the first deploy and rollback.
 #
-# - dev: after CI succeeded for a push to main (workflow_run), the commit CI tested.
+# - dev: after CI succeeded for a push to main (workflow_run), the commit CI tested, but
+#   only if something deployable changed since the last dev deploy (step `changes`).
 # - prod: only by hand (workflow_dispatch, stage prod) from main, in the environment
 #   `prod`, whose required reviewer is the owner.
 # - Either stage, by hand: an earlier commit of main, for a rollback.
@@ -65,7 +66,10 @@ jobs:
       actions: read
       contents: read
     outputs:
-      deploy: ${{ steps.decide.outputs.deploy }}
+      # The `changes` step runs only after a workflow_run decision of deploy=true and
+      # then has the last word (its output is the string true or false); otherwise it is
+      # skipped, its output is empty and the `decide` output stands.
+      deploy: ${{ steps.changes.outputs.deploy || steps.decide.outputs.deploy }}
       stage: ${{ steps.decide.outputs.stage }}
       sha: ${{ steps.decide.outputs.sha }}
     steps:
@@ -138,6 +142,84 @@ jobs:
               refuse "event $EVENT_NAME"
               ;;
           esac
+
+      # Automatic deploys only (workflow_run): skip when nothing deployable changed since
+      # the last dev deploy that really ran (ADR 0019, addendum). A manual run always
+      # deploys. Fails open: any doubt (no earlier deploy found, API error, a compare that
+      # is truncated or not a straight line of history) deploys. Read-only API calls; the
+      # values from the API are validated and only ever passed through variables.
+      # scripts/deploy-gate.test.mjs runs this very script against canned API answers.
+      - name: Skip when nothing deployable changed
+        id: changes
+        if: github.event_name == 'workflow_run' && steps.decide.outputs.deploy == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -uo pipefail
+          sha_ok() { [[ "$1" =~ ^[0-9a-f]{40}$ ]]; }
+          say() { local m="${2//$'\r'/ }"; echo "::notice title=$1::${m//$'\n'/ }"; }
+          deploy_now() { say "Deploying" "$1"; echo "deploy=true" >> "$GITHUB_OUTPUT"; exit 0; }
+          skip() {
+            say "Nothing to deploy" "nothing deployable changed since the last deployed commit ($1)"
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          # Prints the first deployable path of the lines on stdin, or nothing.
+          # Deployable: backend/, infra/, contracts/, scripts/deploy/, .nvmrc, this workflow.
+          deployable() {
+            local line
+            while IFS= read -r line || [ -n "$line" ]; do
+              case "$line" in
+                backend/*|infra/*|contracts/*|scripts/deploy/*|.nvmrc|.github/workflows/deploy.yml)
+                  printf '%s\n' "$line"
+                  return 0
+                  ;;
+              esac
+            done
+          }
+          sha_ok "$HEAD_SHA" || deploy_now "bad head_sha; deploying to be safe"
+          # BASE: the newest earlier run of this workflow, started by CI (workflow_run),
+          # whose job `deploy dev` succeeded. A run that skipped (this step, or superseded)
+          # also ends successfully, but its `deploy dev` job is skipped, so it is not BASE:
+          # a change that was never deployed is therefore compared again next time.
+          # Manual runs are not BASE: their head_sha is not necessarily what they deployed.
+          base=""
+          checked=0
+          for page in 1 2; do
+            runs="$(gh api "repos/$REPO/actions/workflows/deploy.yml/runs?event=workflow_run&status=success&branch=main&per_page=50&page=$page" --jq '.workflow_runs[] | "\(.id) \(.head_sha)"')" || break
+            [ -n "$runs" ] || break
+            while read -r id cand; do
+              [[ "$id" =~ ^[0-9]+$ ]] || continue
+              sha_ok "$cand" || continue
+              checked=$((checked + 1))
+              [ "$checked" -le 40 ] || break
+              ok="$(gh api "repos/$REPO/actions/runs/$id/jobs?per_page=100" --jq '[.jobs[] | select(.name == "deploy dev" and .conclusion == "success")] | length')" || continue
+              if [[ "$ok" =~ ^[0-9]+$ ]] && [ "$ok" -ge 1 ]; then base="$cand"; break; fi
+            done <<< "$runs"
+            if [ -n "$base" ] || [ "$checked" -ge 40 ]; then break; fi
+          done
+          [ -n "$base" ] || deploy_now "no earlier successful dev deploy found"
+          echo "Last deployed commit: $base"
+          if [ "$base" = "$HEAD_SHA" ]; then skip "$base is already deployed"; fi
+          # Lines: status, ahead_by, file count, then the file names. A missing or non-array
+          # `files` (GitHub may omit it for a huge diff) gives "x" as the count: unknown.
+          out="$(gh api "repos/$REPO/compare/$base...$HEAD_SHA" --jq '.status, (if (.ahead_by | type) == "number" then .ahead_by else "x" end), (if (.files | type) == "array" then (.files | length) else "x" end), (if (.files | type) == "array" then (.files[] | .filename, (.previous_filename // empty)) else empty end)')" || deploy_now "could not compare with $base"
+          status="$(printf '%s\n' "$out" | sed -n 1p)"
+          ahead="$(printf '%s\n' "$out" | sed -n 2p)"
+          count="$(printf '%s\n' "$out" | sed -n 3p)"
+          files="$(printf '%s\n' "$out" | tail -n +4)"
+          case "$status" in identical|ahead) ;; *) deploy_now "$base is not an ancestor of $HEAD_SHA (compare: $status)" ;; esac
+          [[ "$count" =~ ^[0-9]+$ ]] || deploy_now "unreadable file list"
+          [[ "$ahead" =~ ^[0-9]+$ ]] || deploy_now "unreadable ahead_by"
+          [ "$count" -lt 300 ] || deploy_now "the compare lists 300 files or more, which may be truncated"
+          if [ "$count" -eq 0 ] && [ "$ahead" -gt 0 ]; then deploy_now "$ahead commits but no files listed since $base"; fi
+          first="$(printf '%s\n' "$files" | deployable)"
+          if [ -n "$first" ]; then
+            deploy_now "a deployable path changed since $base: $first"
+          fi
+          skip "$base"
 
   deploy-dev:
     name: deploy dev
