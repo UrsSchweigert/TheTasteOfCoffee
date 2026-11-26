@@ -85,7 +85,7 @@ test('a published number outside the vocabulary range drops the row: it is not a
   assert.equal(filled.parameters.water_temp_c, 90, 'the median of what was published, not of what was dropped');
 });
 
-test('the medians for missing numbers come from published values only, whatever the order', () => {
+test('the filled numbers do not depend on the order of the input (a median of published values)', () => {
   const rows = [
     row({ ...base, total_recipe_time_s: '100', coffee_g_source: '15' }),
     row({ ...base, total_recipe_time_s: '', coffee_g_source: '16' }),
@@ -176,7 +176,7 @@ test('the committed set is on vocabulary v3 and inside its ranges and field rule
     assert.ok(!ids.has(id), `duplicate id ${id}`);
     ids.add(id);
     assert.ok(methodIds.includes(p.method), `${id}: method`);
-    // Cold brew carries the special temperature, and a temperature the source gave is never replaced.
+    // Cold brew carries the special temperature (a published temperature is never replaced: see the out-of-range test above).
     if (p.method === 'cold_brew') assert.equal(p.water_temp_special, 'cold', `${id}: cold brew`);
     const { ranges: r } = brew;
     assert.ok(Number.isInteger(p.dose_dg) && p.dose_dg >= r.dose_g.minimum * 10 && p.dose_dg <= r.dose_g.maximum * 10, `${id}: dose`);
