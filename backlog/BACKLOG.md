@@ -1034,6 +1034,21 @@ Planning notes (planned 2026-11-25):
   - Tests: unit tests of the rules and the row model; a UI test with the harness (M2-T33) that opens a shelf entry with brews and sees the dimension rows and the count.
   - Mac: the `ios` job. Marked `needs-mac-verification` until it passes.
 
+### M2-T45 A setting: include brew photos in the device backup
+- status: todo
+- owner: ios-engineer
+- depends: M2-T42, M2-T42b
+- implements: owner decision of 2026-11-26 ("the iCloud backup should include the photos if the user wishes, to be toggled in the options"); ADR 0033 (brew photos on the device; its first version left them in the backup, as iOS does by default); invariant 6 and the privacy policy (nothing leaves the device on our initiative)
+- decision (lead, ADR 0014, no cloud cost; the owner can flip the default in one line): the default is OFF. The app's promise is that brew photos stay on the device, and an iCloud device backup copies them to Apple. The user turns it on in Settings, with a footer that says what each state means. The setting is per device and is not synced to the server (it is not part of the profile, so no contract change).
+- acceptance:
+  - Settings gets a toggle "Include brew photos in the device backup" (en and de, through the catalogue) with a footer: off, brew photos stay on this phone only and are not restored from a backup when the phone is replaced; on, they are included in the backup of this phone that the user already has with Apple (iCloud or a computer). Default off. 44-point target, a VoiceOver label and value (on, off), the theme's accent tint on the toggle.
+  - The setting is applied by `isExcludedFromBackup` on the per-account `BrewPhotos/<account>/` folder (and every file inside, so a photo that moved or was written earlier follows), set again whenever a folder is created, when the setting changes, and at store open (so a restored install or an older folder that was backed up before the setting existed is corrected). Excluded is the default state for a new folder. A test with a temporary folder checks the resource value for both states, for a new photo written after the change, and that the sweep and the account deletion are unaffected.
+  - Where the setting is stored: the simplest robust choice for a per-device flag (for example `UserDefaults` with its required-reason entry `CA92.1` added to `PrivacyInfo.xcprivacy`, with the privacy manifest test of #84 extended, or a field in the local store if that is cleaner; say which in the ADR addendum). Not in the profile and not sent to the server.
+  - ADR 0033 gets an addendum: the default off, what the backup contains in each state, and that nothing changes for the other app data (the store and label photos keep their current backup behaviour, unchanged by this task).
+  - The companion page (`site/index.html` and `site/de/index.html`) says in the privacy text: brew photos stay on the device and are not uploaded; if the user turns on the backup setting, Apple includes them in the backup of that phone (iCloud or a computer), which is Apple's service under Apple's terms. `scripts/site.test.mjs` requires the sentence in both languages. docs/04 gets a line.
+  - Tests: unit tests of the setting and its application; a UI test with the harness (M2-T33) that opens Settings and flips the toggle, seeing its value change.
+  - Mac: the `ios` job. Marked `needs-mac-verification` until it passes.
+
 ## M3 Aggregation
 
 Goal: aggregates per bean and per method stay correct under create, edit, delete and replay. Not yet planned.
