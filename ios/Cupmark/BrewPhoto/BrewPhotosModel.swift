@@ -274,6 +274,15 @@ enum BrewPhotoThumbnails {
         }.value
     }
 
+    /// `load`, tried once more when the first read fails (a file that was not readable yet, or
+    /// while the app was inactive).
+    static func loadWithRetry(_ url: URL, maxPixelSize: Int = pixelSize) async -> Thumbnail? {
+        if let loaded = await load(url, maxPixelSize: maxPixelSize) {
+            return loaded
+        }
+        return await load(url, maxPixelSize: maxPixelSize)
+    }
+
     /// Synchronous; call it off the main actor. The file is upright already (the encoder applied
     /// the orientation), and the thumbnail is never cached by ImageIO beyond this call.
     static func downsample(_ url: URL, maxPixelSize: Int) -> Thumbnail? {

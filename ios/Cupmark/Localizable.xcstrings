@@ -2899,6 +2899,348 @@
         }
       }
     },
+    "gallery.bag.option %@ %@" : {
+      "comment" : "A bag in the bag filter; first %@ the bean, second the purchase date.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, gekauft am %2$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, bought %2$@"
+          }
+        }
+      }
+    },
+    "gallery.bean.unnamed" : {
+      "comment" : "A bean without name or attributes, as one line in the gallery.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bohne ohne Angaben"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bean without details"
+          }
+        }
+      }
+    },
+    "gallery.count %@" : {
+      "comment" : "Count of the photos shown and VoiceOver value; %@ is the number.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fotos: %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Photos: %@"
+          }
+        }
+      }
+    },
+    "gallery.count.filtered %@ %@" : {
+      "comment" : "Count with the active filter; first %@ the number, second the filter (method and bag).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fotos: %1$@, Filter: %2$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Photos: %1$@, filter: %2$@"
+          }
+        }
+      }
+    },
+    "gallery.empty.filtered" : {
+      "comment" : "Shown when the filters match no photo.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kein Foto passt zu den Filtern."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No photos match the filters."
+          }
+        }
+      }
+    },
+    "gallery.empty.message" : {
+      "comment" : "Explains where brew photos come from.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fotos, die du einer Zubereitung hinzufügst, erscheinen hier."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Photos you add to a brew appear here."
+          }
+        }
+      }
+    },
+    "gallery.empty.title" : {
+      "comment" : "Empty state of the gallery when the account has no brew photo.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch keine Fotos"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Brew Photos Yet"
+          }
+        }
+      }
+    },
+    "gallery.filter.any_bag" : {
+      "comment" : "Menu entry that clears the bag filter.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle Packungen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All bags"
+          }
+        }
+      }
+    },
+    "gallery.filter.any_method" : {
+      "comment" : "Menu entry that clears the method filter.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle Methoden"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All methods"
+          }
+        }
+      }
+    },
+    "gallery.filter.bag" : {
+      "comment" : "Label of the bag filter menu.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Packung"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bag"
+          }
+        }
+      }
+    },
+    "gallery.filter.clear" : {
+      "comment" : "Button that clears both filters.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filter löschen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear Filters"
+          }
+        }
+      }
+    },
+    "gallery.filter.method" : {
+      "comment" : "Label of the method filter menu.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Methode"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Method"
+          }
+        }
+      }
+    },
+    "gallery.photo.bag %@" : {
+      "comment" : "The bag of a photo in its label; %@ is the bean (name or attributes).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Packung %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ bag"
+          }
+        }
+      }
+    },
+    "gallery.photo.label %@ %@ %@" : {
+      "comment" : "VoiceOver label of a photo: method, bag, date (for example Espresso, Ethiopia washed bag, 12 Nov 2026).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, %2$@, %3$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, %2$@, %3$@"
+          }
+        }
+      }
+    },
+    "gallery.photo.method_unknown" : {
+      "comment" : "Method part of a photo's label for a method this app version does not know.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zubereitung"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brew"
+          }
+        }
+      }
+    },
+    "gallery.photo.no_bag" : {
+      "comment" : "Bag part of a photo's label when the brew has no shelf entry.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ohne Packung"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "no bag"
+          }
+        }
+      }
+    },
+    "gallery.summary.label" : {
+      "comment" : "VoiceOver label of the gallery's count; its value is the count and the active filter.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fotos der Zubereitungen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brew photos"
+          }
+        }
+      }
+    },
+    "gallery.title" : {
+      "comment" : "Title of the brew photo gallery and the label of the shelf button that opens it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fotogalerie"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Photo Gallery"
+          }
+        }
+      }
+    },
+    "gallery.viewer.not_found" : {
+      "comment" : "Shown in the photo viewer when the photo is gone.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieses Foto ist nicht mehr verfügbar."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This photo is no longer available."
+          }
+        }
+      }
+    },
     "label_photo.add_another" : {
       "comment" : "Button that opens the camera for one more label photo.",
       "extractionState" : "manual",

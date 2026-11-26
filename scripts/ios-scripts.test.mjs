@@ -1357,6 +1357,81 @@ test('navigation: value destinations are registered at the stack root, never ins
   assert.doesNotMatch(read('ios/Cupmark/Brew/BrewListScreen.swift'), /\.navigationDestination\(for:/);
 });
 
+// Every type used in `NavigationLink(value: X(...))` needs a `navigationDestination(for: X.self)` in
+// the files allowed to register one; without it SwiftUI shows an empty screen at run time (M2-T43,
+// from the M2-T40 review). `sources` maps a path below ios/Cupmark/ to its Swift source.
+const NAVIGATION_DESTINATION_FILES = ['Brew/BrewRoutes.swift', 'Shelf/ShelfScreen.swift'];
+
+function navigationLinkProblems(sources, allowed = NAVIGATION_DESTINATION_FILES) {
+  const linked = new Map();
+  const registered = new Set();
+  for (const [path, source] of Object.entries(sources)) {
+    const masked = lexSwift(source).masked;
+    for (const match of masked.matchAll(/\bNavigationLink\(\s*value:\s*([A-Z]\w*)\s*\(/g)) {
+      if (!linked.has(match[1])) linked.set(match[1], path);
+    }
+    if (!allowed.includes(path)) continue;
+    for (const match of masked.matchAll(/\.navigationDestination\(\s*for:\s*([A-Z]\w*)\.self\b/g)) registered.add(match[1]);
+  }
+  return [...linked]
+    .filter(([type]) => !registered.has(type))
+    .map(([type, path]) => `${path}: NavigationLink(value: ${type}(...)) has no .navigationDestination(for: ${type}.self) in ${allowed.join(' or ')}`);
+}
+
+function readSwiftSources() {
+  const root = join(repoRoot, 'ios/Cupmark');
+  const sources = {};
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else if (entry.name.endsWith('.swift')) sources[relative(root, path).split(sep).join('/')] = readFileSync(path, 'utf8');
+    }
+  };
+  walk(root);
+  return sources;
+}
+
+test('navigation: a link to a value route without a destination at the stack root fails the check (M2-T43)', () => {
+  const link = 'struct S: View {\n  var body: some View {\n    NavigationLink(value: GalleryRoute(id: 1)) { Text("x") }\n  }\n}\n';
+  const registered = 'extension View {\n  func routes() -> some View {\n    self\n      .navigationDestination(for: GalleryRoute.self) { _ in Text("g") }\n  }\n}\n';
+
+  // Fails on a fixture: the link's type has no destination anywhere, or only outside the allowed files.
+  assert.deepEqual(navigationLinkProblems({ 'Shelf/Link.swift': link, 'Shelf/ShelfScreen.swift': '// nothing\n' }), [
+    'Shelf/Link.swift: NavigationLink(value: GalleryRoute(...)) has no .navigationDestination(for: GalleryRoute.self) in Brew/BrewRoutes.swift or Shelf/ShelfScreen.swift',
+  ]);
+  assert.equal(navigationLinkProblems({ 'Shelf/Link.swift': link, 'Shelf/Pushed.swift': registered }).length, 1);
+  // Passes when a destination for the type is in an allowed file, whichever it is.
+  assert.deepEqual(navigationLinkProblems({ 'Shelf/Link.swift': link, 'Shelf/ShelfScreen.swift': registered }), []);
+  assert.deepEqual(navigationLinkProblems({ 'Shelf/Link.swift': link, 'Brew/BrewRoutes.swift': registered }), []);
+  // A destination for another type does not count; a comment or a string does not count as a link.
+  assert.equal(navigationLinkProblems({ 'Shelf/Link.swift': link, 'Shelf/ShelfScreen.swift': registered.replace('GalleryRoute', 'OtherRoute') }).length, 1);
+  assert.deepEqual(navigationLinkProblems({ 'Shelf/Link.swift': '// NavigationLink(value: GalleryRoute(id: 1))\nlet s = "NavigationLink(value: GalleryRoute(id: 1))"\n' }), []);
+  // A link whose value is a variable, not a type, is not checked.
+  assert.deepEqual(navigationLinkProblems({ 'Shelf/Link.swift': 'NavigationLink(value: route) { Text("x") }\n' }), []);
+});
+
+test('navigation: every NavigationLink value type in ios/Cupmark has its destination at the stack root, the gallery included (M2-T43)', () => {
+  const sources = readSwiftSources();
+  assert.deepEqual(navigationLinkProblems(sources), []);
+  const linkedTypes = new Set();
+  for (const source of Object.values(sources)) {
+    for (const match of lexSwift(source).masked.matchAll(/\bNavigationLink\(\s*value:\s*([A-Z]\w*)\s*\(/g)) linkedTypes.add(match[1]);
+  }
+  for (const type of ['ShelfEntryRoute', 'BrewListRoute', 'BrewRatingRoute', 'StatisticsRoute', 'SettingsRoute', 'BrewPhotoGalleryRoute', 'BrewPhotoRoute']) {
+    assert.ok(linkedTypes.has(type), `${type} is not linked any more; update this list`);
+  }
+  // The gallery and its viewer are registered in ShelfScreen.swift, with the other routes.
+  const shelf = lexSwift(sources['Shelf/ShelfScreen.swift']).masked;
+  assert.match(shelf, /\.navigationDestination\(for: BrewPhotoGalleryRoute\.self\)/);
+  assert.match(shelf, /\.navigationDestination\(for: BrewPhotoRoute\.self\)/);
+  // The gallery has pick lists only: no text input, no search (invariant 1), no destination of its own.
+  const gallery = lexSwift(sources['BrewPhoto/BrewPhotoGalleryScreen.swift']).masked;
+  assert.doesNotMatch(gallery, /TextField|TextEditor|SecureField|searchable|UISearchBar|navigationDestination/);
+  assert.match(gallery, /GridItem\(\.adaptive\(minimum:/);
+  assert.match(gallery, /isAccessibilitySize/);
+});
+
 test('label photo upload: the Swift patterns equal the contract, and the S3 POST never goes through APIClient (M2-T24)', () => {
   const doc = loadOpenApi();
   const schemas = doc.components.schemas;
