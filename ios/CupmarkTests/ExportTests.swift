@@ -7,7 +7,10 @@ import XCTest
 final class ExportTests: XCTestCase {
     private var root: URL = FileManager.default.temporaryDirectory.appending(path: "ExportTests-\(UUID().uuidString)", directoryHint: .isDirectory)
 
+    private var servers: [StubServer] = []
+
     override func tearDown() {
+        servers.removeAll()
         try? FileManager.default.removeItem(at: root)
         super.tearDown()
     }
@@ -66,6 +69,10 @@ final class ExportTests: XCTestCase {
             }
             return StubResponse(status: status, body: body, headers: ["Content-Type": "text/csv; charset=utf-8; header=present"])
         }
+        // The stub registry holds a server weakly and forgets its host when it is released, so
+        // the test keeps every server alive until it ends; a caller that drops the returned
+        // server would otherwise see "cannot find host" instead of the answer it set up.
+        servers.append(server)
         let client = APIClient(baseURL: server.baseURL, tokenProvider: FakeTokenProvider(), session: server.makeSession(), imageCache: nil)
         return (server, client)
     }
@@ -327,12 +334,14 @@ final class ExportTests: XCTestCase {
     }
 
     func testAFileThatCannotBeWrittenIsAFailureNotACrash() async throws {
-        // The root is a regular file, so no folder can be made under it.
+        // The root lies under a regular file, so no folder can be made there. (The root itself
+        // cannot be the file: `export()` clears the root first, which would remove that file.)
         let blocker = FileManager.default.temporaryDirectory.appending(path: "ExportTests-blocker-\(UUID().uuidString)", directoryHint: .notDirectory)
         try Data("x".utf8).write(to: blocker)
         defer { try? FileManager.default.removeItem(at: blocker) }
+        let underFile = blocker.appending(path: "CupmarkExport", directoryHint: .isDirectory)
 
-        let model = try makeModel(source: FakeExportSource(.success(csvBytes)), root: blocker)
+        let model = try makeModel(source: FakeExportSource(.success(csvBytes)), root: underFile)
         await model.export()
 
         XCTAssertEqual(try failure(model), .fileNotWritten)
