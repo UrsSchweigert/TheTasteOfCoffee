@@ -292,6 +292,7 @@ struct BrewFormScreen: View {
             Toggle(isOn: $model.keepsAsRecipe) {
                 Text(model.replacesStartedRecipe ? L10n.brewRecipeUpdate : L10n.brewRecipeSave)
             }
+            .tint(Theme.accent)
             .disabled(model.savedBrewID != nil)
             .accessibilityIdentifier("brew-keep-recipe")
         } header: {

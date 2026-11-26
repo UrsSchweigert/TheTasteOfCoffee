@@ -56,6 +56,7 @@ struct FlavourNoteList: View {
                             Spacer()
                             if model.draft.isPicked(note) {
                                 Image(systemName: "checkmark")
+                                    .accentText()
                                     .accessibilityHidden(true)
                             }
                         }

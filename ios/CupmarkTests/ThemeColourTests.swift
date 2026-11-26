@@ -60,7 +60,7 @@ final class ThemeColourTests: XCTestCase {
         let colors: [Entry]
     }
 
-    static let names = ["AccentColor", "OnAccent", "FormBackground", "ListBackground", "Surface", "TextPrimary", "TextSecondary"]
+    static let names = ["AccentColor", "OnAccent", "FormBackground", "ListBackground", "Surface", "TextPrimary", "TextSecondary", "SwipeAction", "SwipeActionSecondary", "ErrorText"]
 
     /// Every pairing of ADR 0032, point 2: foreground, background.
     static let pairings: [(foreground: String, background: String)] = [
@@ -73,7 +73,13 @@ final class ThemeColourTests: XCTestCase {
         ("TextSecondary", "FormBackground"),
         ("TextSecondary", "ListBackground"),
         ("TextSecondary", "Surface"),
-        ("OnAccent", "AccentColor")
+        ("OnAccent", "AccentColor"),
+        // The system draws a swipe action's label in white.
+        ("White", "SwipeAction"),
+        ("White", "SwipeActionSecondary"),
+        ("ErrorText", "FormBackground"),
+        ("ErrorText", "ListBackground"),
+        ("ErrorText", "Surface")
     ]
 
     static let minimumContrast = 4.5
@@ -121,6 +127,7 @@ final class ThemeColourTests: XCTestCase {
         for name in names {
             sets[name] = try load(name)
         }
+        sets["White"] = [.light: RGB(red: 1, green: 1, blue: 1), .dark: RGB(red: 1, green: 1, blue: 1)]
         return sets
     }
 
@@ -160,7 +167,10 @@ final class ThemeColourTests: XCTestCase {
             "ListBackground": ("F7F0E6", "1E1510"),
             "Surface": ("FFFBF4", "2A1E17"),
             "TextPrimary": ("2B1D14", "F3E9DC"),
-            "TextSecondary": ("5E4B3C", "BFAE9C")
+            "TextSecondary": ("5E4B3C", "BFAE9C"),
+            "SwipeAction": ("6B4428", "8A5A36"),
+            "SwipeActionSecondary": ("5E4B3C", "6B5645"),
+            "ErrorText": ("A3261A", "FF9B8F")
         ]
         for (name, values) in expected {
             XCTAssertEqual(sets[name]?[.light]?.hex, values.light, "\(name) light")

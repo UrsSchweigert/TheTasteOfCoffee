@@ -6,7 +6,8 @@ import SwiftUI
 /// (`scripts/check-ios-colours.mjs` fails on one).
 ///
 /// The accent colour is also the app's global tint (`AccentColor`, set in the build settings),
-/// so buttons, links, sliders, steppers, toggles and pickers take it without a modifier.
+/// so buttons, links, sliders, steppers and pickers take it without a modifier. A `Toggle` stays
+/// green unless `.tint(Theme.accent)` is applied, so every toggle does.
 enum Theme {
     /// Espresso brown in light mode, caramel in dark mode.
     static let accent = Color("AccentColor")
@@ -22,6 +23,13 @@ enum Theme {
     /// Captions, footers and hints. Not the system's `.secondary`, which is a translucent grey
     /// that nearly fails 4.5:1 on cream (ADR 0032, point 3).
     static let textSecondary = Color("TextSecondary")
+    /// Background of a swipe action; the system draws its label in white (8.5:1 light, 5.8:1 dark).
+    static let swipeAction = Color("SwipeAction")
+    /// A second swipe action next to the first, so the two look different.
+    static let swipeActionSecondary = Color("SwipeActionSecondary")
+    /// Error and failure text and its icon. The system red is 3.0 to 3.4:1 on cream; the
+    /// destructive button role keeps the system red.
+    static let errorText = Color("ErrorText")
 
     /// A title or large heading: system font, rounded design, heavier weight. A text style, not
     /// a size, so Dynamic Type scales it.

@@ -33,6 +33,19 @@ test('check-ios-colours: colour literals, hex strings, named sets and system tin
   fails('let s = HierarchicalShapeStyle.secondary');
   fails('.foregroundStyle(.white)');
   fails('.background(Color.black)');
+  fails('let c = #colorLiteral(red: 0.1, green: 0.2, blue: 0.3, alpha: 1)');
+  fails('let c = 0x6B4428');
+  fails('let hex = "#FFF"');
+  fails('let hex = "#FFFF"');
+  fails('.foregroundStyle(isOn ? .blue : .red)');
+  fails('.foregroundStyle(isOn ? Color.primary : .orange)');
+  fails('let g = LinearGradient(colors: [.blue, .green], startPoint: .top, endPoint: .bottom)');
+  fails('let g = RadialGradient(colors: [Theme.accent, .clear], center: .center, startRadius: 0, endRadius: 9)');
+  fails('.strokeBorder(.blue)');
+  fails('.listItemTint(.blue)');
+  fails('.tint(.secondary)');
+  fails('.fill(.secondary)');
+  fails('.background(.secondary)');
   // The line is reported.
   assert.deepEqual(
     colours.colourProblems('struct A {}\n\nlet c = Color(red: 1, green: 1, blue: 1)\n').map((p) => p.line),
@@ -57,6 +70,10 @@ test('check-ios-colours: Theme names, .red for errors, .primary, .clear, .tint, 
     'let hash = "#fragment"',
     'let id = "0x1"',
     'case .orange: return .citrus',
+    '.foregroundStyle(isOn ? Theme.accent : Theme.textSecondary)',
+    '.foregroundStyle(isOn ? .red : .primary)',
+    'case .a: return .citrus',
+    'let n = 0x1F',
     'let c = CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)',
   ].join('\n');
   assert.deepEqual(colours.colourProblems(clean), []);
@@ -107,13 +124,16 @@ test('colour sets: the values of ADR 0032 and every pairing at 4.5:1 in both app
     Surface: ['FFFBF4', '2A1E17'],
     TextPrimary: ['2B1D14', 'F3E9DC'],
     TextSecondary: ['5E4B3C', 'BFAE9C'],
+    SwipeAction: ['6B4428', '8A5A36'],
+    SwipeActionSecondary: ['5E4B3C', '6B5645'],
+    ErrorText: ['A3261A', 'FF9B8F'],
   };
   for (const [name, [light, dark]] of Object.entries(expected)) {
     assert.equal(hexOf(sets[name].light), light, `${name} light`);
     assert.equal(hexOf(sets[name].dark), dark, `${name} dark`);
   }
   assert.deepEqual(colours.contrastProblems(sets), []);
-  assert.equal(colours.PAIRINGS.length, 10);
+  assert.equal(colours.PAIRINGS.length, 15);
   for (const [fg, bg, ratios] of colours.PAIRINGS) {
     for (const mode of colours.APPEARANCES) {
       const ratio = colours.contrastRatio(sets[fg][mode], sets[bg][mode]);
@@ -127,10 +147,14 @@ test('colour sets: the contrast check fails when a value is changed to a failing
   const sets = structuredClone(colours.readColourSets());
   sets.TextSecondary.light = [0.75, 0.7, 0.65];
   sets.AccentColor.dark = sets.FormBackground.dark;
+  sets.SwipeAction.dark = [0.88, 0.7, 0.49];
+  sets.ErrorText.light = [1, 0.3, 0.3];
   const problems = colours.contrastProblems(sets);
   assert.ok(problems.some((p) => p.startsWith('TextSecondary on FormBackground (light)')), problems.join('\n'));
   assert.ok(problems.some((p) => p.startsWith('AccentColor on FormBackground (dark)')), problems.join('\n'));
   assert.ok(problems.some((p) => p.startsWith('OnAccent on AccentColor (dark)')), problems.join('\n'));
+  assert.ok(problems.some((p) => p.startsWith('White on SwipeAction (dark)')), problems.join('\n'));
+  assert.ok(problems.some((p) => p.startsWith('ErrorText on Surface (light)')), problems.join('\n'));
   // A known ratio: black on white is 21:1.
   assert.equal(Math.round(colours.contrastRatio([0, 0, 0], [1, 1, 1])), 21);
   // A malformed set is an error, not a pass.

@@ -86,6 +86,7 @@ struct OnboardingScreen: View {
             Toggle(isOn: $model.agrees) {
                 Text(L10n.onboardingConsentAgree)
             }
+            .tint(Theme.accent)
             .accessibilityIdentifier("onboarding-consent-agree")
             Text(L10n.onboardingConsentChangeLater)
                 .font(.footnote)
@@ -102,7 +103,7 @@ struct OnboardingScreen: View {
                     Image(systemName: "exclamationmark.triangle")
                         .accessibilityHidden(true)
                 }
-                .foregroundStyle(.red)
+                .foregroundStyle(Theme.errorText)
             }
             Button {
                 model.next()

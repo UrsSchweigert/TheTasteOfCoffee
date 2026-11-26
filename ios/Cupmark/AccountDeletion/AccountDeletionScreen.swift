@@ -58,7 +58,7 @@ struct AccountDeletionScreen: View {
                         Image(systemName: "exclamationmark.triangle")
                             .accessibilityHidden(true)
                     }
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Theme.errorText)
                 }
             } footer: {
                 Text(L10n.accountDeletionExportHint)
@@ -152,7 +152,7 @@ struct AccountDeletionProgressView: View {
             if let failure = model.signInAgainFailure {
                 Text(failure.message)
                     .font(.callout)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Theme.errorText)
                     .multilineTextAlignment(.center)
                     .accessibilityIdentifier("account-deletion-sign-in-failure")
             }
@@ -169,7 +169,7 @@ struct AccountDeletionProgressView: View {
         case .confirmDifferentAccount, .confirmUnreadableRecord:
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.title)
-                .foregroundStyle(.red)
+                .foregroundStyle(Theme.errorText)
                 .accessibilityHidden(true)
             Text(model.state == .confirmDifferentAccount ? L10n.accountDeletionDifferentAccountMessage : L10n.accountDeletionUnreadableRecordMessage)
                 .font(.body)

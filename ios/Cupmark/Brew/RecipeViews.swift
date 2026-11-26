@@ -90,9 +90,11 @@ struct RecipeListScreen: View {
             if model.loadFailed {
                 Text(L10n.shelfStoreErrorTitle)
                     .secondaryText()
+                    .surfaceRow()
             } else if model.recipes.isEmpty {
                 Text(L10n.recipeEmpty)
                     .secondaryText()
+                    .surfaceRow()
             } else {
                 Section {
                     ForEach(model.recipes) { row in
@@ -153,10 +155,11 @@ private struct RecipeButton: View {
                         Text(L10n.shelfRowIssue)
                     } icon: {
                         Image(systemName: "exclamationmark.icloud")
+                            .foregroundStyle(Theme.errorText)
                             .accessibilityHidden(true)
                     }
                     .font(.footnote)
-                    .accentText()
+                    .secondaryText()
                 }
             }
             .accessibilityElement(children: .combine)

@@ -184,6 +184,7 @@ struct ShelfEntryEditorScreen: View {
             Toggle(isOn: hasRoastDate) {
                 Text(L10n.shelfEntryRoastDateKnown)
             }
+            .tint(Theme.accent)
             .accessibilityIdentifier("shelf-entry-roast-known")
             if model.hasRoastDate {
                 DatePicker(selection: roastDate, in: ...model.latestDate, displayedComponents: .date) {

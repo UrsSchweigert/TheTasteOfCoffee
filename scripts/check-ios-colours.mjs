@@ -46,12 +46,23 @@ const RULES = [
   { re: new RegExp(`\\b(?:Color|HierarchicalShapeStyle)\\.(${HIERARCHICAL})\\b`, 'g'), message: 'system secondary colour; use .secondaryText() or Theme.textSecondary' },
   { re: new RegExp(`\\.foreground(?:Style|Color)\\s*\\(\\s*\\.(${HIERARCHICAL})\\b`, 'g'), message: 'system secondary colour; use .secondaryText() or Theme.textSecondary' },
 ];
+// More ways to write a colour or a brand tint (review of M2-T41).
+RULES.push(
+  { re: /#colorLiteral\s*\(/g, message: 'colour literal' },
+  { re: /\b(?:Linear|Radial|Angular|Elliptical)Gradient\s*\(/g, message: 'gradient; colours come from Theme' },
+  { re: /\bColor\s*\.\s*init\s*\(/g, message: 'Color(...) built from values; use Theme' },
+  { re: /\b0x[0-9A-Fa-f]{6,8}\b/g, message: 'integer hex colour' },
+  { re: new RegExp(`\\.(?:${COLOUR_MODIFIERS}|strokeBorder|listItemTint)\\s*\\(\\s*\\.(${HIERARCHICAL})\\b`, 'g'), message: 'system secondary colour; use .secondaryText() or Theme.textSecondary' },
+  // A system colour in a ternary: `c ? .blue : .red`.
+  { re: new RegExp(`[?:]\\s*(?:Color)?\\.(${SYSTEM_COLOURS})\\b(?![A-Za-z0-9_(])`, 'g'), message: 'system colour as a brand colour in a condition; use Theme' },
+  { re: new RegExp(`\\.(?:strokeBorder|listItemTint)\\s*\\(\\s*(?:Color)?\\.(${SYSTEM_COLOURS})\\b`, 'g'), message: 'system colour as a brand colour; use Theme.accent' },
+);
 const WHITE_BLACK = [
   /\bColor\.(white|black)\b/g,
   new RegExp(`\\.(?:${COLOUR_MODIFIERS})\\s*\\(\\s*(?:Color)?\\.(white|black)\\b`, 'g'),
 ];
 // A hex colour in a string: "#6B4428", "#6B4428FF", "0x6B4428".
-const HEX_STRING = /^"(?:#|0x)[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?"$/;
+const HEX_STRING = /^"(?:#|0x)(?:[0-9A-Fa-f]{3,4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})"$/;
 // A colour set read by name: Color("Name"), UIColor(named: "Name"), Color("Name", bundle:).
 const NAMED_COLOUR = /\b(?:Color|UIColor)\s*\(\s*(?:named\s*:\s*)?$/;
 
@@ -100,7 +111,7 @@ function swiftFiles(dir) {
 // ---- The palette: named colour sets and their contrast (ADR 0032) ----
 
 export const ASSETS_DIR = join(APP_DIR, 'Assets.xcassets');
-export const COLOUR_NAMES = ['AccentColor', 'OnAccent', 'FormBackground', 'ListBackground', 'Surface', 'TextPrimary', 'TextSecondary'];
+export const COLOUR_NAMES = ['AccentColor', 'OnAccent', 'FormBackground', 'ListBackground', 'Surface', 'TextPrimary', 'TextSecondary', 'SwipeAction', 'SwipeActionSecondary', 'ErrorText'];
 export const APPEARANCES = ['light', 'dark'];
 /** Minimum WCAG 2.x contrast ratio for normal text and for controls the ADR lists. */
 export const MIN_CONTRAST = 4.5;
@@ -119,6 +130,12 @@ export const PAIRINGS = [
   ['TextSecondary', 'ListBackground', { light: 7.29, dark: 8.33 }],
   ['TextSecondary', 'Surface', { light: 7.99, dark: 7.52 }],
   ['OnAccent', 'AccentColor', { light: 8.2, dark: 9.52 }],
+  // The system draws a swipe action's label in white.
+  ['White', 'SwipeAction', { light: 8.46, dark: 5.84 }],
+  ['White', 'SwipeActionSecondary', { light: 8.24, dark: 6.9 }],
+  ['ErrorText', 'FormBackground', { light: 6.24, dark: 9.08 }],
+  ['ErrorText', 'ListBackground', { light: 6.51, dark: 8.84 }],
+  ['ErrorText', 'Surface', { light: 7.14, dark: 7.97 }],
 ];
 
 /** `{ light: [r, g, b], dark: [r, g, b] }` (0 to 1) of a colour set's Contents.json, or throws. */
@@ -158,6 +175,8 @@ export function readColourSets(assetsDir = ASSETS_DIR) {
     const file = join(assetsDir, `${name}.colorset`, 'Contents.json');
     sets[name] = parseColourSet(JSON.parse(readFileSync(file, 'utf8')), name);
   }
+  // Not a colour set: the colour the system draws swipe action labels in.
+  sets.White = { light: [1, 1, 1], dark: [1, 1, 1] };
   return sets;
 }
 

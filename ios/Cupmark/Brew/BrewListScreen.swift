@@ -52,7 +52,7 @@ struct BrewListScreen: View {
                                     Image(systemName: "bookmark")
                                 }
                             }
-                            .tint(Theme.accent)
+                            .tint(Theme.swipeAction)
                             .accessibilityIdentifier("brew-list-save-recipe")
                         }
                     }
@@ -116,10 +116,11 @@ struct BrewListRowView: View {
                     Text(L10n.shelfRowIssue)
                 } icon: {
                     Image(systemName: "exclamationmark.icloud")
+                        .foregroundStyle(Theme.errorText)
                         .accessibilityHidden(true)
                 }
                 .font(.footnote)
-                .accentText()
+                .secondaryText()
             }
         }
         .padding(.vertical, 2)

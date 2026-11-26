@@ -90,10 +90,11 @@ struct ShelfRowView: View {
                     Text(L10n.shelfRowIssue)
                 } icon: {
                     Image(systemName: "exclamationmark.icloud")
+                        .foregroundStyle(Theme.errorText)
                         .accessibilityHidden(true)
                 }
                 .font(.footnote)
-                .accentText()
+                .secondaryText()
             }
         }
         .padding(.vertical, 2)

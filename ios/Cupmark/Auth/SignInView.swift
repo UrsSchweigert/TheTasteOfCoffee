@@ -31,7 +31,7 @@ struct SignInView: View {
                 if finishesDeletion {
                     Text(L10n.accountDeletionSignInNote)
                         .font(.callout)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Theme.errorText)
                         .multilineTextAlignment(.center)
                         .accessibilityIdentifier("sign-in-deletion-note")
                 }
@@ -39,7 +39,7 @@ struct SignInView: View {
                 if let failure {
                     Text(failure.message)
                         .font(.callout)
-                        .foregroundStyle(failure.isProblem ? Color.red : Theme.textSecondary)
+                        .foregroundStyle(failure.isProblem ? Theme.errorText : Theme.textSecondary)
                         .multilineTextAlignment(.center)
                         .accessibilityIdentifier("sign-in-failure")
                 }

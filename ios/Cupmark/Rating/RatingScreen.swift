@@ -256,7 +256,7 @@ struct RatingScreen: View {
                     }
                     .contentShape(Rectangle())
                 }
-                .tint(.primary)
+                .tint(Theme.accent)
                 .accessibilityHint(Text(L10n.ratingNoteRemoveHint))
                 .accessibilityIdentifier("rating-picked-note")
             }

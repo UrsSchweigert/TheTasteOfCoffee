@@ -182,7 +182,7 @@ struct ShelfScreen: View {
                                     Image(systemName: "cup.and.saucer")
                                 }
                             }
-                            .tint(Theme.accent)
+                            .tint(Theme.swipeAction)
                             .accessibilityIdentifier("shelf-entry-brew")
                             // Repeats the last brew on this bag, prefilled (M2-T27).
                             if model.canRepeatLastBrew {
@@ -195,7 +195,7 @@ struct ShelfScreen: View {
                                         Image(systemName: "arrow.clockwise")
                                     }
                                 }
-                                .tint(Theme.accent)
+                                .tint(Theme.swipeActionSecondary)
                                 .accessibilityIdentifier("shelf-entry-repeat")
                             }
                         }

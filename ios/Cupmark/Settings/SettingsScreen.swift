@@ -66,6 +66,7 @@ struct SettingsScreen: View {
             )) {
                 Text(L10n.settingsConsentToggle)
             }
+            .tint(Theme.accent)
             .disabled(model.loadFailed)
             .accessibilityHint(Text(L10n.settingsConsentHint))
             .accessibilityIdentifier("settings-consent")
@@ -80,7 +81,7 @@ struct SettingsScreen: View {
                     Image(systemName: "exclamationmark.triangle")
                         .accessibilityHidden(true)
                 }
-                .foregroundStyle(.red)
+                .foregroundStyle(Theme.errorText)
             }
         } header: {
             Text(L10n.settingsPrivacyHeader)
