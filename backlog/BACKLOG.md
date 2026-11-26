@@ -974,10 +974,10 @@ Scope: App Store listing, screenshots, privacy nutrition labels, privacy policy 
 - acceptance:
   - These come from the reviews of PR #66, none of them blocking.
   - An `.attribute` restore reports whether it changed anything, by comparing values where they are `Equatable`, or the doc says it always reports a change.
-  - The repair pass's "not settled" outcome also raises an `assertionFailure` in debug builds, as the read-failure path does.
-  - A fetch error during the repair is logged with a fixed message, separately from "not on disk".
+  - Done in #66: the "not settled" and "unresolved" outcomes log a fixed fault and raise an `assertionFailure`; a fetch error is logged apart from "not on disk". What remains: a test of the "not settled" path needs the assertion to be injectable, or it crashes Debug test runs.
   - In the real save-failure test, `changedModelsArray` holds only the models of the failed write, and each equals its copy on disk.
-  - Tests cover the "not settled" path and a repair run twice: an engine discard after a repaired discard.
+  - Tests cover the "not settled" path (see above) and a repair run twice: an engine discard after a repaired discard.
+  - An unresolved relationship left as the failed save's delete rule set it stays a pending change, and the next save would store it. Consider refusing `save()` until the context is reloaded, as `innerWriteFailed` does.
   - Two consent footer notes from the M2-T29 round 2 review:
     - the ADR 0025 addendum M2-T29 and the code agree on parked profile operations in the merge and adopt branches;
     - a test covers an edit made during the GET while `sentWithoutAnswer` is already true.

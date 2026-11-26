@@ -413,9 +413,10 @@ final class FailedWriteTests: XCTestCase {
             scannedEntryID = scannedEntry
             pendingBeanID = try XCTUnwrap(writable.shelfEntry(localID: scannedEntry)?.bean?.localID)
         }
-        // Best effort: SwiftData may keep a container a little longer. The copy below is what
-        // keeps the read-only store apart; waiting only keeps a late close out of the copy.
-        _ = waitUntilReleased { writableContainer != nil }
+        // The writable container must be gone before the copy: a close during the copy could
+        // checkpoint its WAL between the two files and lose the newest rows. A timeout fails here,
+        // as a setup problem, rather than later as a missing bean.
+        XCTAssertTrue(waitUntilReleased { writableContainer != nil }, "the writable container is still open")
         for name in [fileName, "\(fileName)-wal"] {
             let source = written.appending(path: name, directoryHint: .notDirectory)
             if FileManager.default.fileExists(atPath: source.path(percentEncoded: false)) {
