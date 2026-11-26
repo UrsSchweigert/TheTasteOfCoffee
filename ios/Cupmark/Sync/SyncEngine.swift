@@ -243,6 +243,12 @@ final class SyncEngine {
             if isStopped || Task.isCancelled {
                 return .stopped
             }
+            // A discard could not put everything back, so the store refuses every save until
+            // it is opened again (ADR 0025 Addendum M2-T37). Nothing can be marked as sent, so
+            // nothing is sent; the engine waits instead of retrying every few seconds.
+            if store.needsReopening {
+                return .waiting(until: now().addingTimeInterval(backoff.maximum))
+            }
             let next: OutboxOperation?
             do {
                 next = try store.nextOutboxOperation(at: now(), skipping: deferred)
@@ -913,7 +919,9 @@ final class SyncEngine {
     /// consent is on only if both say so, so neither a profile made on another device nor the
     /// user's own "no" on this device is undone silently. If that equals the server's
     /// profile it is adopted and nothing is sent; otherwise it is stored, the profile becomes
-    /// `pendingUpdate`, and it is sent as the one `PUT` of this operation.
+    /// `pendingUpdate`, and it is sent as the one `PUT` of this operation. In both branches
+    /// every other operation of the profile is removed, parked ones included; the profile's
+    /// flag stays until the screen's "OK" clears it (ADR 0025 addenda M2-T18 and M2-T37).
     private func putProfile(_ sequence: Int, _ localID: UUID) async throws -> Outcome {
         guard let checked = try store.profile(), checked.localID == localID else {
             return try drop(sequence)
@@ -945,8 +953,12 @@ final class SyncEngine {
                         try store.save()
                         return true
                     }
-                    // Ours differs: keep this one operation and send the merged values.
-                    for operation in try store.outboxOperations(for: localID) where operation.sequence != sequence && !operation.parked {
+                    // Ours differs: keep this one operation and send the merged values. Every
+                    // other operation of the profile goes, parked ones too, as in the adopt
+                    // branch above (ADR 0025 Addendum M2-T37): the body is built from the
+                    // profile's current values, so a parked one has nothing else to send, and
+                    // kept it would stop every later edit from being queued (`enqueueEdit`).
+                    for operation in try store.outboxOperations(for: localID) where operation.sequence != sequence {
                         store.context.delete(operation)
                     }
                     current.syncState = .pendingUpdate

@@ -30,6 +30,12 @@ import SwiftData
 // `localID` of another is an upsert in SwiftData, not a failed save, and the schema has no other
 // constraint (no `.deny` delete rule, no relationship counts), and no schema change is made for
 // a test.
+//
+// What a discard cannot put back (M2-T37): every such case is a `DiscardFault`, logged with a
+// fixed message and passed to `AccountStore.onDiscardFault` (an `assertionFailure` in the app,
+// a recorder in tests). A fault that may leave a value the store does not have in the context
+// (an unreadable saved copy, a relationship that is unresolved or does not settle) also makes
+// the store refuse every later save, until a new `AccountStore` reads the file again.
 
 /// The state of the writes under way, kept by `write { }` only.
 struct WriteNesting {
@@ -43,6 +49,48 @@ struct WriteNesting {
 enum WriteNestingError: Error, Equatable {
     /// A save after the failed inner write, or the outer write's end, was refused.
     case innerWriteFailed
+}
+
+/// What a failed write's discard (`discardUnsavedChanges()`) could not do. None of these
+/// should happen; each is logged with a fixed message and passed to
+/// `AccountStore.onDiscardFault` (an `assertionFailure` in the app, ADR 0025 Addendum M2-T37).
+enum DiscardFault: Hashable, CaseIterable {
+    /// The saved values of a changed model could not be read: it was only rolled back, which
+    /// may keep a changed attribute in memory.
+    case savedValuesUnreadable
+    /// The relationship passes after the rollback still changed something in their last pass.
+    case relationshipsNotSettled
+    /// A saved relationship target could not be found in the live context: the relationship
+    /// was left as the failed save left it (for example nil, set by a delete rule).
+    case relationshipUnresolved
+    /// A model the store has was not found again by the app's fetch after the discard.
+    case savedModelNotFound
+
+    /// Whether the context may still hold, as a change or in memory, a value the store does
+    /// not have. Then the store refuses every later save until it is opened again.
+    var leavesUnsavedState: Bool {
+        switch self {
+        case .savedValuesUnreadable, .relationshipsNotSettled, .relationshipUnresolved: return true
+        case .savedModelNotFound: return false
+        }
+    }
+
+    /// The fixed text of the debug assertion (no ids, no values).
+    var assertionMessage: String {
+        switch self {
+        case .savedValuesUnreadable: return "A failed write could not read the saved values of a changed model; it was only rolled back."
+        case .relationshipsNotSettled: return "A failed write's relationship passes did not settle after the rollback."
+        case .relationshipUnresolved: return "A failed write could not resolve a saved relationship target after the rollback."
+        case .savedModelNotFound: return "A failed write left a saved model that a fetch does not find."
+        }
+    }
+}
+
+/// Thrown by `save()` once a discard left the context with values the store does not have.
+enum DiscardError: Error, Equatable {
+    /// The store must be opened again (the app's next start, or the next sign-in) before it
+    /// saves anything: the next save could otherwise store what the failed write left.
+    case storeNeedsReopening
 }
 
 /// Fixed messages only: no ids, no values, no paths.
@@ -87,17 +135,33 @@ struct RestoredProperty<Model: PersistentModel> {
     /// twice (SwiftData does not make the schema's key paths public).
     let keyPath: PartialKeyPath<Model>
     let kind: RestoredPropertyKind
+    /// Whether the live model (first) holds the saved copy's value (second). Reads only: an
+    /// attribute by `==`, a to-one by the target's local id, a to-many as the exact saved set,
+    /// each target once. `restore` answers `unchanged` exactly when this is true.
+    let holdsSavedValue: (Model, Model) -> Bool
     /// Sets the property of the live model (first) to the saved copy's value (second), and
     /// says whether it had to. Setting it again once it holds the saved value changes nothing
     /// (idempotent), so it may run before and after the rollback.
     let restore: (Model, Model, AccountStore) -> RestoreOutcome
 
-    /// An attribute: the saved value is set as it is.
-    static func attribute<Value>(_ name: String, _ keyPath: ReferenceWritableKeyPath<Model, Value>) -> RestoredProperty {
-        RestoredProperty(name: name, keyPath: keyPath, kind: .attribute) { live, saved, _ in
-            live[keyPath: keyPath] = saved[keyPath: keyPath]
-            return .changed
-        }
+    /// An attribute. It is compared with the saved value first (every stored attribute type is
+    /// `Equatable`; one that is not does not compile here) and set only when it differs, so
+    /// the outcome says whether anything changed (M2-T37).
+    static func attribute<Value: Equatable>(_ name: String, _ keyPath: ReferenceWritableKeyPath<Model, Value>) -> RestoredProperty {
+        RestoredProperty(
+            name: name,
+            keyPath: keyPath,
+            kind: .attribute,
+            holdsSavedValue: { live, saved in live[keyPath: keyPath] == saved[keyPath: keyPath] },
+            restore: { live, saved, _ in
+                let value = saved[keyPath: keyPath]
+                guard live[keyPath: keyPath] != value else {
+                    return .unchanged
+                }
+                live[keyPath: keyPath] = value
+                return .changed
+            }
+        )
     }
 
     /// A to-one relationship, compared by the target's local id. The saved target is resolved
@@ -109,24 +173,29 @@ struct RestoredProperty<Model: PersistentModel> {
         id: KeyPath<Target, UUID>,
         resolve: @escaping (AccountStore, Target) -> Target?
     ) -> RestoredProperty {
-        RestoredProperty(name: name, keyPath: keyPath, kind: .toOne) { live, saved, store in
-            let current = live[keyPath: keyPath]
-            guard let savedTarget = saved[keyPath: keyPath] else {
-                guard current != nil else {
+        let holdsSavedValue: (Model, Model) -> Bool = { live, saved in
+            live[keyPath: keyPath]?[keyPath: id] == saved[keyPath: keyPath]?[keyPath: id]
+        }
+        return RestoredProperty(
+            name: name,
+            keyPath: keyPath,
+            kind: .toOne,
+            holdsSavedValue: holdsSavedValue,
+            restore: { live, saved, store in
+                if holdsSavedValue(live, saved) {
                     return .unchanged
                 }
-                live[keyPath: keyPath] = nil
+                guard let savedTarget = saved[keyPath: keyPath] else {
+                    live[keyPath: keyPath] = nil
+                    return .changed
+                }
+                guard let target = resolve(store, savedTarget) else {
+                    return .unresolved
+                }
+                live[keyPath: keyPath] = target
                 return .changed
             }
-            if let current, current[keyPath: id] == savedTarget[keyPath: id] {
-                return .unchanged
-            }
-            guard let target = resolve(store, savedTarget) else {
-                return .unresolved
-            }
-            live[keyPath: keyPath] = target
-            return .changed
-        }
+        )
     }
 
     /// A to-many relationship. It holds the saved targets exactly once each, or it is set to
@@ -139,24 +208,44 @@ struct RestoredProperty<Model: PersistentModel> {
         id: KeyPath<Target, UUID>,
         resolve: @escaping (AccountStore, Target) -> Target?
     ) -> RestoredProperty {
-        RestoredProperty(name: name, keyPath: keyPath, kind: .toMany) { live, saved, store in
-            let savedTargets = saved[keyPath: keyPath]
-            let savedIDs = Set(savedTargets.map { target in target[keyPath: id] })
+        let holdsSavedValue: (Model, Model) -> Bool = { live, saved in
+            let savedIDs = Set(saved[keyPath: keyPath].map { target in target[keyPath: id] })
             let liveIDs = live[keyPath: keyPath].map { target in target[keyPath: id] }
-            guard liveIDs.count != savedIDs.count || Set(liveIDs) != savedIDs else {
-                return .unchanged
-            }
-            var targets: [Target] = []
-            var seen = Set<UUID>()
-            for savedTarget in savedTargets where seen.insert(savedTarget[keyPath: id]).inserted {
-                guard let target = resolve(store, savedTarget) else {
-                    return .unresolved
-                }
-                targets.append(target)
-            }
-            live[keyPath: keyPath] = targets
-            return .changed
+            return liveIDs.count == savedIDs.count && Set(liveIDs) == savedIDs
         }
+        return RestoredProperty(
+            name: name,
+            keyPath: keyPath,
+            kind: .toMany,
+            holdsSavedValue: holdsSavedValue,
+            restore: { live, saved, store in
+                if holdsSavedValue(live, saved) {
+                    return .unchanged
+                }
+                return RestoredProperty.restoreToMany(live, saved, store, keyPath: keyPath, id: id, resolve: resolve)
+            }
+        )
+    }
+
+    /// Sets a to-many relationship that differs from the saved one to the saved targets.
+    private static func restoreToMany<Target: PersistentModel>(
+        _ live: Model,
+        _ saved: Model,
+        _ store: AccountStore,
+        keyPath: ReferenceWritableKeyPath<Model, [Target]>,
+        id: KeyPath<Target, UUID>,
+        resolve: (AccountStore, Target) -> Target?
+    ) -> RestoreOutcome {
+        var targets: [Target] = []
+        var seen = Set<UUID>()
+        for savedTarget in saved[keyPath: keyPath] where seen.insert(savedTarget[keyPath: id]).inserted {
+            guard let target = resolve(store, savedTarget) else {
+                return .unresolved
+            }
+            targets.append(target)
+        }
+        live[keyPath: keyPath] = targets
+        return .changed
     }
 }
 
@@ -175,7 +264,8 @@ extension SavedValuesRestorable {
     ///
     /// A store that cannot be read here should not happen (the same container just answered
     /// the write). If it does, the model is left to the bare `rollback()`, which may keep a
-    /// changed attribute in memory; that is said, in debug by an assertion, always in the log.
+    /// changed attribute in memory; that is reported (`DiscardFault.savedValuesUnreadable`),
+    /// and the store refuses later saves until it is opened again.
     ///
     /// Returns what is still done for the model after the rollback, nil when the store does
     /// not have it (nothing to put back).
@@ -184,8 +274,7 @@ extension SavedValuesRestorable {
         do {
             copy = try Self.savedCopy(of: self, in: saved)
         } catch {
-            writeLogger.fault("A failed write could not read the saved values of a changed model; it was only rolled back.")
-            assertionFailure("A failed write could not read the saved values of a changed model; it was only rolled back.")
+            store.reportDiscardFault(.savedValuesUnreadable)
             return nil
         }
         guard let copy else {
@@ -216,6 +305,19 @@ extension SavedValuesRestorable {
                 }
             }
         )
+    }
+
+    /// The names of the restored properties whose value differs from the store's, read
+    /// through `saved` (a fresh context on the store's container); nil when the store does not
+    /// have the model. Changes nothing. The tests use it to check that what a discard leaves
+    /// as a change of the context equals the disk.
+    func propertiesDifferingFromSaved(in saved: ModelContext) throws -> [String]? {
+        guard let copy = try Self.savedCopy(of: self, in: saved) else {
+            return nil
+        }
+        return Self.restoredProperties
+            .filter { property in !property.holdsSavedValue(self, copy) }
+            .map(\.name)
     }
 }
 
@@ -266,6 +368,39 @@ extension AccountStore {
         }
     }
 
+    /// Throws once a discard left the context with values the store does not have
+    /// (`DiscardFault.leavesUnsavedState`), so `save()` stores none of them. Only a new
+    /// `AccountStore` on the file (the app's next start, the next sign-in) saves again: its
+    /// context reads everything from the disk (ADR 0025 Addendum M2-T37).
+    func refuseSaveWhileNeedsReopening() throws {
+        if needsReopening {
+            throw DiscardError.storeNeedsReopening
+        }
+    }
+
+    /// Logs `fault` with its fixed message, makes the store refuse later saves when the fault
+    /// may leave unsaved state behind, then calls `onDiscardFault` (an `assertionFailure` in
+    /// the app; a test records it instead).
+    func reportDiscardFault(_ fault: DiscardFault) {
+        switch fault {
+        case .savedValuesUnreadable:
+            writeLogger.fault("A failed write could not read the saved values of a changed model; it was only rolled back.")
+        case .relationshipsNotSettled:
+            writeLogger.fault("A failed write's relationship passes did not settle after the rollback.")
+        case .relationshipUnresolved:
+            writeLogger.fault("A failed write could not resolve a saved relationship target after the rollback.")
+        case .savedModelNotFound:
+            writeLogger.fault("A failed write left a saved model that a fetch does not find.")
+        }
+        if fault.leavesUnsavedState {
+            if !needsReopening {
+                writeLogger.fault("The store refuses every save until it is opened again.")
+            }
+            needsReopening = true
+        }
+        onDiscardFault(fault)
+    }
+
     /// Undoes every unsaved change of the context: the changed and deleted models take the
     /// values the store holds for them again, then the context rolls back, which drops the
     /// inserted models and the deletes, and then the relationships are checked against the
@@ -288,6 +423,9 @@ extension AccountStore {
     /// handed back until its pending changes are processed and every model the store has is
     /// found again by the fetch the app uses (a model the first round misses is fetched a
     /// second time, after that round, before the miss counts).
+    ///
+    /// What could not be put back is reported (`reportDiscardFault`); a relationship left as
+    /// the failed save set it makes the store refuse later saves (ADR 0025 Addendum M2-T37).
     func discardUnsavedChanges() {
         let touched = context.changedModelsArray + context.deletedModelsArray
         guard !touched.isEmpty else {
@@ -306,41 +444,61 @@ extension AccountStore {
         context.rollback()
         // The saved copies are read through `saved`, which must live until the last pass.
         withExtendedLifetime(saved) {
-            var settled = false
-            var repaired = false
-            var unresolved = false
-            for _ in 0..<AccountStore.relationshipPasses where !settled {
-                var outcomes = Set<RestoreOutcome>()
-                for kind in [RestoredPropertyKind.toOne, .toMany] {
-                    for restore in restores {
-                        outcomes.formUnion(restore.restoreAgain(kind))
-                    }
-                }
-                // Inverses and the context's own bookkeeping follow the sets now, not at the
-                // next fetch, so the next pass and the checks below see the settled state.
-                context.processPendingChanges()
-                let changed = outcomes.contains(.changed)
-                unresolved = outcomes.contains(.unresolved)
-                repaired = repaired || changed
-                settled = !changed
-            }
-            if !settled || unresolved {
-                // A relationship differs from the store and could not be set: the next save
-                // might store it. Should not happen; said loudly in debug, always in the log.
-                writeLogger.fault("A failed write could not put every relationship back after the rollback.")
-                assertionFailure("A failed write could not put every relationship back after the rollback.")
-            } else if repaired {
-                writeLogger.notice("A failed write put relationships back after the rollback.")
-            }
-            confirmFoundAgain(restores)
+            _ = repairAfterRollback(restores)
         }
     }
 
+    /// What the relationship passes after a rollback ended with.
+    struct RelationshipRepair: Equatable {
+        /// The last pass changed nothing.
+        var settled = false
+        /// Some pass set a relationship.
+        var repaired = false
+        /// The last pass found a saved target it could not resolve.
+        var unresolved = false
+    }
+
+    /// The part of `discardUnsavedChanges()` after the rollback: the relationship passes, then
+    /// the fetch of every restored model. Separate so that a test can run it on restores that
+    /// never settle or never resolve, which a real store cannot be made to do on purpose.
+    @discardableResult
+    func repairAfterRollback(_ restores: [SavedValuesRestore]) -> RelationshipRepair {
+        var repair = RelationshipRepair()
+        for _ in 0..<AccountStore.relationshipPasses where !repair.settled {
+            var outcomes = Set<RestoreOutcome>()
+            for kind in [RestoredPropertyKind.toOne, .toMany] {
+                for restore in restores {
+                    outcomes.formUnion(restore.restoreAgain(kind))
+                }
+            }
+            // Inverses and the context's own bookkeeping follow the sets now, not at the
+            // next fetch, so the next pass and the checks below see the settled state.
+            context.processPendingChanges()
+            let changed = outcomes.contains(.changed)
+            repair.unresolved = outcomes.contains(.unresolved)
+            repair.repaired = repair.repaired || changed
+            repair.settled = !changed
+        }
+        // A relationship that differs from the store and could not be set would be stored by
+        // the next save, so these reports make the store refuse saves.
+        if repair.unresolved {
+            reportDiscardFault(.relationshipUnresolved)
+        }
+        if !repair.settled {
+            reportDiscardFault(.relationshipsNotSettled)
+        }
+        if repair.repaired, repair.settled, !repair.unresolved {
+            writeLogger.notice("A failed write put relationships back after the rollback.")
+        }
+        confirmFoundAgain(restores)
+        return repair
+    }
+
     /// Fetches every restored model again through the live context. The models the first
-    /// round misses are fetched again after it (the CI log suggests a later fetch finds them; the cause is not known)
-    /// a model still missed, or a fetch that fails, would hide a model the store has
-    /// from the screens and the engine. Should not happen; said loudly in debug, always in
-    /// the log.
+    /// round misses are fetched again after it (the CI log showed that a later fetch finds
+    /// them; the cause is not known). A model still missed, or a fetch that fails, would hide
+    /// a model the store has from the screens and the engine: that is reported
+    /// (`DiscardFault.savedModelNotFound`).
     private func confirmFoundAgain(_ restores: [SavedValuesRestore]) {
         let missed = restores.filter { restore in restore.isFoundAgain() != true }
         guard !missed.isEmpty else {
@@ -349,8 +507,7 @@ extension AccountStore {
         context.processPendingChanges()
         let stillMissed = missed.filter { restore in restore.isFoundAgain() != true }
         guard stillMissed.isEmpty else {
-            writeLogger.fault("A failed write left a saved model that a fetch does not find.")
-            assertionFailure("A failed write left a saved model that a fetch does not find.")
+            reportDiscardFault(.savedModelNotFound)
             return
         }
         writeLogger.notice("A failed write's saved models were found on a second fetch.")

@@ -63,6 +63,72 @@ final class FailedWriteTests: XCTestCase {
         store.willSave = { throw WriteFailed() }
     }
 
+    /// The discard faults of one store, recorded instead of the app's `assertionFailure`, so a
+    /// test of a fault does not stop a Debug run (M2-T37).
+    private final class FaultRecorder {
+        var faults: [DiscardFault] = []
+    }
+
+    private func recordFaults(_ store: AccountStore) -> FaultRecorder {
+        let recorder = FaultRecorder()
+        store.onDiscardFault = { fault in recorder.faults.append(fault) }
+        return recorder
+    }
+
+    /// A name for a model of the store: its type and its key.
+    private func key(_ model: any PersistentModel) -> String {
+        switch model {
+        case let bean as StoredBean: return "bean \(bean.localID)"
+        case let entry as StoredShelfEntry: return "shelf_entry \(entry.localID)"
+        case let brew as StoredBrew: return "brew \(brew.localID)"
+        case let recipe as StoredRecipe: return "recipe \(recipe.localID)"
+        case let profile as StoredProfile: return "profile \(profile.localID)"
+        case let operation as OutboxOperation: return "operation \(operation.sequence)"
+        case let photo as QueuedLabelPhoto: return "photo \(photo.localID)"
+        default: return "unknown \(type(of: model))"
+        }
+    }
+
+    /// The keys of the items `localIDs` and of their operations, as `key(_:)` names them.
+    private func keys(of localIDs: [UUID], in store: AccountStore) throws -> Set<String> {
+        var keys = Set<String>()
+        for model in try store.context.fetch(FetchDescriptor<StoredBean>()) where localIDs.contains(model.localID) {
+            keys.insert(key(model))
+        }
+        for model in try store.context.fetch(FetchDescriptor<StoredShelfEntry>()) where localIDs.contains(model.localID) {
+            keys.insert(key(model))
+        }
+        for model in try store.context.fetch(FetchDescriptor<StoredBrew>()) where localIDs.contains(model.localID) {
+            keys.insert(key(model))
+        }
+        for operation in try store.outboxOperations() where localIDs.contains(operation.localID) {
+            keys.insert(key(operation))
+        }
+        return keys
+    }
+
+    /// What a discard may leave as changes of the context (M2-T37): only models of the failed
+    /// writes (`expected`), each equal to its copy on disk in every restored property.
+    private func checkChangedModels(
+        _ store: AccountStore,
+        onlyOf expected: Set<String>,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws {
+        let saved = ModelContext(store.container)
+        for model in store.context.changedModelsArray {
+            let name = key(model)
+            XCTAssertTrue(expected.contains(name), "\(name) is a change of the context but not a model of the failed write", file: file, line: line)
+            guard let restorable = model as? any SavedValuesRestorable else {
+                XCTFail("\(name) cannot be compared with the disk", file: file, line: line)
+                continue
+            }
+            let differing = try restorable.propertiesDifferingFromSaved(in: saved)
+            XCTAssertEqual(differing, [], "\(name) differs from its copy on disk", file: file, line: line)
+        }
+        withExtendedLifetime(saved) {}
+    }
+
     private func otherBean(in store: AccountStore) throws -> StoredBean {
         let bean = StoredBean(API.Bean(
             beanId: FailedWriteTests.otherBeanID,
@@ -163,6 +229,178 @@ final class FailedWriteTests: XCTestCase {
         check(StoredProfile.self)
         check(OutboxOperation.self)
         check(QueuedLabelPhoto.self)
+    }
+
+    // MARK: - What a restore reports, and the faults of a discard (M2-T37)
+
+    /// An attribute restore compares with the saved value: an equal one is not set again and
+    /// reports `unchanged`, a different one is set and reports `changed`.
+    func testAnAttributeRestoreSaysWhetherItChangedAnything() throws {
+        let store = try AccountStore.inMemory()
+        let brew = try syncedBrew(in: store)
+        let saved = ModelContext(store.container)
+        let copy = try XCTUnwrap(StoredBrew.savedCopy(of: brew, in: saved))
+        let dose = try XCTUnwrap(StoredBrew.restoredProperties.first { property in property.name == "doseDg" })
+        XCTAssertEqual(dose.kind, .attribute)
+
+        for property in StoredBrew.restoredProperties {
+            XCTAssertTrue(property.holdsSavedValue(brew, copy), property.name)
+            XCTAssertEqual(property.restore(brew, copy, store), .unchanged, property.name)
+        }
+        XCTAssertFalse(store.context.hasChanges, "an equal value is not set again")
+
+        brew.doseDg = 222
+        XCTAssertFalse(dose.holdsSavedValue(brew, copy))
+        XCTAssertEqual(try brew.propertiesDifferingFromSaved(in: saved), ["doseDg"])
+        XCTAssertEqual(dose.restore(brew, copy, store), .changed)
+        XCTAssertEqual(brew.doseDg, copy.doseDg)
+        XCTAssertEqual(dose.restore(brew, copy, store), .unchanged, "idempotent")
+        XCTAssertEqual(try brew.propertiesDifferingFromSaved(in: saved), [])
+        withExtendedLifetime(saved) {}
+    }
+
+    /// Relationship passes that never settle (a restore that keeps changing something, which a
+    /// real store cannot be made to do on purpose) run 3 times, are reported, and the store
+    /// refuses every later save until it is opened again.
+    func testRelationshipsThatDoNotSettleAreReportedAndTheStoreRefusesSaves() throws {
+        let store = try AccountStore.inMemory()
+        let recorder = recordFaults(store)
+        var passes = 0
+        let neverSettles = SavedValuesRestore(
+            restoreAgain: { kind in
+                if kind == .toOne {
+                    passes += 1
+                }
+                return [.changed]
+            },
+            isFoundAgain: { true }
+        )
+
+        let repair = store.repairAfterRollback([neverSettles])
+
+        XCTAssertEqual(repair, AccountStore.RelationshipRepair(settled: false, repaired: true, unresolved: false))
+        XCTAssertEqual(passes, 3)
+        XCTAssertEqual(recorder.faults, [.relationshipsNotSettled])
+        XCTAssertTrue(store.needsReopening)
+        XCTAssertThrowsError(try unrelatedSave(store)) { error in
+            XCTAssertEqual(error as? DiscardError, .storeNeedsReopening)
+        }
+        XCTAssertFalse(store.context.hasChanges)
+        XCTAssertEqual(try savedQueue(store), [])
+
+        // Opened again: a new store on the same container reads the disk and saves.
+        let reopened = AccountStore(container: store.container)
+        XCTAssertFalse(reopened.needsReopening)
+        try unrelatedSave(reopened)
+        XCTAssertEqual(try savedQueue(reopened), ["create recipe"])
+    }
+
+    /// A saved target that cannot be resolved leaves the relationship as the failed save set
+    /// it: reported, and no later save stores it.
+    func testAnUnresolvedRelationshipIsReportedAndTheStoreRefusesSaves() throws {
+        let store = try AccountStore.inMemory()
+        let recorder = recordFaults(store)
+        let unresolved = SavedValuesRestore(restoreAgain: { _ in [.unresolved] }, isFoundAgain: { true })
+
+        let repair = store.repairAfterRollback([unresolved])
+
+        XCTAssertEqual(repair, AccountStore.RelationshipRepair(settled: true, repaired: false, unresolved: true))
+        XCTAssertEqual(recorder.faults, [.relationshipUnresolved])
+        XCTAssertThrowsError(try unrelatedSave(store)) { error in
+            XCTAssertEqual(error as? DiscardError, .storeNeedsReopening)
+        }
+        XCTAssertEqual(try savedQueue(store), [])
+    }
+
+    /// A repair that sets a relationship once and then finds everything right is no fault.
+    func testARepairThatSettlesIsNoFault() throws {
+        let store = try AccountStore.inMemory()
+        let recorder = recordFaults(store)
+        var toOnePasses = 0
+        let settles = SavedValuesRestore(
+            restoreAgain: { kind in
+                guard kind == .toOne else {
+                    return [.unchanged]
+                }
+                toOnePasses += 1
+                return toOnePasses == 1 ? [.changed] : [.unchanged]
+            },
+            isFoundAgain: { true }
+        )
+
+        let repair = store.repairAfterRollback([settles])
+
+        XCTAssertEqual(repair, AccountStore.RelationshipRepair(settled: true, repaired: true, unresolved: false))
+        XCTAssertEqual(toOnePasses, 2)
+        XCTAssertEqual(recorder.faults, [])
+        XCTAssertFalse(store.needsReopening)
+        try unrelatedSave(store)
+        XCTAssertEqual(try savedQueue(store), ["create recipe"])
+    }
+
+    /// A model the fetch misses twice, or a fetch that fails, is reported; a miss the second
+    /// fetch finds is not. Neither leaves a value the store does not have, so saves go on.
+    func testAModelTheFetchDoesNotFindAgainIsReported() throws {
+        let store = try AccountStore.inMemory()
+        let recorder = recordFaults(store)
+        var fetches = 0
+        let foundSecond = SavedValuesRestore(
+            restoreAgain: { _ in [.unchanged] },
+            isFoundAgain: {
+                fetches += 1
+                return fetches > 1
+            }
+        )
+        store.repairAfterRollback([foundSecond])
+        XCTAssertEqual(fetches, 2)
+        XCTAssertEqual(recorder.faults, [])
+
+        store.repairAfterRollback([SavedValuesRestore(restoreAgain: { _ in [.unchanged] }, isFoundAgain: { false })])
+        store.repairAfterRollback([SavedValuesRestore(restoreAgain: { _ in [.unchanged] }, isFoundAgain: { nil })])
+
+        XCTAssertEqual(recorder.faults, [.savedModelNotFound, .savedModelNotFound])
+        XCTAssertFalse(store.needsReopening)
+        try unrelatedSave(store)
+        XCTAssertEqual(try savedQueue(store), ["create recipe"])
+    }
+
+    /// Every fault reaches the hook; those that may leave unsaved values make the store refuse
+    /// saves.
+    func testEveryDiscardFaultIsReportedAndOnlyThoseLeavingUnsavedValuesStopSaves() throws {
+        for fault in DiscardFault.allCases {
+            let store = try AccountStore.inMemory()
+            let recorder = recordFaults(store)
+
+            store.reportDiscardFault(fault)
+
+            XCTAssertEqual(recorder.faults, [fault])
+            XCTAssertEqual(store.needsReopening, fault.leavesUnsavedState, "\(fault)")
+            XCTAssertFalse(fault.assertionMessage.isEmpty)
+        }
+        XCTAssertEqual(
+            Set(DiscardFault.allCases.filter(\.leavesUnsavedState)),
+            [.savedValuesUnreadable, .relationshipsNotSettled, .relationshipUnresolved]
+        )
+    }
+
+    /// The engine sends nothing from a store that refuses saves: it could not mark an
+    /// operation as sent, so it waits the longest backoff instead of retrying at once.
+    func testTheEngineWaitsWhileTheStoreNeedsReopening() async throws {
+        let store = try AccountStore.inMemory()
+        try unrelatedSave(store)
+        let recorder = recordFaults(store)
+        store.reportDiscardFault(.relationshipUnresolved)
+        let server = try FakeSyncServer()
+        let clock = TestClock()
+        let engine = SyncEngine(store: store, client: server.client(), now: { clock.now }, jitter: { 1 }, sleep: { _ in })
+
+        let result = await engine.drain()
+
+        XCTAssertEqual(result, .waiting(until: clock.now.addingTimeInterval(SyncBackoff().maximum)))
+        XCTAssertTrue(server.log.isEmpty)
+        XCTAssertEqual(try savedQueue(store), ["create recipe"])
+        XCTAssertEqual(recorder.faults, [.relationshipUnresolved])
+        withExtendedLifetime(server) {}
     }
 
     func testAWriteThatThrowsPutsBackEveryChangedFieldOfASavedBrew() throws {
@@ -480,9 +718,16 @@ final class FailedWriteTests: XCTestCase {
         let expectedQueue = ["create brew", "look_up bean", "create shelf_entry"]
 
         XCTAssertNil(store.willSave, "the store itself fails, not the hook")
+        // A fault fails the test here instead of stopping the Debug run (M2-T37).
+        let recorder = recordFaults(store)
         let entry = try XCTUnwrap(store.shelfEntry(localID: entryID))
         let brew = try XCTUnwrap(store.brew(localID: brewID))
         XCTAssertEqual(try queue(store), expectedQueue)
+        // The models each failed write touches: its items and their operations.
+        let brewWrite = try keys(of: [brewID, entryID], in: store)
+        let scanWrite = try keys(of: [scannedEntryID, pendingBeanID], in: store)
+        XCTAssertEqual(brewWrite.count, 3, "the brew, its entry and its create")
+        XCTAssertEqual(scanWrite.count, 4, "the entry, its pending bean and their two operations")
 
         // A brew the server never had is deleted at once, with its create.
         XCTAssertThrowsError(try store.markDeleted(brew))
@@ -493,6 +738,7 @@ final class FailedWriteTests: XCTestCase {
         XCTAssertEqual(entry.brews.map(\.localID), [brewID])
         XCTAssertEqual(try store.brewsNewestFirst().map(\.localID), [brewID])
         XCTAssertEqual(try queue(store), expectedQueue)
+        try checkChangedModels(store, onlyOf: brewWrite)
 
         // A scanned bag's entry the server never had goes at once, and its pending bean with it.
         let scannedEntry = try XCTUnwrap(store.shelfEntry(localID: scannedEntryID))
@@ -513,14 +759,40 @@ final class FailedWriteTests: XCTestCase {
         XCTAssertEqual(try store.bean(localID: pendingBeanID)?.localID, pendingBeanID)
         // Read through fresh fetches first (what the app's screens do: they keep local ids and
         // fetch again), then through the instances held from before the failed write.
-        XCTAssertEqual(try store.shelfEntry(localID: scannedEntryID)?.bean?.localID, pendingBeanID, "fetched entry")
-        XCTAssertEqual(try store.bean(localID: pendingBeanID)?.shelfEntries.map(\.localID), [scannedEntryID], "fetched bean")
-        XCTAssertEqual(scannedEntry.bean?.localID, pendingBeanID, "held entry")
-        XCTAssertEqual(pendingBean.shelfEntries.map(\.localID), [scannedEntryID], "held bean")
-        XCTAssertEqual(Set(try store.shelfEntries().map(\.localID)), [entryID, scannedEntryID])
-        XCTAssertEqual(try queue(store), expectedQueue)
-        XCTAssertEqual(try store.pendingBeanStates()[pendingBeanID], .lookingUp)
-        XCTAssertEqual(try savedQueue(store), expectedQueue)
+        func checkScannedBagIsBack(_ when: String, file: StaticString = #filePath, line: UInt = #line) throws {
+            XCTAssertTrue(store.context.insertedModelsArray.isEmpty, when, file: file, line: line)
+            XCTAssertTrue(store.context.deletedModelsArray.isEmpty, when, file: file, line: line)
+            XCTAssertEqual(try store.shelfEntry(localID: scannedEntryID)?.bean?.localID, pendingBeanID, "fetched entry, \(when)", file: file, line: line)
+            XCTAssertEqual(try store.bean(localID: pendingBeanID)?.shelfEntries.map(\.localID), [scannedEntryID], "fetched bean, \(when)", file: file, line: line)
+            XCTAssertEqual(scannedEntry.bean?.localID, pendingBeanID, "held entry, \(when)", file: file, line: line)
+            XCTAssertEqual(pendingBean.shelfEntries.map(\.localID), [scannedEntryID], "held bean, \(when)", file: file, line: line)
+            XCTAssertEqual(Set(try store.shelfEntries().map(\.localID)), [entryID, scannedEntryID], when, file: file, line: line)
+            XCTAssertEqual(try queue(store), expectedQueue, when, file: file, line: line)
+            XCTAssertEqual(try store.pendingBeanStates()[pendingBeanID], .lookingUp, when, file: file, line: line)
+            XCTAssertEqual(try savedQueue(store), expectedQueue, when, file: file, line: line)
+            // What the discards leave as changes of the context: only models of the two failed
+            // writes (the brew's may still be listed; nothing is ever saved here), each equal
+            // to its copy on disk (M2-T37).
+            try checkChangedModels(store, onlyOf: brewWrite.union(scanWrite), file: file, line: line)
+            XCTAssertEqual(recorder.faults, [], when, file: file, line: line)
+            XCTAssertFalse(store.needsReopening, when, file: file, line: line)
+        }
+        try checkScannedBagIsBack("after the repaired discard")
+
+        // A repair run twice (M2-T37): the engine's next send changes the look-up operation as
+        // `markSending` does, its save fails in the store and discards over the repaired state,
+        // and the engine's `catch` discards once more. The scanned bag stays as it was.
+        let lookUp = try XCTUnwrap(store.outboxOperations().first { operation in operation.localID == pendingBeanID })
+        let attempts = lookUp.attemptCount
+        XCTAssertFalse(lookUp.sentWithoutAnswer)
+        lookUp.attemptCount += 1
+        lookUp.sentWithoutAnswer = true
+        XCTAssertThrowsError(try store.save())
+        store.discardUnsavedChanges()
+
+        XCTAssertEqual(lookUp.attemptCount, attempts)
+        XCTAssertFalse(lookUp.sentWithoutAnswer)
+        try checkScannedBagIsBack("after an engine discard")
     }
 
     /// The same removal as above through the `willSave` hook: a scanned bag's entry and the
@@ -549,6 +821,51 @@ final class FailedWriteTests: XCTestCase {
         XCTAssertEqual(try savedQueue(store), ["look_up bean", "create shelf_entry", "create recipe"])
         let savedBean = try saved(StoredShelfEntry.self, in: store) { entries in entries.first?.bean?.localID }
         XCTAssertEqual(savedBean, bean.localID)
+    }
+
+    /// A repair run twice (M2-T37): after the failed removal above, the engine's own send fails
+    /// at its first save (the look-up's attempt), and the engine discards again. The bag is
+    /// still on the shelf with its pending bean, and once saves work the bean is looked up, not
+    /// dropped as a bean without a shelf entry would be.
+    func testAnEngineDiscardAfterARepairedDiscardKeepsTheScannedBag() async throws {
+        let store = try AccountStore.inMemory()
+        let recorder = recordFaults(store)
+        let server = try FakeSyncServer()
+        let clock = TestClock()
+        let engine = SyncEngine(store: store, client: server.client(), now: { clock.now }, jitter: { 1 }, sleep: { _ in })
+        let bean = try pendingScan(store)
+        let entry = try XCTUnwrap(bean.shelfEntries.first)
+        let failedWrite = try keys(of: [bean.localID, entry.localID], in: store)
+        failSaves(store)
+        XCTAssertThrowsError(try store.markDeleted(entry))
+
+        let failed = await engine.drain()
+
+        guard case .waiting = failed else {
+            return XCTFail("a failed save waits: \(failed)")
+        }
+        XCTAssertTrue(server.log.isEmpty, "nothing is sent before its attempt is saved")
+        store.willSave = nil
+        XCTAssertTrue(store.context.insertedModelsArray.isEmpty)
+        XCTAssertTrue(store.context.deletedModelsArray.isEmpty)
+        XCTAssertEqual(try store.shelfEntry(localID: entry.localID)?.bean?.localID, bean.localID)
+        XCTAssertEqual(try store.bean(localID: bean.localID)?.shelfEntries.map(\.localID), [entry.localID])
+        XCTAssertEqual(entry.bean?.localID, bean.localID)
+        XCTAssertEqual(bean.shelfEntries.map(\.localID), [entry.localID])
+        XCTAssertEqual(try queue(store), ["look_up bean", "create shelf_entry"])
+        XCTAssertEqual(try store.outboxOperations().map(\.attemptCount), [0, 0])
+        try checkChangedModels(store, onlyOf: failedWrite)
+        XCTAssertEqual(recorder.faults, [])
+
+        clock.advance(SyncBackoff().maximum + 1)
+        let second = await engine.drain()
+
+        XCTAssertEqual(second, .idle)
+        XCTAssertEqual(server.log, lookUpRequests, "the pending bean was looked up")
+        XCTAssertEqual(try savedQueue(store), ["await_description bean", "create shelf_entry"])
+        XCTAssertEqual(try store.pendingBeanQuestions().map(\.beanID), [bean.localID])
+        XCTAssertEqual(recorder.faults, [])
+        withExtendedLifetime(server) {}
     }
 
     // MARK: - AccountStore writes

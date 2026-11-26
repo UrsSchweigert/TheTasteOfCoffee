@@ -22,6 +22,17 @@ final class AccountStore {
     /// The writes under way (`write { }`, `Store/AccountStore+Write.swift`). Only `write`
     /// changes it.
     var writeNesting = WriteNesting()
+    /// Called when a failed write's discard could not put everything back (`DiscardFault`),
+    /// after the fault was logged. An `assertionFailure` in the app; tests record the fault
+    /// instead, so that a test of that path does not stop a Debug run.
+    var onDiscardFault: (DiscardFault) -> Void = { fault in
+        assertionFailure(fault.assertionMessage)
+    }
+    /// True once a discard left values the store does not have (`DiscardFault`,
+    /// `leavesUnsavedState`). Every later `save()` then throws `DiscardError.storeNeedsReopening`
+    /// (ADR 0025 Addendum M2-T37). Only `reportDiscardFault` sets it; it is never cleared: a
+    /// new `AccountStore` on the same file starts without it.
+    var needsReopening = false
 
     init(container: ModelContainer) {
         self.container = container
@@ -229,10 +240,12 @@ final class AccountStore {
     /// changed models take their saved values again, inserts and deletes are rolled back) and
     /// the error thrown. After a save `onSave` is called, so the sync engine can look at the
     /// outbox, and `didSaveNotification` is posted with this store as its object, so screens
-    /// read again.
+    /// read again. Once a discard could not put everything back (`needsReopening`) every save
+    /// is refused this way, with `DiscardError.storeNeedsReopening`.
     func save() throws {
         do {
             try refuseSaveAfterFailedInnerWrite()
+            try refuseSaveWhileNeedsReopening()
             try willSave?()
             try context.save()
         } catch {
