@@ -50,9 +50,10 @@ export const GITHUB_REPOSITORY = 'UrsSchweigert/TheTasteOfCoffee';
 
 /**
  * GitHub's numeric ids of the owner account and of this repository (public, not secret;
- * `GET /repos/UrsSchweigert/TheTasteOfCoffee` returns `owner.id` and `id`). GitHub now
- * issues the immutable subject form `repo:<owner>@<owner_id>/<repo>@<repo_id>:...` for
- * this repository (ADR 0018, addendum 2026-11-26). A different owner or repository that
+ * `GET /repos/UrsSchweigert/TheTasteOfCoffee` returns `owner.id` and `id`). The live
+ * trust of the role uses the immutable subject form `repo:<owner>@<owner_id>/<repo>@<repo_id>:...`,
+ * so that is taken to be what GitHub issues for this repository; the first AWS OIDC check
+ * after the trust change proves it, and a wrong `sub` fails closed (ADR 0018, addendum 2026-11-26). A different owner or repository that
  * reuses the name has other ids and never matches.
  */
 export const GITHUB_OWNER_ID = '132881530';
