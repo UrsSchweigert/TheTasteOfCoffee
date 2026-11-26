@@ -940,6 +940,11 @@ Scope: App Store listing, screenshots, privacy nutrition labels, privacy policy 
 - acceptance:
   - From PR #63: `ModelContext.rollback()` does not restore an attribute changed on a model that was already saved. The rating write now keeps a `BrewRatingSnapshot` and puts the fields back itself.
   - Do the same at every other `rollback()` after an edit of a saved model: `ShelfEntryEditorModel`, `BrewFormModel`, `SyncIssuesModel` (redo, discard), `Puller` and `AccountStore.save()`. Otherwise a failed edit stays in memory with no operation queued, and the next unrelated save stores it without ever sending it.
+  - From the M2-T25 round 2 review, the M2-T25 sites too: `describePendingBean` and `skipDescription` (AccountStore+PendingBeans.swift), the existing-bean branch of `addOfflineBean`, `settleQuestion`, and `askForDescription` (SyncEngine.swift). Today a failed describe leaves `create` in memory, and a retry deletes the queued photo and reports success. Correct the comment in PendingBeanConfirmation.swift that says `save()` rolled the change back.
+  - Also from that review:
+    - moving the last shelf entry off a pending bean (ShelfEntryEditorModel) drops the bean as `markDeleted` does, so a bean waiting for an answer cannot stay in the outbox forever;
+    - `BeanEntryModel` never calls `createBean` while `describing` is set, even without an offline store;
+    - add tests that a failed `.addScanned` save leaves nothing behind and that a parked dependency does not loop.
   - Prefer one shared mechanism in `AccountStore` (for example, a write that snapshots the changed models' sync state and fields and restores them on failure) over a snapshot per screen.
   - Each site has a test like `RatingTests.testAFailedSaveLeavesNothingBehind`: a write that throws after changing a saved model leaves the model as it was and queues nothing.
   - Mac: the `ios` job.
