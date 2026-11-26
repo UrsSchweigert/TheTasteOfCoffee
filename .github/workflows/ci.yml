@@ -152,6 +152,9 @@ jobs:
       # matches contracts/, and the String Catalog has English and German.
       - name: iOS scripts tests
         run: node --test scripts/ios-scripts.test.mjs
+      # The companion page in site/ stays static and true to the decisions (M2-T38).
+      - name: Companion page tests
+        run: node --test scripts/site.test.mjs
       - name: iOS generated vocabulary is up to date
         run: node scripts/generate-ios-vocabulary.mjs --check
       # The Swift API types match contracts/openapi.yaml (M2-T7, ADR 0022).

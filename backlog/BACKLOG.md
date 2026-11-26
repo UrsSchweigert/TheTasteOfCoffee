@@ -924,7 +924,7 @@ Planning notes (planned 2026-11-25):
 - needs: human. The page lives on the owner's existing DerSchweigert site, which this repo must not touch (CLAUDE.md invariant 9: no change to any resource this repo did not create, no new Route 53 zone). So the owner copies `site/` into the DerSchweigert site themselves, from their own checkout, and deploys it there.
 - depends: M2-T38
 - acceptance:
-  - The owner fills in every `TODO` of the page (operator name and address, contact email, publication date, TestFlight link, governing law, Impressum) and has a lawyer review the privacy text and the terms (issue #37, issue #38 for the Open Food Facts licence).
+  - The owner fills in every `TODO` of the page (operator name and address, contact email, publication date, TestFlight link, what the host of the page logs, governing law, Impressum) and has a lawyer review the privacy text and the terms, in particular the liability clause (issue #37, issue #38 for the Open Food Facts licence).
   - The page is reachable at derschweigert/cupmark with its German version. The relative links `de/` and `../` still work at that path.
   - The URL (with `#privacy`) is entered as the privacy policy URL in App Store Connect before App Review. TestFlight external testing also asks for it.
   - If the owner would rather have a Cupmark-owned site (S3 and CloudFront named `cupmark-`), that is a cost and DNS decision: ask first, record an ADR.

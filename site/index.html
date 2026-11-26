@@ -18,7 +18,7 @@
       <li><a href="#testers">Become a tester</a></li>
       <li><a href="#privacy">Privacy</a></li>
       <li><a href="#terms">Terms</a></li>
-      <li><a href="de/">Deutsch</a></li>
+      <li><a href="de/" lang="de" hreflang="de">Deutsch</a></li>
     </ul>
   </nav>
 </header>
@@ -65,9 +65,9 @@
 
 <h3>What is stored, and why</h3>
 <ul>
-  <li><strong>Your account.</strong> You sign in with Apple. The app asks only for a pseudonymous account identifier. Apple gives us no name and no email address. The identifier is kept to know which data is yours (contract, Art. 6(1)(b) GDPR).</li>
-  <li><strong>Your log.</strong> Beans on your shelf, brews, ratings, recipes and your settings (such as your units and your choice about contributing to averages), kept so the app works and syncs between your devices (Art. 6(1)(b)).</li>
-  <li><strong>Label photos.</strong> If you photograph a bag label, the photo is stored for you and may be checked by the operator to confirm a bean for the shared catalogue. Label photos are never shown to other users. All metadata, including any location, is removed from a photo before it is stored.</li>
+  <li><strong>Your account.</strong> You sign in with Apple. The app asks only for a pseudonymous account identifier. Apple gives us no name and no email address. The identifier is kept, in an Amazon Cognito user record, to know which data is yours (contract, Art. 6(1)(b) GDPR).</li>
+  <li><strong>Your log.</strong> Beans on your shelf, brews, ratings, recipes and your settings (your language and your choice about contributing to averages), kept so the app works and syncs between your devices (Art. 6(1)(b)).</li>
+  <li><strong>Label photos.</strong> If you photograph a bag label, the photo is sent to our server and may be checked by the operator to confirm a bean for the shared catalogue. It is never shown to other users, not even back to you. The server removes all metadata, including any location, and keeps only the cleaned copy. The original you uploaded still has its metadata until it is deleted automatically, within about two days.</li>
   <li><strong>Your choice about averages.</strong> Whether you contribute to community averages is stored with your profile. The default is no. Your brews count towards averages only if you said yes when you wrote them (consent, Art. 6(1)(a)); you can change this in the app at any time.</li>
   <li><strong>Bean look-ups.</strong> When you scan a barcode, our server looks the number up in the Open Food Facts database and may keep a copy of the product's name, brand and image in the shared catalogue. Open Food Facts data is available under the Open Database License (ODbL). The look-up is made by our server, not by your phone, so Open Food Facts does not see your device.</li>
   <li><strong>Technical logs.</strong> The servers keep the technical records that running a service needs (for example request errors) for two weeks, only to keep the service secure and working (Art. 6(1)(f)).</li>
@@ -77,11 +77,11 @@
 <p>Averages are shown only when at least five different people have rated a bean. No individual log, rating or profile is shown to anyone else. When an account is deleted, its brews are removed and subtracted from the averages.</p>
 
 <h3>Where it is processed</h3>
-<p>The data is stored with Amazon Web Services in Frankfurt, Germany (region eu-central-1). Amazon Web Services EMEA SARL acts as our processor. Sign in with Apple is provided by Apple. We do not send app data to any other recipient, and no app data leaves the EU on our initiative.</p>
+<p>The data is stored with Amazon Web Services in Frankfurt, Germany (region eu-central-1). Amazon Web Services EMEA SARL acts as our processor. Sign in with Apple is provided by Apple, which handles the sign-in as a separate controller under its own privacy policy. We do not send app data to any other recipient, and we do not move app data out of the EU ourselves.</p>
 
 <h3>How long it is kept, and deleting it</h3>
-<p>Your data is kept while your account exists. In the app, Settings has a button to delete your account. It removes your brews, ratings, recipes and profile, and every version of the label photos you uploaded, straight away. Photos of beans that were already verified stay in the shared catalogue, but they are no longer linked to you.</p>
-<p>Backups: after a deletion, copies can remain in the database's point-in-time recovery for up to 35 days and in weekly exports for up to about 13 months. A list of deleted account identifiers, nothing else, is kept so that any restore from a backup removes them again before the data is used.</p>
+<p>Your data is kept while your account exists. In the app, Settings has a button to delete your account. It removes your shelf entries, brews, ratings, recipes and profile, and every version of the label photos you uploaded, straight away. Photos of beans that were already verified stay in the shared catalogue for 90 days after the verification, but they are no longer linked to you.</p>
+<p>Backups: after a deletion, copies can remain in the database's point-in-time recovery for up to 35 days and in weekly exports for up to about 13 months. A deletion log is kept so that any restore from a backup removes deleted accounts again before the data is used. Each entry holds only the account identifier, the identifiers of its label photos and the time of deletion. Entries are deleted after 400 days (up to about 14 months in all, counting older versions). Short-lived technical records, such as daily usage counters and unfinished uploads, expire by themselves.</p>
 
 <h3>Your rights</h3>
 <p>You can ask for access to your data, correction, deletion, restriction, a copy in a common format and you can object to processing based on legitimate interests. The app already gives you a CSV export and account deletion. For anything else write to the contact above. You may withdraw consent at any time. You also have the right to complain to a data protection authority, in particular in the country where you live or work.</p>
@@ -90,6 +90,7 @@
 <p>The app uses the camera only to read a barcode, which happens on your device, and, if you choose, to photograph a label. Only a label photo you choose to take is uploaded.</p>
 
 <h3>Changes</h3>
+<p>This policy covers the app. The page you are reading is served by its host, which may keep access records such as IP addresses: <span class="todo">TODO owner: describe what the host of this page logs, and for how long</span>.</p>
 <p>If this policy changes, the new version appears here with its date. Version: draft of <span class="todo">TODO date of publication</span>.</p>
 </section>
 
@@ -102,15 +103,15 @@
   <li><strong>Your data.</strong> Your log stays yours. You allow us to store and process it to run the app as described in the privacy policy, and, only if you opt in, to include your ratings in anonymous community averages.</li>
   <li><strong>Fair use.</strong> No attempts to read other people's data, to overload the service or to feed it false data on purpose.</li>
   <li><strong>Catalogue data.</strong> Product data and images come from Open Food Facts and are available under the Open Database License (ODbL): <a href="https://world.openfoodfacts.org/legal">openfoodfacts.org/legal</a>.</li>
-  <li><strong>No warranty for the beta.</strong> The app and this page are provided as they are, free of charge, as far as the law allows. Liability is limited to intent and gross negligence, and to the cases where the law makes it unavoidable, such as injury to life, body or health, and mandatory consumer rights.</li>
+  <li><strong>No warranty for the beta.</strong> The app and this page are provided as they are, free of charge, as far as the law allows. Liability is limited as far as the law allows, and never for what the law does not let anyone exclude, such as injury to life, body or health, and mandatory consumer rights. <span class="todo">TODO lawyer: confirm or replace this clause</span></li>
   <li><strong>Ending.</strong> You can stop at any time. We may end the test or a test account, for example when a test round finishes.</li>
   <li><strong>Law.</strong> <span class="todo">TODO owner and lawyer: governing law, place of jurisdiction and, if the law requires it, the Impressum details</span>.</li>
 </ol>
 </section>
 
-<footer>
-<p>Cupmark. <a href="#privacy">Privacy</a> · <a href="#terms">Terms</a> · <a href="de/">Deutsch</a></p>
-</footer>
 </main>
+<footer>
+<p>Cupmark. <a href="#privacy">Privacy</a> · <a href="#terms">Terms</a> · <a href="de/" lang="de" hreflang="de">Deutsch</a></p>
+</footer>
 </body>
 </html>
