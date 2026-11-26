@@ -53,6 +53,8 @@ struct ShelfScreen: View {
     let language: VocabularyLanguage
     @State private var model: ShelfModel
     @State private var isScanning = false
+    /// The shelf entry whose brew form is open (M2-T19).
+    @State private var brewing: BrewRoute?
     @Environment(\.apiClient) private var apiClient
     @Environment(\.scenePhase) private var scenePhase
 
@@ -110,10 +112,29 @@ struct ShelfScreen: View {
                             ShelfRowView(row: row, vocabulary: vocabulary, language: language)
                         }
                         .accessibilityIdentifier("shelf-entry-row")
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            // Logs a brew of this bag (M2-T19); VoiceOver lists it as an action.
+                            Button {
+                                brewing = BrewRoute(shelfEntryLocalID: row.id)
+                            } label: {
+                                Label {
+                                    Text(L10n.brewStart)
+                                } icon: {
+                                    Image(systemName: "cup.and.saucer")
+                                }
+                            }
+                            .tint(.brown)
+                            .accessibilityIdentifier("shelf-entry-brew")
+                        }
                     }
                 }
             } header: {
                 Text(L10n.shelfHeader)
+            }
+        }
+        .sheet(item: $brewing) { route in
+            NavigationStack {
+                BrewFormScreen(store: store, shelfEntry: route.shelfEntryLocalID, vocabulary: vocabulary, language: language)
             }
         }
         .navigationDestination(for: ShelfEntryRoute.self) { route in

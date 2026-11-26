@@ -646,7 +646,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T19 Brew form per method
-- status: todo
+- status: done (built and tested by the macOS `ios` job in #62)
 - owner: ios-engineer
 - depends: M2-T18
 - implements: docs/04-specification.md, F2
@@ -726,7 +726,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the conversion is tested in the `ios` job. The task ends `needs-mac-verification` until a real HEIC capture passes on a device in M2-T34.
 
 ### M2-T24 Label photo: presigned upload and completion
-- status: todo
+- status: needs-mac-verification (the unit tests pass in the `ios` job in #62; a real upload to dev is verified in M2-T34)
 - owner: ios-engineer
 - depends: M2-T23
 - implements: ADR 0016; contracts/openapi.yaml, `createLabelPhotoUpload`, `completeLabelPhoto`
@@ -750,6 +750,7 @@ Planning notes (planned 2026-11-25):
 - owner: ios-engineer
 - depends: M2-T18, M2-T24
 - implements: docs/04-specification.md, Non-functional (Offline: "Scan, brew and rate work offline and sync later")
+- note: from the M2-T24 review, `LabelPhotoUploadJob` must become `Codable` and live in the per-account outbox; a sign-out today deletes the account's not-yet-uploaded photos, which queued jobs must survive. Point the SyncHost tests at a temporary `LabelPhotoFolders` root.
 - acceptance:
   - A barcode scanned offline is kept as a pending bean. It can be put on the shelf, and brews can be logged against it, at once.
   - When the device is back online, the outbox resolves the pending bean:
@@ -843,6 +844,7 @@ Planning notes (planned 2026-11-25):
 - owner: ios-engineer
 - depends: M2-T16
 - implements: docs/04-specification.md, Non-functional (account deletion in the app); ADR 0017 and its Addendum; contracts `deleteAccount`
+- note: from the M2-T24 review, account deletion must also remove the account's `Application Support/LabelPhotos/<account>` folder of pending label photos.
 - acceptance:
   - From the M2-T16 review: a 401 from the ADR 0017 tombstone signs the user out without a reason. Give `AuthModel` a way to show "this account was deleted or its session ended" when sync asks for sign-in.
   - Settings, then Delete account. Two steps confirm with buttons only, and they say what is deleted: the data, the label photos of unverified beans, and the sign-in.
@@ -863,6 +865,7 @@ Planning notes (planned 2026-11-25):
 - owner: ios-engineer
 - depends: M2-T25, M2-T26, M2-T27, M2-T28, M2-T29, M2-T30, M2-T31
 - implements: docs/04-specification.md, Non-functional (Localisation); docs/03-project-brief.md, In scope (German and English)
+- note: from the M2-T19 review, the ratio's `1:` prefix is written in `BrewFormat.ratio`; move it to a catalogue format key if a locale writes ratios differently.
 - acceptance:
   - `scripts/check-ios-strings.mjs` also checks `InfoPlist.xcstrings`: both languages, and `extractionState` manual. A test shows it failing on a missing language.
   - Numbers, units, dates and durations go through Foundation formatters in the device locale. Tests check "18,5 g" in de and "18.5 g" in en, the ratio, dates, and the timer as mm:ss.

@@ -31,6 +31,8 @@ struct BeanDetailView: View {
     let vocabulary: VocabularyStore
     let language: VocabularyLanguage
     let loadImage: CatalogueImageLoader
+    /// The label photos of a bean the user just entered (M2-T24); nil elsewhere.
+    var labelPhotos: LabelPhotoUploadSection? = nil
 
     var body: some View {
         List {
@@ -78,6 +80,10 @@ struct BeanDetailView: View {
                 }
             } header: {
                 Text(L10n.beanAttributesHeader)
+            }
+
+            if let labelPhotos {
+                labelPhotos
             }
         }
         .accessibilityIdentifier("bean-detail")

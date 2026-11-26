@@ -13,7 +13,8 @@ import Observation
 ///   shown and the same body is never sent again. Every other failure can be retried.
 ///
 /// The save goes straight to the API for now. `request` is the complete body, built from the
-/// picks alone, so M2-T25 can put it into the outbox instead of calling `save()`.
+/// picks alone, so M2-T25 can put it into the outbox instead of calling `save()`. Once an
+/// unverified bean is saved, its label photos are uploaded by `labelPhotoUploads` (M2-T24).
 @MainActor
 @Observable
 final class BeanEntryModel {
@@ -47,15 +48,39 @@ final class BeanEntryModel {
     /// The body a 400 answered. It is never sent again.
     private(set) var rejectedRequest: API.BeanCreate?
     /// The label photo (M2-T23), held in memory as an encoded JPEG. It is not part of
-    /// `request`: M2-T24 uploads it to the saved bean's id.
+    /// `request`: once the bean is saved, it is handed to `labelPhotoUploads`.
     let labelPhoto = LabelPhotoDraft()
+    /// The label photos of the saved bean (M2-T24): set once the bean is saved, if it is
+    /// unverified. The photo of the form is its first one and starts uploading at once.
+    private(set) var labelPhotoUploads: LabelPhotoUploadModel?
 
     private let client: APIClient
+    /// Whose label photos these are; nil while nobody is signed in, and then none is uploaded.
+    private let photoAccount: LabelPhotoAccount?
+    private let photoUploader: (any LabelPhotoUploading)?
 
-    init(barcode: CanonicalBarcode?, client: APIClient, picks: API.BeanAttributes = API.BeanAttributes()) {
+    init(
+        barcode: CanonicalBarcode?,
+        client: APIClient,
+        picks: API.BeanAttributes = API.BeanAttributes(),
+        labelPhotos: LabelPhotoAccount? = nil,
+        photoUploader: (any LabelPhotoUploading)? = nil
+    ) {
         self.barcode = barcode
         self.client = client
         self.picks = picks
+        self.photoAccount = labelPhotos
+        if let photoUploader {
+            self.photoUploader = photoUploader
+        } else if let labelPhotos {
+            self.photoUploader = LabelPhotoUploader(
+                api: client,
+                files: labelPhotos.files,
+                isCurrentAccount: labelPhotos.isSignedIn
+            )
+        } else {
+            self.photoUploader = nil
+        }
     }
 
     /// The `POST /beans` body for the current picks: the bundled vocabulary version, the
@@ -77,10 +102,10 @@ final class BeanEntryModel {
         }
     }
 
-    /// Whether `save()` would send a request now: not while saving, not once saved, and not
-    /// the body a 400 answered.
+    /// Whether `save()` would send a request now: not while saving, not once saved, not
+    /// while the label photo is being encoded, and not the body a 400 answered.
     var canSave: Bool {
-        isEditable && request != rejectedRequest && state != .failed(.signInRequired)
+        isEditable && request != rejectedRequest && state != .failed(.signInRequired) && !labelPhoto.isPreparing
     }
 
     /// Sends `POST /beans`. Does nothing unless `canSave`.
@@ -91,7 +116,8 @@ final class BeanEntryModel {
         let body = self.request
         state = .saving
         do {
-            state = .saved(try await client.createBean(body))
+            let saved = try await client.createBean(body)
+            await didSave(saved)
         } catch APIError.badRequest {
             rejectedRequest = body
             state = .failed(.rejected)
@@ -119,11 +145,38 @@ final class BeanEntryModel {
             return
         }
         do {
-            state = .saved(try await client.lookupBarcode(path))
+            let existing = try await client.lookupBarcode(path)
+            await didSave(existing)
         } catch {
             // A 404 after a 409 contradicts it; "Try again" starts over with `POST /beans`.
             state = BeanEntryModel.failureState(after: error)
         }
+    }
+
+    /// Shows the saved bean. For an unverified bean the label photos start (M2-T24), and the
+    /// photo of the form, if any, uploads at once. A verified bean takes no label photos
+    /// (ADR 0016), so the form's photo is dropped, as it is while nobody is signed in.
+    private func didSave(_ bean: API.Bean) async {
+        var formPhoto: PreparedLabelPhoto?
+        if case .attached(let prepared) = labelPhoto.state {
+            formPhoto = prepared
+        }
+        labelPhoto.remove()
+        var uploads: LabelPhotoUploadModel?
+        if !bean.verified, let beanID = ResourceID(bean.beanId), let photoAccount, let photoUploader {
+            uploads = LabelPhotoUploadModel(beanID: beanID, account: photoAccount, uploader: photoUploader)
+        }
+        labelPhotoUploads = uploads
+        state = .saved(bean)
+        if let uploads, let formPhoto {
+            await uploads.add(formPhoto)
+        }
+    }
+
+    /// The saved-bean screen is gone: the photos that are not uploading lose their files, and
+    /// the others once their upload ends (`LabelPhotoUploadModel.releaseFiles()`).
+    func releaseLabelPhotos() {
+        labelPhotoUploads?.releaseFiles()
     }
 
     /// The state after a failed call that is not a 400 or 409 from `POST /beans`. A cancelled
