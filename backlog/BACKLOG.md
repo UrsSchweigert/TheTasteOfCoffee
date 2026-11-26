@@ -1139,7 +1139,8 @@ Planning notes (planned 2026-11-26):
 - **What exists.** The table has `NEW_AND_OLD_IMAGES` streams (infra/src/data.ts, output `TableStreamArn`), PITR, a `backups` bucket with the weekly-export lifecycle, the scheduler guards (group `cupmark-*`), and the boundary already allows `dynamodb:ExportTableToPointInTime` and stream reads. `backend/src/repository/keys.ts` has key builders for `AGG#ALL`, `AGG#METHOD#<m>`, `RATER#<id>` and `RANK#<facet>`, and no reader or writer for them. Brew items carry `beanId` and `shelfEntryId` copies (ADR 0012); `ITEM_TYPE` tells the aggregator what to skip. Nothing else of M3 exists: no aggregator function, no schedule, no export job.
 - **No API route in M3.** Aggregates are read by the paid routes of M4, so M3 changes no `openapi.yaml`. M3 builds the single read path (M3-T9) that those routes must use. The contract task (M3-T3) covers only the bucket definitions, so no bucket edge is written in code (invariant 2).
 - **Design in one paragraph (decided in M3-T1).** The aggregator does not trust the stream record to say what changed. For every brew record it takes the group (user, bean, UTC day of `brewed_at`), re-reads that group's brews from the user's partition (`BREW#<day>` prefix), picks the one counted brew by a fixed rule, and applies the difference between that pick and the group's stored day slot in one transaction (day slot, `AGG#ALL`, `AGG#METHOD#<method>`, rater marker). Duplicate, late or replayed records then change nothing, and the result does not depend on record order. Scores are kept as integer half points (ADR 0004), so sums are exact.
-- **Human items.** M3-T2 (cost-relevant decision on how the nightly job lists the aggregates), M3-T14 (possible guardrail change for the export), M3-T17 (approve the dev deploy and check it).
+- **Owner decisions of 2026-11-26.** (1) M3-T2 is decided: the nightly rankings job lists the aggregates with a bounded, paged Scan filtered on `AGG#` sort keys (about 3 USD a month at 50,000 users); no `gsi1` aggregate items; a new ADR is needed if its cost or run time passes the bound set in the M3-T1 ADR. (2) Consent withdrawal removes the user's contributions from the community aggregates (their personal log stays). Consent is therefore no longer recorded on the brew at write time. The aggregator reads the live consent when it recomputes a group, and a profile stream record triggers a recompute of all of that user's groups (M3-T4, M3-T18); re-consent restores the contributions from all of the user's rated brews (M3-T1 ADR). The M6 privacy text says withdrawal removes the user's ratings from the community numbers, not from their own log.
+- **Human items.** M3-T14 (possible guardrail change for the export), M3-T17 (approve the dev deploy and check it).
 - **Reference recipes (ADR 0034).** They are a bundled static file and never enter the table. M3-T9 pins this with a test: no aggregation or ranking module may import or read `contracts/reference/`, and no aggregate or ranking item has a field for them.
 
 ### M3-T1 ADR: aggregation model, and the docs it changes
@@ -1148,8 +1149,8 @@ Planning notes (planned 2026-11-26):
 - depends: none
 - implements: docs/05-system-design.md, Data model and Aggregation pipeline; docs/07 D1, D2; docs/03-project-brief.md, Risks (one rating per user, bean and day); ADR 0004, 0010, 0012
 - acceptance:
-  - One ADR records these choices ("decided by: lead (ADR 0014)"). The cost-relevant listing question is not among them; it is M3-T2.
-    - The group and the counted brew: the day is the UTC day of `brewed_at`; which brew of a user-bean-day counts (recommended: the latest `brewed_at`, then the larger brew id, so the pick does not depend on arrival order); only rated brews whose item says the author had consented at write time count (D1).
+  - One ADR records these choices ("decided by: lead (ADR 0014)"), and records the owner's decision of M3-T2 (nightly Scan, about 3 USD a month at 50,000 users) with its limit: a bound on the estimated Scan cost and a time budget for the run, and that passing either needs a new ADR. It also gives the page size and maximum page count of the Scan.
+    - The group and the counted brew: the day is the UTC day of `brewed_at`; which brew of a user-bean-day counts (recommended: the latest `brewed_at`, then the larger brew id, so the pick does not depend on arrival order); only rated brews of a user whose consent is on now count (D1 as changed by the owner on 2026-11-26; see the consent bullet).
     - What the day slot holds (the counted brew's contribution as applied), so an edit or delete subtracts exactly what was added.
     - Rater markers: `RATER#<sub>` holds how many day slots of that user count for the bean, in total and per method. The bean's rater count rises when the total goes 0 to 1 and falls at 1 to 0; the method's rater count does the same with the per-method number. The marker is deleted at 0.
     - Scores stored as integer half points (2 to 20); mean and spread come from count, sum and sum of squares of those integers.
@@ -1159,21 +1160,18 @@ Planning notes (planned 2026-11-26):
     - Poison records: a record that cannot be parsed is logged by ids only and skipped; any other failure is retried (no dead-letter queue, because SQS needs a guardrail change; see Proposed additions).
     - Ranking facets and keys (refines ADR 0010): `ALL`, `METHOD`, `PROCESS`, `ROAST_LEVEL`, `ORIGIN`; the list length; only verified beans are ranked; the operator's attribute wins over the picked one; a bean needs at least 5 raters in the ranked scope. `PRICE_BAND` is in ADR 0010 and docs/04 F4, but the price band belongs to the shelf entry, not the bean or the brew, so no aggregate has it. Either decide how a bean gets a band, or record that the facet is deferred (the ADR must say which; the lead may not drop it silently).
     - Ranking read: a ranking entry stores the rater count it had at the nightly run; the read path re-checks the live aggregate and drops entries under 5 (an account deletion can lower a count between runs).
-    - Consent withdrawal: D1 counts a brew by consent at write time. The ADR states that withdrawing later does not remove earlier contributions, so M6's privacy text can say so. This is flagged for the owner in the plan report.
+    - Consent (owner decision 2026-11-26, replacing "consent at write time"): the community aggregates hold the contributions of the users whose consent is on now. The wanted contribution of a group is the counted brew's contribution if the user's live consent is true, otherwise none. Withdrawing consent removes the user's contributions (day slots, their share of the bean and method aggregates, rater markers); it deletes nothing of the personal log (brews, shelf). Re-consent (lead's choice, ADR 0014, no cost): the contributions come back by recomputing from all of the user's rated brews, not only those made after the re-consent; this is the simplest rule, it is a pure function of the stored brews and the current consent, and so it is replay-safe and independent of record order. The aggregator learns of a change from the profile item's stream record (a record only triggers a recompute; it is never trusted for the consent value), and recomputes every group of the user (M3-T18). The per-brew `contributes` attribute does not exist. Account deletion (D2) stays consistent: the deleted profile counts as consent false, and the brew deletions subtract the same slots, so nothing is subtracted twice. A rating made while consent is off never counts until consent is on again. State the cost of a consent change (the number of groups recomputed for one user, bounded by that user's brew days) in docs/06. M6's privacy text must say: withdrawing consent removes your ratings from the community numbers, not from your own log.
   - docs/05 is updated: the data model gets the day slot item, the marker contents and the ranking entry; the aggregation pipeline describes the recompute rule. docs/06 changes the "about 3 table writes" assumption, which no longer holds once a brew is already 3 item writes (ADR 0010, 0012) and an aggregated brew adds about 4 more; the DynamoDB line is re-estimated.
-  - docs/07 has no new open question left unanswered, except those raised for the owner.
+  - docs/07 D1 is updated to the consent rule above (withdrawal removes contributions; re-consent restores them from all rated brews), and docs/05 states that the aggregator reacts to profile records. docs/07 has no new open question left unanswered.
 
 ### M3-T2 Decide: how the nightly job lists the aggregates
-- status: blocked
+- status: done (owner decision 2026-11-26: nightly Scan, about 3 USD a month at 50,000 users)
 - owner: human
-- needs: human. The decision changes the shape of the DynamoDB bill, so it is the owner's (CLAUDE.md, "Stop and ask"). docs/05 says the nightly job "reads the aggregate items (one per bean)", but the table has no index that lists them: `gsi1` is the sparse review-queue index (infra/README.md) and a query needs a partition key. Choose one and answer on the task's issue:
-  - Option A (lead's recommendation): a nightly Scan with a filter on the sort keys `AGG#ALL` and `AGG#METHOD#`. No new resource, no write amplification. It reads the whole table (brews included), so the cost is one scan a night, growing with the table. Rough size, from docs/06's volumes at 50,000 users: about 5 GB, about 0.6 million read units a night, roughly 0.1 USD a night, about 3 USD a month; at 1,000 users it is cents.
-  - Option B: aggregate items also carry `gsi1pk` and `gsi1sk` (for example `AGG#ALL` and the bean id), and the job queries the index. `gsi1` projects all attributes, so each aggregate update also writes the index copy (a few write units per brew, roughly 4 to 6 USD a month at 50,000 users), but the nightly read is small and flat. This also changes the documented use of `gsi1` in infra/README.md.
-  - Option C: neither; rankings are built only on demand later. Not recommended: F4 and the M3 scope want a nightly job.
+- decided: option A. The nightly rankings job lists the aggregate items with a Scan of the table, filtered on the sort key (`begins_with(sk, 'AGG#')`, which covers `AGG#ALL` and `AGG#METHOD#<m>`). No index, no `gsi1` keys on aggregate items, no write amplification, and `gsi1` stays the sparse review-queue index of infra/README.md. The Scan reads the whole table (brews included; a filter does not reduce the billed reads), so the cost is one scan a night, growing with the table: from docs/06's volumes at 50,000 users about 5 GB, about 0.6 million read units a night, roughly 0.1 USD a night, about 3 USD a month; at 1,000 users it is cents. Options B (aggregate items in `gsi1`) and C (no nightly job) are not taken.
 - depends: M3-T1
 - implements: docs/05-system-design.md, Aggregation pipeline step 5; docs/06-cost-estimate.md
 - acceptance:
-  - The owner's choice is written on the issue and recorded in the M3-T1 ADR (or an addendum), with docs/05 and docs/06 matching it. M3-T11 reads the choice.
+  - Nothing is left to do here except the record: the M3-T1 ADR states the decision and its limit, with docs/05 and docs/06 matching it. The limit: the ADR gives a bound on the estimated Scan cost (a figure above the stated 3 USD a month, for example 6 USD a month, chosen by the ADR) and on the run time (a time budget well under the function timeout). If either bound is passed, a new ADR must decide the listing again before the job changes. M3-T11 to M3-T13 read this decision.
 
 ### M3-T3 Aggregation bucket contract
 - status: todo
@@ -1185,17 +1183,16 @@ Planning notes (planned 2026-11-26):
   - Tests: every field and range it names exists in the published vocabulary v3 (and in later versions it must be re-checked: the test fails when a newer published version changes a covered range); every edge computed for every method is exact in binary floating point (ADR 0004); the buckets of one field cover its range with no gap and no overlap; a field a method does not allow under the v3 `field_rules` (for example the temperature of a moka pot) gets no histogram for that method.
   - `contracts/README.md` describes the file. `openapi.yaml` is unchanged.
 
-### M3-T4 Brew items record the author's consent at write time
+### M3-T4 Live consent read for the aggregator (replaces consent at write time)
 - status: todo
 - owner: backend-engineer
 - depends: none
-- implements: docs/07-open-questions.md D1; docs/05-system-design.md, Data model (brew)
+- implements: docs/07-open-questions.md D1 (as changed by the owner decision of 2026-11-26); docs/05-system-design.md, Data model (profile)
 - acceptance:
-  - Today a brew item carries no consent: the repository never reads the profile when it writes a brew, so the aggregator could not apply D1. Creating or replacing a brew now stores a boolean `contributes` on the brew item, true only when the caller's profile exists and has `consent.contribute_to_aggregates` true at that write. No profile means false.
-  - The value comes from the stored profile of the token's user (invariant 3); it is not an API field and the contract does not change. `GET /brews` and `GET /export` do not show it.
-  - A replace re-evaluates it (a brew edited after consent was withdrawn stops contributing; docs/05 and the M3-T1 ADR state this).
-  - Existing brew items without the attribute read as false.
-  - Tests (DynamoDB Local): create with and without a profile, with consent true and false; replace after the consent flipped both ways; a brew written before this change; the key and `type` attributes of the item are unchanged, so M1 reads and the export still pass.
+  - Consent is no longer a write-time attribute of a brew: brew items are not changed, there is no `contributes` attribute, and M1 brew writes, `GET /brews` and `GET /export` stay as they are. The consent that counts is the one stored on the user's profile item now (M1-T6: `values.consent.contribute_to_aggregates`, written by `PUT /profile` as an update of that one item).
+  - The repository gains `consentOf(user)`: a strongly consistent `GetItem` of that user's profile item, true only when the profile exists and `consent.contribute_to_aggregates` is true; no profile means false. The user id is the one from the stream record's key or the token (invariant 3), never a body field.
+  - Profile changes reach the stream: the profile item is in the same table, so every `PUT /profile`, the first one included, and the profile's deletion (account deletion) produce a stream record with `NEW_AND_OLD_IMAGES`. A test builds the records from the real item images (the profile's `values` path, `type` = `PROFILE`, and the user in the key) and shows that a `PUT` with the same consent still produces a record (the handler is idempotent, M3-T18) and that `updatedAt` and the other attributes (the entitlement, M4) are kept.
+  - Tests (DynamoDB Local): no profile, consent true, consent false, consent flipped both ways between two reads (the read sees the latest); another user's profile is never read.
 
 ### M3-T5 Aggregation core: contributions and the counted brew
 - status: todo
@@ -1204,11 +1201,11 @@ Planning notes (planned 2026-11-26):
 - implements: docs/05-system-design.md, Aggregation pipeline step 3; docs/04-specification.md, F3, F4
 - acceptance:
   - Pure functions, no I/O, in `backend/src/aggregation/`:
-    - `contributionOf(brew, contributes)` turns a rated, consented brew into its counters: integer half-point scores per criterion with squares, intensity counts, note counts, buy-again, and histogram bucket indexes from the generated bucket data. It returns nothing for an unrated brew and for `contributes` false.
+    - `contributionOf(brew, consented)` turns a rated brew of a consenting user into its counters: integer half-point scores per criterion with squares, intensity counts, note counts, buy-again, and histogram bucket indexes from the generated bucket data. It returns nothing for an unrated brew and for `consented` false. The caller passes the user's live consent (M3-T4), not a value stored on the brew.
     - `countedBrewOf(brews)` picks the one brew of a user-bean-day by the M3-T1 rule.
     - `difference(applied, wanted)` returns the signed counter changes between two contributions (the stored day slot and the new pick), including a change of method.
   - No list or edge is written in the code; everything comes from `src/generated/`.
-  - Tests: half-point exactness (7.5 is 15, sum of squares exact); order independence of `countedBrewOf` (all permutations of a small set); an unrated brew, a brew without consent and a score outside the range contribute nothing or are rejected as the ADR says; `difference(x, x)` is empty; difference of a method change subtracts from the old method and adds to the new; an unknown note id is skipped and reported by id; a method whose rules disallow a field has no bucket for it; the sum of all changes of any sequence of picks equals the final contribution (property test).
+  - Tests: half-point exactness (7.5 is 15, sum of squares exact); order independence of `countedBrewOf` (all permutations of a small set); an unrated brew, a brew with `consented` false and a score outside the range contribute nothing or are rejected as the ADR says; `difference(x, x)` is empty; difference of a method change subtracts from the old method and adds to the new; an unknown note id is skipped and reported by id; a method whose rules disallow a field has no bucket for it; the sum of all changes of any sequence of picks equals the final contribution (property test).
 
 ### M3-T6 Repository: aggregate items, day slots and rater markers
 - status: todo
@@ -1219,6 +1216,8 @@ Planning notes (planned 2026-11-26):
   - `backend/src/repository/` gains typed items and one write method for the aggregator: `applyDaySlot(group, previousSlot, nextSlot)`, one transaction that updates the day slot (conditional on the stored version, so a concurrent writer fails and retries), adds the counters of `AGG#ALL` and `AGG#METHOD#<method>` with atomic `ADD`, and creates, changes or deletes `RATER#<sub>`, moving the bean and method rater counts exactly when the marker's totals cross 0 and 1.
   - The transaction stays within the 100-item limit; a test pins the item count for the worst case (method change plus first and last rater).
   - Reading the user's brews of a day uses the sort key prefix `BREW#<YYYY-MM-DD>` in the user's partition only.
+  - For consent changes (M3-T18) the repository also offers `listUserGroups(user)`: paged key queries in the user's partition only, for the user's day slots (a slot sort key prefix) and for the user's `BREW#` items, returning the distinct (bean, day) groups. It reads no other partition and does no table scan.
+  - The day slot and the rater marker sort keys never start with `AGG#`, so the nightly rankings Scan filter (M3-T12) cannot return them; a test pins this.
   - No other module builds an `AGG#`, `RATER#` or day slot key; the repository stays the only code that talks to the table.
   - Tests (DynamoDB Local): first, second and last rater of a bean; a second day of the same user (marker total 2, bean raters unchanged); a method change; a stale `previousSlot` is refused and nothing changes; every counter returns to zero, and the marker and slot disappear, after the reverse sequence; one user's marker cannot be addressed through another user's partition.
 
@@ -1228,16 +1227,16 @@ Planning notes (planned 2026-11-26):
 - depends: M3-T4, M3-T5, M3-T6
 - implements: docs/05-system-design.md, Aggregation pipeline steps 2 and 3; ADR 0010 and 0012 (what to ignore); D2
 - acceptance:
-  - `backend/src/handlers/aggregator.ts` (and its entry in the esbuild bundle script) reads a stream batch. It acts only on `BREW` items (`type`), from both images, and ignores every other item type: `SHELF`, `BREW_REF`, `PROFILE`, recipes, beans, photo items, counters, tombstones, and every TTL delete (a `REMOVE` made by the DynamoDB service).
-  - For each distinct group (user, bean, UTC day) found in a batch, once: it reads the day's brews, picks the counted one, and applies the difference to the stored slot through M3-T6. The group comes from the old image as well as the new one, so a moved or deleted brew re-evaluates the old day.
+  - `backend/src/handlers/aggregator.ts` (and its entry in the esbuild bundle script) reads a stream batch. It acts on `BREW` items (`type`), from both images, and ignores every other item type: `SHELF`, `BREW_REF`, recipes, beans, photo items, counters, tombstones, and every TTL delete (a `REMOVE` made by the DynamoDB service). `PROFILE` records are recognised and handed to the consent change handling of M3-T18 (until that task is merged they are ignored and a test marks the gap).
+  - For each distinct group (user, bean, UTC day) found in a batch, once: it reads the day's brews, picks the counted one, reads the user's live consent (M3-T4, strongly consistent; no profile means no consent), and applies the difference between the stored slot and the wanted contribution (none when the user has not consented) through M3-T6. The group comes from the old image as well as the new one, so a moved or deleted brew re-evaluates the old day.
   - The batch response reports `batchItemFailures` for transient errors (the sequence number of the first failed record), so Lambda retries from there. A record that does not parse is logged by ids only (no scores, no user id beyond the existing logging rules) and skipped.
   - The handler's IAM needs are listed in its README section (stream read, `GetItem`, `Query`, `TransactWriteItems` on the table; nothing on S3, SSM or Cognito).
-  - Tests: the filter table above, one case per item type; two records of one group in a batch cause one recompute; a failure on the second group reports only its record; the handler never reads a user id from anywhere but the key of the stream record.
+  - Tests: the filter table above, one case per item type; a brew of a user with consent true counts and one with consent false or no profile does not; two records of one group in a batch cause one recompute; a failure on the second group reports only its record; the handler never reads a user id from anywhere but the key of the stream record.
 
 ### M3-T8 Correctness suite: create, edit, delete, replay, account deletion
 - status: todo
 - owner: backend-engineer
-- depends: M3-T7
+- depends: M3-T7, M3-T18
 - implements: Goal of M3; docs/07 D1, D2; docs/03-project-brief.md, Risks
 - acceptance:
   - A DynamoDB Local suite drives the real API write paths (the M1 repository) and feeds the resulting stream records, built from the real item images, to the handler. After each step the aggregates equal a from-scratch oracle computed from the brews that count.
@@ -1245,9 +1244,11 @@ Planning notes (planned 2026-11-26):
     - create a first rating, a second rating by the same user on the same bean and day (still one counted), and one on the next day (counted);
     - edit the scores, the method, `brewed_at` into another day, and remove the rating;
     - delete the counted brew while another of that day remains (the other is promoted); delete the last;
-    - rating by a user without consent never counts, and one edited after withdrawing consent stops counting;
-    - account deletion through the real `DELETE /account` path: every contribution is subtracted, no `RATER#` marker or day slot of that user remains, and the bean's rater count drops by one;
-    - the same stream batch delivered twice, in reverse order, and split in single records: the same final state.
+    - a rating by a user who has no profile or has not consented never counts, and no marker or slot is created for them;
+    - consent withdrawal (real `PUT /profile`): every contribution of that user is removed (every day slot, the marker, the counters of the bean and of each method), the bean's rater count drops by one, the 5-rater threshold applies again to the remaining raters, and the user's brews and shelf entries are untouched; re-consent restores exactly the contributions of the oracle; the aggregates after a withdrawal equal the state as if the user had never contributed;
+    - a brew created, edited or deleted while consent is withdrawn changes no aggregate, and counts after re-consent;
+    - account deletion through the real `DELETE /account` path (including a user who had withdrawn, and one who had not): every contribution is subtracted, no `RATER#` marker or day slot of that user remains, the bean's rater count drops by one, and no earlier withdrawal leaves a double subtraction (counters never go below the oracle);
+    - the same stream batch, with brew and profile records interleaved, delivered twice, in reverse order, and split in single records: the same final state; a consent change delivered before and after the brew events it was recorded between gives the same state.
   - A failed transaction (condition) in the middle of a batch leaves the aggregates equal to the oracle after the retry.
 
 ### M3-T9 The single read path and the 5-rater threshold
@@ -1267,11 +1268,11 @@ Planning notes (planned 2026-11-26):
 ### M3-T10 Infra: aggregator function and stream mapping
 - status: todo
 - owner: infra-engineer
-- depends: M3-T7
+- depends: M3-T7, M3-T18
 - implements: docs/05-system-design.md, Components (Compute, Jobs), Aggregation pipeline step 2; CLAUDE.md invariants 5, 6, 9
 - acceptance:
   - The stack gets the `cupmark-<stage>-aggregator` function (through `cupmarkFunction`: arm64, own log group with 14-day retention, own role with the boundary) and an event source mapping from the table stream: starting position `TRIM_HORIZON`, a small batch size and window, `ReportBatchItemFailures`, bisect on error, retries until the record expires (no dead-letter queue, M3-T1), a reserved concurrency cap, and no provisioned pollers.
-  - The role may only read that stream and `GetItem`, `Query` and `TransactWriteItems` on the table and its own indexes by exact ARN, with no wildcard beyond what `guards.ts` already allows.
+  - The role may only read that stream and `GetItem`, `Query` and `TransactWriteItems` on the table by exact ARN (the strongly consistent consent read and the per-user key queries need nothing more; no index), with no wildcard beyond what `guards.ts` already allows.
   - An alarm on the stream's iterator age and one on function errors, to the existing alarm topic.
   - Tests: the mapping points at the table's stream; the guard tests still pass; an assertion that no provisioned concurrency or poller setting, no SQS and no Kinesis exists; the role has no `s3:`, `ssm:` or `cognito-idp:` action.
   - infra/README.md documents the function and what to do when the iterator age alarm fires. `cdk synth` passes. The deploy to dev goes through the existing pipeline (M1-T7); nothing is deployed by hand.
@@ -1279,14 +1280,14 @@ Planning notes (planned 2026-11-26):
 ### M3-T11 Rankings computation
 - status: todo
 - owner: backend-engineer
-- depends: M3-T2, M3-T3, M3-T6, M3-T9
-- implements: docs/04-specification.md, F4 Rankings; docs/05-system-design.md, Aggregation pipeline step 5; ADR 0010 (ranking keys), M3-T1 ADR
+- depends: M3-T3, M3-T6, M3-T9
+- implements: docs/04-specification.md, F4 Rankings; docs/05-system-design.md, Aggregation pipeline step 5; ADR 0010 (ranking keys), M3-T1 ADR; M3-T2 (owner decision 2026-11-26: nightly Scan)
 - acceptance:
-  - A pure function takes the aggregate items listed by the mechanism of M3-T2, the beans' attributes (operator value wins over the picked one) and returns the top lists per facet: `ALL`, `METHOD`, `PROCESS`, `ROAST_LEVEL`, `ORIGIN` (and `PRICE_BAND` only if the M3-T1 ADR decided how). Only verified beans, only scopes with at least 5 raters, using the same threshold constant as M3-T9; the score is the mean overall.
+  - A pure function takes the aggregate items returned by the paged Scan (M3-T2; the Scan itself is in M3-T12), the beans' attributes (operator value wins over the picked one) and returns the top lists per facet: `ALL`, `METHOD`, `PROCESS`, `ROAST_LEVEL`, `ORIGIN` (and `PRICE_BAND` only if the M3-T1 ADR decided how). Only verified beans, only scopes with at least 5 raters, using the same threshold constant as M3-T9; the score is the mean overall.
   - Ties break by more raters, then bean id, so two runs on the same data give the same list. The list length comes from the ADR.
   - A bean with no value for the facet's attribute (or `unknown`/`other` where the vocabulary has them) is left out of that facet's list, not put under a made-up value.
   - Each entry holds the bean id, the mean overall, the rater count at run time and the run day. No text and no user id.
-  - Tests: threshold boundary (4 and 5 raters); tie order; operator override; a rejected or unverified bean never ranked; a bean under the threshold in one method but over it overall appears only in the overall facet; the facet ids are exactly the key forms of ADR 0010; the input listing works for both a paged scan and a paged index query (whichever M3-T2 chose, with the other not implemented).
+  - Tests: threshold boundary (4 and 5 raters); tie order; operator override; a rejected or unverified bean never ranked; a bean under the threshold in one method but over it overall appears only in the overall facet; the facet ids are exactly the key forms of ADR 0010; the input is accepted in several pages (the function gives the same lists however the aggregate items are split into pages), and items that are not aggregate items (a stray brew, slot or marker in the input) are ignored. No index query is implemented.
 
 ### M3-T12 Rankings job handler and persistence
 - status: todo
@@ -1296,19 +1297,21 @@ Planning notes (planned 2026-11-26):
 - acceptance:
   - `backend/src/handlers/rankings.ts` (with its bundle entry) runs the listing, builds the lists with M3-T11 and writes one `RANK#<facet>` / `<YYYY-MM-DD>` item per facet for the UTC day of the run. A rerun on the same day overwrites that day's items and leaves the same result.
   - A facet that has no bean over the threshold writes no item (and a test shows an earlier day's item is not touched). Older days are kept; how long is stated in the ADR (a TTL on `expires_at` is allowed, since the table already has the attribute).
-  - The scan or query is paged with a bounded number of pages per invocation or the function times out safely and reports it; the 15-minute Lambda limit is respected and the handler logs only counts.
+  - The listing is a `Scan` of the table (owner decision 2026-11-26), paged by `LastEvaluatedKey` with a fixed page size, and it reads only aggregate items: a `FilterExpression` on the sort key (`begins_with(sk, 'AGG#')`) and a projection of only the attributes the ranking needs. The filter does not reduce the read units billed (the whole table is read), which is why the bound below exists. The day slot and rater marker sort keys do not start with `AGG#` (M3-T6), so they are never returned.
+  - The Scan is bounded: a maximum number of pages and a time budget below the function timeout (the values come from the M3-T1 ADR). If the budget is reached before the last page, the handler stops, writes nothing (no half list), logs the page count and that the run was incomplete, and fails the invocation so the schedule's retry and the alarm show it; it never writes a list built from a partial scan. The 15-minute Lambda limit is respected and the handler logs only counts (pages, items scanned, aggregate items kept, duration).
+  - Cost note (docs/06, about 3 USD a month at 50,000 users, cents at 1,000) stays in the ADR and the README. If the estimated Scan cost passes the bound stated in the ADR, or a run no longer fits its time budget, a new ADR must decide the listing again (for example an index with its write cost) before the job is changed; the job is not quietly given a longer timeout or a bigger budget.
   - Tests (DynamoDB Local): 6 beans with 5 or more raters and 3 below give lists without the 3; a rerun is identical; a second day adds items; a bean that fell below 5 since the last day is absent from the new list; the item has no field outside the ranking shape.
 
 ### M3-T13 Infra: nightly rankings schedule
 - status: todo
 - owner: infra-engineer
 - depends: M3-T12
-- implements: docs/05-system-design.md, Components (Jobs: EventBridge Scheduler); CLAUDE.md invariants 5, 6, 9
+- implements: docs/05-system-design.md, Components (Jobs: EventBridge Scheduler); CLAUDE.md invariants 5, 6, 9; M3-T2 (owner decision 2026-11-26: nightly Scan)
 - acceptance:
   - The stack gets the `cupmark-<stage>-rankings` function and an EventBridge Scheduler schedule in the group `cupmark-<stage>-jobs` (not the default group) that invokes it once a night at a fixed UTC time, with a flexible window off and a retry policy of a few attempts. The schedule's role may only invoke that function.
-  - The function's role can read the table (and, if M3-T2 chose option B, query that index by exact ARN) and write `RANK#` items; it has no other access.
-  - An alarm on errors. The function timeout is within the Lambda limit and the budget in docs/06.
-  - Tests: the schedule is in a named group with a `cron` expression; the target is the rankings function; the guard tests pass (no wildcard, `cupmark-` names, tag `project=cupmark`); no fixed-fee resource.
+  - The function's role can `Scan` the table (exact table ARN, no index ARN, since no index is used) and write `RANK#` items; it has no other access. No index is added or changed, and no aggregate item carries `gsi1` keys.
+  - An alarm on errors. The function timeout is within the Lambda limit (the bound is in the M3-T1 ADR, M3-T12) and the budget in docs/06.
+  - Tests: the schedule is in a named group with a `cron` expression; the target is the rankings function; the guard tests pass (no wildcard, `cupmark-` names, tag `project=cupmark`); no fixed-fee resource; the role has no `dynamodb:Query` on an index and the table's indexes are unchanged.
   - infra/README.md describes how to run the job once by hand (an invoke, done by the owner).
 
 ### M3-T14 Infra: weekly table export to S3
@@ -1327,12 +1330,12 @@ Planning notes (planned 2026-11-26):
 ### M3-T15 Replay and load test of the aggregator
 - status: todo
 - owner: backend-engineer
-- depends: M3-T7, M3-T8
+- depends: M3-T7, M3-T8, M3-T18
 - implements: M3 scope ("load test of the aggregator with replayed records"); docs/05-system-design.md, Aggregation pipeline; docs/06-cost-estimate.md (write assumption)
 - acceptance:
-  - `npm run test:replay` in `backend/` (not part of the default `npm test`, run in CI as its own step with a bounded size) builds a history on DynamoDB Local: at least 200 users, 40 beans, several methods, 20,000 brew events including creates, edits (scores, method, day), deletes, consent flips and a few account deletions, with a seeded random generator so a failure reproduces.
-  - It replays the recorded stream records through the handler in these ways: in order; each record twice; shuffled within batches of 100; in batches of 1 and of 100; with an injected transient failure per 50 records. Every run ends with aggregates, markers and slots identical to a from-scratch oracle and to each other.
-  - It reports, and asserts bounds on: write items per brew event (the number is written into docs/06 by M3-T1 and the test fails if it grows beyond the documented value), the largest transaction, the largest aggregate item size (well under the 400 KB item limit for 10,000 raters on one bean), and records per second on DynamoDB Local.
+  - `npm run test:replay` in `backend/` (not part of the default `npm test`, run in CI as its own step with a bounded size) builds a history on DynamoDB Local: at least 200 users, 40 beans, several methods, 20,000 brew events including creates, edits (scores, method, day), deletes, consent flips (profile `PUT`s that withdraw and restore consent, a few users flipping several times, including the first-ever profile and flips with no brew in between) and a few account deletions, with a seeded random generator so a failure reproduces. The recorded stream includes the profile records.
+  - It replays the recorded stream records, brew and profile records interleaved, through the handler in these ways: in order; each record twice; shuffled within batches of 100 (so a consent flip is seen before or after the brew events it was recorded between); in batches of 1 and of 100; with an injected transient failure per 50 records. Every run ends with aggregates, markers and slots identical to a from-scratch oracle and to each other.
+  - It reports, and asserts bounds on: write items per brew event (the number is written into docs/06 by M3-T1 and the test fails if it grows beyond the documented value), the work of one consent change for the busiest user (the number of day slots and brew groups it recomputes, written into docs/06 by M3-T1), the largest transaction, the largest aggregate item size (well under the 400 KB item limit for 10,000 raters on one bean), and records per second on DynamoDB Local.
   - It runs on Linux CI with the same DynamoDB Local setup as the repository tests, with no AWS account and no network.
   - A real-account load test is not part of this task (it would spend money): see Proposed additions.
 
@@ -1352,7 +1355,8 @@ Planning notes (planned 2026-11-26):
 - needs: human. After M3-T10, M3-T13 and M3-T14 are merged, the owner approves the dev deployment (the existing pipeline, M1-T7; `cdk deploy` is not run by an agent), and then:
   - runs `scripts/smoke/post-deploy-checks.sh dev` from CloudShell and posts the result;
   - with at least two test accounts, logs and rates brews in the TestFlight build, then reads the aggregator log group for errors (no aggregate route exists before M4, so the check is that the function ran and the iterator age is near zero);
-  - invokes the rankings function once by hand and confirms it finishes without error (with fewer than 5 raters it correctly writes no ranking);
+  - invokes the rankings function once by hand and confirms it finishes without error (with fewer than 5 raters it correctly writes no ranking), and reads the logged page count, items scanned and duration of the Scan against the bound in the M3-T1 ADR;
+  - in the test accounts, turns consent off and on again in Settings and confirms from the aggregator log that the consent change ran without error (no aggregate route exists before M4);
   - after the first scheduled week, confirms the export object exists in the backup bucket.
 - depends: M3-T16
 - implements: M3 Goal; Definition of done ("Anything that touches a real account")
@@ -1360,12 +1364,33 @@ Planning notes (planned 2026-11-26):
   - The owner reports the results on the task's issue, and any failure is recorded in infra/README.md ("If the first deploy fails") as M1-T7 did.
   - The 5-rater behaviour on real data cannot be seen before M4's routes; it stays proven by the tests of M3-T8, M3-T9 and M3-T15.
 
+### M3-T18 Consent change handling in the aggregator
+- status: todo
+- owner: backend-engineer
+- depends: M3-T4, M3-T5, M3-T6, M3-T7
+- implements: owner decision 2026-11-26 (withdrawing consent removes the user's contributions from the community aggregates); docs/07-open-questions.md D1; docs/05-system-design.md, Aggregation pipeline
+- acceptance:
+  - The aggregator also acts on `PROFILE` records (item `type`). It never reads consent from the record image: a profile record only says "this user's consent may have changed". The user is taken from the key of the record (invariant 3). It then recomputes every group of that user (below), reading the live consent through M3-T4, so a late, duplicate or reordered profile record gives the same result as the right one.
+  - The groups of the user are the union of two key queries in the user's partition only, both paged and run to the end: the user's day slots (M3-T6) and the user's rated brews (`BREW#` prefix, grouped by bean and UTC day). Each group is recomputed with the same code and the same transaction as a brew record (M3-T7), once per group. Withdrawal therefore removes every slot, subtracts it from the bean and method aggregates and deletes the markers; consent adds every counted brew back (see the ADR of M3-T1: all of the user's rated brews, not only those from the moment of consent).
+  - Records of every kind (`PROFILE` and `BREW`) for one user in one batch cause one pass over the user's groups at most; a brew group recomputed in that pass is not recomputed again for a brew record of the same batch.
+  - Bounded work: a pass touches only that user's slots and brews (one key query each, no table scan, no other user's item). Progress is saved by each group's transaction, so a pass that fails or runs short of time reports the record in `batchItemFailures` and the retry resumes cheaply, because groups already equal to their wanted state change nothing. The number of groups of the busiest test user and the handler's timeout are stated in the README.
+  - A `REMOVE` of the profile (account deletion) is handled like consent false; a TTL `REMOVE` is still ignored. A profile that is created with consent false does nothing (no slots exist).
+  - A profile record whose consent did not change (a locale change) recomputes to the same state and writes nothing; a test counts the writes.
+  - Tests (DynamoDB Local, real `PUT /profile` and brew write paths feeding real stream images to the handler):
+    - withdraw after 6 raters rated a bean: that user's slots, marker and counters disappear, the bean's rater count is 5, and a ninth user's data is not touched;
+    - the 5-rater threshold re-applies: with exactly 5 raters the aggregate is readable through M3-T9, after one withdraws it returns nothing, after the re-consent it returns the data again;
+    - the user withdraws, rates a new brew (it does not count), then consents again (it counts, with the older brews);
+    - the aggregate counters, markers and slots after withdraw and re-consent equal exactly the state of a from-scratch oracle, and after withdrawal equal the state as if the user had never contributed (every counter zero for a sole rater, and no `RATER#` or slot item left);
+    - the profile record delivered before, after and between the brew records it was recorded with, twice, and in reverse: the same final state;
+    - a failure in the middle of the pass, then a retry: the same final state;
+    - the profile's personal data is untouched: the user's brews and shelf entries are all still readable through the M1 repository after withdrawal.
+
 ### M3 Proposed additions (not in the backlog)
 
 - **Real-account load test** of the aggregator: a stream replay against the dev table, which spends money and needs the owner. Only if the DynamoDB Local test of M3-T15 is judged too weak.
 - **Dead-letter queue for the aggregator's stream mapping**: needs SQS, which the CFN execution policy does not allow today (SNS is allowed, but its failure destination carries no record content). The plan relies on retries until the 24 hour stream retention ends plus the iterator-age alarm; a reconcile job that rebuilds aggregates from the brews (the recompute rule makes it cheap) would close the gap.
 - **Outlier trimming** (docs/03 Risks, "outlier trimming") is named as a manipulation defence but is not in the M3 scope or in docs/04. Not planned.
-- **Give-to-get and consent.** docs/04 F4 gives a free user the overall score "for beans they have rated themselves", and docs/05 says the rater marker drives it. A user who has not consented has no marker (D1), so give-to-get as built on markers would not apply to them. M4 decides whether it uses the marker or the user's own brews.
+- **Give-to-get and consent.** docs/04 F4 gives a free user the overall score "for beans they have rated themselves", and docs/05 says the rater marker drives it. A user who has not consented, or who has withdrawn consent (owner decision 2026-11-26), has no marker, so give-to-get as built on markers would not apply to them, and a user who withdraws loses it for beans they rated. M4 decides whether it uses the marker or the user's own brews (the user's own brews are the better fit, since the personal log is kept on withdrawal).
 
 ## M4 Paid tier
 
