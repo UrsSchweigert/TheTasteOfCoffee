@@ -862,7 +862,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T32 Localisation pass (en, de)
-- status: needs-mac-verification (the timer readout is m:ss, h:mm:ss from an hour: decided and pinned)
+- status: done (merged in #81; the macOS `ios` job ran the formatter, language rule and localisation tests; the timer readout is m:ss, h:mm:ss from an hour: decided and pinned; the German strings still want a native read in M2-T34)
 - owner: ios-engineer
 - depends: M2-T25, M2-T26, M2-T27, M2-T28, M2-T29, M2-T30, M2-T31
 - implements: docs/04-specification.md, Non-functional (Localisation); docs/03-project-brief.md, In scope (German and English)
@@ -875,7 +875,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T33 Accessibility pass
-- status: todo
+- status: in-progress
 - owner: ios-engineer
 - depends: M2-T32
 - implements: docs/04-specification.md, Non-functional (Accessibility: Dynamic Type and VoiceOver on every control)
