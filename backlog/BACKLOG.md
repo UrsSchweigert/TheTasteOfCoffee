@@ -809,7 +809,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T29 Onboarding with consent (D1)
-- status: in-review (#66; round 1 asked for changes to the consent resolution and texts)
+- status: done (built and tested by the macOS `ios` job in #66; ADR 0025 addendum M2-T29)
 - owner: ios-engineer
 - depends: M2-T1, M2-T11, M2-T16
 - implements: docs/07 D1; ADR 0017 (opt-in); docs/03-project-brief.md, Risks ("Plain consent at onboarding; an opt-out that keeps the personal log working"); contracts `Profile`
@@ -964,4 +964,21 @@ Scope: App Store listing, screenshots, privacy nutrition labels, privacy policy 
   - A comment in `LabelPhotoQueue` says that a failed save after an upload repeats the S3 POST, and why that is safe.
   - Describing without a store shows a state that does not offer a retry.
   - The schema test also compares each property's key path, not only its name.
+  - Mac: the `ios` job.
+
+### M2-T37 Failed-write repair: the remaining review notes
+- status: todo
+- owner: ios-engineer
+- depends: M2-T36
+- implements: ADR 0025 (addenda M2-T35 and M2-T36)
+- acceptance:
+  - These come from the reviews of PR #66, none of them blocking.
+  - An `.attribute` restore reports whether it changed anything, by comparing values where they are `Equatable`, or the doc says it always reports a change.
+  - The repair pass's "not settled" outcome also raises an `assertionFailure` in debug builds, as the read-failure path does.
+  - A fetch error during the repair is logged with a fixed message, separately from "not on disk".
+  - In the real save-failure test, `changedModelsArray` holds only the models of the failed write, and each equals its copy on disk.
+  - Tests cover the "not settled" path and a repair run twice: an engine discard after a repaired discard.
+  - Two consent footer notes from the M2-T29 round 2 review:
+    - the ADR 0025 addendum M2-T29 and the code agree on parked profile operations in the merge and adopt branches;
+    - a test covers an edit made during the GET while `sentWithoutAnswer` is already true.
   - Mac: the `ios` job.
