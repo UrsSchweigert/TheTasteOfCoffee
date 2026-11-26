@@ -58,7 +58,8 @@ enum DiscardFault: Hashable, CaseIterable {
     /// The saved values of a changed model could not be read: it was only rolled back, which
     /// may keep a changed attribute in memory.
     case savedValuesUnreadable
-    /// The relationship passes after the rollback still changed something in their last pass.
+    /// The passes after the rollback (attributes and relationships) still changed something
+    /// in their last pass.
     case relationshipsNotSettled
     /// A saved relationship target could not be found in the live context: the relationship
     /// was left as the failed save left it (for example nil, set by a delete rule).
@@ -426,8 +427,22 @@ extension AccountStore {
     ///
     /// What could not be put back is reported (`reportDiscardFault`); a relationship left as
     /// the failed save set it makes the store refuse later saves (ADR 0025 Addendum M2-T37).
-    func discardUnsavedChanges() {
-        let touched = context.changedModelsArray + context.deletedModelsArray
+    ///
+    /// Why attributes are checked after the rollback too, and `pending` (M2-T37): after a real
+    /// failed `ModelContext.save()` of an attribute change (the engine's `markSending` on a
+    /// store that refuses the write), the discard left `attemptCount` and `sentWithoutAnswer`
+    /// at the failed write's values. Attributes were only put back before the rollback, and the
+    /// changed models were only read from the context after the failed save had processed the
+    /// changes. Which of the two SwiftData steps lost the value (the rollback reverting to the
+    /// processed values, or the context no longer listing the model) was not observable from
+    /// Linux; checking every kind of property after the rollback, on the models listed before
+    /// the save as well, covers both. `pending` is what `save()` listed before it called
+    /// `ModelContext.save()`.
+    func discardUnsavedChanges(alsoChecking pending: [any PersistentModel] = []) {
+        var seen = Set<ObjectIdentifier>()
+        let touched = (pending + context.changedModelsArray + context.deletedModelsArray).filter { model in
+            seen.insert(ObjectIdentifier(model)).inserted
+        }
         guard !touched.isEmpty else {
             context.rollback()
             return
@@ -452,7 +467,7 @@ extension AccountStore {
     struct RelationshipRepair: Equatable {
         /// The last pass changed nothing.
         var settled = false
-        /// Some pass set a relationship.
+        /// Some pass set a property (an attribute or a relationship).
         var repaired = false
         /// The last pass found a saved target it could not resolve.
         var unresolved = false
@@ -466,7 +481,9 @@ extension AccountStore {
         var repair = RelationshipRepair()
         for _ in 0..<AccountStore.relationshipPasses where !repair.settled {
             var outcomes = Set<RestoreOutcome>()
-            for kind in [RestoredPropertyKind.toOne, .toMany] {
+            // Attributes too: after a failed save in the store, the rollback does not leave
+            // them at the values put back before it (see `discardUnsavedChanges`).
+            for kind in [RestoredPropertyKind.attribute, .toOne, .toMany] {
                 for restore in restores {
                     outcomes.formUnion(restore.restoreAgain(kind))
                 }
@@ -488,7 +505,7 @@ extension AccountStore {
             reportDiscardFault(.relationshipsNotSettled)
         }
         if repair.repaired, repair.settled, !repair.unresolved {
-            writeLogger.notice("A failed write put relationships back after the rollback.")
+            writeLogger.notice("A failed write put saved values back after the rollback.")
         }
         confirmFoundAgain(restores)
         return repair

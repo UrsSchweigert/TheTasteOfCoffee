@@ -781,7 +781,9 @@ final class FailedWriteTests: XCTestCase {
 
         // A repair run twice (M2-T37): the engine's next send changes the look-up operation as
         // `markSending` does, its save fails in the store and discards over the repaired state,
-        // and the engine's `catch` discards once more. The scanned bag stays as it was.
+        // and the engine's `catch` discards once more. The scanned bag stays as it was, and the
+        // operation's attributes are back too (the first macOS run found them left at 1 and
+        // true: attributes were not checked after the rollback; ADR 0025 Addendum M2-T37).
         let lookUp = try XCTUnwrap(store.outboxOperations().first { operation in operation.localID == pendingBeanID })
         let attempts = lookUp.attemptCount
         XCTAssertFalse(lookUp.sentWithoutAnswer)

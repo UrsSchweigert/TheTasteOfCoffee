@@ -242,14 +242,20 @@ final class AccountStore {
     /// outbox, and `didSaveNotification` is posted with this store as its object, so screens
     /// read again. Once a discard could not put everything back (`needsReopening`) every save
     /// is refused this way, with `DiscardError.storeNeedsReopening`.
+    ///
+    /// The changed and deleted models are listed before `ModelContext.save()` runs and handed
+    /// to the discard: a save that fails in the store has already processed the changes, so
+    /// the context may no longer list them as changed (ADR 0025 Addendum M2-T37).
     func save() throws {
+        var pending: [any PersistentModel] = []
         do {
             try refuseSaveAfterFailedInnerWrite()
             try refuseSaveWhileNeedsReopening()
             try willSave?()
+            pending = context.changedModelsArray + context.deletedModelsArray
             try context.save()
         } catch {
-            discardUnsavedChanges()
+            discardUnsavedChanges(alsoChecking: pending)
             throw error
         }
         onSave?()
