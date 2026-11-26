@@ -931,3 +931,15 @@ From M1-T4d (ADR 0016, D10): the operator CLI reads label photos from `labels/<p
 Goal: TestFlight, then App Store. Not yet planned. Mostly human tasks.
 
 Scope: App Store listing, screenshots, privacy nutrition labels, privacy policy and terms, TestFlight round with the persona interviews, production deployment, launch checklist.
+
+### M2-T35 Failed saves put edited fields back
+- status: todo
+- owner: ios-engineer
+- depends: M2-T25
+- implements: docs/04-specification.md, Non-functional (Durability: no loss of a confirmed write, and no write sent that was not confirmed); ADR 0025
+- acceptance:
+  - From PR #63: `ModelContext.rollback()` does not restore an attribute changed on a model that was already saved. The rating write now keeps a `BrewRatingSnapshot` and puts the fields back itself.
+  - Do the same at every other `rollback()` after an edit of a saved model: `ShelfEntryEditorModel`, `BrewFormModel`, `SyncIssuesModel` (redo, discard), `Puller` and `AccountStore.save()`. Otherwise a failed edit stays in memory with no operation queued, and the next unrelated save stores it without ever sending it.
+  - Prefer one shared mechanism in `AccountStore` (for example, a write that snapshots the changed models' sync state and fields and restores them on failure) over a snapshot per screen.
+  - Each site has a test like `RatingTests.testAFailedSaveLeavesNothingBehind`: a write that throws after changing a saved model leaves the model as it was and queues nothing.
+  - Mac: the `ios` job.
