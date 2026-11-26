@@ -146,7 +146,7 @@ final class BrewFormModel {
         guard let seconds = timer.stop(locale: locale) else {
             return
         }
-        draft.brewTimeS = seconds
+        draft.setBrewTime(seconds: seconds)
     }
 
     /// Resets the brew timer and clears `brew_time_s`, so the readout and the saved value

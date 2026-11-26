@@ -208,7 +208,8 @@ enum L10n {
     static var brewTimerResetHint: LocalizedStringKey { "brew.timer.reset.hint" }
     // VoiceOver announcements are posted as text, so these are looked up as a String.
     static var brewTimerAnnounceStarted: String { String(localized: "brew.timer.announce.started") }
-    static var brewTimerAnnounceStopped: String { String(localized: "brew.timer.announce.stopped") }
+    /// The stop announcement with the brew time in words; the catalog value places `%@`.
+    static func brewTimerAnnounceStopped(time: String) -> String { String(localized: "brew.timer.announce.stopped_with_time \(time)") }
     static var brewTimerAnnounceReset: String { String(localized: "brew.timer.announce.reset") }
     // Brew list and rating (M2-T20).
     static var brewListTitle: LocalizedStringKey { "brew_list.title" }

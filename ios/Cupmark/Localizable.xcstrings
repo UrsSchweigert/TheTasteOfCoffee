@@ -1081,20 +1081,20 @@
         }
       }
     },
-    "brew.timer.announce.stopped" : {
-      "comment" : "VoiceOver announcement when the brew timer stops; the brew time in words follows after a comma.",
+    "brew.timer.announce.stopped_with_time %@" : {
+      "comment" : "VoiceOver announcement when the brew timer stops; %@ is the brew time in words, for example \"2 minutes, 30 seconds\".",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Timer gestoppt"
+            "value" : "Timer gestoppt, %@"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Timer stopped"
+            "value" : "Timer stopped, %@"
           }
         }
       }

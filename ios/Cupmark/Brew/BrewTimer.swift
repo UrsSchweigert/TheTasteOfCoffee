@@ -82,9 +82,9 @@ extension BrewDraft {
             .flatMap { seconds in API.scaledInteger(seconds, scale: 1) }
     }
 
-    /// Sets `brew_time_s` from a timed brew, or clears it for nil.
+    /// Sets `brew_time_s` from a timed brew (whole seconds, clamped), or clears it for nil.
     mutating func setBrewTime(_ elapsed: Duration?) {
-        brewTimeS = elapsed.flatMap { duration in BrewDraft.brewTimeS(for: duration) }
+        setBrewTime(seconds: elapsed.flatMap { duration in BrewDraft.brewTimeS(for: duration) })
     }
 }
 
@@ -133,7 +133,7 @@ final class BrewTimerModel {
         guard let elapsed = timer.stop(at: now()), let seconds = BrewDraft.brewTimeS(for: elapsed) else {
             return nil
         }
-        announce([L10n.brewTimerAnnounceStopped, BrewTimerFormat.spoken(seconds, locale: locale)].joined(separator: ", "))
+        announce(L10n.brewTimerAnnounceStopped(time: BrewTimerFormat.spoken(seconds, locale: locale)))
         return seconds
     }
 

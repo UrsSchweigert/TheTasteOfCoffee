@@ -409,6 +409,8 @@ test('keysInL10n and checkKeys find missing and orphan keys', () => {
   // String members that look their key up (VoiceOver announcements, M2-T21) count too, in order.
   const withString = `enum L10n {\n    static var a: LocalizedStringKey { "a.one" }\n    static var c: String { String(localized: "c.three") }\n    static var b: LocalizedStringKey { "b.two" }\n}`;
   assert.deepEqual(keysInL10n(withString), ['a.one', 'c.three', 'b.two']);
+  const withFormat = `enum L10n {\n    static func d(time: String) -> String { String(localized: "d.four \\(time)") }\n}`;
+  assert.deepEqual(keysInL10n(withFormat), ['d.four %@']);
   assert.equal(checkKeys(['a.one', 'b.two'], ['a.one', 'c.three']).length, 2);
 });
 

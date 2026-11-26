@@ -151,6 +151,24 @@ final class BrewTimerTests: XCTestCase {
         XCTAssertEqual(BrewDraft.brewTimeS(for: .milliseconds(29_999)), try secondsInRange(28), "whole seconds, rounded down")
     }
 
+    func testSettingTheBrewTimeClampsItAndNilClearsIt() throws {
+        let maximum = try XCTUnwrap(Int(exactly: range.maximum))
+        let minimum = try XCTUnwrap(Int(exactly: range.minimum))
+        var draft = BrewDraft(method: try StoreFixtures.first(Vocabulary.Method.self))
+        draft.setBrewTime(seconds: try secondsInRange(29))
+        XCTAssertEqual(draft.brewTimeS, try secondsInRange(29), "a value in the range is kept")
+        draft.setBrewTime(seconds: maximum + 1)
+        XCTAssertEqual(draft.brewTimeS, maximum)
+        draft.setBrewTime(seconds: minimum - 1)
+        XCTAssertEqual(draft.brewTimeS, minimum)
+        draft.setBrewTime(seconds: nil)
+        XCTAssertNil(draft.brewTimeS)
+        draft.setBrewTime(.seconds(30))
+        XCTAssertEqual(draft.brewTimeS, 30)
+        draft.setBrewTime(nil)
+        XCTAssertNil(draft.brewTimeS)
+    }
+
     func testTheTimedBrewIsSavedAndASaveStopsARunningTimer() throws {
         let store = try AccountStore.inMemory()
         let entry = try StoreFixtures.syncedShelfEntry(in: store)
@@ -248,11 +266,14 @@ final class BrewTimerTests: XCTestCase {
         XCTAssertEqual(announcements.messages.first, L10n.brewTimerAnnounceStarted)
         XCTAssertEqual(
             announcements.messages.dropFirst().first,
-            L10n.brewTimerAnnounceStopped + ", " + BrewTimerFormat.spoken(150, locale: english),
+            L10n.brewTimerAnnounceStopped(time: BrewTimerFormat.spoken(150, locale: english)),
             "the stop is announced with the brew time"
         )
+        let stopped = announcements.messages.dropFirst().first ?? ""
+        XCTAssertTrue(stopped.contains(BrewTimerFormat.spoken(150, locale: english)), "the format places the time: \(stopped)")
+        XCTAssertFalse(stopped.contains("%@"), stopped)
         XCTAssertEqual(announcements.messages.last, L10n.brewTimerAnnounceReset)
-        for (message, key) in zip(announcements.messages, ["brew.timer.announce.started", "brew.timer.announce.stopped", "brew.timer.announce.reset"]) {
+        for (message, key) in zip(announcements.messages, ["brew.timer.announce.started", "brew.timer.announce.stopped_with_time", "brew.timer.announce.reset"]) {
             XCTAssertFalse(message.isEmpty)
             XCTAssertFalse(message.hasPrefix(key), "\(key) resolves to catalog text")
         }
