@@ -2,9 +2,9 @@ import SwiftData
 import XCTest
 @testable import Cupmark
 
-/// Schema versions 2 (M2-T25) and 3 (M2-T26): a store written with version 1 or 2 opens with the
-/// current schema, keeps its items and its outbox, and takes the new label photo queue and the
-/// grinder columns.
+/// Schema versions 2 (M2-T25), 3 (M2-T26) and 4 (M2-T42): a store written with version 1, 2 or 3
+/// opens with the current schema, keeps its items and its outbox, and takes the new label photo
+/// queue, the grinder columns and the brew photos.
 final class StoreMigrationTests: XCTestCase {
     private let directory = FileManager.default.temporaryDirectory.appending(
         path: "StoreMigrationTests-\(UUID().uuidString)",
@@ -22,7 +22,7 @@ final class StoreMigrationTests: XCTestCase {
     }
 
     /// A store file as an older build wrote it: the given schema only, no migration plan, models
-    /// of that schema (the current aliases are version 3's and do not belong to it).
+    /// of that schema, named by their version (the current aliases may belong to a later one).
     private func writeOldStore(
         _ schema: Schema,
         account: AccountID,
@@ -109,6 +109,57 @@ final class StoreMigrationTests: XCTestCase {
         XCTAssertEqual(recipe.waterG, 300)
         XCTAssertNil(recipe.grinderID)
         XCTAssertEqual(try store.queuedLabelPhotoFileNames(), ["old.jpg"])
+    }
+
+    /// Version 4 (M2-T42, ADR 0033): a store file written with version 3's schema opens with the
+    /// current one through the lightweight stage, keeps every brew, recipe, outbox operation and
+    /// queued label photo, has an empty photo list, and takes brew photos.
+    func testAVersion3StoreOpensWithVersion4AndKeepsEveryBrewWithAnEmptyPhotoList() throws {
+        let folder = directory
+        let account = AccountID(subject: AuthFixtures.subject)
+        let brewIDs = [UUID(), UUID(), UUID()]
+        let recipeID = UUID()
+        let methodID = try StoreFixtures.first(Vocabulary.Method.self).rawValue
+        let grinder = try XCTUnwrap(Vocabulary.Grinder.allCases.first { grinder in grinder.scale != nil })
+        try writeOldStore(Schema(versionedSchema: CupmarkSchemaV3.self), account: account) { context in
+            let bean = CupmarkSchemaV3.StoredBean(barcode: "4006381333931")
+            let entry = CupmarkSchemaV3.StoredShelfEntry(purchaseDate: try StoreFixtures.day("2026-11-01"))
+            context.insert(bean)
+            context.insert(entry)
+            entry.bean = bean
+            for (index, brewID) in brewIDs.enumerated() {
+                let brew = CupmarkSchemaV3.StoredBrew(localID: brewID, brewedAtMilliseconds: Int64(3_000 + index), methodID: methodID)
+                brew.doseDg = 180 + index
+                brew.grinderID = grinder.rawValue
+                context.insert(brew)
+                brew.shelfEntry = entry
+            }
+            let recipe = CupmarkSchemaV3.StoredRecipe(localID: recipeID, methodID: methodID)
+            recipe.waterG = 250
+            context.insert(recipe)
+            context.insert(CupmarkSchemaV1.OutboxOperation(sequence: 1, resourceRaw: "brew", actionRaw: "create", localID: brewIDs[0]))
+            context.insert(CupmarkSchemaV2.QueuedLabelPhoto(beanLocalID: bean.localID, fileName: "label.jpg"))
+        }
+        let photos = BrewPhotoFolders(root: folder.appending(path: "BrewPhotos", directoryHint: .isDirectory))
+
+        let store = try AccountStore.open(for: account, in: folder, brewPhotos: photos)
+
+        XCTAssertEqual(Set(try store.brewsNewestFirst().map(\.localID)), Set(brewIDs))
+        for (index, brewID) in brewIDs.enumerated() {
+            let brew = try XCTUnwrap(try store.brew(localID: brewID))
+            XCTAssertEqual(brew.doseDg, 180 + index)
+            XCTAssertEqual(brew.grinder, grinder)
+            XCTAssertEqual(brew.shelfEntry?.bean?.barcode, "4006381333931")
+            XCTAssertEqual(try store.brewPhotos(of: brew).count, 0)
+        }
+        XCTAssertEqual(try store.recipe(localID: recipeID)?.waterG, 250)
+        XCTAssertEqual(try store.outboxOperations().map(\.localID), [brewIDs[0]])
+        XCTAssertEqual(try store.queuedLabelPhotoFileNames(), ["label.jpg"])
+        XCTAssertTrue(try store.allBrewPhotos().isEmpty)
+        // The new model works in the migrated store, and opens again.
+        let brew = try XCTUnwrap(try store.brew(localID: brewIDs[1]))
+        let added = try store.addBrewPhoto(to: brew, jpeg: try BrewPhotoFixtures.photo(), createdAt: BrewPhotoFixtures.start)
+        XCTAssertEqual(try store.brewPhotos(of: brew).map(\.localID), [added.localID])
     }
 
     func testAVersion2StoreOpensAgainWithItsQueuedPhotos() throws {

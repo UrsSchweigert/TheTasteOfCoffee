@@ -289,6 +289,9 @@ extension AccountStore {
     /// found again by the fetch the app uses (a model the first round misses is fetched a
     /// second time, after that round, before the miss counts).
     func discardUnsavedChanges() {
+        // The brew photo records deleted in the discarded changes come back, so their files
+        // stay (M2-T42, ADR 0033).
+        brewPhotoFilesToRemove.removeAll()
         let touched = context.changedModelsArray + context.deletedModelsArray
         guard !touched.isEmpty else {
             context.rollback()
@@ -598,6 +601,23 @@ extension QueuedLabelPhoto: SavedValuesRestorable {
             .attribute("jobData", \.jobData),
             .attribute("attemptCount", \.attemptCount),
             .attribute("nextAttemptAt", \.nextAttemptAt),
+        ]
+    }
+}
+
+extension StoredBrewPhoto: SavedValuesRestorable {
+    static func savedCopy(of model: StoredBrewPhoto, in context: ModelContext) throws -> StoredBrewPhoto? {
+        let localID = model.localID
+        var descriptor = FetchDescriptor<StoredBrewPhoto>(predicate: #Predicate<StoredBrewPhoto> { photo in photo.localID == localID })
+        descriptor.fetchLimit = 1
+        return try context.fetch(descriptor).first
+    }
+
+    static var restoredProperties: [RestoredProperty<StoredBrewPhoto>] {
+        [
+            .attribute("brewLocalID", \.brewLocalID),
+            .attribute("fileName", \.fileName),
+            .attribute("createdAt", \.createdAt),
         ]
     }
 }

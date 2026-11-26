@@ -7,6 +7,8 @@ import Foundation
 ///   (`StoreLocation`), which holds its data and its outbox;
 /// - the account's label photo folder, `LabelPhotos/<account id>/`, with the `Queued` photos of
 ///   its label photo queue (`LabelPhotoFolders`, from the M2-T24 and M2-T25 reviews);
+/// - the account's brew photo folder, `BrewPhotos/<account id>/` (`BrewPhotoFolders`, M2-T42,
+///   ADR 0033), which only the device ever had;
 /// - the cached catalogue images and any export file, which are not the account's alone but
 ///   were loaded with its token.
 ///
@@ -15,17 +17,20 @@ import Foundation
 struct AccountLocalData: Sendable {
     let storesDirectory: URL
     let labelPhotos: LabelPhotoFolders
+    let brewPhotos: BrewPhotoFolders
     let catalogueImages: URL?
     let exports: ExportFileStore
 
     init(
         storesDirectory: URL = StoreLocation.defaultDirectory,
         labelPhotos: LabelPhotoFolders = .standard,
+        brewPhotos: BrewPhotoFolders = .standard,
         catalogueImages: URL? = CatalogueImageCache.standardDirectory,
         exports: ExportFileStore = ExportFileStore()
     ) {
         self.storesDirectory = storesDirectory
         self.labelPhotos = labelPhotos
+        self.brewPhotos = brewPhotos
         self.catalogueImages = catalogueImages
         self.exports = exports
     }
@@ -41,9 +46,9 @@ struct AccountLocalData: Sendable {
         }
     }
 
-    /// Deletes the store files and the label photo folder of `account`. Every file is tried;
-    /// the first failure is thrown at the end. Nothing else is touched: other accounts' stores
-    /// and folders stay.
+    /// Deletes the store files, the label photo folder and the brew photo folder of `account`.
+    /// Every file is tried; the first failure is thrown at the end. Nothing else is touched:
+    /// other accounts' stores and folders stay.
     func remove(_ account: AccountID) throws {
         var firstError: (any Error)?
         for url in try storeFiles(of: account) {
@@ -55,6 +60,11 @@ struct AccountLocalData: Sendable {
         }
         do {
             try AccountLocalData.removeIfPresent(labelPhotos.store(for: account).directory)
+        } catch {
+            firstError = firstError ?? error
+        }
+        do {
+            try brewPhotos.removeFolder(of: account)
         } catch {
             firstError = firstError ?? error
         }

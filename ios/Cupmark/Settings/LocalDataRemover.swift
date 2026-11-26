@@ -15,15 +15,22 @@ import Foundation
 ///   that shape belongs to another account. A file of another shape is never touched.
 /// - Only stores that are not open are removed: the app opens the signed-in account's store
 ///   only.
-/// - The label photo folders of the other accounts go with them (`LabelPhotoFolders`).
+/// - The label photo folders and the brew photo folders (M2-T42, ADR 0033) of the other
+///   accounts go with them (`LabelPhotoFolders`, `BrewPhotoFolders`).
 /// - Nothing is sent to the server, and the server's data is not touched.
 struct LocalDataRemover: Sendable {
     let storesDirectory: URL
     let labelPhotos: LabelPhotoFolders
+    let brewPhotos: BrewPhotoFolders
 
-    init(storesDirectory: URL = StoreLocation.defaultDirectory, labelPhotos: LabelPhotoFolders = .standard) {
+    init(
+        storesDirectory: URL = StoreLocation.defaultDirectory,
+        labelPhotos: LabelPhotoFolders = .standard,
+        brewPhotos: BrewPhotoFolders = .standard
+    ) {
         self.storesDirectory = storesDirectory
         self.labelPhotos = labelPhotos
+        self.brewPhotos = brewPhotos
     }
 
     /// The file stems (hex digits) of the other accounts' stores, sorted.
@@ -43,9 +50,9 @@ struct LocalDataRemover: Sendable {
         try otherStems(keeping: account).count
     }
 
-    /// Deletes the stores of the other accounts (with their `-wal` and `-shm` files) and their
-    /// label photo folders, and returns how many stores went. Every file is tried; the first
-    /// failure is thrown at the end.
+    /// Deletes the stores of the other accounts (with their `-wal` and `-shm` files), their
+    /// label photo folders and their brew photo folders, and returns how many stores went.
+    /// Every file is tried; the first failure is thrown at the end.
     @discardableResult
     func removeOtherAccounts(keeping account: AccountID) throws -> Int {
         let own = try StoreLocation.fileStem(for: account)
@@ -63,6 +70,11 @@ struct LocalDataRemover: Sendable {
             }
         }
         labelPhotos.removeFolders(exceptOf: account)
+        do {
+            try brewPhotos.removeFolders(exceptOf: account)
+        } catch {
+            firstError = firstError ?? error
+        }
         if let firstError {
             throw firstError
         }

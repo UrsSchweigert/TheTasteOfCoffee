@@ -26,8 +26,9 @@ final class AccountDeletionTests: XCTestCase {
     private var photos: LabelPhotoFolders { LabelPhotoFolders(root: root.appending(path: "LabelPhotos", directoryHint: .isDirectory)) }
     private var images: URL { root.appending(path: "CatalogueImages", directoryHint: .isDirectory) }
     private var exports: ExportFileStore { ExportFileStore(root: root.appending(path: "CupmarkExport", directoryHint: .isDirectory)) }
+    private var brewPhotos: BrewPhotoFolders { BrewPhotoFolders(root: root.appending(path: "BrewPhotos", directoryHint: .isDirectory)) }
     private var localData: AccountLocalData {
-        AccountLocalData(storesDirectory: stores, labelPhotos: photos, catalogueImages: images, exports: exports)
+        AccountLocalData(storesDirectory: stores, labelPhotos: photos, brewPhotos: brewPhotos, catalogueImages: images, exports: exports)
     }
 
     // MARK: - Harness
@@ -60,11 +61,12 @@ final class AccountDeletionTests: XCTestCase {
         )
         let client = APIClient(baseURL: server.baseURL, tokenProvider: session, session: server.makeSession(), imageCache: nil)
         let stores = self.stores
+        let brewPhotos = self.brewPhotos
         let opened = DeletionCounter()
         let host = SyncHost(
             makeStore: { account in
                 opened.increment()
-                return try AccountStore.open(for: account, in: stores)
+                return try AccountStore.open(for: account, in: stores, brewPhotos: brewPhotos)
             },
             makeEngine: { account, store in
                 SyncEngine(store: store, client: client, isCurrentAccount: {
@@ -93,13 +95,21 @@ final class AccountDeletionTests: XCTestCase {
         FakeCredentialStore(StoredCredential(refreshToken: refreshToken, accountID: account))
     }
 
-    /// The account's store with one recipe and its queued create, a screen photo, a queued
-    /// photo, a cached catalogue image and an export file.
+    /// The account's store with one recipe and its queued create, two synced brews with brew
+    /// photos (M2-T42), a screen photo, a queued photo, a cached catalogue image and an export
+    /// file.
     private func seedLocalData(of account: AccountID) throws {
         do {
-            let store = try AccountStore.open(for: account, in: stores)
+            let store = try AccountStore.open(for: account, in: stores, brewPhotos: brewPhotos)
             try store.addRecipe(StoredRecipe(API.RecipeInput(vocabularyVersion: Vocabulary.version, parameters: try StoreFixtures.parameters())))
+            let first = try BrewPhotoFixtures.brew(in: store)
+            let second = try BrewPhotoFixtures.brew(in: store, entry: first.shelfEntry, serverID: FakeSyncBackend.id(61), minute: 1)
+            let jpeg = try BrewPhotoFixtures.photo()
+            try store.addBrewPhoto(to: first, jpeg: jpeg, createdAt: BrewPhotoFixtures.at(minute: 1))
+            try store.addBrewPhoto(to: first, jpeg: jpeg, createdAt: BrewPhotoFixtures.at(minute: 2))
+            try store.addBrewPhoto(to: second, jpeg: jpeg, createdAt: BrewPhotoFixtures.at(minute: 3))
             XCTAssertEqual(try store.outboxOperations().count, 1)
+            XCTAssertEqual(brewPhotos.files(for: account).entryNames().count, 3)
         }
         _ = try photos.store(for: account).write(LabelPhotoFixtures.jpeg)
         _ = try photos.queue(for: account).write(LabelPhotoFixtures.jpeg)
@@ -117,6 +127,9 @@ final class AccountDeletionTests: XCTestCase {
             XCTAssertFalse(exists(url), "the store file \(url.lastPathComponent) is gone", file: file, line: line)
         }
         XCTAssertFalse(exists(photos.store(for: account).directory), "the label photo folder is gone, Queued included", file: file, line: line)
+        XCTAssertFalse(exists(brewPhotos.files(for: account).directory), "the brew photo folder is gone, with every photo", file: file, line: line)
+        let leftNames = (try? FileManager.default.contentsOfDirectory(atPath: brewPhotos.root.path(percentEncoded: false))) ?? []
+        XCTAssertFalse(leftNames.contains(account.rawValue), "nothing of BrewPhotos is left for the account", file: file, line: line)
         XCTAssertFalse(exists(images), "the cached images are gone", file: file, line: line)
         XCTAssertFalse(exists(exports.root), "the export files are gone", file: file, line: line)
     }
@@ -220,7 +233,55 @@ final class AccountDeletionTests: XCTestCase {
         }
         XCTAssertTrue(exists(images), "the cached images stay until the 204")
         XCTAssertTrue(exists(photos.store(for: account).directory), "no label photo is deleted before the 204")
+        XCTAssertEqual(brewPhotos.files(for: account).entryNames().count, 3, "no brew photo is deleted before the 204")
         app.deletion.stop()
+    }
+
+    /// Every path under `BrewPhotos`, relative and sorted. (Not the stores folder: SQLite may
+    /// still remove a closed store's `-wal` and `-shm` files at any moment.)
+    private func snapshot() -> [String] {
+        let paths = FileManager.default.enumerator(atPath: brewPhotos.root.path(percentEncoded: false))?.allObjects as? [String]
+        return (paths ?? []).sorted()
+    }
+
+    /// M2-T42: after a deletion run with brews that hold photos, no file and no folder of
+    /// `BrewPhotos` is left for the account, another account's photos stay, and a second run
+    /// changes nothing.
+    func testADeletionRunLeavesNoBrewPhotoOfTheAccountAndASecondRunChangesNothing() async throws {
+        let script = DeleteScript([204])
+        let server = try StubServer { request in try script.respond(to: request) }
+        let credentials = signedIn(account)
+        let records = FakeAccountDeletionStore()
+        try seedLocalData(of: account)
+        let bystanderPhoto: String
+        do {
+            let store = try AccountStore.open(for: bystander, in: stores, brewPhotos: brewPhotos)
+            let brew = try BrewPhotoFixtures.brew(in: store)
+            bystanderPhoto = try store.addBrewPhoto(to: brew, jpeg: try BrewPhotoFixtures.photo(), createdAt: BrewPhotoFixtures.start).fileName
+        }
+        let app = try await launch(server: server, credentials: credentials, records: records)
+        XCTAssertEqual(brewPhotos.files(for: account).entryNames().count, 3, "the sweep at open keeps the photos of live brews")
+
+        app.deletion.start()
+        await app.deletion.running?.value
+        await settle()
+
+        XCTAssertNil(records.record)
+        XCTAssertEqual(app.auth.phase, .signedOut)
+        try assertLocalDataGone(of: account)
+        XCTAssertEqual(brewPhotos.files(for: bystander).entryNames(), [bystanderPhoto], "another account's brew photos stay")
+        let after = snapshot()
+        XCTAssertFalse(after.contains { path in path.hasPrefix(account.rawValue) }, "no file and no folder of the account")
+        XCTAssertTrue(after.contains { path in path.hasPrefix(bystander.rawValue) })
+        let requests = server.requests.count
+
+        try localData.remove(account)
+        app.deletion.resume()
+        await app.deletion.running?.value
+        await settle()
+
+        XCTAssertEqual(snapshot(), after, "a second run changes nothing")
+        XCTAssertEqual(server.requests.count, requests, "and sends nothing")
     }
 
     func testTheDeletionResumesAfterARestart() async throws {
@@ -877,6 +938,7 @@ final class AccountDeletionTests: XCTestCase {
     func testLocalDataRemovesTheAccountsStoreAndPhotosOnlyAndCanRunTwice() throws {
         try seedLocalData(of: account)
         let otherQueued = try photos.queue(for: bystander).write(LabelPhotoFixtures.jpeg)
+        let otherBrewPhoto = try brewPhotos.files(for: bystander).write(try BrewPhotoFixtures.photo())
         do {
             let other = try AccountStore.open(for: bystander, in: stores)
             try other.addRecipe(StoredRecipe(API.RecipeInput(vocabularyVersion: Vocabulary.version, parameters: try StoreFixtures.parameters())))
@@ -887,6 +949,7 @@ final class AccountDeletionTests: XCTestCase {
         localData.removeCaches()
 
         try assertLocalDataGone(of: account)
+        XCTAssertTrue(brewPhotos.files(for: bystander).fileExists(otherBrewPhoto), "another account's brew photos stay")
         let reopened = try AccountStore.open(for: account, in: stores)
         XCTAssertTrue(try reopened.recipes().isEmpty)
         XCTAssertTrue(try reopened.outboxOperations().isEmpty, "the outbox went with the store")

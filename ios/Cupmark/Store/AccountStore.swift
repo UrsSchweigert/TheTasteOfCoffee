@@ -22,22 +22,37 @@ final class AccountStore {
     /// The writes under way (`write { }`, `Store/AccountStore+Write.swift`). Only `write`
     /// changes it.
     var writeNesting = WriteNesting()
+    /// The account's brew photo folder (M2-T42, ADR 0033), nil for a store that has none (an
+    /// in-memory store without one, or an account whose id is not an `AccountID`). Without
+    /// it no photo can be added; removals of records still work.
+    let brewPhotoFiles: BrewPhotoFileStore?
+    /// The files of brew photo records deleted in the unsaved changes. `save()` deletes them
+    /// once the records are gone from disk; a failed write forgets them, since its records come
+    /// back (`Store/AccountStore+BrewPhotos.swift`).
+    var brewPhotoFilesToRemove: Set<String> = []
 
-    init(container: ModelContainer) {
+    init(container: ModelContainer, brewPhotoFiles: BrewPhotoFileStore? = nil) {
         self.container = container
         self.context = ModelContext(container)
         self.context.autosaveEnabled = false
+        self.brewPhotoFiles = brewPhotoFiles
     }
 
     // MARK: - Containers
 
     /// The schema of the current version.
-    static var schema: Schema { Schema(versionedSchema: CupmarkSchemaV3.self) }
+    static var schema: Schema { Schema(versionedSchema: CupmarkSchemaV4.self) }
 
     /// The store of `account`: its own file in `directory` (`StoreLocation`). No other
     /// account's file is ever opened. CloudKit is off: data leaves the device only through
-    /// our API (invariant 6).
-    static func open(for account: some StoreAccount, in directory: URL = StoreLocation.defaultDirectory) throws -> AccountStore {
+    /// our API (invariant 6). Its brew photos live in `brewPhotos`' folder of the account
+    /// (`BrewPhotoFolders`, named by the `AccountID` as the label photo folders are); an
+    /// account whose stable id is not an `AccountID` gets no photo folder.
+    static func open(
+        for account: some StoreAccount,
+        in directory: URL = StoreLocation.defaultDirectory,
+        brewPhotos: BrewPhotoFolders = .standard
+    ) throws -> AccountStore {
         let url = try StoreLocation.fileURL(for: account, in: directory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let configuration = ModelConfiguration(
@@ -48,12 +63,13 @@ final class AccountStore {
             cloudKitDatabase: .none
         )
         let container = try ModelContainer(for: schema, migrationPlan: CupmarkMigrationPlan.self, configurations: configuration)
-        return AccountStore(container: container)
+        let photoFiles = AccountID(rawValue: account.stableID).map { id in brewPhotos.files(for: id) }
+        return AccountStore(container: container, brewPhotoFiles: photoFiles)
     }
 
     /// A store that lives in memory only, for tests and previews. Each call is a new, empty
-    /// store.
-    static func inMemory() throws -> AccountStore {
+    /// store. Its brew photos go to `brewPhotoFiles`; without one no photo can be added.
+    static func inMemory(brewPhotoFiles: BrewPhotoFileStore? = nil) throws -> AccountStore {
         let configuration = ModelConfiguration(
             UUID().uuidString,
             schema: schema,
@@ -63,7 +79,7 @@ final class AccountStore {
             cloudKitDatabase: .none
         )
         let container = try ModelContainer(for: schema, migrationPlan: CupmarkMigrationPlan.self, configurations: configuration)
-        return AccountStore(container: container)
+        return AccountStore(container: container, brewPhotoFiles: brewPhotoFiles)
     }
 
     // MARK: - Writes
@@ -196,6 +212,12 @@ final class AccountStore {
         if decision == .removeNow, try createMayHaveReachedServer(item.localID) {
             decision = .markPendingDelete
         }
+        // A brew's photos (M2-T42, ADR 0033) go with the user's delete in both cases: they are
+        // on the device only, so nothing waits for the server's answer. Their files go after
+        // the save below.
+        if item is StoredBrew {
+            try removeBrewPhotos(ofBrewLocalID: item.localID)
+        }
         switch decision {
         case .removeNow:
             try removeOutboxOperations(for: item.localID)
@@ -229,7 +251,9 @@ final class AccountStore {
     /// changed models take their saved values again, inserts and deletes are rolled back) and
     /// the error thrown. After a save `onSave` is called, so the sync engine can look at the
     /// outbox, and `didSaveNotification` is posted with this store as its object, so screens
-    /// read again.
+    /// read again. The files of brew photo records the save deleted are deleted right after
+    /// it (`brewPhotoFilesToRemove`); a file left by an app ended in between goes at the next
+    /// sweep (`sweepBrewPhotos()`).
     func save() throws {
         do {
             try refuseSaveAfterFailedInnerWrite()
@@ -239,6 +263,7 @@ final class AccountStore {
             discardUnsavedChanges()
             throw error
         }
+        removeBrewPhotoFilesOfSavedDeletes()
         onSave?()
         NotificationCenter.default.post(name: AccountStore.didSaveNotification, object: self)
     }

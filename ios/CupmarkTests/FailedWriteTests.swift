@@ -130,10 +130,11 @@ final class FailedWriteTests: XCTestCase {
             "StoredProfile": (restored(StoredProfile.self), ["localID"]),
             "OutboxOperation": (restored(OutboxOperation.self), ["sequence", "localID"]),
             "QueuedLabelPhoto": (restored(QueuedLabelPhoto.self), ["localID"]),
+            "StoredBrewPhoto": (restored(StoredBrewPhoto.self), ["localID"]),
         ]
         let entities = AccountStore.schema.entities
         XCTAssertEqual(Set(entities.map(\.name)), Set(expected.keys))
-        XCTAssertTrue(CupmarkSchemaV3.models.allSatisfy { model in model is any SavedValuesRestorable.Type })
+        XCTAssertTrue(CupmarkSchemaV4.models.allSatisfy { model in model is any SavedValuesRestorable.Type })
         for entity in entities {
             guard let names = expected[entity.name] else {
                 XCTFail("no restore for \(entity.name)")
@@ -163,6 +164,7 @@ final class FailedWriteTests: XCTestCase {
         check(StoredProfile.self)
         check(OutboxOperation.self)
         check(QueuedLabelPhoto.self)
+        check(StoredBrewPhoto.self)
     }
 
     func testAWriteThatThrowsPutsBackEveryChangedFieldOfASavedBrew() throws {
