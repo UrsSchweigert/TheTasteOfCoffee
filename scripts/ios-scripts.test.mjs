@@ -1444,15 +1444,38 @@ test('account deletion: buttons only, outside Settings, the record first, no sig
   inOrder(body('start'), ['try records.save(started)', 'sync?.holdForAccountDeletion()', 'launch()'], 'start');
   // The token is refreshed, then DELETE /account is sent.
   inOrder(body('attempt'), ['requests.refreshToken()', 'requests.deleteAccount()'], 'attempt');
-  // The only sign-out is in the cleanup after the 204: local data, sign-out, then the record.
-  assert.equal((model.match(/\bsignOut\(/g) ?? []).length, 1, 'one sign-out in the deletion model');
-  inOrder(body('finish'), ['localData.remove(', 'auth.signOut(reason: .accountDeleted)', 'records.delete()'], 'finish');
-  inOrder(body('proceed'), ['case .serverDeleted:', 'await finish(current)', 'case .requested:', 'switch await attempt()'], 'proceed');
+  // Two sign-outs only: the cleanup after the 204 (local data, sign-out, then the record), and
+  // the explicit "Sign Out" of a different account's session, which deletes nothing (ADR 0031).
+  assert.equal((model.match(/\bauth\.signOut\(/g) ?? []).length, 2, 'two sign-outs in the deletion model');
+  inOrder(body('finish'), ['localData.remove(', 'auth.signOut(reason: current.wasMovedToAnotherAccount ? .otherAccountDeleted : .accountDeleted)', 'records.delete()'], 'finish');
+  const otherSignOut = body('signOutOfSignedInAccount');
+  assert.match(otherSignOut, /await auth\.signOut\(\)/);
+  assert.doesNotMatch(otherSignOut, /records\.(save|delete)|localData|requests\./, 'signing out of another account keeps the record and deletes nothing');
+  // A different account is never deleted without the tap: proceed stops before any attempt, and
+  // only deleteSignedInAccount() moves the record.
+  inOrder(body('proceed'), ['case .serverDeleted:', 'await finish(current)', 'case .requested:', 'guard signedIn == current.account else', 'state = .confirmDifferentAccount', 'switch await attempt()'], 'proceed');
+  assert.doesNotMatch(body('proceed'), /records\.save\(next\)|account: signedIn/, 'proceed never moves the record');
+  assert.match(body('deleteSignedInAccount'), /guard state == \.confirmDifferentAccount \|\| state == \.confirmUnreadableRecord/);
+  // Every run refreshes first.
+  assert.match(body('proceed'), /^[^]*?tokenRefreshed = false/);
+  // A record that cannot be decoded is kept and holds (ADR 0031).
+  const recordFile = masked('ios/Cupmark/AccountDeletion/AccountDeletionRecord.swift');
+  // The Keychain store's load, after the protocol's declaration.
+  const load = recordFile.slice(recordFile.lastIndexOf('func load()'), recordFile.lastIndexOf('func save('));
+  assert.doesNotMatch(load, /try delete\(\)/, 'an undecodable record is never deleted');
+  assert.match(load, /throw AccountDeletionStoreError\.unreadableRecord/);
+  // The progress screen warns which account a sign-in deletes, as the sign-in screen does.
+  const screen = masked('ios/Cupmark/AccountDeletion/AccountDeletionScreen.swift');
+  assert.match(screen, /case \.signInRequired:\s*message\(L10n\.accountDeletionSignInRequired\)\s*message\(L10n\.accountDeletionSignInNote\)/);
+  assert.match(masked('ios/Cupmark/Auth/SignInView.swift'), /L10n\.accountDeletionSignInNote/);
+  // A cold start resumes after the sign-in is restored.
+  assert.match(masked('ios/Cupmark/Auth/AuthGate.swift'), /await auth\?\.start\(\)\s*deletion\?\.resume\(\)/);
 
   // Nothing is sent while a deletion is recorded: the host opens no store, and every sender asks
   // `maySend(as:)`, which reads the record.
   const host = masked('ios/Cupmark/Sync/SyncHost.swift');
-  assert.match(host, /let next = isHeld\(\) \? nil : requested/);
+  assert.match(host, /let held = isHeld\(\)\s*let next = held \? nil : requested/);
+  assert.match(host, /if let previous = account, !held \{/, 'no label photo is deleted while held');
   assert.match(host, /isHeld: \{ deletions\.holdsSending \}/);
   const live = host.slice(host.indexOf('static func live('), host.indexOf('func switchTo('));
   assert.doesNotMatch(live, /isSignedIn\(as:/, 'the live senders ask maySend(as:)');

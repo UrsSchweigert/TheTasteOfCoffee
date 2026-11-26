@@ -31,6 +31,10 @@ final class AuthModel {
         case signInRequired
         /// This device deleted the account (M2-T31). Not a problem: the note says it is done.
         case accountDeleted
+        /// This device deleted the account the user signed in with and explicitly chose to
+        /// delete instead of the one the deletion was started for (M2-T31, ADR 0031). The note
+        /// never claims that the original account was deleted.
+        case otherAccountDeleted
 
         var message: LocalizedStringKey {
             switch self {
@@ -39,12 +43,13 @@ final class AuthModel {
             case .sessionExpired: L10n.signInSessionExpired
             case .signInRequired: L10n.signInRequiredByServer
             case .accountDeleted: L10n.signInAccountDeleted
+            case .otherAccountDeleted: L10n.signInOtherAccountDeleted
             }
         }
 
         /// False for a note that reports something done rather than something wrong.
         var isProblem: Bool {
-            self != .accountDeleted
+            self != .accountDeleted && self != .otherAccountDeleted
         }
     }
 
@@ -52,6 +57,17 @@ final class AuthModel {
     private(set) var failure: Failure?
     /// True while `signInAgain()` runs.
     private(set) var isSigningInAgain = false
+
+    /// How `signInAgain()` ended.
+    enum SignInAgainOutcome: Equatable, Sendable {
+        case succeeded
+        /// The user closed the sheet. Not a failure to show.
+        case cancelled
+        /// It failed; the note says why (`Failure.signInFailed` or `.offline`).
+        case failed(Failure)
+        /// Nobody was signed in, or another `signInAgain()` was running.
+        case notAvailable
+    }
 
     /// The app's token provider.
     let session: AuthSession
@@ -130,10 +146,10 @@ final class AuthModel {
     /// deletion must never sign out or discard tokens before its 204 (ADR 0017), but needs a new
     /// sign-in when the saved one can no longer be refreshed while it is still saved. The new
     /// sign-in replaces the saved one only once it succeeded; a cancelled or failed one leaves
-    /// the session as it was. Returns true when it succeeded.
-    func signInAgain() async -> Bool {
+    /// the session as it was, and the outcome says why.
+    func signInAgain() async -> SignInAgainOutcome {
         guard case .signedIn = phase, !isSigningInAgain else {
-            return false
+            return .notAvailable
         }
         isSigningInAgain = true
         defer { isSigningInAgain = false }
@@ -141,9 +157,11 @@ final class AuthModel {
             let account = try await authenticate()
             phase = .signedIn(account)
             failure = nil
-            return true
+            return .succeeded
+        } catch AuthError.cancelled {
+            return .cancelled
         } catch {
-            return false
+            return .failed(AuthModel.failure(for: error))
         }
     }
 

@@ -35,6 +35,7 @@ enum L10n {
     static var signInSessionExpired: LocalizedStringKey { "sign_in.session_expired" }
     static var signInRequiredByServer: LocalizedStringKey { "sign_in.required_by_server" }
     static var signInAccountDeleted: LocalizedStringKey { "sign_in.account_deleted" }
+    static var signInOtherAccountDeleted: LocalizedStringKey { "sign_in.other_account_deleted" }
     static var authRestoring: LocalizedStringKey { "auth.restoring" }
     static var accountSignOut: LocalizedStringKey { "account.sign_out" }
     static var accountSignOutConfirmTitle: LocalizedStringKey { "account.sign_out.confirm_title" }
@@ -410,4 +411,10 @@ enum L10n {
     static var accountDeletionSignInAgain: LocalizedStringKey { "account_deletion.sign_in_again" }
     static var accountDeletionCleanupFailed: LocalizedStringKey { "account_deletion.cleanup_failed" }
     static var accountDeletionSignInNote: LocalizedStringKey { "account_deletion.sign_in_note" }
+    static var accountDeletionDifferentAccountMessage: LocalizedStringKey { "account_deletion.different_account.message" }
+    static var accountDeletionUnreadableRecordMessage: LocalizedStringKey { "account_deletion.unreadable_record.message" }
+    static var accountDeletionDeleteThisAccount: LocalizedStringKey { "account_deletion.delete_this_account" }
+    static var accountDeletionDeleteThisAccountHint: LocalizedStringKey { "account_deletion.delete_this_account.hint" }
+    static var accountDeletionSignOutInstead: LocalizedStringKey { "account_deletion.sign_out_instead" }
+    static var accountDeletionSignOutInsteadHint: LocalizedStringKey { "account_deletion.sign_out_instead.hint" }
 }

@@ -19,12 +19,18 @@ struct AccountDeletionRecord: Codable, Equatable, Sendable {
 
     var phase: Phase
     /// The account whose token `DELETE /account` is sent with: the signed-in account when the
-    /// deletion started, or the account signed in with after the token could not be refreshed
-    /// (ADR 0031).
+    /// deletion started, or another account the user explicitly chose to delete after signing
+    /// in with it (ADR 0031: never without that tap).
     var account: AccountID
-    /// Every account whose local data goes after the 204, in the order they joined; `account`
-    /// is always one of them.
+    /// Every account whose local data goes after the 204, in the order they joined; the first
+    /// is the account the deletion was started for, and `account` is always one of them.
     var localAccounts: [AccountID]
+
+    /// True when the deletion was moved to another account than the one it was started for,
+    /// so the final note must not say that the original account was deleted.
+    var wasMovedToAnotherAccount: Bool {
+        localAccounts.first != account
+    }
 
     init(phase: Phase, account: AccountID, localAccounts: [AccountID]) {
         self.phase = phase
@@ -39,10 +45,18 @@ struct AccountDeletionRecord: Codable, Equatable, Sendable {
     }
 }
 
+/// A saved record that this build cannot decode. It is never deleted for that reason: dropping
+/// it would let sync run again for an account whose deletion may be half done (ADR 0031).
+enum AccountDeletionStoreError: Error, Equatable, Sendable {
+    case unreadableRecord
+}
+
 /// Where the record of a running account deletion is kept. The app uses
 /// `KeychainAccountDeletionStore`; tests use a fake.
 protocol AccountDeletionStore: Sendable {
-    /// The saved record, or nil when no deletion runs.
+    /// The saved record, or nil when no deletion runs. Throws
+    /// `AccountDeletionStoreError.unreadableRecord` for a record that is there but cannot be
+    /// decoded.
     func load() throws -> AccountDeletionRecord?
     /// Saves `record`, replacing any saved one.
     func save(_ record: AccountDeletionRecord) throws
@@ -52,8 +66,8 @@ protocol AccountDeletionStore: Sendable {
 
 extension AccountDeletionStore {
     /// True while a deletion is recorded, and while the record cannot be read (before the
-    /// first unlock): nothing is sent for any account then (`AuthSession.maySend(as:)`,
-    /// `SyncHost`).
+    /// first unlock) or decoded: nothing is sent for any account then
+    /// (`AuthSession.maySend(as:)`, `SyncHost`).
     var holdsSending: Bool {
         do {
             return try load() != nil
@@ -108,10 +122,10 @@ struct KeychainAccountDeletionStore: AccountDeletionStore {
         }
         guard let data = result as? Data,
               let record = try? JSONDecoder().decode(AccountDeletionRecord.self, from: data) else {
-            // Only this app writes the item; one it cannot read would hold every sync for good,
-            // so it is dropped, as an unreadable sign-in is (`KeychainCredentialStore`).
-            try delete()
-            return nil
+            // Kept, unlike an unreadable sign-in: a deletion may be half done. It keeps holding
+            // sync, and `AccountDeletionModel` asks before it deletes the signed-in account and
+            // writes a new record over this one.
+            throw AccountDeletionStoreError.unreadableRecord
         }
         return record
     }

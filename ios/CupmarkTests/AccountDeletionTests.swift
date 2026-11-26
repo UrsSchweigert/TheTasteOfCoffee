@@ -217,6 +217,7 @@ final class AccountDeletionTests: XCTestCase {
             XCTAssertTrue(exists(url), "nothing local is deleted before the 204")
         }
         XCTAssertTrue(exists(images), "the cached images stay until the 204")
+        XCTAssertTrue(exists(photos.store(for: account).directory), "no label photo is deleted before the 204")
         app.deletion.stop()
     }
 
@@ -269,7 +270,7 @@ final class AccountDeletionTests: XCTestCase {
         try assertLocalDataGone(of: account)
     }
 
-    func testARefreshThatFailsAsksForSignInAndTheNewEmptyAccountIsDeletedToo() async throws {
+    func testARefreshThatFailsAsksForSignInAndADifferentAccountIsOnlyDeletedAfterATap() async throws {
         let script = DeleteScript([204])
         let server = try StubServer { request in try script.respond(to: request) }
         let credentials = signedIn(account)
@@ -307,12 +308,23 @@ final class AccountDeletionTests: XCTestCase {
         await app.deletion.running?.value
         await settle()
 
-        XCTAssertEqual(server.requests.map { "\($0.method) \($0.path)" }, ["DELETE /account"])
-        XCTAssertEqual(server.requests.first?.header("Authorization"), "Bearer access-new-2", "retried with the new token, refreshed first")
+        XCTAssertEqual(app.deletion.state, .confirmDifferentAccount, "another account is never deleted without a tap")
+        XCTAssertTrue(server.requests.isEmpty, "no DELETE /account before the tap")
+        XCTAssertEqual(records.record?.account, account, "the record is unchanged until the tap")
+        let refreshesBeforeTap = await endpoint.refreshCount
+        XCTAssertEqual(refreshesBeforeTap, 1, "only the failed refresh of the old account")
+
+        app.deletion.deleteSignedInAccount()
+        XCTAssertEqual(records.record, AccountDeletionRecord(phase: .requested, account: newAccount, localAccounts: [account, newAccount]))
+        await app.deletion.running?.value
+        await settle()
+
+        XCTAssertEqual(server.requests.map { "\($0.method) \($0.path)" }, ["DELETE /account"], "deleted exactly once")
+        XCTAssertEqual(server.requests.first?.header("Authorization"), "Bearer access-new-2", "with the new token, refreshed first")
         let revoked = await revokes(endpoint)
         XCTAssertEqual(revoked, [.revoke("refresh-new")])
         XCTAssertEqual(app.auth.phase, .signedOut)
-        XCTAssertEqual(app.auth.failure, .accountDeleted)
+        XCTAssertEqual(app.auth.failure, .otherAccountDeleted, "the note does not claim the original account was deleted")
         XCTAssertNil(credentials.credential)
         XCTAssertNil(records.record)
         try assertLocalDataGone(of: account)
@@ -343,9 +355,207 @@ final class AccountDeletionTests: XCTestCase {
         await app.deletion.running?.value
         await settle()
 
-        XCTAssertEqual(server.requests.map { $0.header("Authorization") }, ["Bearer access-again-2"])
+        XCTAssertEqual(server.requests.map { $0.header("Authorization") }, ["Bearer access-again-2"], "the same account goes on without a prompt")
         XCTAssertEqual(app.auth.phase, .signedOut)
+        XCTAssertEqual(app.auth.failure, .accountDeleted)
         XCTAssertNil(records.record)
+    }
+
+    // MARK: - A different or unknown account (ADR 0031)
+
+    func testSignOutInsteadOfDeletingADifferentAccountKeepsTheRecordAndSendsNothing() async throws {
+        let script = DeleteScript([204])
+        let server = try StubServer { request in try script.respond(to: request) }
+        let records = FakeAccountDeletionStore(AccountDeletionRecord(phase: .requested, account: account, localAccounts: [account]))
+        let credentials = signedIn(newAccount, refreshToken: "refresh-new")
+        try seedLocalData(of: account)
+        let endpoint = FakeTokenEndpoint()
+        let app = try await launch(server: server, credentials: credentials, records: records, endpoint: endpoint)
+        app.deletion.resume()
+        await app.deletion.running?.value
+        XCTAssertEqual(app.deletion.state, .confirmDifferentAccount)
+
+        await app.deletion.signOutOfSignedInAccount()
+        await app.deletion.running?.value
+        await settle()
+
+        XCTAssertTrue(server.requests.isEmpty)
+        let refreshes = await endpoint.refreshCount
+        XCTAssertEqual(refreshes, 0, "nothing is sent for the other account")
+        XCTAssertEqual(app.auth.phase, .signedOut)
+        XCTAssertNil(credentials.credential)
+        XCTAssertEqual(records.record, AccountDeletionRecord(phase: .requested, account: account, localAccounts: [account]), "the record stays as it was")
+        XCTAssertTrue(app.deletion.awaitsServerDeletion, "the sign-in screen still asks to finish the deletion")
+        XCTAssertEqual(app.deletion.state, .signInRequired)
+        XCTAssertTrue(exists(try localData.storeFiles(of: account)[0]), "nothing local is deleted")
+    }
+
+    func testARestartWhileTheConfirmationIsShownShowsItAgain() async throws {
+        let script = DeleteScript([204])
+        let server = try StubServer { request in try script.respond(to: request) }
+        let records = FakeAccountDeletionStore(AccountDeletionRecord(phase: .requested, account: account, localAccounts: [account]))
+        let credentials = signedIn(newAccount, refreshToken: "refresh-new")
+        do {
+            let first = try await launch(server: server, credentials: credentials, records: records)
+            first.deletion.resume()
+            await first.deletion.running?.value
+            XCTAssertEqual(first.deletion.state, .confirmDifferentAccount)
+        }
+        let second = try await launch(server: server, credentials: credentials, records: records)
+        XCTAssertTrue(second.deletion.isActive)
+        XCTAssertNil(second.host.store)
+        second.deletion.resume()
+        await second.deletion.running?.value
+
+        XCTAssertEqual(second.deletion.state, .confirmDifferentAccount, "derived again from the saved sign-in and the record")
+        XCTAssertTrue(server.requests.isEmpty, "never deleted without the tap")
+        XCTAssertEqual(second.auth.phase, .signedIn(newAccount))
+        XCTAssertEqual(records.record?.account, account)
+    }
+
+    func testSignInAgainAsADifferentAccountAsksThenDeletesIt() async throws {
+        let script = DeleteScript([204])
+        let server = try StubServer { request in try script.respond(to: request) }
+        let credentials = signedIn(account)
+        let records = FakeAccountDeletionStore()
+        let refreshes = DeletionCounter()
+        // The saved session cannot be refreshed but stays saved (a Cognito 400 other than
+        // invalid_grant); the next refreshes, of the new sign-in, work.
+        let endpoint = FakeTokenEndpoint(
+            exchange: { try AuthFixtures.tokenResponse(access: "access-new", subject: AuthFixtures.otherSubject, refresh: "refresh-new") },
+            refresh: {
+                refreshes.increment()
+                if refreshes.count == 1 {
+                    throw AuthError.server(status: 400)
+                }
+                return try AuthFixtures.tokenResponse(access: "access-new-2", subject: AuthFixtures.otherSubject, refresh: nil)
+            }
+        )
+        let app = try await launch(server: server, credentials: credentials, records: records, endpoint: endpoint)
+        app.deletion.start()
+        await app.deletion.running?.value
+        XCTAssertEqual(app.deletion.state, .signInRequired)
+        XCTAssertEqual(app.auth.phase, .signedIn(account), "the saved session is kept")
+
+        await app.deletion.signInAgain()
+        await app.deletion.running?.value
+        XCTAssertEqual(app.auth.phase, .signedIn(newAccount))
+        XCTAssertEqual(app.deletion.state, .confirmDifferentAccount)
+        XCTAssertTrue(server.requests.isEmpty)
+
+        app.deletion.deleteSignedInAccount()
+        await app.deletion.running?.value
+        await settle()
+
+        XCTAssertEqual(server.requests.map { $0.header("Authorization") }, ["Bearer access-new-2"])
+        XCTAssertEqual(app.auth.failure, .otherAccountDeleted)
+        XCTAssertNil(records.record)
+    }
+
+    func testAFailedSignInAgainIsShown() async throws {
+        let script = DeleteScript([204])
+        let server = try StubServer { request in try script.respond(to: request) }
+        let records = FakeAccountDeletionStore()
+        let endpoint = FakeTokenEndpoint(refresh: { throw AuthError.server(status: 400) })
+        let app = try await launch(
+            server: server,
+            credentials: signedIn(account),
+            records: records,
+            endpoint: endpoint,
+            respond: { _ in throw APIError.transport(.notConnectedToInternet) }
+        )
+        app.deletion.start()
+        await app.deletion.running?.value
+        XCTAssertEqual(app.deletion.state, .signInRequired)
+
+        await app.deletion.signInAgain()
+
+        XCTAssertEqual(app.deletion.signInAgainFailure, .offline)
+        XCTAssertEqual(app.deletion.state, .signInRequired)
+        XCTAssertEqual(app.auth.phase, .signedIn(account))
+        XCTAssertTrue(server.requests.isEmpty)
+    }
+
+    func testAResumeDuringARunIsFollowedByAnotherRun() async throws {
+        let script = DeleteScript([204])
+        let server = try StubServer { request in try script.respond(to: request) }
+        let records = FakeAccountDeletionStore()
+        let refreshes = DeletionCounter()
+        let endpoint = FakeTokenEndpoint(refresh: {
+            refreshes.increment()
+            if refreshes.count == 1 {
+                throw AuthError.server(status: 400)
+            }
+            return try AuthFixtures.tokenResponse(access: "access-later", refresh: nil)
+        })
+        await endpoint.holdRefreshes()
+        let app = try await launch(server: server, credentials: signedIn(account), records: records, endpoint: endpoint)
+
+        app.deletion.start()
+        await endpoint.waitUntilARefreshIsHeld()
+        // For example the scene became active again while the run was still under way.
+        app.deletion.resume()
+        await endpoint.releaseRefreshes()
+        try await waitUntil("the second run deleted") { !app.deletion.isActive }
+        await settle()
+
+        XCTAssertEqual(refreshes.count, 2, "the first run's refresh failed; the run that followed refreshed again")
+        XCTAssertEqual(server.requests.map { $0.header("Authorization") }, ["Bearer access-later"])
+        XCTAssertEqual(app.auth.phase, .signedOut)
+    }
+
+    func testAnUndecodableRecordHoldsSyncAndAsksBeforeDeletingTheSignedInAccount() async throws {
+        let script = DeleteScript([204])
+        let server = try StubServer { request in try script.respond(to: request) }
+        let records = FakeAccountDeletionStore()
+        records.failLoads(with: AccountDeletionStoreError.unreadableRecord)
+        try seedLocalData(of: account)
+        let app = try await launch(server: server, credentials: signedIn(account), records: records)
+
+        XCTAssertTrue(app.deletion.isActive, "the progress is shown, not the shelf")
+        XCTAssertTrue(records.holdsSending)
+        XCTAssertNil(app.host.store, "sync stays held")
+        let maySend = await app.session.maySend(as: account)
+        XCTAssertFalse(maySend)
+        app.deletion.resume()
+        await app.deletion.running?.value
+        XCTAssertEqual(app.deletion.state, .confirmUnreadableRecord)
+        XCTAssertTrue(server.requests.isEmpty)
+
+        app.deletion.deleteSignedInAccount()
+        await app.deletion.running?.value
+        await settle()
+
+        XCTAssertEqual(server.requests.count, 1)
+        XCTAssertEqual(app.auth.phase, .signedOut)
+        XCTAssertEqual(app.auth.failure, .accountDeleted)
+        XCTAssertNil(records.record)
+        try assertLocalDataGone(of: account)
+    }
+
+    func testTheKeychainKeepsARecordItCannotDecode() throws {
+        let store = KeychainAccountDeletionStore(service: "app.cupmark.Cupmark.deletion.test-\(UUID().uuidString)")
+        defer { try? store.delete() }
+        let item: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: store.service,
+            kSecAttrAccount as String: KeychainAccountDeletionStore.account,
+            kSecValueData as String: Data("not json".utf8),
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+        ]
+        let status = SecItemAdd(item as CFDictionary, nil)
+        let unavailable: Set<OSStatus> = [errSecMissingEntitlement, errSecNotAvailable, errSecInteractionNotAllowed]
+        if unavailable.contains(status) {
+            throw XCTSkip("NOT RUN: real Keychain test skipped, SecItem returned OSStatus \(status); this test process has no Keychain access (unsigned simulator build). The model's handling is covered with FakeAccountDeletionStore.")
+        }
+        XCTAssertEqual(status, errSecSuccess)
+        XCTAssertThrowsError(try store.load()) { error in
+            XCTAssertEqual(error as? AccountDeletionStoreError, .unreadableRecord)
+        }
+        XCTAssertThrowsError(try store.load(), "the item is still there") { error in
+            XCTAssertEqual(error as? AccountDeletionStoreError, .unreadableRecord)
+        }
+        XCTAssertTrue(store.holdsSending)
     }
 
     // MARK: - Nothing more is sent
@@ -545,7 +755,7 @@ final class AccountDeletionTests: XCTestCase {
         XCTAssertFalse(during)
         XCTAssertTrue(stillSignedIn, "still signed in")
         try records.delete()
-        records.failLoads(with: .keychain(-25308))
+        records.failLoads(with: AuthError.keychain(-25308))
         XCTAssertTrue(records.holdsSending, "a record that cannot be read holds too")
     }
 
@@ -591,7 +801,7 @@ final class FakeAccountDeletionStore: AccountDeletionStore, @unchecked Sendable 
     private let lock = NSLock()
     private var stored: AccountDeletionRecord?
     private var saveError: AuthError?
-    private var loadError: AuthError?
+    private var loadError: (any Error)?
 
     init(_ record: AccountDeletionRecord? = nil) {
         stored = record
@@ -605,7 +815,7 @@ final class FakeAccountDeletionStore: AccountDeletionStore, @unchecked Sendable 
         lock.withLock { saveError = error }
     }
 
-    func failLoads(with error: AuthError?) {
+    func failLoads(with error: (any Error)?) {
         lock.withLock { loadError = error }
     }
 
@@ -623,6 +833,8 @@ final class FakeAccountDeletionStore: AccountDeletionStore, @unchecked Sendable 
             if let error = saveError {
                 throw error
             }
+            // A save overwrites the item, also one that could not be decoded.
+            loadError = nil
             stored = record
         }
     }

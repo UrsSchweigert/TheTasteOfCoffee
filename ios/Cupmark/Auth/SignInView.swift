@@ -4,7 +4,8 @@ import SwiftUI
 /// input, no account form. The app asks for no name and no email.
 ///
 /// While an account deletion waits for a new sign-in (M2-T31, `finishesDeletion`), the screen
-/// says that signing in finishes the deletion, and of the account signed in with.
+/// says that signing in with that account finishes the deletion, and that a different account
+/// is only deleted after the user confirms it. The failure note is shown as well.
 struct SignInView: View {
     let isSigningIn: Bool
     let failure: AuthModel.Failure?
@@ -33,7 +34,9 @@ struct SignInView: View {
                         .foregroundStyle(.red)
                         .multilineTextAlignment(.center)
                         .accessibilityIdentifier("sign-in-deletion-note")
-                } else if let failure {
+                }
+                // Also while a deletion waits: why the last sign-in failed, or that it expired.
+                if let failure {
                     Text(failure.message)
                         .font(.callout)
                         .foregroundStyle(failure.isProblem ? Color.red : Color.secondary)

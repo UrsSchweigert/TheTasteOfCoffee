@@ -191,25 +191,40 @@ final class AuthModelTests: XCTestCase {
         await model.start()
 
         let cancelled = await model.signInAgain()
-        XCTAssertFalse(cancelled)
+        XCTAssertEqual(cancelled, .cancelled)
         XCTAssertEqual(model.phase, .signedIn(account), "never signed out")
         XCTAssertEqual(store.credential?.refreshToken, "refresh-1")
         XCTAssertFalse(model.isSigningInAgain)
 
         authenticator.respond = FakeWebAuthenticator.returningCode("code-9")
         let renewed = await model.signInAgain()
-        XCTAssertTrue(renewed)
+        XCTAssertEqual(renewed, .succeeded)
         XCTAssertEqual(model.phase, .signedIn(account))
         XCTAssertEqual(store.credential?.refreshToken, "refresh-9", "the new sign-in replaced the saved one")
         let calls = await endpoint.calls
         XCTAssertFalse(calls.contains(.revoke("refresh-1")), "nothing was revoked")
     }
 
+    func testAFailedSignInAgainSaysWhyAndKeepsTheSession() async throws {
+        let store = FakeCredentialStore(StoredCredential(refreshToken: "refresh-1", accountID: account))
+        let (model, _) = try makeModel(respond: { _ in throw APIError.transport(.notConnectedToInternet) }, store: store)
+        await model.start()
+        let result = await model.signInAgain()
+        XCTAssertEqual(result, .failed(.offline))
+        XCTAssertEqual(model.phase, .signedIn(account))
+        XCTAssertEqual(store.credential?.refreshToken, "refresh-1")
+    }
+
+    func testTheOtherAccountNoteIsNotAProblem() {
+        XCTAssertFalse(AuthModel.Failure.otherAccountDeleted.isProblem)
+        XCTAssertTrue(AuthModel.Failure.signInRequired.isProblem)
+    }
+
     func testSigningInAgainNeedsASignedInSession() async throws {
         let (model, authenticator) = try makeModel()
         await model.start()
         let result = await model.signInAgain()
-        XCTAssertFalse(result)
+        XCTAssertEqual(result, .notAvailable)
         XCTAssertTrue(authenticator.urls.isEmpty)
         XCTAssertEqual(model.phase, .signedOut)
     }

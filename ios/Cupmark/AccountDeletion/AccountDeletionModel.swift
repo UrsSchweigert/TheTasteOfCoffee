@@ -25,27 +25,28 @@ struct AccountDeletionRequests: Sendable {
 ///    saved in the Keychain first. If that fails nothing is done. Then the sync host is held
 ///    (`SyncHost.holdForAccountDeletion()`): the engine stops and the store closes, and from
 ///    now on nothing but `DELETE /account` is sent, for any account
-///    (`AuthSession.maySend(as:)` and `SyncHost` read the record).
-/// 2. The token is refreshed, then `DELETE /account` is sent. A 500, 429, any other failure
-///    and a network failure (also of the refresh) are retried with `SyncBackoff` until a 204.
-///    Later attempts of the same run use the token as it is (the client still refreshes it
-///    when it is about to expire or on a 401), so a retry after a deletion that finished on
-///    the server but lost its answer is still authorised (ADR 0017: a repeated `DELETE` with an
-///    old token answers 204). Until the 204 the user stays signed in: nothing here signs out or
-///    discards a token before it.
+///    (`AuthSession.maySend(as:)` and `SyncHost` read the record). Nothing local is deleted.
+/// 2. Each run (the start, every resume) refreshes the token once, then sends
+///    `DELETE /account`. A 500, 429, any other failure and a network failure (also of the
+///    refresh) are retried with `SyncBackoff` until a 204. Later attempts of the same run use
+///    the token as it is (the client still refreshes it when it is about to expire or on a
+///    401), so a retry after a deletion that finished on the server but lost its answer is
+///    still authorised (ADR 0017: a repeated `DELETE` with an old token answers 204). Until the
+///    204 the user stays signed in: nothing here signs out or discards a token before it.
 /// 3. If the token cannot be refreshed (`unauthorized`), the user is asked to sign in again:
-///    a session that ended itself (`invalid_grant`) shows the sign-in screen, with the note
-///    that signing in finishes the deletion; a session that is still saved is renewed with
-///    `AuthModel.signInAgain()`, without a sign-out. The deletion then goes on with the new
-///    token. A sign-in that gives another account (Cognito had already deleted the user, so the
-///    same Apple ID is a new, empty account) moves the deletion to it, and its 204 leaves
-///    nothing (ADR 0031).
+///    a session that ended itself (`invalid_grant`) shows the sign-in screen; a session that is
+///    still saved is renewed with `AuthModel.signInAgain()`, without a sign-out. The same
+///    account goes on at once. A different account is never deleted without the user's tap
+///    (`confirmDifferentAccount`, ADR 0031): the app cannot tell a new Cognito user made for
+///    the same Apple ID (the old one already deleted) from another Apple ID. "Delete This
+///    Account" moves the record to it; "Sign Out" signs that session out and keeps the record.
+///    The prompt is derived from the saved sign-in and the record, so a restart shows it again.
+///    A record that cannot be decoded asks the same before the signed-in account is deleted.
 /// 4. After the 204 the record becomes `serverDeleted`; then the local data of every account in
 ///    the record goes (`AccountLocalData`: the store with the outbox, the label photo folder
 ///    with its queued photos, the cached images, export files), then the sign-out (the Keychain
-///    sign-in, `AuthModel.signOut(reason: .accountDeleted)`), and last the record itself. Every
-///    step is safe to repeat, so a deletion interrupted after the 204 finishes at the next
-///    start without another request.
+///    sign-in, with `accountDeleted`, or `otherAccountDeleted` when the record was moved), and
+///    last the record itself. Every step is safe to repeat.
 @MainActor
 @Observable
 final class AccountDeletionModel {
@@ -59,6 +60,12 @@ final class AccountDeletionModel {
         case waitingToRetry
         /// The token could not be refreshed: the user signs in again to go on.
         case signInRequired
+        /// Signed in with another account than the one being deleted. Nothing is sent until the
+        /// user taps "Delete This Account" or "Sign Out".
+        case confirmDifferentAccount
+        /// The saved record cannot be decoded. Nothing is sent until the user taps "Delete
+        /// This Account" (the signed-in one) or "Sign Out".
+        case confirmUnreadableRecord
         /// The local data could not all be removed after the 204. `resume()` tries again, and
         /// so does the next start.
         case cleanupFailed
@@ -67,19 +74,25 @@ final class AccountDeletionModel {
     }
 
     private(set) var state: State = .idle
-    /// The running deletion's record, nil when none runs. Mirrors the Keychain item.
+    /// The running deletion's record, nil when none runs or when it cannot be decoded.
+    /// Mirrors the Keychain item.
     private(set) var record: AccountDeletionRecord?
+    /// True when a record is saved but cannot be decoded (`AccountDeletionStoreError`). It is
+    /// never deleted for that; it holds sync like any record.
+    private(set) var recordUnreadable = false
+    /// Why the last "Sign In Again" failed, nil after a success or a new try.
+    private(set) var signInAgainFailure: AuthModel.Failure?
 
     /// True while a deletion runs: the app shows its progress instead of the shelf, and no
     /// sign-out button.
     var isActive: Bool {
-        record != nil
+        record != nil || recordUnreadable
     }
 
     /// True while `DELETE /account` has not answered 204: a sign-in now finishes the deletion,
     /// which the sign-in screen says.
     var awaitsServerDeletion: Bool {
-        record?.phase == .requested
+        record?.phase == .requested || recordUnreadable
     }
 
     @ObservationIgnored private let records: any AccountDeletionStore
@@ -91,7 +104,7 @@ final class AccountDeletionModel {
     @ObservationIgnored private let jitter: @Sendable () -> Double
     @ObservationIgnored private let sleep: @Sendable (TimeInterval) async throws -> Void
     @ObservationIgnored private var loaded = false
-    /// The token is refreshed once per run, before its first `DELETE /account`.
+    /// Set at the start of every run: the token is refreshed before its first `DELETE /account`.
     @ObservationIgnored private var tokenRefreshed = false
     @ObservationIgnored private var failedAttempts = 0
     /// The running deletion, nil when none runs. Tests await it.
@@ -99,6 +112,10 @@ final class AccountDeletionModel {
     @ObservationIgnored private var nap: Task<Void, Never>?
     /// Counts the runs, so a run that ended only clears its own `running`.
     @ObservationIgnored private var runNumber = 0
+    /// `resume()` was called while a run was under way (for example the scene became active
+    /// again after the web sheet): one more run follows when it ends, so a state it saw too
+    /// early (a sign-in that had not finished) is never the last word.
+    @ObservationIgnored private var runAgain = false
 
     /// Nonisolated, so `CupmarkApp.init` can build it whatever its isolation. Reads nothing:
     /// `load()` reads the record.
@@ -123,13 +140,19 @@ final class AccountDeletionModel {
     }
 
     /// Reads the record once. A Keychain that cannot be read yet (before the first unlock) is
-    /// read again at the next call.
+    /// read again at the next call. A record that cannot be decoded is kept and counts as a
+    /// running deletion (`recordUnreadable`).
     func load() {
         guard !loaded else {
             return
         }
         do {
             record = try records.load()
+            recordUnreadable = false
+            loaded = true
+        } catch AccountDeletionStoreError.unreadableRecord {
+            record = nil
+            recordUnreadable = true
             loaded = true
         } catch {
             record = nil
@@ -140,7 +163,7 @@ final class AccountDeletionModel {
     /// while signed in and no deletion runs.
     func start() {
         load()
-        guard loaded, record == nil, running == nil, case .signedIn(let account) = auth.phase else {
+        guard loaded, !isActive, running == nil, case .signedIn(let account) = auth.phase else {
             return
         }
         let started = AccountDeletionRecord(phase: .requested, account: account, localAccounts: [account])
@@ -153,22 +176,24 @@ final class AccountDeletionModel {
         }
         record = started
         state = .deleting
-        tokenRefreshed = false
         failedAttempts = 0
+        runAgain = false
         sync?.holdForAccountDeletion()
         launch()
     }
 
     /// Goes on with a recorded deletion: at launch, on every change of the signed-in account
     /// (`AccountDeletionModifier`), when the app comes to the foreground, and from the buttons
-    /// of the progress screen. A retry that waits runs now. Without a record it does nothing.
+    /// of the progress screen. A retry that waits runs now; a run under way is followed by
+    /// another one. Without a record it does nothing.
     func resume() {
         load()
-        guard record != nil else {
+        guard isActive else {
             return
         }
         sync?.holdForAccountDeletion()
         if running != nil {
+            runAgain = true
             nap?.cancel()
             return
         }
@@ -177,17 +202,59 @@ final class AccountDeletionModel {
 
     /// The progress screen's "Sign In Again" while the session is still saved but its token
     /// cannot be refreshed: a new sign-in without a sign-out (`AuthModel.signInAgain()`), then
-    /// the deletion goes on.
+    /// the deletion goes on. A failure is kept for the screen (`signInAgainFailure`).
     func signInAgain() async {
-        guard await auth.signInAgain() else {
+        signInAgainFailure = nil
+        switch await auth.signInAgain() {
+        case .succeeded:
+            resume()
+        case .failed(let failure):
+            signInAgainFailure = failure
+        case .cancelled, .notAvailable:
+            break
+        }
+    }
+
+    /// "Delete This Account" (`confirmDifferentAccount`, `confirmUnreadableRecord`): the user
+    /// chose to delete the account signed in now. The record moves to it (its local data and
+    /// the old account's go after the 204), or, for an unreadable record, a new record for it
+    /// replaces that one. Only now may `DELETE /account` be sent for this account.
+    func deleteSignedInAccount() {
+        guard state == .confirmDifferentAccount || state == .confirmUnreadableRecord,
+              case .signedIn(let signedIn) = auth.phase else {
             return
         }
+        let next: AccountDeletionRecord
+        if let record {
+            next = AccountDeletionRecord(phase: .requested, account: signedIn, localAccounts: record.localAccounts)
+        } else {
+            next = AccountDeletionRecord(phase: .requested, account: signedIn, localAccounts: [signedIn])
+        }
+        // If the save fails, the deletion goes on in memory; a restart reads the old record and
+        // asks again, so nothing is deleted without a tap.
+        try? records.save(next)
+        record = next
+        recordUnreadable = false
+        state = .deleting
+        failedAttempts = 0
         resume()
+    }
+
+    /// "Sign Out" (`confirmDifferentAccount`, `confirmUnreadableRecord`): signs out of the
+    /// session signed in now, which is not the account being deleted, and deletes nothing. The
+    /// record stays, so the sign-in screen still asks to finish the deletion.
+    func signOutOfSignedInAccount() async {
+        guard state == .confirmDifferentAccount || state == .confirmUnreadableRecord else {
+            return
+        }
+        await auth.signOut()
+        state = .signInRequired
     }
 
     /// Ends the running attempt and any wait without touching the record, as an ended app
     /// would; `resume()` goes on. The app never stops a deletion; tests do.
     func stop() {
+        runAgain = false
         running?.cancel()
         running = nil
         nap?.cancel()
@@ -206,6 +273,7 @@ final class AccountDeletionModel {
     private func launch() {
         runNumber += 1
         let number = runNumber
+        runAgain = false
         running = Task { [weak self] in
             await self?.proceed()
             // A run that `stop()` ended must not clear the run started after it.
@@ -213,10 +281,26 @@ final class AccountDeletionModel {
                 return
             }
             self.running = nil
+            if self.runAgain, !Task.isCancelled {
+                self.launch()
+            }
         }
     }
 
     private func proceed() async {
+        // Every run refreshes the token before its first request (ADR 0031, point 3).
+        tokenRefreshed = false
+        if recordUnreadable {
+            switch auth.phase {
+            case .signedIn:
+                state = .confirmUnreadableRecord
+            case .signedOut:
+                state = .signInRequired
+            case .restoring, .signingIn:
+                break
+            }
+            return
+        }
         while !Task.isCancelled, let current = record {
             // Restoring the sign-in at launch, or a sign-in under way: `resume()` is called again
             // when the account changes.
@@ -230,18 +314,25 @@ final class AccountDeletionModel {
             case .requested:
                 guard case .signedIn(let signedIn) = auth.phase else {
                     // The session ended itself (the refresh failed): the sign-in screen asks
-                    // for a new sign-in, which finishes the deletion.
+                    // for a new sign-in.
                     state = .signInRequired
                     return
                 }
-                let target = retargeted(current, to: signedIn)
+                guard signedIn == current.account else {
+                    // Another account: never deleted without the user's tap.
+                    state = .confirmDifferentAccount
+                    return
+                }
                 state = .deleting
                 switch await attempt() {
                 case .deleted:
-                    var done = target
+                    var done = current
                     done.phase = .serverDeleted
-                    // If this save fails, a restart sends `DELETE /account` once more, which
-                    // answers 204 again (ADR 0017, Addendum), and then cleans up.
+                    // If this save fails, the record still says `requested`. A restart then
+                    // refreshes and sends `DELETE /account` again: within the old token's
+                    // lifetime that answers 204 (ADR 0017, Addendum), but the refresh for a
+                    // user Cognito deleted fails, so the user is asked to sign in again, and a
+                    // new sign-in is a different account, which is only deleted after a tap.
                     try? records.save(done)
                     record = done
                     failedAttempts = 0
@@ -257,24 +348,6 @@ final class AccountDeletionModel {
                 }
             }
         }
-    }
-
-    /// The record for the signed-in account. The same account keeps it. Another one is only
-    /// possible after the sign-in this deletion asked for (the progress screen replaces every
-    /// other screen and offers no sign-out): Cognito had deleted the user, so the same Apple ID
-    /// came back as a new account, and the deletion goes on with it (ADR 0031). The local data
-    /// of both goes after the 204.
-    private func retargeted(_ current: AccountDeletionRecord, to signedIn: AccountID) -> AccountDeletionRecord {
-        guard current.account != signedIn else {
-            return current
-        }
-        let next = AccountDeletionRecord(phase: .requested, account: signedIn, localAccounts: current.localAccounts)
-        // A failed save is repeated by the next run: the record still names the old account,
-        // and the sign-in is still the new one.
-        try? records.save(next)
-        record = next
-        tokenRefreshed = false
-        return next
     }
 
     /// One attempt: the token is refreshed first once per run, then `DELETE /account`.
@@ -322,8 +395,9 @@ final class AccountDeletionModel {
         }
         localData.removeCaches()
         // Only an account of this deletion is signed out; once it is signed out, nobody is.
+        // The note says which account was deleted: never the original one when it was moved.
         if let signedIn = auth.accountID, current.localAccounts.contains(signedIn) {
-            await auth.signOut(reason: .accountDeleted)
+            await auth.signOut(reason: current.wasMovedToAnotherAccount ? .otherAccountDeleted : .accountDeleted)
         }
         do {
             try records.delete()

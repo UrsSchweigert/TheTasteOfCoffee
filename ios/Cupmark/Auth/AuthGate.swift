@@ -32,6 +32,9 @@ struct AuthGate<Content: View>: View {
             // The deletion record first, so a deletion that was running is shown, not the shelf.
             deletion?.load()
             await auth?.start()
+            // A cold start signed out with a record (the server answered 204, the cleanup did
+            // not finish) changes no account, so the modifier's resume would not run again.
+            deletion?.resume()
         }
     }
 

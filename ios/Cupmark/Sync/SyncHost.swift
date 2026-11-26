@@ -129,11 +129,14 @@ final class SyncHost {
     /// recorded (`isHeld`) every account counts as nil: the current store is closed and none is
     /// opened (M2-T31).
     func switchTo(_ requested: AccountID?) {
-        let next = isHeld() ? nil : requested
+        let held = isHeld()
+        let next = held ? nil : requested
         guard next != account else {
             return
         }
-        if let previous = account {
+        // While held nothing local is deleted before the deletion's 204 (ADR 0031): the screen
+        // photos stay until the deletion removes the whole folder.
+        if let previous = account, !held {
             // The screen's photos end with the session; queued ones stay with the store, as
             // far as the store lists them (nil: it could not be read, so nothing is dropped).
             let queued = try? store?.queuedLabelPhotoFileNames()
@@ -206,7 +209,7 @@ final class SyncHost {
 
     /// An account deletion started or resumed (M2-T31): stops the engine, so the request on its
     /// way is cancelled and nothing more is sent, and closes the store, whose files the deletion
-    /// removes after its 204. The record of the deletion is saved before this is called, so
+    /// removes after its 204. No label photo is deleted here. The record of the deletion is saved before this is called, so
     /// `switchTo(_:)` opens no store until the deletion is done.
     func holdForAccountDeletion() {
         switchTo(nil)

@@ -163,6 +163,60 @@
         }
       }
     },
+    "account_deletion.delete_this_account" : {
+      "comment" : "Destructive button that deletes the account the user is signed in with now, after a different or unknown account was found.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieses Konto löschen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete This Account"
+          }
+        }
+      }
+    },
+    "account_deletion.delete_this_account.hint" : {
+      "comment" : "VoiceOver hint of the Delete This Account button.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Löscht das Konto, mit dem du gerade angemeldet bist, und alle seine Daten."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deletes the account you are signed in with now and all its data."
+          }
+        }
+      }
+    },
+    "account_deletion.different_account.message" : {
+      "comment" : "Shown during an account deletion after the user signed in with a different account than the one being deleted. Nothing is deleted until a button is tapped.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Du hast dich mit einem anderen Konto angemeldet als dem, das du löschen wolltest. Das Konto, das du löschen wolltest, ist vielleicht schon gelöscht, vielleicht gibt es es aber noch. Wenn du fortfährst, werden **dieses** Konto und alle seine Daten gelöscht. Das lässt sich nicht rückgängig machen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You signed in with a different account than the one you asked to delete. The account you asked to delete may already be gone, or it may still exist. If you continue, **this** account and all its data are deleted, and this cannot be undone."
+          }
+        }
+      }
+    },
     "account_deletion.export_hint" : {
       "comment" : "Footer below the first confirmation step of account deletion.",
       "extractionState" : "manual",
@@ -290,19 +344,19 @@
       }
     },
     "account_deletion.sign_in_note" : {
-      "comment" : "Shown on the sign-in screen while an account deletion waits for a new sign-in.",
+      "comment" : "Shown on the sign-in screen and the deletion progress screen while an account deletion waits for a new sign-in: which account a sign-in deletes.",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Melde dich erneut an, um das Löschen deines Kontos abzuschließen. Das Konto, mit dem du dich anmeldest, wird gelöscht."
+            "value" : "Melde dich mit dem Konto an, das du löschen wolltest, um das Löschen abzuschließen. Wenn du dich mit einem anderen Konto anmeldest, fragt Cupmark dich, bevor etwas gelöscht wird."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sign in again to finish deleting your account. The account you sign in with is deleted."
+            "value" : "Sign in with the account you asked to delete to finish deleting it. If you sign in with a different account, Cupmark asks you before it deletes anything."
           }
         }
       }
@@ -325,6 +379,42 @@
         }
       }
     },
+    "account_deletion.sign_out_instead" : {
+      "comment" : "Button that signs out of the account signed in now instead of deleting it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abmelden"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign Out"
+          }
+        }
+      }
+    },
+    "account_deletion.sign_out_instead.hint" : {
+      "comment" : "VoiceOver hint of the Sign Out button shown instead of deleting a different account.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Meldet dich von diesem Konto ab. Es wird nichts gelöscht."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signs out of this account. Nothing is deleted."
+          }
+        }
+      }
+    },
     "account_deletion.title" : {
       "comment" : "Settings row and screen title that lead to deleting the account.",
       "extractionState" : "manual",
@@ -339,6 +429,24 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Delete Account"
+          }
+        }
+      }
+    },
+    "account_deletion.unreadable_record.message" : {
+      "comment" : "Shown when the record of an account deletion on this device cannot be read. Nothing is deleted until a button is tapped.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auf diesem iPhone wurde das Löschen eines Kontos begonnen, aber sein Eintrag kann nicht gelesen werden. Wenn du fortfährst, werden **das Konto, mit dem du angemeldet bist,** und alle seine Daten gelöscht. Das lässt sich nicht rückgängig machen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An account deletion was started on this iPhone, but its record cannot be read. If you continue, **the account you are signed in with** and all its data are deleted, and this cannot be undone."
           }
         }
       }
@@ -5811,6 +5919,24 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No connection. Check your internet connection and try again."
+          }
+        }
+      }
+    },
+    "sign_in.other_account_deleted" : {
+      "comment" : "Shown on the sign-in screen after this device deleted the account the user signed in with and chose to delete instead of the one the deletion was started for. It must not say that the originally chosen account was deleted.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Konto, mit dem du dich angemeldet und das du zum Löschen gewählt hast, und seine Daten wurden gelöscht."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The account you signed in with and chose to delete, and its data, were deleted."
           }
         }
       }

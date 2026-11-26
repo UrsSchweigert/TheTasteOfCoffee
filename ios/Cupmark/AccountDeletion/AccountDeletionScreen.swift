@@ -94,7 +94,9 @@ private struct AccountDeletionItem: View {
 /// Shown instead of every signed-in screen while a deletion runs (M2-T31), so nothing can be
 /// changed or sent and there is no sign-out before the 204. It follows the model's state:
 /// deleting, waiting to retry (with "Try Now"), sign in again (with "Sign In Again", which
-/// renews the sign-in without signing out), and a failed cleanup (with "Try Again").
+/// renews the sign-in without signing out, and the warning about another account), the
+/// confirmation for another or an unknown account ("Delete This Account" or "Sign Out",
+/// ADR 0031), and a failed cleanup (with "Try Now").
 struct AccountDeletionProgressView: View {
     let model: AccountDeletionModel
     @Environment(AuthModel.self) private var auth: AuthModel?
@@ -138,6 +140,15 @@ struct AccountDeletionProgressView: View {
             .accessibilityIdentifier("account-deletion-retry")
         case .signInRequired:
             message(L10n.accountDeletionSignInRequired)
+            // The same warning as the sign-in screen: which account a sign-in deletes.
+            message(L10n.accountDeletionSignInNote)
+            if let failure = model.signInAgainFailure {
+                Text(failure.message)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+                    .multilineTextAlignment(.center)
+                    .accessibilityIdentifier("account-deletion-sign-in-failure")
+            }
             Button {
                 Task {
                     await model.signInAgain()
@@ -148,6 +159,33 @@ struct AccountDeletionProgressView: View {
             .buttonStyle(.borderedProminent)
             .disabled(auth?.isSigningInAgain ?? false)
             .accessibilityIdentifier("account-deletion-sign-in-again")
+        case .confirmDifferentAccount, .confirmUnreadableRecord:
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.title)
+                .foregroundStyle(.red)
+                .accessibilityHidden(true)
+            Text(model.state == .confirmDifferentAccount ? L10n.accountDeletionDifferentAccountMessage : L10n.accountDeletionUnreadableRecordMessage)
+                .font(.body)
+                .multilineTextAlignment(.center)
+                .accessibilityIdentifier("account-deletion-confirm-account")
+            Button(role: .destructive) {
+                model.deleteSignedInAccount()
+            } label: {
+                Text(L10n.accountDeletionDeleteThisAccount)
+            }
+            .buttonStyle(.borderedProminent)
+            .accessibilityHint(Text(L10n.accountDeletionDeleteThisAccountHint))
+            .accessibilityIdentifier("account-deletion-delete-this-account")
+            Button {
+                Task {
+                    await model.signOutOfSignedInAccount()
+                }
+            } label: {
+                Text(L10n.accountDeletionSignOutInstead)
+            }
+            .buttonStyle(.bordered)
+            .accessibilityHint(Text(L10n.accountDeletionSignOutInsteadHint))
+            .accessibilityIdentifier("account-deletion-sign-out-instead")
         case .cleanupFailed:
             message(L10n.accountDeletionCleanupFailed)
             Button {
