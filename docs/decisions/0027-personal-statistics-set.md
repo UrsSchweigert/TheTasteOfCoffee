@@ -52,3 +52,12 @@ After testing the TestFlight build the owner asked to see the averages "right ne
 - **Top of the coffee's screen:** a compact summary row at the very top of a stored entry's screen, "Overall 7.4, rated brews 3": the mean overall score and the number of rated brews, no plural wording. It appears only with at least one rated brew that scores `overall` (no empty state of its own and no zeros: the section below says "Rate a brew to see your averages here"). With one rated brew it shows that brew's values, as the section does. A tap scrolls to the dimension section of the addendum above, which stays as it is.
 - **Brew list:** a rated row shows its own overall score and, next to it, the coffee's average overall ("avg 7.4"). An unrated row shows neither; with one rated brew there is no average (it would be the brew's own number). VoiceOver reads "Overall 8.0, coffee average 7.4".
 
+
+## Addendum M2-T50: a method switcher (lead, ADR 0014)
+
+The owner found the statistics screen, which listed every method one after another, far too long (2026-11-26). A menu picker at the top replaces those sections. On the device, offline, no route, no cost. The rules:
+
+- **Options:** "All methods" and each method with at least one rated, not removed brew, in vocabulary order, labelled from the vocabulary.
+- **Effect:** with one method chosen every section (brews, weeks, taste profile, flavour notes, best bean, buy again) shows the numbers of that method's brews only, from the same `PersonalStatistics.compute` with a method filter. "All methods" is the output as before. "Best method" compares methods and is hidden while one is chosen.
+- **Threshold:** unchanged. A chosen method with fewer than `StatisticsRules.minimumRatedBrews` rated brews shows the empty state of the taste profile, not zeros.
+- **Kept:** per device in `UserDefaults` (privacy reason CA92.1) as one method id or "all". An unknown id, or a method that has no rated brew any more, shows "All methods"; the kept value is not overwritten until the user picks again.

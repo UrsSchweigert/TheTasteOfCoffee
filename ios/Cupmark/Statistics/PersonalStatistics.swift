@@ -18,6 +18,12 @@ enum StatisticsRules {
     /// Means are shown with this many decimals, in the device locale.
     static let meanFractionDigits = 1
 
+    /// Whether `ratedBrews` are enough for a per-method taste profile (M2-T50 uses it for the
+    /// chosen method, the same threshold as `PersonalStatistics.methodProfiles`).
+    static func hasEnoughRatedBrews(_ ratedBrews: Int) -> Bool {
+        ratedBrews >= minimumRatedBrews
+    }
+
     /// How a mean is shown: one decimal, in the locale of the view's environment.
     static func meanStyle() -> FloatingPointFormatStyle<Double> {
         FloatingPointFormatStyle<Double>().precision(.fractionLength(meanFractionDigits))
@@ -178,8 +184,18 @@ extension PersonalStatistics {
 
     /// The statistics of `brews` at `now`, weeks bucketed in `calendar` (use
     /// `isoWeekCalendar(timeZone:)`). Pure: reads nothing else.
-    static func compute(_ brews: [StatisticsBrew], now: Date, calendar: Calendar) -> PersonalStatistics {
-        let live = brews.filter { brew in !brew.isRemoved }
+    ///
+    /// With `method` (M2-T50, ADR 0027 addendum) only the brews of that method count, in every
+    /// number; the taste profile is then empty while the method has fewer than
+    /// `StatisticsRules.minimumRatedBrews` rated brews, like a method in `methodProfiles`.
+    /// Nil, the default, is "all methods" and gives the statistics of all brews.
+    static func compute(
+        _ brews: [StatisticsBrew],
+        now: Date,
+        calendar: Calendar,
+        method: Vocabulary.Method? = nil
+    ) -> PersonalStatistics {
+        let live = brews.filter { brew in !brew.isRemoved && (method == nil || brew.method == method) }
         let rated = live.filter { brew in brew.rating != nil }
         let ratings = rated.compactMap { brew in brew.rating }
 
@@ -187,13 +203,20 @@ extension PersonalStatistics {
             totalBrews: live.count,
             ratedBrews: rated.count,
             weeks: weeks(of: live, now: now, calendar: calendar),
-            tasteProfile: means(of: ratings),
+            tasteProfile: method == nil || StatisticsRules.hasEnoughRatedBrews(ratings.count) ? means(of: ratings) : [],
             methodProfiles: methodProfiles(of: rated),
             topFlavourNotes: topFlavourNotes(of: ratings),
             bestMethod: bestMethod(of: rated),
             bestBean: bestBean(of: rated),
             buyAgain: buyAgainShare(of: ratings)
         )
+    }
+
+    /// The methods with at least one rated brew that is not removed, in vocabulary order: what
+    /// the statistics screen offers in its method picker (M2-T50).
+    static func ratedMethods(in brews: [StatisticsBrew]) -> [Vocabulary.Method] {
+        let present = Set(brews.filter { brew in !brew.isRemoved && brew.rating != nil }.compactMap { brew in brew.method })
+        return Vocabulary.Method.allCases.filter { method in present.contains(method) }
     }
 
     /// Brews per week for the last `StatisticsRules.weekCount` ISO weeks, oldest first.

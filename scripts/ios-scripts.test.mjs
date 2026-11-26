@@ -1960,6 +1960,8 @@ test('the app answers export compliance and ships a privacy manifest for the fil
   assert.match(manifest, /<string>NSPrivacyAccessedAPICategoryUserDefaults<\/string>\s*<key>NSPrivacyAccessedAPITypeReasons<\/key>\s*<array>\s*<string>CA92\.1<\/string>\s*<\/array>/);
   const allowedUserDefaults = new Set([
     join('BrewPhoto', 'BrewPhotoBackupSetting.swift'),
+    // M2-T50: the kept method id of the statistics picker (reason CA92.1).
+    join('Statistics', 'StatisticsMethodChoice.swift'),
     join('UITestSupport', 'UITestFixtures.swift'),
   ]);
   const sources = readdirSync(join(iosDir, 'Cupmark'), { recursive: true }).filter((f) => f.endsWith('.swift'));

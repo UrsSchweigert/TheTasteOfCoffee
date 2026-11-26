@@ -7993,38 +7993,38 @@
         }
       }
     },
-    "statistics.method_profile.header %@" : {
-      "comment" : "Header of one method's taste profile; %@ is the method, for example \"V60\".",
+    "statistics.method.all" : {
+      "comment" : "Option of the statistics method picker: no filter, the numbers of every brew method.",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Geschmacksprofil: %@"
+            "value" : "Alle Zubereitungsarten"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Taste Profile: %@"
+            "value" : "All Methods"
           }
         }
       }
     },
-    "statistics.methods.header" : {
-      "comment" : "Header of the taste profiles per brew method.",
+    "statistics.method.picker" : {
+      "comment" : "Label of the menu picker at the top of the statistics that filters them by brew method.",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Geschmacksprofil nach Zubereitungsart"
+            "value" : "Zubereitungsart"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Taste Profile by Method"
+            "value" : "Method"
           }
         }
       }
