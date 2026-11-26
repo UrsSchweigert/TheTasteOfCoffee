@@ -71,11 +71,16 @@ export function checkCatalog(catalog, languages = LANGUAGES) {
   return problems;
 }
 
-/** The string literals of `LocalizedStringKey` members in L10n.swift. */
+/**
+ * The keys of L10n.swift, in source order: the literal of each
+ * `LocalizedStringKey` member (`{ "a.b" }`), and of each `String` member that
+ * looks its key up with `String(localized:)` (`{ String(localized: "a.b") }`,
+ * for text that is not shown through SwiftUI, such as VoiceOver announcements).
+ */
 export function keysInL10n(source) {
   const keys = [];
-  const pattern = /:\s*LocalizedStringKey\s*\{\s*"([^"\\]+)"\s*\}/g;
-  for (const match of source.matchAll(pattern)) keys.push(match[1]);
+  const pattern = /:\s*(?:LocalizedStringKey\s*\{\s*"([^"\\]+)"|String\s*\{\s*String\(localized:\s*"([^"\\]+)"\s*\))\s*\}/g;
+  for (const match of source.matchAll(pattern)) keys.push(match[1] ?? match[2]);
   return keys;
 }
 

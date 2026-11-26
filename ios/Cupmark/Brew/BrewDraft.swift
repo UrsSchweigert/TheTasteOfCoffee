@@ -71,7 +71,8 @@ struct BrewDraft: Equatable, Sendable {
     private(set) var waterG: API.WaterG?
     /// `water_temp_c` or `water_temp_special`, optional, never both.
     private(set) var waterTemperature: API.WaterTemperature?
-    /// `brew_time_s`, optional. The brew timer (M2-T21) sets it; the form has no control for it.
+    /// `brew_time_s`, optional. Set by the brew timer (M2-T21, `setBrewTime(_:)`), clamped to
+    /// `Vocabulary.Ranges.brewTimeS`; nothing else in the form sets it.
     var brewTimeS: API.BrewTimeS?
     /// `grind_normalised`, optional.
     private(set) var grindNormalised: API.GrindNormalised?

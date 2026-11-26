@@ -406,6 +406,9 @@ test('keysInL10n and checkKeys find missing and orphan keys', () => {
   const source = `enum L10n {\n    static var a: LocalizedStringKey { "a.one" }\n    static var b: LocalizedStringKey { "b.two" }\n}`;
   assert.deepEqual(keysInL10n(source), ['a.one', 'b.two']);
   assert.deepEqual(checkKeys(['a.one'], ['a.one']), []);
+  // String members that look their key up (VoiceOver announcements, M2-T21) count too, in order.
+  const withString = `enum L10n {\n    static var a: LocalizedStringKey { "a.one" }\n    static var c: String { String(localized: "c.three") }\n    static var b: LocalizedStringKey { "b.two" }\n}`;
+  assert.deepEqual(keysInL10n(withString), ['a.one', 'c.three', 'b.two']);
   assert.equal(checkKeys(['a.one', 'b.two'], ['a.one', 'c.three']).length, 2);
 });
 
@@ -1165,6 +1168,25 @@ test('the brew form has no typed text, takes its ranges from the vocabulary and 
   assert.match(editor, /BrewSheet\(store: model\.store, route: route/);
   const sheet = lexSwift(readFileSync(join(repoRoot, 'ios/Cupmark/Brew/BrewSheet.swift'), 'utf8')).masked;
   assert.match(sheet, /BrewFormScreen\(\s*store: store,\s*shelfEntry: route\.shelfEntryLocalID/);
+});
+
+// ---- Brew timer (M2-T21, docs/04 Input model "Timer") ----
+
+test('the brew timer measures from a start instant, takes brew_time_s from the vocabulary and writes no range in the view (M2-T21)', () => {
+  const read = (file) => lexSwift(readFileSync(join(repoRoot, file), 'utf8')).masked;
+  const timer = read('ios/Cupmark/Brew/BrewTimer.swift');
+  assert.match(timer, /Vocabulary\.Ranges\.brewTimeS\b/, 'the clamp reads Vocabulary.Ranges.brewTimeS');
+  assert.match(timer, /ContinuousClock/, 'a monotonic clock that keeps counting while the device sleeps');
+  assert.match(timer, /startedAt\.duration\(to: instant\)/, 'the elapsed time is computed from the start instant');
+  assert.doesNotMatch(timer, /\bTimer\.(publish|scheduledTimer)\b|\+= *1\b/, 'no counted-up ticks');
+  const row = read('ios/Cupmark/Brew/BrewTimerRow.swift');
+  assert.doesNotMatch(row, /Vocabulary\.Ranges/, 'the view reads no range');
+  assert.match(row, /\.font\(\.largeTitle/, 'the readout uses a text style, so it follows Dynamic Type');
+  assert.match(row, /accessibilityValue\(/, 'VoiceOver reads the elapsed time');
+  const model = read('ios/Cupmark/Brew/BrewFormModel.swift');
+  assert.match(model, /timer\.stop\(locale: locale\)/);
+  const screen = read('ios/Cupmark/Brew/BrewFormScreen.swift');
+  assert.match(screen, /BrewTimerRow\(/, 'the brew form shows the timer');
 });
 
 // ---- Rating (M2-T20, docs/04 F3, ADR 0025) ----

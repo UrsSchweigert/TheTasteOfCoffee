@@ -15,6 +15,7 @@ struct BrewRoute: Identifiable, Hashable {
 ///   steppers whose bounds and steps come from `Vocabulary.Ranges` through `BrewNumberField`.
 ///   Temperature is a temperature in °C or `cold`, never both. Water type and milk: pick lists.
 ///   Nothing is typed (invariant 1), and everything but the method is optional.
+/// - Brew time: the brew timer (M2-T21, `BrewTimerRow`); Stop fills `brew_time_s`.
 /// - The ratio and days since roast follow the values as they change.
 /// - Save writes through `BrewFormModel` to `AccountStore`, which queues the create in the
 ///   outbox, so it works offline. In `BrewSheet` the rating of the new brew follows (M2-T20).
@@ -50,6 +51,7 @@ struct BrewFormScreen: View {
             beanSection
             methodSection
             amountsSection
+            timerSection
             waterSection
             grindAndMilkSection
             if let failure = model.failure {
@@ -150,6 +152,22 @@ struct BrewFormScreen: View {
             .accessibilityIdentifier("brew-ratio")
         } header: {
             Text(L10n.brewAmountsHeader)
+        }
+    }
+
+    private var timerSection: some View {
+        Section {
+            BrewTimerRow(
+                timer: model.timer,
+                brewTimeS: model.draft.brewTimeS,
+                onStart: { model.startTimer() },
+                onStop: { model.stopTimer(locale: locale) },
+                onReset: { model.resetTimer() }
+            )
+        } header: {
+            Text(L10n.brewTimerHeader)
+        } footer: {
+            Text(L10n.brewTimerFooter)
         }
     }
 

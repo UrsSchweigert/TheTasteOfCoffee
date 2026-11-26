@@ -21,7 +21,7 @@ Cupmark/                  app target sources and resources
   LabelPhoto/             label photo (M2-T23, M2-T24): encoder, camera, draft, presigned upload
   Shelf/                  shelf list, shelf entry form and sync issues (M2-T18)
   Brew/                   brew form of a shelf entry (M2-T19): BrewDraft, BrewFormModel, BrewFormScreen;
-                          BrewSheet and the brew list (M2-T20)
+                          BrewSheet and the brew list (M2-T20); the brew timer (M2-T21)
   Rating/                 rating of a brew (M2-T20): RatingDraft, RatingFormModel, RatingScreen, flavour note lists
   L10n.swift              keys of the String Catalog
   Localizable.xcstrings   String Catalog, English (source) and German
@@ -230,6 +230,16 @@ M2-T25 makes docs/04, Non-functional (Offline: "Scan, brew and rate work offline
 - **Derived values.** The ratio (`1:16.2`, through `BrewDerivedValues.ratio`, in the device locale) and days since roast (to today, the day the brew is recorded) follow the values as they change.
 - **Save.** `BrewFormModel.save()` records `brewed_at` from the device clock, makes a `StoredBrew` with `vocabulary_version` = `Vocabulary.version` and adds it with `AccountStore.addBrew`, which queues `create brew` in the same save, so it works offline. The request names the shelf entry by the server id it has when the operation is sent, so a brew on an entry that is still waiting for its own create goes out after it. A saved form saves nothing more; a failed save rolls back and can be tried again.
 - Tests: `BrewFormTests` (the mapping to `BrewInput`, 18.5 g as 185, the ranges equal to the bundled ones, clamping and steps, the exclusive temperature, the ratio text in English and German, `vocabulary_version` equal to the bundled `brew.json`, the offline save with one queued create, the order after an unsent entry, the method and stepper starts from the latest brew, a removed entry and a failed save).
+
+## Brew timer
+
+`Brew/BrewTimer.swift` and `Brew/BrewTimerRow.swift` (M2-T21) implement the timer of docs/04 (Input model, F2 brew time) in the brew form, between the amounts and the water.
+
+- **Start, Stop, Reset.** One button starts and stops; Reset sets the timer back and clears `brew_time_s`, so the readout and the saved value never disagree. A new Start after a Stop times again from zero, and the brew time already set is replaced only when that timing stops. Saving while the timer runs stops it first, so its time is saved. Nothing is typed.
+- **Measured from the start instant.** `BrewTimer` keeps only the `ContinuousClock.Instant` it was started at, and the elapsed time is always `now - start`, never counted up by ticks. `ContinuousClock` keeps advancing while the device sleeps and does not follow wall-clock changes, so time in the background or with the phone locked counts. The clock is injected (`BrewTimerModel(now:announce:)`). A `TimelineView` redraws the readout while the timer runs.
+- **Clamp.** Stop takes the whole seconds (rounded down) and moves them into `Vocabulary.Ranges.brewTimeS` and onto its step (`BrewDraft.brewTimeS(for:)`, `BrewDraft.brewTimeRange`, the only place the range is read): a stop within the first second is the minimum, a timer left running past the maximum the maximum.
+- **Readout and VoiceOver.** The readout is `m:ss` (`h:mm:ss` from one hour), in the device locale, in the large title text style, so it follows Dynamic Type; at accessibility sizes the buttons stack. VoiceOver reads it as "Brew time" with the time in words (`Duration.UnitsFormatStyle`) and treats it as updating frequently. Start, stop (with the brew time) and reset are announced, queued after the tapped button's label. The announcements are `String` members of `L10n` (`String(localized:)`), which `scripts/check-ios-strings.mjs` counts as keys.
+- Tests: `BrewTimerTests` (30 s with no tick in between counts as 30 s, the time read from the start instant, a second start, the range equal to the bundled one, the clamp at both ends and on whole seconds, the timed brew saved and a save stopping a running timer, reset while running and after a stop, a new timing, the announcements, the readout and the spoken time). `scripts/ios-scripts.test.mjs` checks on Linux that the timer reads its range from the vocabulary and the view reads none.
 
 ## Rating
 
