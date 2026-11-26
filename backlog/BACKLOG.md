@@ -646,7 +646,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T19 Brew form per method
-- status: needs-mac-verification (reviewed; marked done once the macOS `ios` job passes in its pull request)
+- status: done (built and tested by the macOS `ios` job in #62)
 - owner: ios-engineer
 - depends: M2-T18
 - implements: docs/04-specification.md, F2
@@ -726,7 +726,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the conversion is tested in the `ios` job. The task ends `needs-mac-verification` until a real HEIC capture passes on a device in M2-T34.
 
 ### M2-T24 Label photo: presigned upload and completion
-- status: todo
+- status: needs-mac-verification (the unit tests pass in the `ios` job in #62; a real upload to dev is verified in M2-T34)
 - owner: ios-engineer
 - depends: M2-T23
 - implements: ADR 0016; contracts/openapi.yaml, `createLabelPhotoUpload`, `completeLabelPhoto`
@@ -750,6 +750,7 @@ Planning notes (planned 2026-11-25):
 - owner: ios-engineer
 - depends: M2-T18, M2-T24
 - implements: docs/04-specification.md, Non-functional (Offline: "Scan, brew and rate work offline and sync later")
+- note: from the M2-T24 review, `LabelPhotoUploadJob` must become `Codable` and live in the per-account outbox; a sign-out today deletes the account's not-yet-uploaded photos, which queued jobs must survive. Point the SyncHost tests at a temporary `LabelPhotoFolders` root.
 - acceptance:
   - A barcode scanned offline is kept as a pending bean. It can be put on the shelf, and brews can be logged against it, at once.
   - When the device is back online, the outbox resolves the pending bean:
