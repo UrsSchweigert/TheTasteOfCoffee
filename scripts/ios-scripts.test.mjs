@@ -1240,3 +1240,24 @@ test('label photo upload: the Swift patterns equal the contract, and the S3 POST
   assert.doesNotMatch(uploader, /Authorization|Bearer|accessToken|tokenProvider/);
   assert.match(uploader, /transport\.send\(post\.request\(for: body\), body: body\.data\)/);
 });
+
+test('offline scan: pending beans write through AccountStore and never send Open Food Facts text (M2-T25)', () => {
+  const masked = (path) => lexSwift(readFileSync(join(repoRoot, path), 'utf8')).masked;
+  const lookup = masked('ios/Cupmark/Lookup/LookupModel.swift');
+  assert.match(lookup, /store\.pendingBean\(barcode: barcode\)/, 'a barcode scanned offline is kept as a pending bean');
+  const confirmation = masked('ios/Cupmark/Lookup/PendingBeanConfirmation.swift');
+  assert.match(confirmation, /store\.confirmOpenFoodFacts\(beanLocalID: prompt\.id, picks: self\.picks\)/);
+  assert.match(confirmation, /store\.rejectOpenFoodFacts\(beanLocalID: prompt\.id\)/);
+  for (const code of [lookup, confirmation, masked('ios/Cupmark/LabelPhoto/LabelPhotoQueue.swift')]) {
+    assert.doesNotMatch(code, /\bcontext\s*\.\s*(insert|save|delete)\(/, 'writes go through AccountStore (ADR 0025)');
+    assert.doesNotMatch(code, /\.searchable\b|\bTextField\b|\bTextEditor\b|\bSecureField\b/, 'no typed text (invariant 1)');
+  }
+  // The confirmed create carries the flag and the picks, never the held product's text (ADR 0005).
+  const values = masked('ios/Cupmark/Store/StoredValues.swift');
+  const create = values.slice(values.indexOf('func apiCreate()'));
+  assert.doesNotMatch(create.slice(0, create.indexOf('\n    }\n')), /openFoodFacts(Name|Brand|ImageID)/);
+  // The engine looks a pending bean up before anything that names it is sent.
+  const engine = masked('ios/Cupmark/Sync/SyncEngine.swift');
+  assert.match(engine, /case \(\.bean, \.lookUp\):\s*return try await lookUpBean\(sequence, localID\)/);
+  assert.match(masked('ios/Cupmark/Sync/SyncHost.swift'), /queue\.run\(\)/, 'queued label photos run in the idle slot');
+});

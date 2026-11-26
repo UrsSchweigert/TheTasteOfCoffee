@@ -664,7 +664,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T20 Rating screen
-- status: todo
+- status: done (built and tested by the macOS `ios` job in #63; decisions in ADR 0026)
 - owner: ios-engineer
 - depends: M2-T19
 - implements: docs/04-specification.md, F3
@@ -746,7 +746,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the unit tests run in the `ios` job. The task ends `needs-mac-verification` until a real upload to dev passes in M2-T34.
 
 ### M2-T25 Offline scan and pending beans
-- status: todo
+- status: done (built and tested by the macOS `ios` job in #63; decisions in the ADR 0025 addendum)
 - owner: ios-engineer
 - depends: M2-T18, M2-T24
 - implements: docs/04-specification.md, Non-functional (Offline: "Scan, brew and rate work offline and sync later")
@@ -844,7 +844,7 @@ Planning notes (planned 2026-11-25):
 - owner: ios-engineer
 - depends: M2-T16
 - implements: docs/04-specification.md, Non-functional (account deletion in the app); ADR 0017 and its Addendum; contracts `deleteAccount`
-- note: from the M2-T24 review, account deletion must also remove the account's `Application Support/LabelPhotos/<account>` folder of pending label photos.
+- note: from the M2-T24 and M2-T25 reviews, account deletion must also remove the account's `Application Support/LabelPhotos/<account>` folder, including its `Queued` label photos, together with the store.
 - acceptance:
   - From the M2-T16 review: a 401 from the ADR 0017 tombstone signs the user out without a reason. Give `AuthModel` a way to show "this account was deleted or its session ended" when sync asks for sign-in.
   - Settings, then Delete account. Two steps confirm with buttons only, and they say what is deleted: the data, the label photos of unverified beans, and the sign-in.

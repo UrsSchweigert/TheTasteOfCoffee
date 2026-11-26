@@ -48,7 +48,8 @@ extension StoredRecipe: ServerIdentified {}
 @MainActor
 final class SyncEngine {
     enum DrainResult: Equatable, Sendable {
-        /// Nothing is left to send (parked operations are not counted).
+        /// Nothing is left to send now: parked operations are not counted, nor a bean look-up
+        /// that waits and the operations that wait for its bean (M2-T25).
         case idle
         /// The next operation backs off until then.
         case waiting(until: Date)
