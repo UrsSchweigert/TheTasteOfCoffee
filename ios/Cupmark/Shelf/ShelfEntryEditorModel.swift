@@ -56,6 +56,9 @@ final class ShelfEntryEditorModel {
     var beanLocalID: UUID?
     private(set) var bean: ShelfBeanSummary
     private(set) var brewCount = 0
+    /// The averages of this entry's rated brews, for "My brews of this coffee" (M2-T44).
+    /// Empty while adding.
+    private(set) var averages = CoffeeAverages(ratedBrews: 0, rows: [], methods: [])
     private(set) var issue: SyncIssue?
     private(set) var failure: Failure?
     /// True once this editor removed the entry: the screen is closing, so a read on the
@@ -112,6 +115,7 @@ final class ShelfEntryEditorModel {
                 bean = ShelfBeanSummary(entry.bean)
                 beanLocalID = entry.bean?.localID
                 brewCount = entry.liveBrewCount
+                averages = ShelfEntryEditorModel.averages(of: entry)
                 issue = entry.syncIssue
             } else {
                 draft = ShelfEntryDraft(purchaseDate: nil)
@@ -306,7 +310,13 @@ final class ShelfEntryEditorModel {
             return
         }
         brewCount = entry.liveBrewCount
+        averages = ShelfEntryEditorModel.averages(of: entry)
         issue = entry.syncIssue
+    }
+
+    /// The averages of `entry`'s own brews (`StatisticsRules.coffeeAverages`): reads only.
+    private static func averages(of entry: StoredShelfEntry) -> CoffeeAverages {
+        StatisticsRules.coffeeAverages(of: StatisticsBrew.values(of: entry.brews), shelfEntry: entry.localID)
     }
 
     private func add(_ apiBean: API.Bean) throws -> UUID {

@@ -1020,7 +1020,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job. Marked `needs-mac-verification` until it passes.
 
 ### M2-T44 My averages for one coffee: the dimensions over all my brews of it
-- status: in-progress
+- status: needs-mac-verification (written on Linux: Swift, XCTest and UI tests not built or run; the macOS `ios` job must pass)
 - owner: ios-engineer
 - depends: M2-T28, M2-T40
 - implements: owner request of 2026-11-26 ("if I click on a coffee, I want to see the averages of all my brews, the dimensions, for that coffee, and later also the community ones"); docs/04-specification.md, F2 and F3; ADR 0027 (personal statistics, computed on the device)

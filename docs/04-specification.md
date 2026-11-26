@@ -83,6 +83,16 @@ The user's own statistics are computed on the device from the local store and wo
 
 Means have one decimal in the device locale. Without rated brews a section shows an empty state, not zeros.
 
+#### My brews of this coffee (free)
+
+The shelf entry screen (one bag) shows "My brews of this coffee" (M2-T44, ADR 0027 addendum), computed on the device and offline:
+
+- the mean of each rating criterion, in vocabulary order, over the rated, not removed brews of this shelf entry (not of other bags of the same bean), with the mean overall score and the number of rated brews; ratings made with an older vocabulary version count;
+- a breakdown by method for each method with at least 2 rated brews of this entry;
+- one decimal in the device locale, each value with a simple bar; VoiceOver reads "Aroma, 7.5 of 10";
+- no rated brew: "Rate a brew to see your averages here", no zeros; exactly one rated brew: its values, labelled as one brew, not as an average;
+- the community mean and number of raters for the bean will sit next to each value (M4, paid rules apply); until then nothing is shown there.
+
 ## F4 Explore (paid)
 
 - Bean page: number of raters, mean and spread per criterion, most-picked flavour notes, buy-again share.

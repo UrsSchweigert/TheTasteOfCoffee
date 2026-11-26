@@ -319,6 +319,16 @@ enum L10n {
     static var statisticsBuyAgainAnswered: LocalizedStringKey { "statistics.buy_again.answered" }
     static var statisticsBuyAgainEmpty: LocalizedStringKey { "statistics.buy_again.empty" }
     static var statisticsBuyAgainFooter: LocalizedStringKey { "statistics.buy_again.footer" }
+    // My brews of this coffee, on the shelf entry screen (M2-T44).
+    static var coffeeAveragesHeader: LocalizedStringKey { "coffee_averages.header" }
+    static var coffeeAveragesEmpty: LocalizedStringKey { "coffee_averages.empty" }
+    static var coffeeAveragesRatedCount: LocalizedStringKey { "coffee_averages.rated_count" }
+    static var coffeeAveragesFooterMany: LocalizedStringKey { "coffee_averages.footer_many" }
+    static var coffeeAveragesFooterSingle: LocalizedStringKey { "coffee_averages.footer_single" }
+    /// A method's averages header; the catalog value places `%1$@`, the method's label, and `%2$@`, its rated brews.
+    static func coffeeAveragesMethodHeader(method: String, brews: String) -> String { String(localized: "coffee_averages.method_header \(method) \(brews)") }
+    /// The community mean next to the user's own (M4); `%1$@` is the mean, `%2$@` the number of raters.
+    static func coffeeAveragesCommunity(mean: String, raters: String) -> String { String(localized: "coffee_averages.community \(mean) \(raters)") }
     // Recipes and repeats (M2-T27).
     static var brewRepeatLast: LocalizedStringKey { "brew.repeat_last" }
     static var brewRepeatHint: LocalizedStringKey { "brew.repeat.hint" }
