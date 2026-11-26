@@ -2636,13 +2636,13 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cupmark kann für jeden Kaffee Werte der Community zeigen, etwa durchschnittliche Bewertungen und die häufigsten Aromen. Diese Werte sehen Abonnentinnen und Abonnenten. Wenn du zustimmst, fließen die Bewertungen der Zubereitungen, die du erfasst, solange das Teilen an ist, in diese Werte ein, zusammen mit der Zubereitungsart und den Rezeptwerten, aber nie mit deinem Namen oder deinem Konto. Die Werte eines Kaffees werden erst gezeigt, wenn ihn mindestens 5 verschiedene Personen bewertet haben."
+            "value" : "Cupmark kann für jeden Kaffee Werte der Community zeigen, etwa durchschnittliche Bewertungen und die häufigsten Aromen. Diese Werte sehen Abonnentinnen und Abonnenten sowie Personen, die denselben Kaffee bewertet haben. Wenn du zustimmst, fließen deine Bewertungen in diese Werte ein, solange das Teilen an ist, zusammen mit der Zubereitungsart und den Rezeptwerten, aber nie mit deinem Namen oder deinem Konto. Die Werte eines Kaffees werden erst gezeigt, wenn ihn mindestens 5 verschiedene Personen bewertet haben."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cupmark can show community figures for each coffee, such as average scores and the most common flavour notes. Subscribers see these figures. If you agree, the ratings of the brews you log while sharing is on are counted into them, together with the brew method and recipe values, but never with your name or account. A coffee's figures are shown only once at least 5 different people have rated it."
+            "value" : "Cupmark can show community figures for each coffee, such as average scores and the most common flavour notes. Subscribers, and people who rated the same coffee, see these figures. If you agree, your ratings are counted into them while sharing is on, together with the brew method and recipe values, but never with your name or account. A coffee's figures are shown only once at least 5 different people have rated it."
           }
         }
       }
@@ -4106,19 +4106,19 @@
       }
     },
     "settings.consent.footer" : {
-      "comment" : "Footer below the consent switch in Settings: what is shared and that turning it off keeps the personal log working.",
+      "comment" : "Footer below the consent switch in Settings: what is shared, who sees it, that counted ratings stay counted when turned off, that deletion removes them (D2), and that the personal log keeps working.",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wenn eingeschaltet, fließen die Bewertungen der Zubereitungen, die du erfasst, mit Zubereitungsart und Rezeptwerten ohne deinen Namen und ohne dein Konto in die Werte der Community für jeden Kaffee ein, die Abonnentinnen und Abonnenten sehen. Die Werte eines Kaffees werden erst gezeigt, wenn ihn mindestens 5 verschiedene Personen bewertet haben. Sonst wird nichts geteilt. Wenn ausgeschaltet, wird nichts Neues von dir gezählt. Regal, Zubereitungen, Rezepte und Statistik funktionieren in beiden Fällen gleich."
+            "value" : "Solange eingeschaltet, fließen deine Bewertungen mit Zubereitungsart und Rezeptwerten ohne deinen Namen und ohne dein Konto in die Werte der Community für jeden Kaffee ein. Diese Werte sehen Abonnentinnen und Abonnenten sowie Personen, die denselben Kaffee bewertet haben. Die Werte eines Kaffees werden erst gezeigt, wenn ihn mindestens 5 verschiedene Personen bewertet haben. Sonst wird nichts geteilt. Wenn du das Teilen ausschaltest, werden deine Bewertungen nicht mehr gezählt; bereits gezählte bleiben gezählt. Wenn du eine Zubereitung oder dein Konto löschst, wird sie aus den Werten entfernt. Regal, Zubereitungen, Rezepte und Statistik funktionieren in beiden Fällen gleich."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "When on, the ratings of the brews you log, with their method and recipe values, are counted without your name or account into community figures for each coffee, which subscribers see. A coffee's figures are shown only once at least 5 different people have rated it. Nothing else is shared. When off, nothing new of yours is counted. Your shelf, brews, recipes and statistics work the same either way."
+            "value" : "While on, your ratings, with their brew method and recipe values, are counted without your name or account into community figures for each coffee. Subscribers, and people who rated the same coffee, see these figures. A coffee's figures are shown only once at least 5 different people have rated it. Nothing else is shared. Turning sharing off stops your ratings from being counted; ratings already counted stay counted. Deleting a brew, or your account, removes it from the figures. Your shelf, brews, recipes and statistics work the same either way."
           }
         }
       }
@@ -4130,13 +4130,13 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Zählt die Bewertungen der Zubereitungen, die du ab jetzt erfasst, ohne deinen Namen in die Werte der Community."
+            "value" : "Solange eingeschaltet, fließen deine Bewertungen ohne deinen Namen in die Werte der Community ein."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Counts the ratings of brews you log from now on into community figures, without your name."
+            "value" : "While on, your ratings are counted into community figures, without your name."
           }
         }
       }

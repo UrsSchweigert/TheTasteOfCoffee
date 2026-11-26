@@ -907,32 +907,53 @@ final class SyncEngine {
     /// `PUT /profile`. The profile has no server id; the token says whose it is.
     ///
     /// A profile made on this device that the server never confirmed (`pendingCreate`, for
-    /// example from onboarding while offline, M2-T29) is first checked with `GET /profile`:
-    /// if the server has one, the server's wins, as a pull would make it (ADR 0025 Addendum
-    /// M2-T29). The local profile takes its values and its operations are removed, so a
-    /// profile made on another device is never overwritten by a fresh one. A 404 sends ours.
+    /// example from onboarding while offline, M2-T29) is first checked with `GET /profile`
+    /// (ADR 0025 Addendum M2-T29). A 404 sends ours. A 200 is merged with the local profile as
+    /// it is after the read (an edit made meanwhile counts): the locale is the server's, and
+    /// consent is on only if both say so, so neither a profile made on another device nor the
+    /// user's own "no" on this device is undone silently. If that equals the server's
+    /// profile it is adopted and nothing is sent; otherwise it is stored, the profile becomes
+    /// `pendingUpdate`, and it is sent as the one `PUT` of this operation.
     private func putProfile(_ sequence: Int, _ localID: UUID) async throws -> Outcome {
         guard let checked = try store.profile(), checked.localID == localID else {
             return try drop(sequence)
         }
         var counted = false
         if checked.syncState == .pendingCreate {
+            let answer = await call({ try await self.client.getProfile() })
+            if case .cancelled = answer {
+                return .cancelled
+            }
             // The check counts as an attempt, so a failing read backs off like a send.
             if let operation = try store.outboxOperation(sequence: sequence) {
                 operation.attemptCount += 1
                 try store.save()
                 counted = true
             }
-            switch await call({ try await self.client.getProfile() }) {
+            switch answer {
             case .value(let server):
+                // Read after the answer: the user may have changed it during the check.
                 guard let current = try store.profile(), current.localID == localID else {
                     return try drop(sequence)
                 }
-                return try store.write { () throws -> Outcome in
-                    try store.removeOutboxOperations(for: localID)
-                    current.apply(server)
-                    current.syncState = .synced
+                let resolved = SyncEngine.resolvedProfile(server: server, localConsent: current.contributeToAggregates)
+                let adopted = try store.write { () throws -> Bool in
+                    current.apply(resolved)
+                    if resolved == server {
+                        try store.removeOutboxOperations(for: localID)
+                        current.syncState = .synced
+                        try store.save()
+                        return true
+                    }
+                    // Ours differs: keep this one operation and send the merged values.
+                    for operation in try store.outboxOperations(for: localID) where operation.sequence != sequence && !operation.parked {
+                        store.context.delete(operation)
+                    }
+                    current.syncState = .pendingUpdate
                     try store.save()
+                    return false
+                }
+                if adopted {
                     return .next
                 }
             case .failed(.notFound):
@@ -974,6 +995,15 @@ final class SyncEngine {
         case .failed(let error):
             return try failure(error, sequence, resource: .profile, localID: localID)
         }
+    }
+
+    /// The profile after `GET /profile` found one for a profile the server never confirmed
+    /// (ADR 0025 Addendum M2-T29): the server's locale, and consent only if both agree.
+    nonisolated static func resolvedProfile(server: API.Profile, localConsent: Bool) -> API.Profile {
+        API.Profile(
+            locale: server.locale,
+            consent: API.Consent(contributeToAggregates: server.consent.contributeToAggregates && localConsent)
+        )
     }
 
     // MARK: - Helpers

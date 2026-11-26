@@ -5,8 +5,8 @@ import XCTest
 /// Onboarding with consent and the Settings toggle (M2-T29, docs/07 D1, ADR 0017), against
 /// `FakeSyncServer` and in-memory stores: a 404 from `GET /profile` leads to onboarding and a
 /// 200 skips it, not agreeing is the default and skipping sends false, the locale mapping,
-/// an offline completion queued and sent later, a server profile winning over one made
-/// offline, no onboarding once a local profile exists, and the toggle sending `PUT /profile`
+/// an offline completion queued and sent later, the merge with a server profile found before
+/// the first `PUT` (consent only if both say yes), no onboarding once a local profile exists, and the toggle sending `PUT /profile`
 /// while every personal feature keeps working.
 @MainActor
 final class OnboardingTests: XCTestCase {
@@ -316,26 +316,198 @@ final class OnboardingTests: XCTestCase {
         }
     }
 
-    func testAServerProfileWinsOverOneMadeOfflineBeforeTheServerAnswered() async throws {
+    // MARK: - A server profile found before the first PUT (ADR 0025, Addendum M2-T29)
+
+    /// Finishes onboarding on `store`, agreeing or not.
+    private func onboard(_ store: AccountStore, agreed: Bool) {
+        let model = OnboardingModel(store: store, preferredLanguages: { ["en-US"] })
+        if agreed {
+            while model.page != .consent {
+                model.next()
+            }
+            model.agrees = true
+            model.next()
+        } else {
+            model.skip()
+        }
+    }
+
+    func testServerYesAndAnOnboardingNoHereSendsNo() async throws {
         let server = try FakeSyncServer()
         // Made on another device.
         server.backend.seed(profile: profileValues(consent: true, locale: .de))
         let store = try AccountStore.inMemory()
-        let model = OnboardingModel(store: store, preferredLanguages: { ["en-US"] })
-        model.skip()
+        onboard(store, agreed: false)
 
         let result = await makeEngine(store, server).drain()
 
         XCTAssertEqual(result, .idle)
         withExtendedLifetime(server) {
-            XCTAssertEqual(server.log, ["GET /profile"], "no PUT: the server's profile is kept")
-            XCTAssertEqual(server.backend.storedProfile, profileValues(consent: true, locale: .de))
+            XCTAssertEqual(server.log, ["GET /profile", "PUT /profile"])
+            // The server's locale, and the "no" given here.
+            XCTAssertEqual(server.backend.storedProfile, profileValues(consent: false, locale: .de))
         }
         let profile = try XCTUnwrap(try store.profile())
-        XCTAssertTrue(profile.contributeToAggregates)
+        XCTAssertFalse(profile.contributeToAggregates)
         XCTAssertEqual(profile.locale, .de)
         XCTAssertEqual(profile.syncState, .synced)
         XCTAssertTrue(try store.outboxOperations().isEmpty)
+    }
+
+    func testServerYesAndASettingsNoBeforeTheFirstSyncSendsNo() async throws {
+        let server = try FakeSyncServer()
+        server.backend.seed(profile: profileValues(consent: true, locale: .de))
+        let store = try AccountStore.inMemory()
+        onboard(store, agreed: true)
+        SettingsModel(store: store).setContributesToAggregates(false)
+        XCTAssertEqual(try queue(store), ["update profile"], "one coalesced operation")
+        XCTAssertEqual(try store.profile()?.syncState, .pendingCreate)
+
+        let result = await makeEngine(store, server).drain()
+
+        XCTAssertEqual(result, .idle)
+        withExtendedLifetime(server) {
+            XCTAssertEqual(server.log, ["GET /profile", "PUT /profile"])
+            XCTAssertEqual(server.backend.storedProfile, profileValues(consent: false, locale: .de))
+        }
+        XCTAssertEqual(try store.profile()?.contributeToAggregates, false)
+        XCTAssertTrue(try store.outboxOperations().isEmpty)
+    }
+
+    func testServerNoAndAYesHereStaysNo() async throws {
+        let server = try FakeSyncServer()
+        server.backend.seed(profile: profileValues(consent: false, locale: .de))
+        let store = try AccountStore.inMemory()
+        onboard(store, agreed: true)
+
+        let result = await makeEngine(store, server).drain()
+
+        XCTAssertEqual(result, .idle)
+        withExtendedLifetime(server) {
+            XCTAssertEqual(server.log, ["GET /profile"], "the merge is the server's profile: nothing is sent")
+            XCTAssertEqual(server.backend.storedProfile, profileValues(consent: false, locale: .de))
+        }
+        let profile = try XCTUnwrap(try store.profile())
+        XCTAssertFalse(profile.contributeToAggregates)
+        XCTAssertEqual(profile.syncState, .synced)
+        XCTAssertTrue(try store.outboxOperations().isEmpty)
+        XCTAssertFalse(SettingsModel(store: store).contributesToAggregates, "Settings shows off")
+    }
+
+    func testServerYesAndYesHereIsAdoptedWithoutAPut() async throws {
+        let server = try FakeSyncServer()
+        server.backend.seed(profile: profileValues(consent: true, locale: .de))
+        let store = try AccountStore.inMemory()
+        onboard(store, agreed: true)
+
+        let result = await makeEngine(store, server).drain()
+
+        XCTAssertEqual(result, .idle)
+        withExtendedLifetime(server) {
+            XCTAssertEqual(server.log, ["GET /profile"])
+        }
+        let profile = try XCTUnwrap(try store.profile())
+        XCTAssertTrue(profile.contributeToAggregates)
+        XCTAssertEqual(profile.locale, .de, "the server's locale")
+        XCTAssertEqual(profile.syncState, .synced)
+        XCTAssertTrue(try store.outboxOperations().isEmpty)
+    }
+
+    func testAnEditMadeWhileTheReadIsInFlightIsNotLost() async throws {
+        let server = try FakeSyncServer()
+        let remote = profileValues(consent: true, locale: .de)
+        let answer = try JSONEncoder().encode(remote)
+        server.backend.setOverride { request in
+            request.method == "GET" && request.path == "/profile" ? StubResponse(status: 200, body: answer, delay: 0.5) : nil
+        }
+        let store = try AccountStore.inMemory()
+        onboard(store, agreed: true)
+        let engine = makeEngine(store, server)
+
+        let drain = Task { await engine.drain() }
+        try await waitUntil("the read is on its way") { server.log.contains("GET /profile") }
+        SettingsModel(store: store).setContributesToAggregates(false)
+        let result = await drain.value
+
+        XCTAssertEqual(result, .idle)
+        withExtendedLifetime(server) {
+            XCTAssertEqual(server.log, ["GET /profile", "PUT /profile"])
+            let sent = try? JSONDecoder().decode(API.Profile.self, from: server.requests.last?.body ?? Data())
+            XCTAssertEqual(sent, profileValues(consent: false, locale: .de))
+        }
+        XCTAssertEqual(try store.profile()?.contributeToAggregates, false)
+        XCTAssertTrue(try store.outboxOperations().isEmpty)
+    }
+
+    func testAFailingReadBacksOffOneAttemptPerCycleThenSendsOn404() async throws {
+        let server = try FakeSyncServer()
+        server.backend.setOverride { request in
+            request.method == "GET" && request.path == "/profile" ? StubResponse(status: 503) : nil
+        }
+        let store = try AccountStore.inMemory()
+        let clock = TestClock()
+        let engine = makeEngine(store, server, clock: clock)
+        onboard(store, agreed: false)
+        // As if an earlier PUT had gone out without an answer: the read must not clear it.
+        let operation = try XCTUnwrap(try store.outboxOperations().first)
+        try store.write {
+            operation.sentWithoutAnswer = true
+            try store.save()
+        }
+
+        for cycle in 1...2 {
+            let result = await engine.drain()
+            guard case .waiting = result else {
+                return XCTFail("a failing read waits: \(result)")
+            }
+            let waiting = try XCTUnwrap(try store.outboxOperations().first)
+            XCTAssertEqual(waiting.attemptCount, cycle, "one attempt per cycle")
+            XCTAssertTrue(waiting.sentWithoutAnswer, "a read answers nothing about the write")
+            XCTAssertFalse(waiting.parked)
+            clock.advance(300)
+        }
+
+        server.backend.setOverride(nil)
+        let result = await engine.drain()
+
+        XCTAssertEqual(result, .idle)
+        withExtendedLifetime(server) {
+            XCTAssertEqual(server.log, ["GET /profile", "GET /profile", "GET /profile", "PUT /profile"])
+            XCTAssertEqual(server.backend.storedProfile, profileValues(consent: false))
+        }
+        XCTAssertTrue(try store.outboxOperations().isEmpty)
+        XCTAssertEqual(try store.profile()?.syncState, .synced)
+    }
+
+    func testAnUnreadableServerProfileIsParkedNotOverwritten() async throws {
+        let server = try FakeSyncServer()
+        // A locale this build does not know, as a newer vocabulary could have.
+        let newer = Data(#"{"locale":"zz","consent":{"contribute_to_aggregates":true}}"#.utf8)
+        server.backend.setOverride { request in
+            request.method == "GET" && request.path == "/profile" ? StubResponse(status: 200, body: newer) : nil
+        }
+        let store = try AccountStore.inMemory()
+        onboard(store, agreed: false)
+
+        let result = await makeEngine(store, server).drain()
+
+        XCTAssertEqual(result, .idle)
+        withExtendedLifetime(server) {
+            XCTAssertEqual(server.log, ["GET /profile"], "no PUT over a profile this build cannot read")
+        }
+        let operation = try XCTUnwrap(try store.outboxOperations().first)
+        XCTAssertTrue(operation.parked)
+        XCTAssertEqual(operation.parkReason, .unexpectedResponse)
+        XCTAssertEqual(try store.profile()?.syncState, .pendingCreate)
+    }
+
+    func testTheMergeIsConsentOnlyIfBothSayYes() {
+        for server in [true, false] {
+            for local in [true, false] {
+                let resolved = SyncEngine.resolvedProfile(server: profileValues(consent: server, locale: .de), localConsent: local)
+                XCTAssertEqual(resolved, profileValues(consent: server && local, locale: .de), "server \(server), local \(local)")
+            }
+        }
     }
 
     // MARK: - Settings

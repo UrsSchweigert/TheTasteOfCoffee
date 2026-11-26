@@ -107,9 +107,14 @@ The failed-write mechanism of M2-T35, hardened after its review (PR #64).
 
 ## Addendum (M2-T29, ios-engineer under the lead's delegation, ADR 0014; no cloud cost)
 
-Onboarding (docs/07 D1) writes the profile while the server's state may be unknown.
+Onboarding (docs/07 D1) writes the profile while the server's state may be unknown. The merge rule below is the lead's decision after review (ADR 0014).
 
 - **When onboarding shows.** With no local profile: at once after `GET /profile` answered 404 or the pull failed (offline); after a short wait (5 s) when no pull has answered yet, so a sync stuck behind a retry never blocks the user. Never once a local profile exists, and never when the server has one (the pull stores it first).
-- **The server's profile wins.** A profile made on the device that the server never confirmed (`pendingCreate`) is checked with `GET /profile` before its `PUT`. A 200 means the server has one (made on another device, or our own earlier `PUT` whose answer was lost): the local profile takes the server's values and is synced, its operations are removed, and nothing is sent, as a pull would leave it. A 404 sends ours. A failure of the read retries with backoff (the read counts as an attempt) and leaves `sentWithoutAnswer` as it is; an unreadable profile is parked (`unexpected_response`) rather than overwritten. A profile the server has (`pendingUpdate`) is sent without the check: a later edit is the user's change of a known profile, and the last write wins as for every other item.
-- **Consequence.** A consent change made on this device before its first profile reached the server gives way to the server's profile; Settings then shows the server's value. That is the price of never overwriting a profile from another device with a fresh default.
-- **Alternatives.** Not showing onboarding until the server answered: blocks a user who signs in offline. Showing it and sending a plain `PUT`: overwrites the consent given on another device.
+- **Check before the first `PUT`.** A profile made on the device that the server never confirmed (`pendingCreate`) is checked with `GET /profile` before its `PUT`. A 404 sends ours. A failure of the read retries with backoff (the read counts as an attempt, except when cancelled) and leaves `sentWithoutAnswer` as it is; an unreadable profile is parked (`unexpected_response`) rather than overwritten.
+- **Merge on a 200.** The server has a profile (made on another device, or our own earlier `PUT` whose answer was lost). The two cannot be ordered, so neither simply wins. The local profile is read again after the answer, so an edit made during the read counts, and resolved as:
+  - `locale`: the server's;
+  - `consent.contribute_to_aggregates`: the server's and the local value both true. A "no" given on either device is never turned into "yes" without the user.
+
+  If the resolved profile equals the server's, it is adopted: the local profile takes it and is synced, its operations are removed, nothing is sent. Otherwise the resolved values are stored, the profile becomes `pendingUpdate`, and the same operation (the only one kept) sends them with `PUT /profile`.
+- **Later edits.** A profile the server has (`pendingUpdate`) is sent without the check: an edit is the user's change of a known profile, and the last write wins as for every other item.
+- **Alternatives.** Not showing onboarding until the server answered: blocks a user who signs in offline. A plain `PUT`: overwrites the consent given on another device. The server's profile winning outright: a "no" given here (in onboarding or Settings) before the first sync would silently become "yes".

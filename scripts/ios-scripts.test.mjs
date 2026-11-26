@@ -1393,7 +1393,9 @@ test('onboarding and settings: no typed text, opt-in by default, written through
   assert.match(shelf, /OnboardingGate\(store: store, sync: sync\)\s*\{\s*ShelfScreen\(/);
   assert.match(shelf, /NavigationLink\(value: SettingsRoute\(\)\)/);
   assert.match(shelf, /SettingsScreen\(store: store\)/);
-  // A profile made before the server answered is checked first, so the server's wins.
+  // A profile made before the server answered is checked first and merged: consent only if
+  // both say yes (ADR 0025, Addendum M2-T29).
   const engine = masked('ios/Cupmark/Sync/SyncEngine.swift');
   assert.match(engine, /if checked\.syncState == \.pendingCreate \{[\s\S]*?client\.getProfile\(\)/);
+  assert.match(engine, /server\.consent\.contributeToAggregates && localConsent/);
 });

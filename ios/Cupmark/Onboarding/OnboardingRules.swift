@@ -44,8 +44,9 @@ enum OnboardingRules {
     ///   the pull stored, or could not read) never does; before any answer the root waits
     ///   `serverWait`, then shows it.
     /// A profile made here while the server's state was unknown is checked against the server
-    /// before it is sent, and the server's wins (`SyncEngine`, ADR 0025 Addendum M2-T29), so
-    /// showing onboarding offline never overwrites a profile made on another device.
+    /// before it is sent and merged with the server's (`SyncEngine.resolvedProfile`, ADR 0025
+    /// Addendum M2-T29), so showing onboarding offline never overwrites a profile made on
+    /// another device, and never turns a "no" into "yes".
     static func decision(hasLocalProfile: Bool, server: ServerProfileAnswer, waitedLongEnough: Bool) -> OnboardingDecision {
         if hasLocalProfile {
             return .done
