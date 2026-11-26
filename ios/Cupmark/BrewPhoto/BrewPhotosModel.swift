@@ -124,8 +124,13 @@ final class BrewPhotosModel {
         }
         brewExists = true
         do {
+            // The file is looked up here, not through `brewPhotoFileURL(of:)`, which logs a
+            // missing file: this runs on every save of the store (the sync engine's too), and
+            // the log would repeat for the same record each time.
+            let files = store.brewPhotoFiles
             items = try store.brewPhotos(of: brew).map { photo in
-                Item(id: photo.localID, createdAt: photo.createdAt, fileURL: try? store.brewPhotoFileURL(of: photo))
+                let url = files.flatMap { $0.fileExists(photo.fileName) ? $0.url(of: photo.fileName) : nil }
+                return Item(id: photo.localID, createdAt: photo.createdAt, fileURL: url)
             }
         } catch {
             items = []

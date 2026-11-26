@@ -216,11 +216,18 @@ extension View {
 
 private struct BrewPhotoPresentations: ViewModifier {
     @Bindable var model: BrewPhotosModel
+    @Environment(\.scenePhase) private var scenePhase
 
     func body(content: Content) -> some View {
         content
             .onAppear {
                 model.refresh()
+            }
+            .onChange(of: scenePhase) { _, phase in
+                // Access may have been changed in Settings meanwhile.
+                if phase == .active {
+                    model.refresh()
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: AccountStore.didSaveNotification, object: model.store)) { _ in
                 model.refresh()
@@ -312,27 +319,49 @@ private struct BrewPhotoThumbnailView: View {
     let url: URL?
     let side: CGFloat
     @State private var thumbnail: BrewPhotoThumbnails.Thumbnail?
+    @Environment(\.displayScale) private var displayScale
+    @Environment(\.scenePhase) private var scenePhase
+
+    /// What a load is for: the file, the pixel size, and whether the app is active, so a thumbnail
+    /// that failed is tried again when the app comes back.
+    private struct LoadKey: Hashable {
+        let url: URL?
+        let pixels: Int
+        let isActive: Bool
+    }
 
     var body: some View {
-        Group {
+        ZStack {
             if let thumbnail {
                 Image(decorative: thumbnail.image, scale: 1)
                     .resizable()
                     .scaledToFill()
             } else {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Theme.surface)
+                // Not the row's own colour, so a missing file still shows a frame.
+                Theme.formBackground
+                Image(systemName: "photo")
+                    .secondaryText()
+                    .accessibilityHidden(true)
             }
         }
         .frame(width: side, height: side)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .accessibilityHidden(true)
-        .task(id: url) {
+        .task(id: LoadKey(url: url, pixels: pixels, isActive: scenePhase == .active)) {
             guard let url else {
                 thumbnail = nil
                 return
             }
-            thumbnail = await BrewPhotoThumbnails.load(url)
+            // One more try for a file that was not readable the first time.
+            var loaded = await BrewPhotoThumbnails.load(url, maxPixelSize: pixels)
+            if loaded == nil {
+                loaded = await BrewPhotoThumbnails.load(url, maxPixelSize: pixels)
+            }
+            thumbnail = loaded
         }
+    }
+
+    private var pixels: Int {
+        max(1, Int((side * displayScale).rounded(.up)))
     }
 }

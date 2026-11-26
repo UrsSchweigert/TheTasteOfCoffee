@@ -40,17 +40,80 @@ final class BrewPhotoUITests: XCTestCase {
         XCTAssertTrue(element.exists && element.isHittable, "\(element) is not on screen after \(attempts) swipes")
     }
 
-    /// Adds the fixture photo through the stand-in for the picker and waits for its thumbnail.
+    /// Scrolls `element` into the middle band of the window, so no other control and not the home
+    /// indicator is over it, and returns whether it got there.
+    @MainActor
+    private func scrollToMiddle(_ element: XCUIElement, in app: XCUIApplication, attempts: Int = 25) -> Bool {
+        let window = app.windows.firstMatch.frame
+        for _ in 0..<attempts {
+            if element.exists && element.isHittable {
+                let middle = element.frame.midY
+                if middle > window.height * 0.25 && middle < window.height * 0.7 {
+                    return true
+                }
+                if middle >= window.height * 0.7 {
+                    app.swipeUp(velocity: .slow)
+                } else {
+                    app.swipeDown(velocity: .slow)
+                }
+            } else {
+                app.swipeUp()
+            }
+        }
+        return element.exists && element.isHittable
+    }
+
+    /// Attaches the accessibility tree and prints the section's failure text, so a failed run
+    /// explains itself.
+    @MainActor
+    private func attachDiagnostics(_ app: XCUIApplication, _ name: String) {
+        let attachment = XCTAttachment(string: app.debugDescription)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        let failure = element("brew-photos-error", in: app)
+        let failureText = failure.exists ? failure.label : "none"
+        let summary = element("brew-photos-summary", in: app).label
+        let adding = element("brew-photos-adding", in: app).exists
+        print("BREW-PHOTOS-DIAGNOSTIC \(name): failure=\(failureText) summary=\(summary) adding=\(adding)")
+    }
+
+    /// Adds the fixture photo through the stand-in for the picker and waits for the count. The
+    /// button is scrolled to the middle of the screen and tapped at its centre; a tap that did
+    /// not land is tried again after scrolling once more.
     @MainActor
     private func addFixturePhoto(_ app: XCUIApplication, expecting count: Int) {
-        let pick = app.buttons["brew-photo-pick"]
-        scrollUntilHittable(pick, in: app)
-        pick.tap()
-        let summary = element("brew-photos-summary", in: app)
         let expected = "Brew photos, \(count) of 6"
-        let appeared = NSPredicate(format: "label == %@", expected)
-        let done = expectation(for: appeared, evaluatedWith: summary)
-        wait(for: [done], timeout: 15)
+        for attempt in 1...3 {
+            let pick = app.buttons["brew-photo-pick"]
+            XCTAssertTrue(scrollToMiddle(pick, in: app), "the picker button is not in view (attempt \(attempt))")
+            pick.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            let summary = element("brew-photos-summary", in: app)
+            let reached = expectation(for: NSPredicate(format: "label == %@", expected), evaluatedWith: summary)
+            if XCTWaiter().wait(for: [reached], timeout: 8) == .completed {
+                return
+            }
+            attachDiagnostics(app, "photo \(count), attempt \(attempt)")
+        }
+        XCTFail("the count did not reach \(expected); the label is \(element("brew-photos-summary", in: app).label)")
+    }
+
+    /// The button of the delete confirmation named `title`: the action sheet's on iPhone, any
+    /// button with that label otherwise. Never an unscoped subscript, which matches twice while
+    /// the sheet animates.
+    @MainActor
+    private func dialogButton(_ title: String, in app: XCUIApplication) -> XCUIElement {
+        let inSheet = app.sheets.buttons[title].firstMatch
+        if inSheet.waitForExistence(timeout: 5) {
+            return inSheet
+        }
+        return app.buttons.matching(NSPredicate(format: "label == %@", title)).firstMatch
+    }
+
+    @MainActor
+    private func waitUntilGone(_ element: XCUIElement, timeout: TimeInterval = 10) {
+        let gone = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: element)
+        wait(for: [gone], timeout: timeout)
     }
 
     @MainActor
@@ -73,18 +136,22 @@ final class BrewPhotoUITests: XCTestCase {
         XCTAssertEqual(delete.label, "Delete photo 1 of 1")
         XCTAssertGreaterThanOrEqual(delete.frame.height, 44, "the delete button is at least 44 points high")
         delete.tap()
-        let confirm = app.buttons["Delete Photo"]
+        let confirm = dialogButton("Delete Photo", in: app)
         XCTAssertTrue(confirm.waitForExistence(timeout: 5), "the confirmation did not appear")
         XCTAssertTrue(element("brew-photo-thumbnail", in: app).exists, "asking deleted the photo")
-        app.buttons["Cancel"].firstMatch.tap()
+        let cancel = dialogButton("Cancel", in: app)
+        XCTAssertTrue(cancel.waitForExistence(timeout: 5), "the confirmation has no Cancel")
+        cancel.tap()
+        waitUntilGone(confirm)
         XCTAssertTrue(element("brew-photo-thumbnail", in: app).waitForExistence(timeout: 5), "Cancel deleted the photo")
 
         // Confirm deletes it.
+        scrollUntilHittable(delete, in: app)
         delete.tap()
-        XCTAssertTrue(app.buttons["Delete Photo"].waitForExistence(timeout: 5))
-        app.buttons["Delete Photo"].tap()
-        let gone = NSPredicate(format: "exists == false")
-        wait(for: [expectation(for: gone, evaluatedWith: element("brew-photo-thumbnail", in: app))], timeout: 10)
+        let again = dialogButton("Delete Photo", in: app)
+        XCTAssertTrue(again.waitForExistence(timeout: 5), "the confirmation did not appear the second time")
+        again.tap()
+        waitUntilGone(element("brew-photo-thumbnail", in: app))
         XCTAssertEqual(element("brew-photos-summary", in: app).label, "Brew photos, 0 of 6")
         XCTAssertTrue(element("brew-photos-empty", in: app).exists)
     }
@@ -99,7 +166,7 @@ final class BrewPhotoUITests: XCTestCase {
         }
 
         let pick = app.buttons["brew-photo-pick"]
-        scrollUntilHittable(pick, in: app)
+        XCTAssertTrue(scrollToMiddle(pick, in: app), "the picker button is not in view")
         XCTAssertFalse(pick.isEnabled, "the picker is still enabled with 6 photos")
         XCTAssertTrue(element("brew-photos-limit", in: app).exists, "the limit is not explained")
     }

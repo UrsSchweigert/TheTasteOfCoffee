@@ -25,6 +25,11 @@ enum UITestFixtures {
     static let shelfEntryID = "01JD00000000000000000000S1"
     static let secondShelfEntryID = "01JD00000000000000000000S2"
 
+    /// The brew photo folder of this launch: one per process, so a launch leaves at most one
+    /// folder in the temporary directory, which the system clears.
+    private static let brewPhotoFolder = FileManager.default.temporaryDirectory
+        .appending(path: "CupmarkUITestBrewPhotos-\(UUID().uuidString)", directoryHint: .isDirectory)
+
     static var account: AccountID {
         AccountID(subject: subject)
     }
@@ -42,10 +47,9 @@ enum UITestFixtures {
     /// app's screens use.
     @MainActor
     static func seed(withProfile: Bool, now: Date = Date(), calendar: Calendar = .current) throws -> Seeded {
-        // The brew photos of a launch go to a folder of their own in the temporary directory.
-        let photoFolder = FileManager.default.temporaryDirectory
-            .appending(path: "CupmarkUITestBrewPhotos-\(UUID().uuidString)", directoryHint: .isDirectory)
-        let store = try AccountStore.inMemory(brewPhotoFiles: BrewPhotoFileStore(directory: photoFolder))
+        // The brew photos of a launch go to one folder of the temporary directory, emptied here.
+        try? FileManager.default.removeItem(at: brewPhotoFolder)
+        let store = try AccountStore.inMemory(brewPhotoFiles: BrewPhotoFileStore(directory: brewPhotoFolder))
         if withProfile {
             let profile = StoredProfile(API.Profile(locale: VocabularyLanguage.current, consent: API.Consent(contributeToAggregates: false)))
             profile.syncState = .synced
