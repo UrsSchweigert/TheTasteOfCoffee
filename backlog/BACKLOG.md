@@ -778,7 +778,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T27 Recipes and one-tap repeat
-- status: todo
+- status: done (built and tested by the macOS `ios` job in #65; ADR 0028, ADR 0026 addendum M2-T27)
 - owner: ios-engineer
 - depends: M2-T20, M2-T21
 - implements: docs/04-specification.md, F2 ("A brew can be saved as a recipe and repeated with one tap"); docs/03-project-brief.md, Goals (a repeat brew in under 30 seconds)
@@ -792,7 +792,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T28 Personal statistics
-- status: done (built and tested by the macOS `ios` job in its pull request; the set is in ADR 0027)
+- status: done (built and tested by the macOS `ios` job in #65; the set is in ADR 0027)
 - owner: ios-engineer
 - depends: M2-T20
 - implements: docs/03-project-brief.md, Tiers ("Own statistics and taste profile"); docs/04-specification.md, F2 and F3

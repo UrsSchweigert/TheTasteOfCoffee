@@ -47,6 +47,9 @@ final class BrewFormModel {
     var keepsAsRecipe = false
     /// The local id of the recipe kept with the saved brew, if any.
     private(set) var savedRecipeID: UUID?
+    /// The brew a `.lastBrew` start copied, nil otherwise. The rating offers its rating when
+    /// neither the bag nor the bean has an earlier one (ADR 0026, Addendum M2-T27).
+    let copiedBrewID: UUID?
 
     let store: AccountStore
     /// The brew timer (M2-T21); stopping it fills `draft.brewTimeS`.
@@ -55,9 +58,10 @@ final class BrewFormModel {
     private let calendar: Calendar
     /// The latest brews on the device, newest first.
     private let recentBrews: [BrewDraft]
-    /// Adds the brew to the entry and saves (`AccountStore.addBrew`). Tests replace it to make
+    /// Adds the brew to the entry, runs the last argument (the recipe kept with it, staged
+    /// after the brew's create) and saves (`AccountStore.addBrew`). Tests replace it to make
     /// the write fail.
-    private let addBrew: (AccountStore, StoredBrew, StoredShelfEntry) throws -> Void
+    private let addBrew: (AccountStore, StoredBrew, StoredShelfEntry, () throws -> Void) throws -> Void
 
     init(
         shelfEntry localID: UUID,
@@ -66,8 +70,8 @@ final class BrewFormModel {
         calendar: Calendar = .current,
         start: BrewStart = .blank,
         timer: BrewTimerModel? = nil,
-        addBrew: @escaping (AccountStore, StoredBrew, StoredShelfEntry) throws -> Void = { store, brew, entry in
-            try store.addBrew(brew, shelfEntry: entry)
+        addBrew: @escaping (AccountStore, StoredBrew, StoredShelfEntry, () throws -> Void) throws -> Void = { store, brew, entry, stageMore in
+            try store.addBrew(brew, shelfEntry: entry, then: stageMore)
         }
     ) {
         shelfEntryLocalID = localID
@@ -86,6 +90,7 @@ final class BrewFormModel {
             draft = copy?.draft ?? BrewDraft(method: entry.liveBrewsNewestFirst.first?.method)
             startedFrom = copy == nil ? .blank : start
             replacesStartedRecipe = copy?.replaceable ?? false
+            copiedBrewID = copy?.copiedBrewID
             failure = copy == nil && start != .blank ? .startNotFound : nil
         } else {
             bean = ShelfBeanSummary(nil)
@@ -93,6 +98,7 @@ final class BrewFormModel {
             draft = BrewDraft()
             startedFrom = .blank
             replacesStartedRecipe = false
+            copiedBrewID = nil
             failure = .notFound
         }
     }
@@ -103,7 +109,7 @@ final class BrewFormModel {
         _ start: BrewStart,
         entry: StoredShelfEntry,
         store: AccountStore
-    ) -> (draft: BrewDraft, replaceable: Bool)? {
+    ) -> (draft: BrewDraft, replaceable: Bool, copiedBrewID: UUID?)? {
         switch start {
         case .blank:
             return nil
@@ -111,12 +117,12 @@ final class BrewFormModel {
             guard let brew = try? store.lastBrewToRepeat(for: entry) else {
                 return nil
             }
-            return (BrewDraft(brew), false)
+            return (BrewDraft(brew), false, brew.localID)
         case .recipe(let recipeID):
             guard let recipe = try? store.liveRecipe(localID: recipeID) else {
                 return nil
             }
-            return (BrewDraft(recipe), recipe.isReplaceable)
+            return (BrewDraft(recipe), recipe.isReplaceable, nil)
         }
     }
 
@@ -233,13 +239,16 @@ final class BrewFormModel {
             brew.setParameters(parameters)
             // A failed write puts the entry's saved fields back (`AccountStore.write`), so
             // nothing half-made stays in the shared context for the engine to save. The recipe,
-            // if kept, is staged first and saved in the brew's one save.
+            // if kept, is staged after the brew and saved in the brew's one save, so its create
+            // goes out after the brew's and a recipe waiting for a retry never holds the brew
+            // and its rating.
             let recipeID = try store.write { () throws -> UUID? in
                 var recipe: StoredRecipe?
-                if keepsAsRecipe {
-                    recipe = try stageRecipe(parameters)
+                try addBrew(store, brew, entry) {
+                    if self.keepsAsRecipe {
+                        recipe = try self.stageRecipe(parameters)
+                    }
                 }
-                try addBrew(store, brew, entry)
                 return recipe?.localID
             }
             failure = nil
@@ -252,14 +261,32 @@ final class BrewFormModel {
         }
     }
 
-    /// Stages the recipe kept with the brew: the started recipe replaced, if it may be and is
-    /// still there, else a new recipe (or the one with the same parameters).
+    /// Stages the recipe kept with the brew: the started recipe replaced, if it is still there
+    /// and may still be replaced (a pull may have brought a newer vocabulary's values meanwhile),
+    /// else a new recipe. Values another recipe already has keep that recipe (ADR 0028).
     private func stageRecipe(_ parameters: API.BrewParameters) throws -> StoredRecipe {
-        if replacesStartedRecipe, case .recipe(let recipeID) = startedFrom, let recipe = try store.liveRecipe(localID: recipeID) {
-            _ = try store.stageRecipeReplacement(recipe, with: parameters)
-            return recipe
+        if replacesStartedRecipe, case .recipe(let recipeID) = startedFrom,
+           let recipe = try store.liveRecipe(localID: recipeID), recipe.isReplaceable {
+            switch try store.stageRecipeReplacement(recipe, with: parameters) {
+            case .unchanged, .replaced:
+                return recipe
+            case .alreadyRecipe(let otherID):
+                return try store.liveRecipe(localID: otherID) ?? recipe
+            }
         }
         return try store.stageNewRecipe(parameters, createdAt: now())
+    }
+
+    /// Whether the draft's values are already another recipe than the one the form replaces,
+    /// so keeping them keeps that recipe and writes nothing (ADR 0028). The form says so.
+    var valuesAreAnotherRecipe: Bool {
+        guard let parameters = draft.parameters, let match = try? store.recipe(matching: parameters) else {
+            return false
+        }
+        if replacesStartedRecipe, case .recipe(let recipeID) = startedFrom {
+            return match.localID != recipeID
+        }
+        return true
     }
 
     /// Reads the entry again (a pull may have removed it or changed its roast date).

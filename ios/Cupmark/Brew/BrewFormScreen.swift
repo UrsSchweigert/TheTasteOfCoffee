@@ -247,7 +247,13 @@ struct BrewFormScreen: View {
         } header: {
             Text(L10n.recipeHeader)
         } footer: {
-            Text(L10n.recipeFooter)
+            if model.valuesAreAnotherRecipe {
+                // Keeping them keeps that recipe; two equal recipes are never made (ADR 0028).
+                Text(L10n.brewRecipeAlreadyKept)
+                    .accessibilityIdentifier("brew-recipe-already-kept")
+            } else {
+                Text(L10n.recipeFooter)
+            }
         }
     }
 

@@ -901,6 +901,24 @@
         }
       }
     },
+    "brew.recipe.already_kept" : {
+      "comment" : "Footer of the recipe toggle when the brew's values are already another recipe.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Werte sind bereits ein Rezept. Es bleibt, wie es ist, damit es nie zwei gleiche Rezepte gibt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "These values are already a recipe. It is kept as it is, so there are never two equal recipes."
+          }
+        }
+      }
+    },
     "brew.recipe.save" : {
       "comment" : "Toggle in the brew form that keeps the brew's values as a recipe when it is saved.",
       "extractionState" : "manual",
@@ -3260,19 +3278,55 @@
       }
     },
     "rating.use_last.footer" : {
-      "comment" : "Explains the button that copies the last rating of the bag.",
+      "comment" : "Explains the button that copies an earlier rating (of this bag, this coffee or the repeated brew).",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Übernimmt Punkte, Intensitäten, Aromen und Wiederkauf der zuletzt bewerteten Zubereitung aus dieser Packung. Danach änderst du, was anders war."
+            "value" : "Übernimmt Punkte, Intensitäten, Aromen und Wiederkauf dieser früheren Bewertung. Danach änderst du, was anders war."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copies the scores, intensities, flavour notes and buy again of the latest rated brew of this bag. Then change what was different."
+            "value" : "Copies the scores, intensities, flavour notes and buy again of that earlier rating. Then change what was different."
+          }
+        }
+      }
+    },
+    "rating.use_last.repeated_brew" : {
+      "comment" : "Button that fills the rating with the rating of the brew this brew repeated.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mit der Bewertung der wiederholten Zubereitung beginnen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start from the Rating of the Repeated Brew"
+          }
+        }
+      }
+    },
+    "rating.use_last.same_bean" : {
+      "comment" : "Button that fills the rating with the latest rating of an earlier brew of the same bean, from another bag.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mit der letzten Bewertung dieses Kaffees beginnen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start from the Last Rating of This Coffee"
           }
         }
       }
@@ -3327,6 +3381,24 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Recipe"
+          }
+        }
+      }
+    },
+    "recipe.summary.separator" : {
+      "comment" : "Separator between the dose, ratio, temperature and grind in the one-line summary of a recipe or brew. Keep the spaces around the dot.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · "
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · "
           }
         }
       }

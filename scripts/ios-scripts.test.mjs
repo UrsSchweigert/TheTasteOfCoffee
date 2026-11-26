@@ -1147,7 +1147,7 @@ test('the brew form has no typed text, takes its ranges from the vocabulary and 
     assert.match(draft, new RegExp(`Vocabulary\\.Ranges\\.${range}\\b`), `the ${range} stepper reads Vocabulary.Ranges.${range}`);
   }
   const model = lexSwift(readFileSync(join(repoRoot, 'ios/Cupmark/Brew/BrewFormModel.swift'), 'utf8')).masked;
-  assert.match(model, /store\.addBrew\(brew, shelfEntry: entry\)/);
+  assert.match(model, /store\.addBrew\(brew, shelfEntry: entry, then: stageMore\)/);
   assert.match(model, /API\.Timestamp\(now\(\)\)/, 'brewed_at is recorded on the device');
 
   // No range is written in the view: no stepper bounds or steps, and no number of any brew range.
@@ -1232,7 +1232,7 @@ test('the rating has no typed text, takes its lists, scale and limit from the vo
   assert.match(store, /try markUpdated\(brew\)/);
   // Rated right after the brew, or later from the shelf entry's brew list.
   const sheet = read('ios/Cupmark/Brew/BrewSheet.swift');
-  assert.match(sheet, /RatingScreen\(store: store, brew: savedBrewID, mode: \.afterBrew/);
+  assert.match(sheet, /RatingScreen\(\s*store: store,\s*brew: savedBrewID,\s*mode: \.afterBrew,\s*repeatedFrom: flow\.form\.copiedBrewID/);
   const list = read('ios/Cupmark/Brew/BrewListScreen.swift');
   assert.match(list, /NavigationLink\(value: BrewRatingRoute\(brewLocalID: row\.id\)\)/, 'the rating is made only when it opens');
   assert.match(list, /RatingScreen\(store: model\.store, brew: route\.brewLocalID, mode: \.later/);
@@ -1345,9 +1345,14 @@ test('recipes: no name, no typed text, written through AccountStore, and one tap
   assert.match(store, /try enqueue\(\.create, \.recipe, localID: recipe\.localID\)/);
   assert.match(store, /try enqueueEdit\(of: recipe\)/);
   assert.match(store, /try markDeleted\(recipe\)/);
-  // The brew form keeps the recipe in the brew's one save.
+  // The brew form keeps the recipe in the brew's one save, queued after the brew.
   const model = masked('ios/Cupmark/Brew/BrewFormModel.swift');
-  assert.match(model, /try store\.write \{[^}]*stageRecipe\(parameters\)[\s\S]*?try addBrew\(store, brew, entry\)/);
+  assert.match(model, /try store\.write \{[^}]*try addBrew\(store, brew, entry\) \{[^}]*stageRecipe\(parameters\)/);
+  // The rating offer says where it comes from (ADR 0026, Addendum M2-T27).
+  const rating = masked('ios/Cupmark/Rating/RatingScreen.swift');
+  for (const key of ['ratingUseLast', 'ratingUseLastSameBean', 'ratingUseLastRepeatedBrew']) {
+    assert.match(rating, new RegExp(`L10n\\.${key}\\b`), `the offer can say ${key}`);
+  }
   // A repeat is one tap: on the shelf row and on the entry's screen.
   assert.match(masked('ios/Cupmark/Shelf/ShelfScreen.swift'), /BrewRoute\(shelfEntryLocalID: row\.id, start: \.lastBrew\)/);
   assert.match(masked('ios/Cupmark/Shelf/ShelfEntryEditorScreen.swift'), /BrewStartSection\(model: repeats/);

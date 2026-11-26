@@ -14,6 +14,8 @@ final class RecipeTests: XCTestCase {
 
     private static let otherShelfEntryID = "01JD00000000000000000SHEF2"
     private static let otherRecipeID = "01JD000000000000000000RCP2"
+    private static let otherBeanID = "01JD00000000000000000BEAN3"
+    private static let otherBeanEntryID = "01JD00000000000000000SHEF3"
 
     private func now() throws -> Date {
         try StoreFixtures.timestamp("2026-11-26T07:15:00.250Z").date
@@ -51,6 +53,37 @@ final class RecipeTests: XCTestCase {
         return other
     }
 
+    /// A synced shelf entry of another bean than the fixtures' one.
+    private func otherBeanEntry(in store: AccountStore) throws -> StoredShelfEntry {
+        let bean = StoredBean(API.Bean(
+            beanId: RecipeTests.otherBeanID,
+            vocabularyVersion: Vocabulary.version,
+            verified: false,
+            barcode: nil,
+            openFoodFactsMatch: false,
+            openFoodFacts: nil,
+            pickedAttributes: API.BeanAttributes(process: try StoreFixtures.last(Vocabulary.Process.self)),
+            operatorAttributes: API.BeanAttributes()
+        ))
+        try store.addBean(bean, syncState: .synced)
+        var values = try StoreFixtures.shelfEntryInput()
+        values.beanId = RecipeTests.otherBeanID
+        let entry = StoredShelfEntry(values, serverID: RecipeTests.otherBeanEntryID)
+        try store.addShelfEntry(entry, bean: bean, syncState: .synced)
+        return entry
+    }
+
+    /// A rated brew on `entry`, brewed at `brewedAt`, with buy again set to `buyAgain` so the
+    /// tests can tell ratings apart.
+    @discardableResult
+    private func ratedBrew(on entry: StoredShelfEntry, at brewedAt: String, buyAgain: Bool, in store: AccountStore) throws -> StoredBrew {
+        var values = try StoreFixtures.brewInput(brewedAt: brewedAt, rated: true)
+        values.rating?.buyAgain = buyAgain
+        let brew = try StoredBrew(values)
+        try store.addBrew(brew, shelfEntry: entry)
+        return brew
+    }
+
     private func flow(_ entry: StoredShelfEntry, _ start: BrewStart, _ store: AccountStore) throws -> BrewFlowModel {
         let now = try now()
         return BrewFlowModel(
@@ -62,7 +95,7 @@ final class RecipeTests: XCTestCase {
     }
 
     func testFixtureIDsAreValidContractIDs() {
-        for id in [RecipeTests.otherShelfEntryID, RecipeTests.otherRecipeID] {
+        for id in [RecipeTests.otherShelfEntryID, RecipeTests.otherRecipeID, RecipeTests.otherBeanID, RecipeTests.otherBeanEntryID] {
             XCTAssertNotNil(ResourceID(id), "\(id) is not a ULID")
         }
     }
@@ -210,7 +243,7 @@ final class RecipeTests: XCTestCase {
 
         let brewID = try XCTUnwrap(flow.save())
 
-        XCTAssertEqual(try queue(store), ["create recipe", "create brew"])
+        XCTAssertEqual(try queue(store), ["create brew", "create recipe"], "the recipe goes out after the brew, never holding it")
         let recipeID = try XCTUnwrap(flow.form.savedRecipeID)
         let recipe = try XCTUnwrap(try store.liveRecipe(localID: recipeID))
         let brew = try XCTUnwrap(try store.brew(localID: brewID))
@@ -223,7 +256,7 @@ final class RecipeTests: XCTestCase {
         again.form.keepsAsRecipe = true
         XCTAssertNotNil(again.save())
         XCTAssertEqual(try store.recipes().count, 1)
-        XCTAssertEqual(try queue(store), ["create recipe", "create brew", "create brew"], "an unchanged recipe queues nothing")
+        XCTAssertEqual(try queue(store), ["create brew", "create recipe", "create brew"], "an unchanged recipe queues nothing")
     }
 
     func testABrewStartedFromARecipeCanReplaceIt() throws {
@@ -240,7 +273,7 @@ final class RecipeTests: XCTestCase {
         XCTAssertEqual(flow.form.savedRecipeID, recipe.localID)
         XCTAssertEqual(recipe.doseDg, try parameters().doseDg.map { dose in dose + 1 })
         XCTAssertEqual(recipe.syncState, .pendingUpdate)
-        XCTAssertEqual(try queue(store), ["update recipe", "create brew"])
+        XCTAssertEqual(try queue(store), ["create brew", "update recipe"])
         XCTAssertEqual(try store.recipes().count, 1)
     }
 
@@ -259,7 +292,7 @@ final class RecipeTests: XCTestCase {
         XCTAssertEqual(newer.doseDg, try parameters().doseDg, "the newer recipe is left as it is")
         XCTAssertEqual(newer.vocabularyVersion, Vocabulary.version + 1)
         XCTAssertEqual(try store.recipes().count, 2)
-        XCTAssertEqual(try queue(store), ["create recipe", "create brew"])
+        XCTAssertEqual(try queue(store), ["create brew", "create recipe"])
         XCTAssertThrowsError(try store.replaceRecipe(newer, with: try otherParameters())) { error in
             XCTAssertEqual(error as? RecipeWriteError, .newerVocabulary)
         }
@@ -274,7 +307,7 @@ final class RecipeTests: XCTestCase {
             store: store,
             now: { now },
             calendar: try StoreFixtures.calendar("Europe/Berlin"),
-            addBrew: { _, _, _ in throw WriteFailed() }
+            addBrew: { _, _, _, _ in throw WriteFailed() }
         )
         model.draft.method = try StoreFixtures.first(Vocabulary.Method.self)
         model.keepsAsRecipe = true
@@ -326,11 +359,11 @@ final class RecipeTests: XCTestCase {
         let store = try AccountStore.inMemory()
         let recipe = try syncedRecipe(try parameters(), in: store)
 
-        XCTAssertFalse(try store.replaceRecipe(recipe, with: try parameters()))
+        XCTAssertEqual(try store.replaceRecipe(recipe, with: try parameters()), .unchanged)
         XCTAssertTrue(try queue(store).isEmpty)
 
-        XCTAssertTrue(try store.replaceRecipe(recipe, with: try otherParameters()))
-        XCTAssertTrue(try store.replaceRecipe(recipe, with: try parameters()))
+        XCTAssertEqual(try store.replaceRecipe(recipe, with: try otherParameters()), .replaced)
+        XCTAssertEqual(try store.replaceRecipe(recipe, with: try parameters()), .replaced)
 
         XCTAssertEqual(try queue(store), ["update recipe"], "one update carries both changes")
         XCTAssertEqual(recipe.syncState, .pendingUpdate)
@@ -341,7 +374,7 @@ final class RecipeTests: XCTestCase {
         let store = try AccountStore.inMemory()
         let recipe = try store.saveRecipe(try parameters())
 
-        XCTAssertTrue(try store.replaceRecipe(recipe, with: try otherParameters()))
+        XCTAssertEqual(try store.replaceRecipe(recipe, with: try otherParameters()), .replaced)
 
         XCTAssertEqual(try queue(store), ["create recipe"])
         XCTAssertEqual(recipe.syncState, .pendingCreate)
@@ -403,7 +436,7 @@ final class RecipeTests: XCTestCase {
         let serverID = try XCTUnwrap(recipe.serverID)
         XCTAssertEqual(server.backend.storedRecipes[serverID], API.RecipeInput(vocabularyVersion: Vocabulary.version, parameters: try parameters()))
 
-        XCTAssertTrue(try store.replaceRecipe(recipe, with: try otherParameters()))
+        XCTAssertEqual(try store.replaceRecipe(recipe, with: try otherParameters()), .replaced)
         let replaced = await engine.drain()
         XCTAssertEqual(replaced, .idle)
         XCTAssertEqual(server.backend.storedRecipes[serverID]?.parameters, try otherParameters())
@@ -437,7 +470,7 @@ final class RecipeTests: XCTestCase {
 
         XCTAssertEqual(result, .idle)
         withExtendedLifetime(server) {
-            XCTAssertEqual(server.log, ["POST /recipes", "POST /brews"])
+            XCTAssertEqual(server.log, ["POST /brews", "POST /recipes"])
             XCTAssertEqual(server.backend.storedRecipes.count, 1)
         }
         XCTAssertTrue(try store.outboxOperations().isEmpty)
@@ -497,7 +530,12 @@ final class RecipeTests: XCTestCase {
         XCTAssertEqual(details[1], "1:16.7")
         XCTAssertTrue(details[0].contains("18"))
         XCTAssertTrue(details[3].contains("4.5"))
-        XCTAssertFalse(summary.detailLine(locale: english) { special in special.rawValue }.isEmpty)
+        // One line, joined with the catalogue's separator: no conjunction between values.
+        let line = summary.detailLine(locale: english) { special in special.rawValue }
+        XCTAssertEqual(line, details.joined(separator: L10n.recipeSummarySeparator))
+        XCTAssertFalse(L10n.recipeSummarySeparator.trimmingCharacters(in: .whitespaces).isEmpty)
+        XCTAssertEqual(line.components(separatedBy: L10n.recipeSummarySeparator), details)
+        XCTAssertFalse(line.contains(" and "))
 
         // Only what is set, and a special temperature by its label.
         var sparse = BrewDraft(method: try StoreFixtures.first(Vocabulary.Method.self))
@@ -554,5 +592,173 @@ final class RecipeTests: XCTestCase {
         try store.markDeleted(brew)
         shelf.reload()
         XCTAssertFalse(shelf.canRepeatLastBrew, "a removed brew is not repeated")
+    }
+
+    // MARK: - Replacing with another recipe's values, a newer vocabulary at save, parked creates
+
+    func testReplacingARecipeWithAnotherRecipesValuesIsRefused() throws {
+        let store = try AccountStore.inMemory()
+        let first = try syncedRecipe(try parameters(), in: store)
+        let second = try syncedRecipe(try otherParameters(), in: store, serverID: RecipeTests.otherRecipeID)
+
+        XCTAssertEqual(try store.replaceRecipe(first, with: try otherParameters()), .alreadyRecipe(second.localID))
+
+        XCTAssertEqual(try first.apiParameters(), try parameters(), "the recipe is left as it is")
+        XCTAssertEqual(first.syncState, .synced)
+        XCTAssertTrue(try queue(store).isEmpty)
+        XCTAssertEqual(try store.recipes().count, 2, "never two equal recipes")
+    }
+
+    func testTheBrewFormKeepsTheOtherRecipeWhenTheValuesAreAlreadyOne() throws {
+        let store = try AccountStore.inMemory()
+        let entry = try StoreFixtures.syncedShelfEntry(in: store)
+        let started = try syncedRecipe(try parameters(), in: store)
+        var bumped = try parameters()
+        bumped.doseDg = bumped.doseDg.map { dose in dose + 1 }
+        let other = try syncedRecipe(bumped, in: store, serverID: RecipeTests.otherRecipeID)
+        let flow = try flow(entry, .recipe(started.localID), store)
+        XCTAssertFalse(flow.form.valuesAreAnotherRecipe, "the started recipe's own values")
+        flow.form.increment(.dose)
+        XCTAssertTrue(flow.form.valuesAreAnotherRecipe, "the form says the values are already a recipe")
+        flow.form.keepsAsRecipe = true
+
+        XCTAssertNotNil(flow.save())
+
+        XCTAssertEqual(flow.form.savedRecipeID, other.localID)
+        XCTAssertEqual(started.doseDg, try parameters().doseDg)
+        XCTAssertEqual(try store.recipes().count, 2)
+        XCTAssertEqual(try queue(store), ["create brew"])
+    }
+
+    func testARecipeThatBecameNewerBeforeTheSaveIsNotReplaced() throws {
+        let store = try AccountStore.inMemory()
+        let entry = try StoreFixtures.syncedShelfEntry(in: store)
+        let recipe = try syncedRecipe(try parameters(), in: store)
+        let flow = try flow(entry, .recipe(recipe.localID), store)
+        XCTAssertTrue(flow.form.replacesStartedRecipe)
+        // As if a pull had brought the recipe from a newer app meanwhile.
+        recipe.vocabularyVersion = Vocabulary.version + 1
+        try store.save()
+        flow.form.increment(.dose)
+        flow.form.keepsAsRecipe = true
+
+        XCTAssertNotNil(flow.save())
+
+        XCTAssertEqual(recipe.doseDg, try parameters().doseDg, "the newer recipe is left as it is")
+        XCTAssertEqual(recipe.vocabularyVersion, Vocabulary.version + 1)
+        let kept = try XCTUnwrap(try store.liveRecipe(localID: try XCTUnwrap(flow.form.savedRecipeID)))
+        XCTAssertNotEqual(kept.localID, recipe.localID, "a new recipe is kept instead (ADR 0028)")
+        XCTAssertEqual(try queue(store), ["create brew", "create recipe"])
+    }
+
+    func testARecipeWhoseCreateIsParkedMatchesNothing() throws {
+        let store = try AccountStore.inMemory()
+        let refused = try store.saveRecipe(try parameters())
+        let operation = try XCTUnwrap(try store.outboxOperations(for: refused.localID).first)
+        operation.parked = true
+        operation.parkReason = .rejected
+        try store.save()
+
+        XCTAssertNil(try store.recipe(matching: try parameters()))
+        let kept = try store.saveRecipe(try parameters())
+
+        XCTAssertNotEqual(kept.localID, refused.localID, "the values are kept as a recipe that can reach the server")
+        XCTAssertEqual(try store.recipe(matching: try parameters())?.localID, kept.localID)
+    }
+
+    // MARK: - The rating offer (ADR 0026, Addendum M2-T27)
+
+    func testTheOfferFallsBackToTheSameBeanOnAnotherBag() throws {
+        let store = try AccountStore.inMemory()
+        let oldBag = try StoreFixtures.syncedShelfEntry(in: store)
+        let earlier = try ratedBrew(on: oldBag, at: "2026-11-24T08:00:00.000Z", buyAgain: false, in: store)
+        let newBag = try otherEntry(like: oldBag, in: store)
+        let flow = try flow(newBag, .lastBrew, store)
+        let brewID = try XCTUnwrap(flow.save())
+
+        let model = RatingFormModel(brew: brewID, store: store, repeatedFrom: flow.form.copiedBrewID)
+
+        XCTAssertTrue(model.offersLastRating)
+        XCTAssertEqual(model.lastRatingSource, .sameBean)
+        XCTAssertEqual(model.lastRating, earlier.rating)
+        XCTAssertEqual(model.draft, RatingDraft(), "nothing is copied before the tap")
+        model.useLastRating()
+        XCTAssertTrue(model.canSave)
+        XCTAssertTrue(model.save())
+    }
+
+    func testTheSameBagComesBeforeANewerRatingOfTheSameBean() throws {
+        let store = try AccountStore.inMemory()
+        let first = try StoreFixtures.syncedShelfEntry(in: store)
+        let second = try otherEntry(like: first, in: store)
+        let ownBag = try ratedBrew(on: second, at: "2026-11-20T08:00:00.000Z", buyAgain: false, in: store)
+        try ratedBrew(on: first, at: "2026-11-25T08:00:00.000Z", buyAgain: true, in: store)
+        let current = try StoredBrew(try StoreFixtures.brewInput(brewedAt: "2026-11-26T08:00:00.000Z", rated: false))
+        try store.addBrew(current, shelfEntry: second)
+
+        let model = RatingFormModel(brew: current.localID, store: store)
+
+        XCTAssertEqual(model.lastRatingSource, .sameBag)
+        XCTAssertEqual(model.lastRating, ownBag.rating)
+        XCTAssertEqual(model.lastRating?.buyAgain, false)
+    }
+
+    func testARepeatOfAnotherBeansBrewOffersTheRepeatedBrewsRating() throws {
+        let store = try AccountStore.inMemory()
+        let usual = try otherBeanEntry(in: store)
+        let repeated = try ratedBrew(on: usual, at: "2026-11-25T08:00:00.000Z", buyAgain: true, in: store)
+        let newBean = try StoreFixtures.syncedShelfEntry(in: store)
+        let flow = try flow(newBean, .lastBrew, store)
+        XCTAssertEqual(flow.form.copiedBrewID, repeated.localID)
+        let brewID = try XCTUnwrap(flow.save())
+
+        let model = RatingFormModel(brew: brewID, store: store, repeatedFrom: flow.form.copiedBrewID)
+
+        XCTAssertEqual(model.lastRatingSource, .repeatedBrew)
+        XCTAssertEqual(model.lastRating, repeated.rating)
+        model.useLastRating()
+        XCTAssertTrue(model.save(), "the first repeat onto a new coffee is rated with one tap and Save")
+
+        // Without the repeat, another bean's rating is not offered.
+        let plain = try StoredBrew(try StoreFixtures.brewInput(brewedAt: "2026-11-26T09:00:00.000Z", rated: false))
+        let plainBag = try otherEntry(like: newBean, in: store)
+        try store.addBrew(plain, shelfEntry: plainBag)
+        XCTAssertEqual(RatingFormModel(brew: plain.localID, store: store).lastRatingSource, .sameBean, "the new coffee's own rating now")
+    }
+
+    func testARecipeStartOffersNoRepeatedBrew() throws {
+        let store = try AccountStore.inMemory()
+        let usual = try otherBeanEntry(in: store)
+        try ratedBrew(on: usual, at: "2026-11-25T08:00:00.000Z", buyAgain: true, in: store)
+        let recipe = try syncedRecipe(try parameters(), in: store)
+        let entry = try StoreFixtures.syncedShelfEntry(in: store)
+        let flow = try flow(entry, .recipe(recipe.localID), store)
+        XCTAssertNil(flow.form.copiedBrewID)
+        let brewID = try XCTUnwrap(flow.save())
+
+        let model = RatingFormModel(brew: brewID, store: store, repeatedFrom: flow.form.copiedBrewID)
+
+        XCTAssertNil(model.lastRating)
+        XCTAssertNil(model.lastRatingSource)
+        XCTAssertFalse(model.offersLastRating)
+    }
+
+    func testTheOfferNeverComesFromALaterBrew() throws {
+        let store = try AccountStore.inMemory()
+        let first = try StoreFixtures.syncedShelfEntry(in: store)
+        let second = try otherEntry(like: first, in: store)
+        let current = try StoredBrew(try StoreFixtures.brewInput(brewedAt: "2026-11-20T08:00:00.000Z", rated: false))
+        try store.addBrew(current, shelfEntry: second)
+        // Later ratings: of the same bag, of the same bean, and of another bean's brew named
+        // as the repeated one.
+        try ratedBrew(on: second, at: "2026-11-21T08:00:00.000Z", buyAgain: true, in: store)
+        try ratedBrew(on: first, at: "2026-11-22T08:00:00.000Z", buyAgain: true, in: store)
+        let laterOther = try ratedBrew(on: try otherBeanEntry(in: store), at: "2026-11-23T08:00:00.000Z", buyAgain: true, in: store)
+
+        let model = RatingFormModel(brew: current.localID, store: store, repeatedFrom: laterOther.localID)
+
+        XCTAssertNil(model.lastRating)
+        XCTAssertNil(model.lastRatingSource)
+        XCTAssertFalse(model.offersLastRating)
     }
 }

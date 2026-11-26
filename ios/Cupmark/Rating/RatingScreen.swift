@@ -32,8 +32,17 @@ struct RatingScreen: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.locale) private var locale
 
-    init(store: AccountStore, brew localID: UUID, mode: Mode, vocabulary: VocabularyStore, language: VocabularyLanguage) {
-        _model = State(initialValue: RatingFormModel(brew: localID, store: store))
+    /// `repeatedFrom` is the brew a repeat copied (M2-T27), whose rating is offered when the
+    /// bag and the bean have none earlier.
+    init(
+        store: AccountStore,
+        brew localID: UUID,
+        mode: Mode,
+        repeatedFrom: UUID? = nil,
+        vocabulary: VocabularyStore,
+        language: VocabularyLanguage
+    ) {
+        _model = State(initialValue: RatingFormModel(brew: localID, store: store, repeatedFrom: repeatedFrom))
         self.mode = mode
         self.vocabulary = vocabulary
         self.language = language
@@ -138,7 +147,7 @@ struct RatingScreen: View {
                 model.useLastRating()
             } label: {
                 Label {
-                    Text(L10n.ratingUseLast)
+                    Text(lastRatingTitle)
                 } icon: {
                     Image(systemName: "arrow.uturn.backward")
                         .accessibilityHidden(true)
@@ -147,6 +156,18 @@ struct RatingScreen: View {
             .accessibilityIdentifier("rating-use-last")
         } footer: {
             Text(L10n.ratingUseLastFooter)
+        }
+    }
+
+    /// The offer says where its rating comes from (ADR 0026, Addendum M2-T27).
+    private var lastRatingTitle: LocalizedStringKey {
+        switch model.lastRatingSource {
+        case .sameBean:
+            return L10n.ratingUseLastSameBean
+        case .repeatedBrew:
+            return L10n.ratingUseLastRepeatedBrew
+        case .sameBag, .none:
+            return L10n.ratingUseLast
         }
     }
 

@@ -26,7 +26,14 @@ struct BrewSheet: View {
         NavigationStack {
             switch flow.phase {
             case .rating(let savedBrewID):
-                RatingScreen(store: store, brew: savedBrewID, mode: .afterBrew, vocabulary: vocabulary, language: language)
+                RatingScreen(
+                    store: store,
+                    brew: savedBrewID,
+                    mode: .afterBrew,
+                    repeatedFrom: flow.form.copiedBrewID,
+                    vocabulary: vocabulary,
+                    language: language
+                )
             case .brewing:
                 BrewFormScreen(
                     model: flow.form,

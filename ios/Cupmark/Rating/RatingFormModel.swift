@@ -13,12 +13,25 @@ import Observation
 /// - A brew stored with a newer vocabulary than the bundled one (picked on a newer app) opens
 ///   read-only (`isReadOnly`): the draft keeps only the ids this build knows, so saving it
 ///   could drop flavour notes or intensities it does not know.
-/// - An unrated brew offers the latest rating of an earlier brew of the same bag
-///   (`lastRating`), which `useLastRating()` copies into the draft. A repeat brew then needs
-///   only the changes, not eight new scores. It is never copied without that tap.
+/// - An unrated brew offers an earlier rating (`lastRating`, from `lastRatingSource`), which
+///   `useLastRating()` copies into the draft. A repeat brew then needs only the changes, not
+///   eight new scores. It is never copied without that tap. The offer is the newest rating of
+///   an earlier brew of the same bag; else of the same bean on any bag; else, for a brew
+///   started as a repeat of the last brew, that brew's rating (ADR 0026, Addendum M2-T27).
+///   A later brew's rating is never offered.
 @MainActor
 @Observable
 final class RatingFormModel {
+    /// Where the offered rating comes from; the screen says so.
+    enum RatingSource: Equatable, Sendable {
+        /// An earlier brew of the same shelf entry.
+        case sameBag
+        /// An earlier brew of the same bean, on another shelf entry.
+        case sameBean
+        /// The brew this one repeated (`BrewFormModel.copiedBrewID`).
+        case repeatedBrew
+    }
+
     enum Failure: Equatable, Sendable {
         /// The brew is gone (removed here, or on another device and pulled).
         case notFound
@@ -36,9 +49,10 @@ final class RatingFormModel {
     private(set) var brewedAt: Date?
     /// Whether the brew had a rating when the screen opened.
     private(set) var wasRated: Bool
-    /// The latest rating of an earlier brew of the same shelf entry, offered while the brew
-    /// has none.
+    /// The rating offered while the brew has none (see `lastRatingSource`).
     private(set) var lastRating: RatingValues?
+    /// Where `lastRating` comes from, nil without an offer.
+    private(set) var lastRatingSource: RatingSource?
     private(set) var failure: Failure?
     /// Whether the rating was saved at least once.
     private(set) var didSave = false
@@ -50,9 +64,11 @@ final class RatingFormModel {
     /// write fail.
     private let rate: (AccountStore, StoredBrew, RatingValues) throws -> Void
 
+    /// `repeatedFrom` is the brew a repeat copied (M2-T27), nil for any other brew.
     init(
         brew localID: UUID,
         store: AccountStore,
+        repeatedFrom: UUID? = nil,
         rate: @escaping (AccountStore, StoredBrew, RatingValues) throws -> Void = { store, brew, rating in
             try store.rateBrew(brew, rating: rating)
         }
@@ -70,7 +86,11 @@ final class RatingFormModel {
             draft = RatingDraft(stored)
             let readOnly = RatingFormModel.isNewer(brew)
             isReadOnly = readOnly
-            lastRating = stored == nil && !readOnly ? RatingFormModel.latestEarlierRating(of: brew) : nil
+            let offer = stored == nil && !readOnly
+                ? RatingFormModel.offeredRating(for: brew, store: store, repeatedFrom: repeatedFrom)
+                : nil
+            lastRating = offer?.rating
+            lastRatingSource = offer?.source
             failure = nil
         } else {
             bean = ShelfBeanSummary(nil)
@@ -79,6 +99,7 @@ final class RatingFormModel {
             wasRated = false
             draft = RatingDraft()
             lastRating = nil
+            lastRatingSource = nil
             failure = .notFound
         }
     }
@@ -95,6 +116,43 @@ final class RatingFormModel {
                 && other.rating != nil
         }
         return earlier?.rating
+    }
+
+    /// The rating offered to `brew`, with where it comes from: the newest rating of an earlier
+    /// brew of the same shelf entry; else of the same bean on any shelf entry; else the rating
+    /// of `repeatedFrom`, the brew it repeated. Every candidate is another brew, not removed,
+    /// brewed no later than `brew`. Nil when there is none.
+    static func offeredRating(
+        for brew: StoredBrew,
+        store: AccountStore,
+        repeatedFrom: UUID?
+    ) -> (rating: RatingValues, source: RatingSource)? {
+        if let rating = latestEarlierRating(of: brew) {
+            return (rating, .sameBag)
+        }
+        if let beanID = brew.shelfEntry?.bean?.localID {
+            let sameBean = ((try? store.brewsNewestFirst()) ?? []).first { other in
+                other.shelfEntry?.bean?.localID == beanID && isEarlierRated(other, than: brew)
+            }
+            if let rating = sameBean?.rating {
+                return (rating, .sameBean)
+            }
+        }
+        if let repeatedFrom,
+           let repeated = try? store.brew(localID: repeatedFrom),
+           repeated.syncState != .pendingDelete,
+           isEarlierRated(repeated, than: brew),
+           let rating = repeated.rating {
+            return (rating, .repeatedBrew)
+        }
+        return nil
+    }
+
+    /// Whether `other` is another brew than `brew`, brewed no later, with a rating.
+    private static func isEarlierRated(_ other: StoredBrew, than brew: StoredBrew) -> Bool {
+        other.localID != brew.localID
+            && other.brewedAtMilliseconds <= brew.brewedAtMilliseconds
+            && other.rating != nil
     }
 
     /// Whether "Start from the last rating" is offered: the brew has no rating of its own
@@ -199,6 +257,7 @@ final class RatingFormModel {
             didSave = true
             wasRated = true
             lastRating = nil
+            lastRatingSource = nil
             return true
         } catch {
             failure = .saveFailed
@@ -218,6 +277,7 @@ final class RatingFormModel {
         if RatingFormModel.isNewer(brew) {
             isReadOnly = true
             lastRating = nil
+            lastRatingSource = nil
         }
         if failure == .notFound {
             failure = nil

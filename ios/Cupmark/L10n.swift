@@ -324,4 +324,9 @@ enum L10n {
     static var brewListRecipeSaveFailed: LocalizedStringKey { "brew_list.recipe_save_failed" }
     /// The grind in a recipe or brew summary; the catalog value places `%@`.
     static func recipeGrindValue(_ value: String) -> String { String(localized: "recipe.grind_value \(value)") }
+    /// Between the values of a recipe or brew summary (" · ").
+    static var recipeSummarySeparator: String { String(localized: "recipe.summary.separator") }
+    static var brewRecipeAlreadyKept: LocalizedStringKey { "brew.recipe.already_kept" }
+    static var ratingUseLastSameBean: LocalizedStringKey { "rating.use_last.same_bean" }
+    static var ratingUseLastRepeatedBrew: LocalizedStringKey { "rating.use_last.repeated_brew" }
 }

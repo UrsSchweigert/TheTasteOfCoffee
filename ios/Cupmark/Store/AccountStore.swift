@@ -88,12 +88,20 @@ final class AccountStore {
         try save()
     }
 
-    /// Adds a brew on `shelfEntry`, which must be in this store.
-    func addBrew(_ brew: StoredBrew, shelfEntry: StoredShelfEntry, syncState: SyncState = .pendingCreate) throws {
+    /// Adds a brew on `shelfEntry`, which must be in this store. `stageMore` runs after the
+    /// brew's create is queued and before the one save, so a write staged there (the recipe
+    /// kept with a brew, M2-T27) is saved with it and queued after it.
+    func addBrew(
+        _ brew: StoredBrew,
+        shelfEntry: StoredShelfEntry,
+        syncState: SyncState = .pendingCreate,
+        then stageMore: () throws -> Void = {}
+    ) throws {
         brew.syncState = syncState
         context.insert(brew)
         brew.shelfEntry = shelfEntry
         try enqueueCreate(of: brew)
+        try stageMore()
         try save()
     }
 

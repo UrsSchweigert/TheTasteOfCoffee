@@ -50,8 +50,9 @@ struct BrewSummary: Equatable, Sendable {
         return parts
     }
 
-    /// `details` as one line, joined the way the device's language lists units.
+    /// `details` as one line, joined with the catalogue's separator (`recipe.summary.separator`,
+    /// " · "), so no conjunction is read into a list of values.
     func detailLine(locale: Locale = .current, special: (Vocabulary.WaterTempSpecial) -> String) -> String {
-        details(locale: locale, special: special).formatted(.list(type: .unit, width: .short))
+        details(locale: locale, special: special).joined(separator: L10n.recipeSummarySeparator)
     }
 }

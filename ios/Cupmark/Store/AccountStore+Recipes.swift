@@ -9,6 +9,17 @@ import SwiftData
 // save, inside `write { }`, so a failure leaves nothing behind (ADR 0025, Addendum M2-T35).
 // The engine sends `POST /recipes`, `PUT` and `DELETE /recipes/{recipe_id}`.
 
+/// What a replacement did (`AccountStore.replaceRecipe`).
+enum RecipeReplacement: Equatable, Sendable {
+    /// The recipe already had these parameters; nothing was written.
+    case unchanged
+    /// The recipe took the parameters and its update was queued.
+    case replaced
+    /// Another recipe (this local id) already has these parameters. The replacement was
+    /// refused and nothing was written, so the device never holds two equal recipes (ADR 0028).
+    case alreadyRecipe(UUID)
+}
+
 /// Why a recipe could not be replaced.
 enum RecipeWriteError: Error, Equatable {
     /// The recipe is gone (removed here, or on another device and pulled).
@@ -58,9 +69,16 @@ extension AccountStore {
     }
 
     /// The recipe on the device with exactly these parameters, if any. A recipe with an id the
-    /// bundled vocabulary does not know matches nothing.
+    /// bundled vocabulary does not know matches nothing, and neither does one whose create is
+    /// parked: it never reaches the server (until the user redoes it from the sync issues), so
+    /// the same values are kept as a recipe that can.
     func recipe(matching parameters: API.BrewParameters) throws -> StoredRecipe? {
-        try recipes().first { recipe in (try? recipe.apiParameters()) == parameters }
+        let parkedCreates = Set(try outboxOperations()
+            .filter { operation in operation.parked && operation.action == .create && operation.resource == .recipe }
+            .map(\.localID))
+        return try recipes().first { recipe in
+            !parkedCreates.contains(recipe.localID) && (try? recipe.apiParameters()) == parameters
+        }
     }
 
     // MARK: - Writes
@@ -82,17 +100,18 @@ extension AccountStore {
 
     /// Replaces every parameter of `recipe` with `parameters` (`PUT /recipes/{recipe_id}`
     /// replaces the whole item), at the bundled vocabulary version, and queues the update in
-    /// one save; a create or update that was not sent yet carries it instead. Returns false and
-    /// writes nothing when the parameters are already the recipe's. Throws `RecipeWriteError`
-    /// for a removed recipe and one stored with a newer vocabulary.
+    /// one save; a create or update that was not sent yet carries it instead. Writes nothing
+    /// and says so when the parameters are already the recipe's (`unchanged`) or another
+    /// recipe's (`alreadyRecipe`). Throws `RecipeWriteError` for a removed recipe and one
+    /// stored with a newer vocabulary.
     @discardableResult
-    func replaceRecipe(_ recipe: StoredRecipe, with parameters: API.BrewParameters) throws -> Bool {
+    func replaceRecipe(_ recipe: StoredRecipe, with parameters: API.BrewParameters) throws -> RecipeReplacement {
         try write {
-            guard try stageRecipeReplacement(recipe, with: parameters) else {
-                return false
+            let result = try stageRecipeReplacement(recipe, with: parameters)
+            if result == .replaced {
+                try save()
             }
-            try save()
-            return true
+            return result
         }
     }
 
@@ -119,9 +138,9 @@ extension AccountStore {
         return recipe
     }
 
-    /// Changes `recipe` to `parameters` and queues the update, without saving. Returns false
-    /// and changes nothing when the parameters are already the recipe's.
-    func stageRecipeReplacement(_ recipe: StoredRecipe, with parameters: API.BrewParameters) throws -> Bool {
+    /// Changes `recipe` to `parameters` and queues the update, without saving. Changes nothing
+    /// when the parameters are already the recipe's or another recipe's.
+    func stageRecipeReplacement(_ recipe: StoredRecipe, with parameters: API.BrewParameters) throws -> RecipeReplacement {
         guard recipe.syncState != .pendingDelete else {
             throw RecipeWriteError.notFound
         }
@@ -129,12 +148,15 @@ extension AccountStore {
             throw RecipeWriteError.newerVocabulary
         }
         if (try? recipe.apiParameters()) == parameters {
-            return false
+            return .unchanged
+        }
+        if let other = try self.recipe(matching: parameters), other.localID != recipe.localID {
+            return .alreadyRecipe(other.localID)
         }
         recipe.setParameters(parameters)
         recipe.vocabularyVersion = Vocabulary.version
         recipe.syncState = recipe.syncState.afterLocalEdit
         try enqueueEdit(of: recipe)
-        return true
+        return .replaced
     }
 }

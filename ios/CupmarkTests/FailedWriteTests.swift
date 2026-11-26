@@ -392,7 +392,7 @@ final class FailedWriteTests: XCTestCase {
         let store = try AccountStore.inMemory()
         let entry = try StoreFixtures.syncedShelfEntry(in: store)
         let before = try entry.apiInput()
-        let model = BrewFormModel(shelfEntry: entry.localID, store: store, addBrew: { _, _, stored in
+        let model = BrewFormModel(shelfEntry: entry.localID, store: store, addBrew: { _, _, stored, _ in
             stored.roastDateRaw = nil
             stored.syncState = .pendingUpdate
             throw WriteFailed()
