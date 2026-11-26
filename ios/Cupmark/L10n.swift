@@ -445,4 +445,25 @@ enum L10n {
     static var brewPhotosFailedLimit: LocalizedStringKey { "brew_photos.failed.limit" }
     static var brewPhotosFailedBrewNotFound: LocalizedStringKey { "brew_photos.failed.brew_not_found" }
     static var brewPhotosFailedSave: LocalizedStringKey { "brew_photos.failed.save" }
+
+    // Brew photo gallery (M2-T43)
+    static var galleryTitle: LocalizedStringKey { "gallery.title" }
+    static var gallerySummaryLabel: LocalizedStringKey { "gallery.summary.label" }
+    static func galleryCount(_ count: String, bundle: Bundle = .main) -> String { String(localized: "gallery.count \(count)", bundle: bundle) }
+    static func galleryCountFiltered(_ count: String, filter: String, bundle: Bundle = .main) -> String { String(localized: "gallery.count.filtered \(count) \(filter)", bundle: bundle) }
+    static var galleryEmptyTitle: LocalizedStringKey { "gallery.empty.title" }
+    static var galleryEmptyMessage: LocalizedStringKey { "gallery.empty.message" }
+    static var galleryEmptyFiltered: LocalizedStringKey { "gallery.empty.filtered" }
+    static var galleryFilterMethod: LocalizedStringKey { "gallery.filter.method" }
+    static var galleryFilterBag: LocalizedStringKey { "gallery.filter.bag" }
+    static var galleryFilterAnyMethod: LocalizedStringKey { "gallery.filter.any_method" }
+    static var galleryFilterAnyBag: LocalizedStringKey { "gallery.filter.any_bag" }
+    static var galleryFilterClear: LocalizedStringKey { "gallery.filter.clear" }
+    static func galleryPhotoLabel(_ method: String, bag: String, date: String, bundle: Bundle = .main) -> String { String(localized: "gallery.photo.label \(method) \(bag) \(date)", bundle: bundle) }
+    static func galleryPhotoBag(_ bean: String, bundle: Bundle = .main) -> String { String(localized: "gallery.photo.bag \(bean)", bundle: bundle) }
+    static func galleryMethodUnknown(bundle: Bundle = .main) -> String { String(localized: "gallery.photo.method_unknown", bundle: bundle) }
+    static func galleryNoBag(bundle: Bundle = .main) -> String { String(localized: "gallery.photo.no_bag", bundle: bundle) }
+    static func galleryBagOption(_ bean: String, bought date: String, bundle: Bundle = .main) -> String { String(localized: "gallery.bag.option \(bean) \(date)", bundle: bundle) }
+    static func galleryBeanUnnamed(bundle: Bundle = .main) -> String { String(localized: "gallery.bean.unnamed", bundle: bundle) }
+    static var galleryViewerNotFound: LocalizedStringKey { "gallery.viewer.not_found" }
 }

@@ -989,7 +989,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job; the camera and the real picker are checked on a device in M2-T34. Marked `needs-mac-verification` until the job passes.
 
 ### M2-T43 Brew photo gallery from the shelf, with pick-list filters
-- status: in-progress
+- status: needs-mac-verification (the Swift and the UI test were written on Linux and have not been built or run; the `ios` job on macOS must pass first)
 - owner: ios-engineer
 - depends: M2-T42
 - implements: owner decision of 2026-11-26 (photo browsing); docs/04-specification.md, F2; M2-T40 (the route registration rule); invariant 1 (no search box)

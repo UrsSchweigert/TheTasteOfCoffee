@@ -12,6 +12,7 @@ import Foundation
 /// - on the first bag, rated brews of the first three methods, one unrated brew (the newest,
 ///   for the rating screen) and one recipe more than the bag's screen lists inline, so
 ///   "All Recipes" is offered;
+/// - three brew photos on the first two rated brews, for the gallery (M2-T43);
 /// - with `withProfile`, a profile without consent, so onboarding is over.
 /// Everything is `synced`, so the outbox is empty and nothing is ever sent.
 enum UITestFixtures {
@@ -73,12 +74,20 @@ enum UITestFixtures {
         try store.addShelfEntry(second, bean: described, syncState: .synced)
 
         let methods = Array(Vocabulary.Method.allCases.prefix(3))
+        var ratedBrews: [StoredBrew] = []
         for (index, method) in methods.enumerated() {
             let brew = try StoredBrew(
                 try brewInput(method: method, index: index, daysAgo: methods.count - index + 1, rated: true, now: now),
                 serverID: brewID(index)
             )
             try store.addBrew(brew, shelfEntry: entry, syncState: .synced)
+            ratedBrews.append(brew)
+        }
+        // The gallery's photos (M2-T43): two on the brew of the first method, one on the second's.
+        // The unrated brew has none, so the rating screen starts with an empty photo section.
+        let photo = try BrewPhotoEncoder.encode(UITestBrewPhotoPicker.fixtureJPEG())
+        for (position, brew) in photoBrews(of: ratedBrews).enumerated() {
+            try store.addBrewPhoto(to: brew, jpeg: photo, createdAt: now.addingTimeInterval(TimeInterval(-60 * position)))
         }
         let newestMethod = try methods.first ?? first(Vocabulary.Method.self)
         let unrated = try StoredBrew(
@@ -96,6 +105,19 @@ enum UITestFixtures {
             try store.addRecipe(recipe, syncState: .synced)
         }
         return Seeded(store: store, shelfEntry: entry.localID, unratedBrew: unrated.localID)
+    }
+
+    /// The brews that hold a photo, one entry per photo: the first rated brew twice, the second
+    /// once (fewer if the vocabulary has fewer methods).
+    private static func photoBrews(of brews: [StoredBrew]) -> [StoredBrew] {
+        var result: [StoredBrew] = []
+        if let first = brews.first {
+            result += [first, first]
+        }
+        if brews.count > 1 {
+            result.append(brews[1])
+        }
+        return result
     }
 
     // MARK: - Catalogue

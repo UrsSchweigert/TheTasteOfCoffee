@@ -353,11 +353,7 @@ private struct BrewPhotoThumbnailView: View {
                 return
             }
             // One more try for a file that was not readable the first time.
-            var loaded = await BrewPhotoThumbnails.load(url, maxPixelSize: pixels)
-            if loaded == nil {
-                loaded = await BrewPhotoThumbnails.load(url, maxPixelSize: pixels)
-            }
-            thumbnail = loaded
+            thumbnail = await BrewPhotoThumbnails.loadWithRetry(url, maxPixelSize: pixels)
         }
     }
 

@@ -208,6 +208,22 @@ struct ShelfScreen: View {
             .surfaceRow()
         }
         .listBackground()
+        .toolbar {
+            // The brew photo gallery (M2-T43), a value link: the screen is made when it opens.
+            ToolbarItem(placement: .topBarLeading) {
+                NavigationLink(value: BrewPhotoGalleryRoute()) {
+                    Label {
+                        Text(L10n.galleryTitle)
+                    } icon: {
+                        Image(systemName: "photo.on.rectangle.angled")
+                            .accessibilityHidden(true)
+                    }
+                    .labelStyle(.iconOnly)
+                    .minimumTapTarget()
+                }
+                .accessibilityIdentifier("shelf-photo-gallery")
+            }
+        }
         .sheet(item: $brewing) { route in
             // The brew form, then the rating of the new brew (M2-T20).
             BrewSheet(store: store, route: route, vocabulary: vocabulary, language: language)
@@ -222,6 +238,14 @@ struct ShelfScreen: View {
         }
         .navigationDestination(for: SettingsRoute.self) { _ in
             SettingsScreen(account: sync?.account, store: store)
+        }
+        // The gallery of brew photos and its viewer (M2-T43); the viewer is replaced by the full
+        // one in M2-T43b. Both are registered here, at the stack root.
+        .navigationDestination(for: BrewPhotoGalleryRoute.self) { _ in
+            BrewPhotoGalleryScreen(store: store, vocabulary: vocabulary, language: language)
+        }
+        .navigationDestination(for: BrewPhotoRoute.self) { route in
+            BrewPhotoViewerScreen(store: store, photo: route.photoLocalID, vocabulary: vocabulary, language: language)
         }
         .navigationDestination(isPresented: $isScanning) {
             if let apiClient {
