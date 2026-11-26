@@ -22,6 +22,25 @@ final class AccountStoreTests: XCTestCase {
         XCTAssertEqual(current, names.union(["QueuedLabelPhoto"]))
     }
 
+    // MARK: - Outbox sequences
+
+    /// Operations queued before one save each get their own, increasing sequence, before and
+    /// after the save (the engine finds an operation again by its sequence).
+    func testOperationsQueuedBeforeOneSaveGetDistinctSequences() throws {
+        let store = try AccountStore.inMemory()
+        let first = try store.enqueue(.create, .bean, localID: UUID())
+        let second = try store.enqueue(.create, .shelfEntry, localID: UUID())
+        let third = try store.enqueue(.create, .brew, localID: UUID())
+        XCTAssertEqual([first.sequence, second.sequence, third.sequence], [1, 2, 3])
+        try store.save()
+
+        let fourth = try store.enqueue(.create, .recipe, localID: UUID())
+        let fifth = try store.enqueue(.create, .brew, localID: UUID())
+        XCTAssertEqual([fourth.sequence, fifth.sequence], [4, 5])
+        try store.save()
+        XCTAssertEqual(try store.outboxOperations().map(\.sequence), [1, 2, 3, 4, 5])
+    }
+
     // MARK: - Create
 
     func testCreatingABeanAShelfEntryAndABrewLinksThemAndMarksThemPending() throws {

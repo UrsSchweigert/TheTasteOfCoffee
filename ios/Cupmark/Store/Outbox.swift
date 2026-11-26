@@ -244,9 +244,12 @@ extension AccountStore {
     /// with the item change.
     @discardableResult
     func enqueue(_ action: OutboxAction, _ resource: OutboxResource, localID: UUID) throws -> OutboxOperation {
-        var descriptor = FetchDescriptor<OutboxOperation>(sortBy: [SortDescriptor(\OutboxOperation.sequence, order: .reverse)])
-        descriptor.fetchLimit = 1
-        let last = try context.fetch(descriptor).first?.sequence ?? 0
+        // Every operation, inserted-but-unsaved ones included, and the highest sequence among
+        // them. A fetch with `fetchLimit` does not reliably see unsaved inserts (seen in the macOS
+        // `ios` job): two operations queued before one save then got the same sequence, and the
+        // engine, which finds an operation again by its sequence, picked the wrong one forever.
+        // Queues are short, so reading them all is cheap.
+        let last = try context.fetch(FetchDescriptor<OutboxOperation>()).map(\.sequence).max() ?? 0
         let operation = OutboxOperation(
             sequence: last + 1,
             resourceRaw: resource.rawValue,
