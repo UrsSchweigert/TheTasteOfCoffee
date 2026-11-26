@@ -252,7 +252,7 @@ final class AccessibilityAuditTests: XCTestCase {
         // buttons, empty-state descriptions: text the app does not colour or size itself, and
         // that scales with the system): "Contrast nearly passed" (a marginal
         // ratio against the system's semantic secondary colour) and "Dynamic Type font sizes
-        // are partially unsupported". A real "Contrast failed" or "not supported" still fails.
+        // are partially unsupported". A real "Contrast failed" or "not supported" is still reported.
         let verdict = issue.compactDescription
         if issue.auditType == .contrast, verdict.localizedCaseInsensitiveContains("nearly passed") {
             return true

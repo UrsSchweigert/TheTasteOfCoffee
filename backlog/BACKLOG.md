@@ -875,7 +875,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T33 Accessibility pass
-- status: needs-mac-verification (the UI tests and unit tests run in the `ios` job; the audit findings are reported, not gated)
+- status: done (#83; the macOS `ios` job passed on ca89c18, the audit findings are reported, not gated; M2-T34 reads the `AUDIT-ISSUE` lines in the job log and judges them on a device)
 - owner: ios-engineer
 - depends: M2-T32
 - implements: docs/04-specification.md, Non-functional (Accessibility: Dynamic Type and VoiceOver on every control)
