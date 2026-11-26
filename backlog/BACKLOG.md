@@ -366,7 +366,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the script tests run on Linux, and the `ios` job runs because the generator changed.
 
 ### M2-T4 Publish vocabulary v3 and follow it in the API
-- status: needs-mac-verification (contracts, backend and script tests pass; the v3 Swift and the pbxproj folder reference are first compiled by the `ios` job)
+- status: done (merged in #68; the v3 Swift and the pbxproj folder reference compiled and passed in the macOS `ios` job)
 - owner: contract-keeper
 - needs: human (the owner approves the v3 draft, in particular the grinder list and the method field rules; contracts/README.md, Publishing a version, step 3)
 - depends: M2-T2, M2-T3
@@ -952,7 +952,7 @@ Scope: App Store listing, screenshots, privacy nutrition labels, privacy policy 
   - Mac: the `ios` job.
 
 ### M2-T36 Harden the failed-write mechanism
-- status: needs-mac-verification (#66; the fix for the one failing test is written, not yet run on the macOS `ios` job)
+- status: done (#66; the macOS `ios` job passed on 6574b43, including the real save-failure test)
 - handover (2026-11-26, lead): `FailedWriteTests.testASaveThatFailsInTheStoreUndoesADeletionWithRelationships` fails at line 509, every run since `d7df43e`.
   - The setup is now deterministic. The store is written, the writable container is released, the store is copied, its WAL is checkpointed with `sqlite3_wal_checkpoint_v2`, and the copy is opened with `allowsSave: false`. Part 1 passes: a deleted brew is restored.
   - Part 2 deletes a scanned bag's shelf entry and, with it, its pending bean. The real `ModelContext.save()` fails (Code 513). After `discardUnsavedChanges()`, `store.bean(localID: pendingBeanID)` returns nil, although no inserted or deleted models are left and the following assertions pass.
