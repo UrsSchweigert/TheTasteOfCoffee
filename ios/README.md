@@ -468,8 +468,8 @@ M2-T12, ADR 0036. Xcode Cloud builds from the repository and uploads to TestFlig
   - post-action: TestFlight internal testing, to an internal group the owner creates;
   - stage: dev (Release uses `Config/Dev.xcconfig`, ADR 0023, until M6).
 - **No secrets** in the workflow (no environment variables holding keys) and none in the repository. Apple manages signing for the workflow.
-- **Build number:** `ci_scripts/ci_pre_xcodebuild.sh` sets `CURRENT_PROJECT_VERSION` to `CI_BUILD_NUMBER` before each build; outside Xcode Cloud it does nothing. The marketing version is in the project file.
-- **Start a build:** in Xcode, Report navigator, Cloud, select the workflow, Start Build; or in App Store Connect, Xcode Cloud, Start Build; or push a tag on `main` if the workflow has that start condition. The build number is shown in the build's list entry and in TestFlight next to the version, for example 1.0 (7).
+- **Build number:** Xcode Cloud numbers its builds itself (the project file still says 1; the first accepted build was 6), so no script sets it. The marketing version is in the project file.
+- **Start a build:** in Xcode, Report navigator, Cloud, select the workflow, Start Build; or in App Store Connect, Xcode Cloud, Start Build; or on a tag change (for example `v*`) if the workflow has that start condition. The build number is shown in the build's list entry and in TestFlight next to the version, for example 0.1.0 (7).
 - **Check the build:** install it from TestFlight on a device and report its build number on M2-T12.
 - **Upload requirements** already in the project: an app icon, `ITSAppUsesNonExemptEncryption = NO`, `PrivacyInfo.xcprivacy`.
 

@@ -505,7 +505,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the unit tests run in the `ios` job. The task ends `needs-mac-verification` until the real sign-in against dev passes in M2-T34.
 
 ### M2-T12 Development team and TestFlight through Xcode Cloud
-- status: needs-mac-verification (repo side done: team, `ios/ci_scripts/ci_pre_xcodebuild.sh`, README "TestFlight (Xcode Cloud)", ADR 0036 `docs/decisions/0036-xcode-cloud-is-the-testflight-route.md`; remains for the owner: the "needs: human" steps below, then report the TestFlight build number installed on a device)
+- status: done (the team is set in the project; the owner set up Xcode Cloud and build 6 was accepted by TestFlight and installed on a device, 2026-11-26; Xcode Cloud numbers its builds itself, no script; README "TestFlight (Xcode Cloud)" and ADR 0036)
 - progress (2026-11-26, lead): the first Xcode Cloud build (1) was refused with ITMS-90022 and ITMS-90713, both because the app had no icon. Done in the app-icon PR: `Assets.xcassets/AppIcon.appiconset` with one 1024-point icon (a placeholder bean, to be replaced by a real design) and `ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon`. Also done there: `INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO` and `PrivacyInfo.xcprivacy` (no tracking; collected data: user id, other user content, photos, all linked and for app functionality; file timestamp API, reason C617.1). Still to do here: the team setting, the build number, the README and the ADR (Release uses Dev.xcconfig on purpose: the internal TestFlight build talks to the dev stage).
 - owner: ios-engineer
 - needs: human. On the owner's Mac, in Xcode: Integrate, then Create Workflow. Grant Xcode Cloud access to the GitHub repository. Pick team `2F695PTZC6` and the App Store Connect app of `app.cupmark.Cupmark`. Create an internal TestFlight group. Start the first build and report its build number once it is installed from TestFlight.
@@ -517,7 +517,7 @@ Planning notes (planned 2026-11-25):
   - The upload is accepted by App Store Connect:
     - `ITSAppUsesNonExemptEncryption` is `NO` (system HTTPS only);
     - `PrivacyInfo.xcprivacy` declares no tracking and the required-reason APIs the app uses, for example `UserDefaults`.
-  - The build number comes from Xcode Cloud (`CI_BUILD_NUMBER`), either through `ios/ci_scripts/ci_pre_xcodebuild.sh` or through Xcode Cloud's managed versioning, as documented.
+  - The build number comes from Xcode Cloud itself (build 6 was the first accepted), as documented.
   - ios/README.md, "TestFlight (Xcode Cloud)", documents the workflow:
     - start condition: manual, or a tag on `main`;
     - action: Archive iOS, scheme `Cupmark`, Release;
