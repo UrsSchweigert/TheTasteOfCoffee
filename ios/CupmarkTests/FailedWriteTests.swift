@@ -426,7 +426,12 @@ final class FailedWriteTests: XCTestCase {
         let pendingBean = try XCTUnwrap(store.bean(localID: pendingBeanID))
         XCTAssertThrowsError(try store.markDeleted(scannedEntry))
 
-        XCTAssertFalse(store.context.hasChanges)
+        // Both ends of the relationship were deleted, and the failed save had already nullified
+        // it: the rollback alone brought the entry back without its bean and twice in the bean's
+        // list. The pass after the rollback sets them to the store's values, which may leave
+        // them as changes of the context, equal to the disk; nothing inserted or deleted is left.
+        XCTAssertTrue(store.context.insertedModelsArray.isEmpty)
+        XCTAssertTrue(store.context.deletedModelsArray.isEmpty)
         XCTAssertEqual(try store.bean(localID: pendingBeanID)?.localID, pendingBeanID)
         XCTAssertEqual(scannedEntry.bean?.localID, pendingBeanID)
         XCTAssertEqual(pendingBean.shelfEntries.map(\.localID), [scannedEntryID])
@@ -434,6 +439,34 @@ final class FailedWriteTests: XCTestCase {
         XCTAssertEqual(try queue(store), expectedQueue)
         XCTAssertEqual(try store.pendingBeanStates()[pendingBeanID], .lookingUp)
         XCTAssertEqual(try savedQueue(store), expectedQueue)
+    }
+
+    /// The same removal as above through the `willSave` hook: a scanned bag's entry and the
+    /// pending bean it leaves, both deleted in one write, come back pointing to each other.
+    func testAFailedRemovalOfAScannedBagsEntryBringsBackTheEntryAndItsPendingBean() throws {
+        let store = try AccountStore.inMemory()
+        let bean = try pendingScan(store)
+        let entry = try XCTUnwrap(bean.shelfEntries.first)
+        failSaves(store)
+
+        XCTAssertThrowsError(try store.markDeleted(entry))
+
+        store.willSave = nil
+        XCTAssertTrue(store.context.insertedModelsArray.isEmpty)
+        XCTAssertTrue(store.context.deletedModelsArray.isEmpty)
+        XCTAssertEqual(try store.bean(localID: bean.localID)?.localID, bean.localID)
+        XCTAssertEqual(entry.bean?.localID, bean.localID)
+        XCTAssertEqual(bean.shelfEntries.map(\.localID), [entry.localID])
+        XCTAssertEqual(try store.shelfEntries().map(\.localID), [entry.localID])
+        XCTAssertEqual(try queue(store), ["look_up bean", "create shelf_entry"])
+
+        try unrelatedSave(store)
+        XCTAssertFalse(store.context.hasChanges)
+        XCTAssertEqual(entry.bean?.localID, bean.localID)
+        XCTAssertEqual(bean.shelfEntries.map(\.localID), [entry.localID])
+        XCTAssertEqual(try savedQueue(store), ["look_up bean", "create shelf_entry", "create recipe"])
+        let savedBean = try saved(StoredShelfEntry.self, in: store) { entries in entries.first?.bean?.localID }
+        XCTAssertEqual(savedBean, bean.localID)
     }
 
     // MARK: - AccountStore writes
