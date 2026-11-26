@@ -6,6 +6,7 @@
 *.pem
 *.mobileprovision
 .claude/settings.local.json
+.claude/worktrees/
 
 # node
 node_modules/
