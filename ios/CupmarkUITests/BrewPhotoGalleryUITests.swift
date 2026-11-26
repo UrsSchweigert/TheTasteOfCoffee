@@ -93,7 +93,7 @@ final class BrewPhotoGalleryUITests: XCTestCase {
         tap(open, in: app) { count.waitForExistence(timeout: 5) }
 
         // All three fixture photos, with the count as the value.
-        waitForCount(app, "value == 'Photos: 3'")
+        waitForCount(app, "value == '3'")
         XCTAssertEqual(count.label, "Brew photos")
         XCTAssertEqual(photoCells(app).count, 3)
         let firstLabel = photoCells(app).element(boundBy: 0).label
@@ -109,7 +109,7 @@ final class BrewPhotoGalleryUITests: XCTestCase {
         XCTAssertFalse(methodLabel.isEmpty)
         firstMethod.tap()
 
-        waitForCount(app, "value BEGINSWITH 'Photos: 2'")
+        waitForCount(app, "value BEGINSWITH '2, filter: '")
         XCTAssertTrue((count.value as? String ?? "").contains(methodLabel), "the value names the filter: \(count.value as? String ?? "none")")
         XCTAssertEqual(photoCells(app).count, 2)
         XCTAssertEqual(methodMenu.value as? String, methodLabel, "the menu's value is the chosen method")
@@ -118,7 +118,7 @@ final class BrewPhotoGalleryUITests: XCTestCase {
         let clear = element("gallery-filter-clear", in: app)
         requireExists(clear, "the clear button", in: app)
         tap(clear, in: app) { !clear.exists }
-        waitForCount(app, "value == 'Photos: 3'")
+        waitForCount(app, "value == '3'")
         XCTAssertEqual(photoCells(app).count, 3)
 
         // A photo opens the viewer, with the same label.

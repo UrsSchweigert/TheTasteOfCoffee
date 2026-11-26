@@ -33,11 +33,14 @@ struct BrewPhotoGalleryBag: Identifiable, Equatable, Sendable {
 /// - Only this store's photos are read (`AccountStore.allBrewPhotos()`: one store per account).
 /// - A photo whose brew is gone or removed on the device (`pendingDelete`) is not shown.
 /// - A filter that no longer exists after a reload (the bag was removed) is cleared.
-/// - The texts come from the String Catalog and the vocabulary labels, with the formatters of
-///   `locale` and `calendar`; tests pin a language by passing its `.lproj` bundle.
+/// - The texts come from the String Catalog and the vocabulary labels (`BrewPhotoTexts`), with
+///   the formatters of `locale` and `calendar`; tests pin a language by passing its `.lproj`
+///   bundle.
 ///
 /// `reload()` reads the store again; the screen calls it when it appears and after every save
-/// of the store (`AccountStore.didSaveNotification`).
+/// of the store (`AccountStore.didSaveNotification`, the sync engine's too), so it does a fixed
+/// number of reads whatever the number of photos: the photos, the brews, the bags and the
+/// photo folder's listing, once each.
 @MainActor
 @Observable
 final class BrewPhotoGalleryModel {
@@ -113,17 +116,27 @@ final class BrewPhotoGalleryModel {
     /// Nov 2026".
     var filterDescription: String? {
         let parts = [methodFilterTitle, bagFilterTitle].compactMap { $0 }
-        return parts.isEmpty ? nil : join(parts)
+        return parts.isEmpty ? nil : makeTexts().join(parts)
     }
 
-    /// The count as shown, and as VoiceOver's value, with the active filter: "Photos: 3" or
-    /// "Photos: 2, filter: Espresso".
+    /// The count as shown, with the active filter: "Photos: 3" or "Photos: 2, filter:
+    /// Espresso".
     var summary: String {
         let number = count.formatted(.number.locale(locale))
         guard let description = filterDescription else {
             return L10n.galleryCount(number, bundle: bundle)
         }
         return L10n.galleryCountFiltered(number, filter: description, bundle: bundle)
+    }
+
+    /// What VoiceOver reads as the count's value, after its label "Brew photos": the number and
+    /// the active filter, "3" or "2, filter: Espresso". The label already says what is counted.
+    var spokenValue: String {
+        let number = count.formatted(.number.locale(locale))
+        guard let description = filterDescription else {
+            return number
+        }
+        return L10n.galleryCountValueFiltered(number, filter: description, bundle: bundle)
     }
 
     func item(id: UUID) -> BrewPhotoGalleryItem? {
@@ -140,40 +153,45 @@ final class BrewPhotoGalleryModel {
 
     func reload() {
         do {
+            let texts = makeTexts()
             let entries = try store.shelfEntries()
             bags = entries.map { entry in
-                BrewPhotoGalleryBag(id: entry.localID, title: bagTitle(of: entry))
+                BrewPhotoGalleryBag(id: entry.localID, title: texts.bagTitle(of: entry))
             }
             if let bagFilter, !bags.contains(where: { $0.id == bagFilter }) {
                 self.bagFilter = nil
             }
-            allItems = try readItems()
+            allItems = try readItems(texts)
             loadFailed = false
         } catch {
             loadFailed = true
         }
     }
 
-    private func readItems() throws -> [BrewPhotoGalleryItem] {
+    private func makeTexts() -> BrewPhotoTexts {
+        BrewPhotoTexts(vocabulary: vocabulary, language: language, locale: locale, calendar: calendar, bundle: bundle)
+    }
+
+    /// One fetch of the photos, one of the brews and one listing of the photo folder, whatever
+    /// the number of photos.
+    private func readItems(_ texts: BrewPhotoTexts) throws -> [BrewPhotoGalleryItem] {
+        let photos = try store.allBrewPhotos()
+        guard !photos.isEmpty else {
+            return []
+        }
+        let brews = try store.brewsByLocalID()
         let files = store.brewPhotoFiles
+        // A file is looked up in the folder's listing, not through `brewPhotoFileURL(of:)`, which
+        // logs a missing file: this runs after every save of the store.
+        let present = Set(files?.entryNames() ?? [])
         var items: [BrewPhotoGalleryItem] = []
-        var brews: [UUID: StoredBrew?] = [:]
-        for photo in try store.allBrewPhotos() {
-            let brew: StoredBrew?
-            if let known = brews[photo.brewLocalID] {
-                brew = known
-            } else {
-                brew = try store.brew(localID: photo.brewLocalID)
-                brews[photo.brewLocalID] = .some(brew)
-            }
+        for photo in photos {
             // The record of a brew that is gone stays until the next sweep; it is not shown.
-            guard let brew, brew.syncState != .pendingDelete else {
+            guard let brew = brews[photo.brewLocalID], brew.syncState != .pendingDelete else {
                 continue
             }
             let name = photo.fileName
-            // Looked up here, not through `brewPhotoFileURL(of:)`, which logs a missing file:
-            // this runs after every save of the store.
-            let url = files.flatMap { $0.fileExists(name) ? $0.url(of: name) : nil }
+            let url = present.contains(name) ? files?.url(of: name) : nil
             let method = brew.method
             let bag = brew.shelfEntry
             items.append(BrewPhotoGalleryItem(
@@ -183,54 +201,9 @@ final class BrewPhotoGalleryModel {
                 method: method,
                 shelfEntryID: bag?.localID,
                 fileURL: url,
-                accessibilityLabel: accessibilityLabel(method: method, bag: bag, date: photo.createdAt)
+                accessibilityLabel: texts.photoLabel(method: method, bag: bag, date: photo.createdAt)
             ))
         }
         return items
-    }
-
-    // MARK: - Texts
-
-    /// Method, bag and date: "Espresso, Ethiopia washed bag, 12 Nov 2026". A method the
-    /// vocabulary does not know is "Brew", a brew without a bag "no bag".
-    private func accessibilityLabel(method: Vocabulary.Method?, bag: StoredShelfEntry?, date: Date) -> String {
-        let methodText = method.map(label(of:)) ?? L10n.galleryMethodUnknown(bundle: bundle)
-        let bagText = bag.map { L10n.galleryPhotoBag(beanText(of: $0), bundle: bundle) } ?? L10n.galleryNoBag(bundle: bundle)
-        return L10n.galleryPhotoLabel(methodText, bag: bagText, date: dayText(date), bundle: bundle)
-    }
-
-    /// The bean of a bag as the shelf shows it, as one line: the Open Food Facts name (else its
-    /// brand), else the attribute labels as a list, else "Bean without details".
-    private func beanText(of entry: StoredShelfEntry) -> String {
-        let summary = ShelfBeanSummary(entry.bean)
-        if summary.hasOpenFoodFactsText, let text = summary.name ?? summary.brand {
-            return text
-        }
-        let labels = summary.attributes.map { row in
-            (try? vocabulary.label(namespace: row.field.namespace, id: row.valueID, language: language)) ?? row.valueID
-        }
-        return labels.isEmpty ? L10n.galleryBeanUnnamed(bundle: bundle) : join(labels)
-    }
-
-    private func bagTitle(of entry: StoredShelfEntry) -> String {
-        let bean = beanText(of: entry)
-        guard let purchase = entry.purchaseDate, let date = ShelfDates.date(of: purchase, calendar: calendar) else {
-            return bean
-        }
-        return L10n.galleryBagOption(bean, bought: dayText(date), bundle: bundle)
-    }
-
-    private func dayText(_ date: Date) -> String {
-        var style = DisplayDate.day
-        style.locale = locale
-        style.calendar = calendar
-        style.timeZone = calendar.timeZone
-        return date.formatted(style)
-    }
-
-    private func join(_ parts: [String]) -> String {
-        let formatter = ListFormatter()
-        formatter.locale = locale
-        return formatter.string(from: parts) ?? parts.joined(separator: ", ")
     }
 }

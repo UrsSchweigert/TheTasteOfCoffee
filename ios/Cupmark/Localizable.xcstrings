@@ -2971,6 +2971,24 @@
         }
       }
     },
+    "gallery.count.value.filtered %@ %@" : {
+      "comment" : "VoiceOver value of the gallery's count with an active filter; first %@ the number, second the filter. The label already says \"Brew photos\".",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, Filter: %2$@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, filter: %2$@"
+          }
+        }
+      }
+    },
     "gallery.empty.filtered" : {
       "comment" : "Shown when the filters match no photo.",
       "extractionState" : "manual",
@@ -5491,6 +5509,78 @@
         }
       }
     },
+    "recipe_detail.brew" : {
+      "comment" : "Button on the recipe screen that starts a brew from the recipe.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mit diesem Rezept brühen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brew from This Recipe"
+          }
+        }
+      }
+    },
+    "recipe_detail.brew.hint" : {
+      "comment" : "VoiceOver hint of the button that starts a brew from the recipe.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffnet einen neuen Brühvorgang für die Packung, mit den Werten dieses Rezepts vorausgefüllt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opens a new brew of the bag, prefilled with the values of this recipe."
+          }
+        }
+      }
+    },
+    "recipe_detail.not_found" : {
+      "comment" : "Shown on the recipe screen when the recipe is gone.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieses Rezept ist nicht mehr verfügbar."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This recipe is no longer available."
+          }
+        }
+      }
+    },
+    "recipe_detail.title" : {
+      "comment" : "Title of the recipe screen reached from the photo viewer.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rezept"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recipe"
+          }
+        }
+      }
+    },
     "recipe_list.delete_failed" : {
       "comment" : "Shown when removing a recipe failed on the device.",
       "extractionState" : "manual",
@@ -7809,6 +7899,312 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sync Issues"
+          }
+        }
+      }
+    },
+    "viewer.delete.failed" : {
+      "comment" : "Shown in the photo viewer when deleting did not work.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Foto konnte nicht gelöscht werden. Es wurde nichts geändert."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The photo could not be deleted. Nothing was changed."
+          }
+        }
+      }
+    },
+    "viewer.delete.label" : {
+      "comment" : "VoiceOver label of the delete button in the photo viewer.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieses Foto löschen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete this photo"
+          }
+        }
+      }
+    },
+    "viewer.detail.dose" : {
+      "comment" : "Name of the coffee dose in the photo viewer.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dosis"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dose"
+          }
+        }
+      }
+    },
+    "viewer.detail.grind" : {
+      "comment" : "Name of the grind in the photo viewer.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mahlgrad"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grind"
+          }
+        }
+      }
+    },
+    "viewer.detail.method" : {
+      "comment" : "Name of the brew method in the photo viewer.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Methode"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Method"
+          }
+        }
+      }
+    },
+    "viewer.detail.ratio" : {
+      "comment" : "Name of the brew ratio in the photo viewer.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verhältnis"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ratio"
+          }
+        }
+      }
+    },
+    "viewer.detail.temperature" : {
+      "comment" : "Name of the water temperature in the photo viewer.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Temperatur"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Temperature"
+          }
+        }
+      }
+    },
+    "viewer.details.header" : {
+      "comment" : "Header of the brew's key details in the photo viewer.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brühvorgang"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brew"
+          }
+        }
+      }
+    },
+    "viewer.link.bag" : {
+      "comment" : "Link from the photo viewer to the brew's bag.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Packung"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This Bag"
+          }
+        }
+      }
+    },
+    "viewer.link.bag.hint" : {
+      "comment" : "VoiceOver hint of the bag link.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffnet die Seite der Packung."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opens the bag's screen."
+          }
+        }
+      }
+    },
+    "viewer.link.brew" : {
+      "comment" : "Link from the photo viewer to the brew and its rating.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieser Brühvorgang und seine Bewertung"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This Brew and Its Rating"
+          }
+        }
+      }
+    },
+    "viewer.link.brew.hint" : {
+      "comment" : "VoiceOver hint of the brew link.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffnet die Bewertung dieses Brühvorgangs."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opens the brew's rating screen."
+          }
+        }
+      }
+    },
+    "viewer.link.recipe" : {
+      "comment" : "Link from the photo viewer to the saved recipe with the brew's values.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rezept mit diesen Werten"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recipe with These Values"
+          }
+        }
+      }
+    },
+    "viewer.link.recipe.hint" : {
+      "comment" : "VoiceOver hint of the recipe link.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zeigt das gespeicherte Rezept mit denselben Werten wie dieser Brühvorgang."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shows the saved recipe with the same values as this brew."
+          }
+        }
+      }
+    },
+    "viewer.links.footer" : {
+      "comment" : "Footer of the viewer links: why the recipe link may be missing.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ein Brühvorgang merkt sich nicht, aus welchem Rezept er stammt. Der Rezeptlink zeigt das gespeicherte Rezept mit denselben Werten, falls es eines gibt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A brew does not store which recipe it came from. The recipe link shows the saved recipe with the same values, if there is one."
+          }
+        }
+      }
+    },
+    "viewer.links.header" : {
+      "comment" : "Header of the links from the photo viewer to the brew, its bag and a recipe.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gehe zu"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Go To"
+          }
+        }
+      }
+    },
+    "viewer.title" : {
+      "comment" : "Title of the brew photo viewer.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Foto"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Photo"
           }
         }
       }

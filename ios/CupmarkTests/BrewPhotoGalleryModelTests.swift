@@ -345,6 +345,36 @@ final class BrewPhotoGalleryModelTests: XCTestCase {
         XCTAssertTrue(both.contains(english.label(of: firstMethod)) && both.contains("Bohne, bought Nov 20, 2026"), both)
     }
 
+    func testVoiceOverReadsOnlyTheNumberAndTheFilterAfterTheLabel() throws {
+        let scenario = try makeScenario(try makeStore())
+        let english = try makeModel(scenario.store)
+        let german = try makeModel(scenario.store, language: .de)
+
+        // The element's label is "Brew photos"; its value does not say "photos" again.
+        XCTAssertEqual(english.spokenValue, "4")
+        XCTAssertEqual(german.spokenValue, "4")
+
+        english.methodFilter = firstMethod
+        german.methodFilter = firstMethod
+        XCTAssertEqual(english.spokenValue, "3, filter: \(english.label(of: firstMethod))")
+        XCTAssertEqual(german.spokenValue, "3, Filter: \(german.label(of: firstMethod))")
+        XCTAssertEqual(english.summary, "Photos: 3, filter: \(english.label(of: firstMethod))", "the text shown is unchanged")
+    }
+
+    func testAReloadKeepsEveryItemAndLabelWhenManyPhotosShareBrewsAndBags() throws {
+        let scenario = try makeScenario(try makeStore())
+        for minute in 10..<30 {
+            try addPhoto(in: scenario.store, to: minute.isMultiple(of: 2) ? scenario.brewA1 : scenario.brewB1, minute: minute)
+        }
+        let model = try makeModel(scenario.store)
+
+        XCTAssertEqual(model.count, 24)
+        XCTAssertEqual(Set(model.allItems.map(\.accessibilityLabel)).count, 3, "one label per brew: the same text is made once per bag")
+        XCTAssertTrue(model.allItems.allSatisfy { $0.fileURL != nil })
+        model.reload()
+        XCTAssertEqual(model.count, 24)
+    }
+
     func testEveryGalleryStringResolvesInEachLanguage() throws {
         for language in VocabularyLanguage.allCases {
             let bundle = try languageBundle(language)

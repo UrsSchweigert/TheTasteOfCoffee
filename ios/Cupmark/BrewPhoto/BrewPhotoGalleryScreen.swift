@@ -5,8 +5,8 @@ import SwiftUI
 /// (`ShelfScreen`).
 struct BrewPhotoGalleryRoute: Hashable {}
 
-/// Pushes the viewer of one brew photo. M2-T43 registers a minimal viewer (the photo full size);
-/// M2-T43b adds the details, the links back and delete.
+/// Pushes the viewer of one brew photo (`BrewPhotoViewerScreen`, M2-T43b). Registered at the
+/// stack root with the gallery's route (`ShelfScreen`).
 struct BrewPhotoRoute: Hashable {
     /// The photo record's `localID`.
     let photoLocalID: UUID
@@ -16,6 +16,9 @@ struct BrewPhotoRoute: Hashable {
 /// of the account, newest first, in an adaptive grid (one column at accessibility text sizes).
 /// Two pick-list filters, method and bag, narrow it; no search box and no text field
 /// (invariant 1). Photos are read from the device only, so it works offline.
+///
+/// The filter menus are the system's: the menu and the checkmark on the chosen entry are drawn
+/// by the system, not in the accent colour.
 ///
 /// Taps to the gallery from the shelf: the gallery button (1). To one photo: the cell (2).
 /// A method filter: the menu, the method (2 more).
@@ -95,15 +98,16 @@ struct BrewPhotoGalleryScreen: View {
         .accessibilityIdentifier("gallery-empty")
     }
 
-    /// The count and the active filter: shown as one line, read as "Brew photos" with the same
-    /// text as its value, so the value changes with every filter.
+    /// The count and the active filter: shown as one line ("Photos: 3"), read as "Brew photos"
+    /// with only the number and the filter as its value ("3"), so the value changes with every
+    /// filter and VoiceOver does not say "photos" twice.
     private var summary: some View {
         Text(verbatim: model.summary)
             .font(.subheadline)
             .accentText()
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(L10n.gallerySummaryLabel))
-            .accessibilityValue(Text(verbatim: model.summary))
+            .accessibilityValue(Text(verbatim: model.spokenValue))
             .accessibilityIdentifier("gallery-count")
     }
 
@@ -140,7 +144,7 @@ struct BrewPhotoGalleryScreen: View {
                 }
             }
         } label: {
-            filterLabel(title: L10n.galleryFilterMethod, value: model.methodFilterTitle, any: L10n.galleryFilterAnyMethod)
+            filterLabel(title: L10n.galleryFilterMethod, value: model.methodFilterTitle, anyTitle: L10n.galleryFilterAnyMethod)
         }
         .buttonStyle(.bordered)
         .accessibilityLabel(Text(L10n.galleryFilterMethod))
@@ -159,7 +163,7 @@ struct BrewPhotoGalleryScreen: View {
                 }
             }
         } label: {
-            filterLabel(title: L10n.galleryFilterBag, value: model.bagFilterTitle, any: L10n.galleryFilterAnyBag)
+            filterLabel(title: L10n.galleryFilterBag, value: model.bagFilterTitle, anyTitle: L10n.galleryFilterAnyBag)
         }
         .buttonStyle(.bordered)
         .accessibilityLabel(Text(L10n.galleryFilterBag))
@@ -191,7 +195,7 @@ struct BrewPhotoGalleryScreen: View {
     }
 
     /// The menu's face: the filter's name and its choice.
-    private func filterLabel(title: LocalizedStringKey, value: String?, any: LocalizedStringKey) -> some View {
+    private func filterLabel(title: LocalizedStringKey, value: String?, anyTitle: LocalizedStringKey) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
                 .font(.caption)
@@ -200,7 +204,7 @@ struct BrewPhotoGalleryScreen: View {
                 if let value {
                     Text(verbatim: value)
                 } else {
-                    Text(any)
+                    Text(anyTitle)
                 }
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.caption2)
@@ -251,7 +255,7 @@ private struct BrewPhotoGalleryCell: View {
 private struct BrewPhotoGalleryThumbnail: View {
     let url: URL?
     let side: CGFloat
-    @State private var thumbnail: BrewPhotoThumbnails.Thumbnail?
+    @State private var loaded: BrewPhotoThumbnails.Loaded?
     @Environment(\.displayScale) private var displayScale
     @Environment(\.scenePhase) private var scenePhase
 
@@ -263,8 +267,8 @@ private struct BrewPhotoGalleryThumbnail: View {
 
     var body: some View {
         ZStack {
-            if let thumbnail {
-                Image(decorative: thumbnail.image, scale: 1)
+            if let loaded, loaded.url == url {
+                Image(decorative: loaded.thumbnail.image, scale: 1)
                     .resizable()
                     .scaledToFill()
             } else {
@@ -277,11 +281,12 @@ private struct BrewPhotoGalleryThumbnail: View {
         .frame(width: side, height: side)
         .clipped()
         .task(id: LoadKey(url: url, pixels: pixels, isActive: scenePhase == .active)) {
-            guard let url, pixels > 1 else {
-                thumbnail = nil
+            // Before the cell has a width nothing is read. A failed load keeps the image already
+            // shown, and one that is shown is not read again when the app becomes active.
+            guard pixels > 1 else {
                 return
             }
-            thumbnail = await BrewPhotoThumbnails.loadWithRetry(url, maxPixelSize: pixels)
+            loaded = await BrewPhotoThumbnails.updated(loaded, for: url, maxPixelSize: pixels)
         }
     }
 
@@ -289,75 +294,5 @@ private struct BrewPhotoGalleryThumbnail: View {
     private var pixels: Int {
         let exact = Int((side * displayScale).rounded(.up))
         return exact <= 0 ? 0 : (exact + 15) / 16 * 16
-    }
-}
-
-/// The minimal viewer of M2-T43: one photo, as large as the screen, with its label for
-/// VoiceOver. M2-T43b replaces the body with the details, the links and delete; the route and
-/// its registration stay.
-struct BrewPhotoViewerScreen: View {
-    @State private var model: BrewPhotoGalleryModel
-    let photoID: UUID
-    @State private var image: BrewPhotoThumbnails.Thumbnail?
-    @Environment(\.scenePhase) private var scenePhase
-
-    /// The longest side of the picture shown, in pixels: larger than any iPhone screen.
-    private static let pixels = 2048
-
-    init(store: AccountStore, photo photoID: UUID, vocabulary: VocabularyStore, language: VocabularyLanguage) {
-        self.photoID = photoID
-        _model = State(initialValue: BrewPhotoGalleryModel(store: store, vocabulary: vocabulary, language: language))
-    }
-
-    var body: some View {
-        ScrollView {
-            if let item = model.item(id: photoID) {
-                VStack(spacing: 12) {
-                    if let image {
-                        Image(decorative: image.image, scale: 1)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxWidth: .infinity)
-                            .accessibilityElement(children: .ignore)
-                            .accessibilityLabel(Text(verbatim: item.accessibilityLabel))
-                            .accessibilityAddTraits(.isImage)
-                            .accessibilityIdentifier("gallery-viewer-photo")
-                    } else if item.fileURL == nil {
-                        Text(L10n.brewPhotosFileMissing)
-                            .secondaryText()
-                    } else {
-                        ProgressView()
-                            .accessibilityHidden(true)
-                    }
-                }
-                .padding()
-                .task(id: item.fileURL) {
-                    guard let url = item.fileURL else {
-                        image = nil
-                        return
-                    }
-                    image = await BrewPhotoThumbnails.loadWithRetry(url, maxPixelSize: BrewPhotoViewerScreen.pixels)
-                }
-            } else {
-                Text(L10n.galleryViewerNotFound)
-                    .secondaryText()
-                    .padding()
-                    .accessibilityIdentifier("gallery-viewer-not-found")
-            }
-        }
-        .screenBackground()
-        .navigationTitle(Text(L10n.galleryTitle))
-        .navigationBarTitleDisplayMode(.inline)
-        .onAppear {
-            model.reload()
-        }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active {
-                model.reload()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: AccountStore.didSaveNotification, object: model.store)) { _ in
-            model.reload()
-        }
     }
 }
