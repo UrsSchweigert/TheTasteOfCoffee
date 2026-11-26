@@ -26,5 +26,5 @@ How the numbers are shown:
 ## Consequences
 
 - No backend change and no cost.
-- The thresholds (2 rated brews, 8 weeks, 5 notes) are constants in one place in the statistics code, with tests.
+- The thresholds (2 rated brews, 8 weeks, 5 notes) are constants in one place in the statistics code (`StatisticsRules`), with tests. They are also stated in docs/04 and ios/README.md, so a change to them updates all four.
 - Community statistics (M3, paid) use the server aggregates instead, with their 5-rater rule (invariant 4).

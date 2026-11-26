@@ -792,7 +792,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T28 Personal statistics
-- status: todo
+- status: done (built and tested by the macOS `ios` job in its pull request; the set is in ADR 0027)
 - owner: ios-engineer
 - depends: M2-T20
 - implements: docs/03-project-brief.md, Tiers ("Own statistics and taste profile"); docs/04-specification.md, F2 and F3
