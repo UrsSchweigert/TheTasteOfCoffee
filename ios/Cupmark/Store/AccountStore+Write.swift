@@ -80,7 +80,7 @@ enum DiscardFault: Hashable, CaseIterable {
     var assertionMessage: String {
         switch self {
         case .savedValuesUnreadable: return "A failed write could not read the saved values of a changed model; it was only rolled back."
-        case .relationshipsNotSettled: return "A failed write's relationship passes did not settle after the rollback."
+        case .relationshipsNotSettled: return "A failed write's restore passes (attributes and relationships) did not settle after the rollback."
         case .relationshipUnresolved: return "A failed write could not resolve a saved relationship target after the rollback."
         case .savedModelNotFound: return "A failed write left a saved model that a fetch does not find."
         }
@@ -102,6 +102,14 @@ protocol SavedValuesRestorable: PersistentModel {
     /// The same model as last saved, read through `context` (a fresh context on the store's
     /// container), nil when the store does not have it.
     static func savedCopy(of model: Self, in context: ModelContext) throws -> Self?
+
+    /// `savedCopy` of each of `models`, in their order. A default runs one fetch per model;
+    /// the busy types run one fetch for all (M2-T37).
+    static func savedCopies(of models: [Self], in context: ModelContext) throws -> [Self?]
+
+    /// The saved values of the models of `models` that are of this type, by live model. A
+    /// requirement, so `capturePendingSave` can call it on a model's dynamic type.
+    static func captureSavedValues(of models: [any PersistentModel], from saved: ModelContext) throws -> [ObjectIdentifier: SavedValuesCapture]
 
     /// Every stored property but the key `savedCopy` finds the model by. The schema test
     /// checks that nothing else is left out.
@@ -327,12 +335,37 @@ struct PendingSave {
 }
 
 extension SavedValuesRestorable {
+    /// One `savedCopy` per model. The models the Puller saves by the hundred override it with
+    /// one fetch per call (`savedCopies` below in this file).
+    static func savedCopies(of models: [Self], in context: ModelContext) throws -> [Self?] {
+        try models.map { model in try savedCopy(of: model, in: context) }
+    }
+
+    /// The saved values of every model of `models` that is of this type and that the store
+    /// has, read through `saved` with one `savedCopies` call, by live model.
+    static func captureSavedValues(of models: [any PersistentModel], from saved: ModelContext) throws -> [ObjectIdentifier: SavedValuesCapture] {
+        let typed = models.compactMap { model in model as? Self }
+        let copies = try savedCopies(of: typed, in: saved)
+        var captures: [ObjectIdentifier: SavedValuesCapture] = [:]
+        for (model, copy) in zip(typed, copies) {
+            if let copy {
+                captures[ObjectIdentifier(model)] = model.captureSavedValues(copy: copy, source: saved)
+            }
+        }
+        return captures
+    }
+
     /// The saved values of this model, read now through `saved` (a fresh context on the
     /// store's container), nil when the store does not have it. Throws when it cannot be read.
     func captureSavedValues(from saved: ModelContext) throws -> SavedValuesCapture? {
         guard let copy = try Self.savedCopy(of: self, in: saved) else {
             return nil
         }
+        return captureSavedValues(copy: copy, source: saved)
+    }
+
+    /// The saved values of this model as `copy` (read through `source`) holds them.
+    func captureSavedValues(copy: Self, source saved: ModelContext) -> SavedValuesCapture {
         let values = Self.restoredProperties.map { property in
             (name: property.name, kind: property.kind, value: property.capture(copy))
         }
@@ -436,7 +469,7 @@ extension AccountStore {
         case .savedValuesUnreadable:
             writeLogger.fault("A failed write could not read the saved values of a changed model; it was only rolled back.")
         case .relationshipsNotSettled:
-            writeLogger.fault("A failed write's relationship passes did not settle after the rollback.")
+            writeLogger.fault("A failed write's restore passes (attributes and relationships) did not settle after the rollback.")
         case .relationshipUnresolved:
             writeLogger.fault("A failed write could not resolve a saved relationship target after the rollback.")
         case .savedModelNotFound:
@@ -462,10 +495,15 @@ extension AccountStore {
     /// a discard that read the saved values only then left an outbox operation's
     /// `attemptCount` and `sentWithoutAnswer` at the failed write's values, also with the
     /// attributes checked again after the rollback and with the models listed before the save.
-    /// What a fresh context answers once such a save failed is therefore not trusted. The
-    /// cost on the success path is one fresh context and one fetch by key per changed or
-    /// deleted model of the save.
+    /// What a fresh context answers once such a save failed is therefore not trusted.
+    ///
+    /// The pending changes are processed first, so the models the save writes on the side
+    /// are listed and captured too: the inverse of a relationship set (a bean's
+    /// `shelfEntries` when an entry's `bean` is set) and the models the delete rules change
+    /// (nullify). The cost on the success path is one fresh context and one fetch per model
+    /// type of the save (`savedCopies`), linear in the number of models.
     func capturePendingSave() -> PendingSave {
+        context.processPendingChanges()
         let pending = context.changedModelsArray + context.deletedModelsArray
         guard !pending.isEmpty else {
             return PendingSave()
@@ -473,33 +511,51 @@ extension AccountStore {
         let saved = ModelContext(container)
         saved.autosaveEnabled = false
         var result = PendingSave()
+        var groups: [ObjectIdentifier: (type: any SavedValuesRestorable.Type, models: [any PersistentModel])] = [:]
         for model in pending {
             let key = ObjectIdentifier(model)
             result.models.insert(key)
             guard failedSaveCaptures[key] == nil, let restorable = model as? any SavedValuesRestorable else {
                 continue
             }
-            // Not readable now: if the save fails, the discard reads it then (and says so if
-            // it cannot).
-            if let capture = try? restorable.captureSavedValues(from: saved) {
-                result.captures[key] = capture
+            let modelType = type(of: restorable)
+            groups[ObjectIdentifier(modelType), default: (modelType, [])].models.append(model)
+        }
+        for group in groups.values {
+            do {
+                result.captures.merge(try group.type.captureSavedValues(of: group.models, from: saved)) { first, _ in first }
+            } catch {
+                // If the save fails, the discard reads these models after the failure, which
+                // may give the failed write's values (see above).
+                writeLogger.error("A save could not capture the saved values of its models; a failure would read them afterwards.")
             }
         }
         return result
     }
 
-    /// Called by `save()` after `ModelContext.save()`. A success writes the models of the
-    /// save, so their held captures are stale and go; the others stay (their rows did not
-    /// change). A failure keeps the save's captures for every later discard, also one called
-    /// without anything listed (the engine's `catch`, `write`'s end), until those models are
-    /// saved.
+    /// Called by `save()` after `ModelContext.save()`. A failure keeps the save's captures for
+    /// every later discard, also one called without anything listed (the engine's `catch`,
+    /// `write`'s end), until those models are saved.
+    ///
+    /// A success writes the models of the save, so their held captures go. It also drops
+    /// every other held capture that no longer matches: one of a model that was deleted, or
+    /// whose values differ from the live model. Right after a successful save the live models
+    /// are what is on disk, so such a capture is stale (a row the save changed on the side,
+    /// for example a bean that got a second entry), and restoring it later would undo a
+    /// confirmed write. A held capture equal to the live model is the disk's and stays.
     func finishSave(_ pending: PendingSave, succeeded: Bool) {
-        if succeeded {
-            for key in pending.models {
-                failedSaveCaptures[key] = nil
-            }
-        } else {
+        guard succeeded else {
             failedSaveCaptures.merge(pending.captures) { held, _ in held }
+            return
+        }
+        for key in pending.models {
+            failedSaveCaptures[key] = nil
+        }
+        guard !failedSaveCaptures.isEmpty else {
+            return
+        }
+        failedSaveCaptures = failedSaveCaptures.filter { _, capture in
+            !capture.model.isDeleted && capture.model.modelContext != nil && capture.differing().isEmpty
         }
     }
 
@@ -727,6 +783,15 @@ extension AccountStore {
 
 // MARK: - The models
 
+/// The fetched copies in the order of `models`, matched by `key` (unique, so at most one each).
+private func matched<Model: PersistentModel>(_ models: [Model], _ found: [Model], key: KeyPath<Model, UUID>) -> [Model?] {
+    var byKey: [UUID: Model] = [:]
+    for copy in found where byKey[copy[keyPath: key]] == nil {
+        byKey[copy[keyPath: key]] = copy
+    }
+    return models.map { model in byKey[model[keyPath: key]] }
+}
+
 // The models are found by `localID` (unique, never changed after insert), the operations by
 // `sequence` (never changed after insert; the engine finds them by it too).
 
@@ -736,6 +801,12 @@ extension StoredBean: SavedValuesRestorable {
         var descriptor = FetchDescriptor<StoredBean>(predicate: #Predicate<StoredBean> { bean in bean.localID == localID })
         descriptor.fetchLimit = 1
         return try context.fetch(descriptor).first
+    }
+
+    static func savedCopies(of models: [StoredBean], in context: ModelContext) throws -> [StoredBean?] {
+        let ids = models.map(\.localID)
+        let found = try context.fetch(FetchDescriptor<StoredBean>(predicate: #Predicate<StoredBean> { bean in ids.contains(bean.localID) }))
+        return matched(models, found, key: \.localID)
     }
 
     static var restoredProperties: [RestoredProperty<StoredBean>] {
@@ -777,6 +848,12 @@ extension StoredShelfEntry: SavedValuesRestorable {
         return try context.fetch(descriptor).first
     }
 
+    static func savedCopies(of models: [StoredShelfEntry], in context: ModelContext) throws -> [StoredShelfEntry?] {
+        let ids = models.map(\.localID)
+        let found = try context.fetch(FetchDescriptor<StoredShelfEntry>(predicate: #Predicate<StoredShelfEntry> { entry in ids.contains(entry.localID) }))
+        return matched(models, found, key: \.localID)
+    }
+
     static var restoredProperties: [RestoredProperty<StoredShelfEntry>] {
         [
             .attribute("serverID", \.serverID),
@@ -804,6 +881,12 @@ extension StoredBrew: SavedValuesRestorable {
         var descriptor = FetchDescriptor<StoredBrew>(predicate: #Predicate<StoredBrew> { brew in brew.localID == localID })
         descriptor.fetchLimit = 1
         return try context.fetch(descriptor).first
+    }
+
+    static func savedCopies(of models: [StoredBrew], in context: ModelContext) throws -> [StoredBrew?] {
+        let ids = models.map(\.localID)
+        let found = try context.fetch(FetchDescriptor<StoredBrew>(predicate: #Predicate<StoredBrew> { brew in ids.contains(brew.localID) }))
+        return matched(models, found, key: \.localID)
     }
 
     static var restoredProperties: [RestoredProperty<StoredBrew>] {
@@ -836,6 +919,12 @@ extension StoredRecipe: SavedValuesRestorable {
         var descriptor = FetchDescriptor<StoredRecipe>(predicate: #Predicate<StoredRecipe> { recipe in recipe.localID == localID })
         descriptor.fetchLimit = 1
         return try context.fetch(descriptor).first
+    }
+
+    static func savedCopies(of models: [StoredRecipe], in context: ModelContext) throws -> [StoredRecipe?] {
+        let ids = models.map(\.localID)
+        let found = try context.fetch(FetchDescriptor<StoredRecipe>(predicate: #Predicate<StoredRecipe> { recipe in ids.contains(recipe.localID) }))
+        return matched(models, found, key: \.localID)
     }
 
     static var restoredProperties: [RestoredProperty<StoredRecipe>] {
@@ -888,6 +977,17 @@ extension OutboxOperation: SavedValuesRestorable {
         )
         descriptor.fetchLimit = 1
         return try context.fetch(descriptor).first
+    }
+
+    /// One fetch by sequence; an operation matches only with its local id too, as in
+    /// `savedCopy`.
+    static func savedCopies(of models: [OutboxOperation], in context: ModelContext) throws -> [OutboxOperation?] {
+        let sequences = models.map(\.sequence)
+        let found = try context.fetch(FetchDescriptor<OutboxOperation>(predicate: #Predicate<OutboxOperation> { operation in sequences.contains(operation.sequence) }))
+        let bySequence = Dictionary(grouping: found) { operation in operation.sequence }
+        return models.map { model in
+            bySequence[model.sequence]?.first { operation in operation.localID == model.localID }
+        }
     }
 
     static var restoredProperties: [RestoredProperty<OutboxOperation>] {

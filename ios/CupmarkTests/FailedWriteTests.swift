@@ -298,6 +298,67 @@ final class FailedWriteTests: XCTestCase {
         XCTAssertEqual(brew.doseDg, 222)
     }
 
+    /// Holds a capture of `bean` as a failed save in the store would: a bean edit is captured,
+    /// the save "fails" (`finishSave(_:succeeded: false)`), and the discard puts it back.
+    private func holdCapture(of bean: StoredBean, in store: AccountStore) throws {
+        bean.pickedProcessID = try StoreFixtures.last(Vocabulary.Process.self).rawValue
+        let pending = store.capturePendingSave()
+        XCTAssertNotNil(pending.captures[ObjectIdentifier(bean)])
+        store.finishSave(pending, succeeded: false)
+        store.discardUnsavedChanges()
+        XCTAssertNotNil(store.failedSaveCaptures[ObjectIdentifier(bean)], "held after the failed save")
+    }
+
+    /// M2-T37 review: a held capture must not outlive its row. A later successful save that
+    /// changes the bean on the side (a second entry names it) makes the capture stale, so it
+    /// goes; a later discard then leaves the new entry with its bean.
+    func testAHeldCaptureGoesWhenASuccessfulSaveChangesItsModelOnTheSide() throws {
+        let store = try AccountStore.inMemory()
+        let recorder = recordFaults(store)
+        let bean = try otherBean(in: store)
+        let first = StoredShelfEntry(try StoreFixtures.shelfEntryInput(), serverID: FakeSyncBackend.id(951))
+        try store.addShelfEntry(first, bean: bean, syncState: .synced)
+        try holdCapture(of: bean, in: store)
+
+        let second = StoredShelfEntry(try StoreFixtures.shelfEntryInput(), serverID: FakeSyncBackend.id(952))
+        try store.addShelfEntry(second, bean: bean, syncState: .synced)
+
+        XCTAssertNil(store.failedSaveCaptures[ObjectIdentifier(bean)], "stale after the save")
+        let report = store.discardUnsavedChangesReporting()
+        XCTAssertEqual(second.bean?.localID, bean.localID, "\(report)")
+        XCTAssertEqual(Set(bean.shelfEntries.map(\.localID)), [first.localID, second.localID], "\(report)")
+        XCTAssertEqual(recorder.faults, [])
+        try unrelatedSave(store)
+        let savedBeans = try saved(StoredShelfEntry.self, in: store) { entries in
+            Set(entries.compactMap { entry in entry.bean?.localID })
+        }
+        XCTAssertEqual(savedBeans, [bean.localID])
+        XCTAssertEqual(try saved(StoredShelfEntry.self, in: store) { entries in entries.count }, 2)
+    }
+
+    /// The same with a delete: the entry in the held capture is removed by a successful save,
+    /// so the capture goes and a later discard reports nothing unresolved.
+    func testAHeldCaptureGoesWhenASuccessfulSaveDeletesWhatItNames() throws {
+        let store = try AccountStore.inMemory()
+        let recorder = recordFaults(store)
+        let bean = try otherBean(in: store)
+        // Made on the device and never sent, so its removal deletes it at once.
+        let entry = StoredShelfEntry(try StoreFixtures.shelfEntryInput())
+        try store.addShelfEntry(entry, bean: bean)
+        try holdCapture(of: bean, in: store)
+
+        try store.markDeleted(entry)
+
+        XCTAssertNil(store.failedSaveCaptures[ObjectIdentifier(bean)])
+        XCTAssertTrue(store.failedSaveCaptures.isEmpty, "the entry's own capture went too, if it had one")
+        let report = store.discardUnsavedChangesReporting()
+        XCTAssertEqual(recorder.faults, [], "\(report)")
+        XCTAssertFalse(store.needsReopening)
+        XCTAssertTrue(bean.shelfEntries.isEmpty)
+        try unrelatedSave(store)
+        XCTAssertEqual(try savedQueue(store), ["create recipe"])
+    }
+
     /// Relationship passes that never settle (a restore that keeps changing something, which a
     /// real store cannot be made to do on purpose) run 3 times, are reported, and the store
     /// refuses every later save until it is opened again.
@@ -889,10 +950,18 @@ final class FailedWriteTests: XCTestCase {
         ].joined(separator: " | ")
         XCTAssertEqual(lookUp.attemptCount, attempts, facts)
         XCTAssertFalse(lookUp.sentWithoutAnswer, facts)
-        if let file = fileValues(ofOperation: sequence, in: storeFile) {
-            XCTAssertEqual(file.attemptCount, Int64(attempts), "the file keeps the saved value; \(facts)")
-            XCTAssertEqual(file.sentWithoutAnswer, 0, facts)
-        }
+        // The file is read past SwiftData, so these checks cannot be skipped silently.
+        XCTAssertNotNil(fileBefore, "the SQLite row could not be read before; \(facts)")
+        let fileAfter = fileValues(ofOperation: sequence, in: storeFile)
+        XCTAssertNotNil(fileAfter, "the SQLite row could not be read after; \(facts)")
+        XCTAssertEqual(fileBefore?.attemptCount, Int64(attempts), facts)
+        XCTAssertEqual(fileAfter?.attemptCount, Int64(attempts), "the file keeps the saved value; \(facts)")
+        XCTAssertEqual(fileAfter?.sentWithoutAnswer, 0, facts)
+        // The capture held for the operation (taken before part 2's failed save) is what the
+        // file holds: the live operation equals both.
+        let held = store.failedSaveCaptures[ObjectIdentifier(lookUp)]
+        XCTAssertNotNil(held, "the operation's capture is held; \(facts)")
+        XCTAssertEqual(held?.differing(), [], "the held capture equals the live operation, which equals the file; \(facts)")
         try checkScannedBagIsBack("after an engine discard")
     }
 
