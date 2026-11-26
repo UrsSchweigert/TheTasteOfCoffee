@@ -249,7 +249,7 @@ if [[ $LOOKUPS_ONLY -eq 0 ]]; then
         fail "presigned POST: unknown form field $bad_field"
       else
         # No Authorization header: the presigned policy authorises the upload.
-        s3_status="$(curl -sS --max-time 30 -o "$tmp/s3-body" -w '%{http_code}' "${form[@]}" -F "file=@$tmp/label.jpg;type=image/jpeg" "$UPLOAD_URL" || true)"
+        s3_status="$(curl -sS --max-time 30 -o "$tmp/s3-body" -w '%{http_code}' ${form[@]+"${form[@]}"} -F "file=@$tmp/label.jpg;type=image/jpeg" "$UPLOAD_URL" || true)"
         if [[ "$s3_status" == "204" ]]; then
           pass "S3 presigned POST of a $(wc -c <"$tmp/label.jpg" | tr -d ' ')-byte JPEG: 204"
           call POST "/label_photos/$PHOTO_ID/complete"

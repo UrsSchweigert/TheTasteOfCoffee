@@ -108,7 +108,8 @@ note "Preflight: $REGION, Node $node_version, main at $(git log -1 --format=%h)$
 step 1 "Guardrails (#45): scripts/aws/apply-guardrails.sh"
 guard_args=()
 [[ $APPLY -eq 1 ]] && guard_args=(--apply)
-"$HERE/apply-guardrails.sh" "${guard_args[@]}" 2>&1 | mask || die "apply-guardrails.sh failed; see its output above"
+# ${arr[@]+"${arr[@]}"}: macOS bash 3.2 treats an empty array as unbound under set -u.
+"$HERE/apply-guardrails.sh" ${guard_args[@]+"${guard_args[@]}"} 2>&1 | mask || die "apply-guardrails.sh failed; see its output above"
 if [[ $APPLY -eq 1 ]]; then note "#45: guardrails applied (CupmarkBoundary, CupmarkCfnExecution)"; else note "#45: guardrails dry run"; fi
 
 # ---------------------------------------------------------------------------------------
