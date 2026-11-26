@@ -1074,6 +1074,23 @@ Planning notes (planned 2026-11-25):
   - VoiceOver labels and values, 44-point targets, Dynamic Type, theme colours, no free text.
   - Mac: the `ios` job. Marked `needs-mac-verification` until it passes.
 
+### M2-T48 Averages in context: markers on the rating sliders, a summary at the top of the coffee, averages on the brew list
+- status: in-progress
+- owner: ios-engineer
+- depends: M2-T44, M2-T20
+- implements: owner feedback of 2026-11-26 after testing the TestFlight build ("I would want the community ratings and my ratings to be visible as an indication on the slider or right next to where I look at my things, rather than having to scroll down and lose the context"); M2-T44 (the averages of one coffee), ADR 0027 addendum
+- decisions (owner, 2026-11-26): the averages appear (1) on the rating sliders, (2) at the top of the coffee's screen, (3) on the brew list rows; on the sliders the marker is shown only after the user has moved that slider (so the average does not anchor the rating); it is for comparison afterwards.
+- note: the community numbers do not exist before M3 and are paid beyond the overall score (M4); this task shows the user's OWN averages and leaves the community slot (optional value, hidden while nil) where M4 attaches the community mean. Anchoring is the reason for "after the slider has been moved".
+- acceptance:
+  - **Rating sliders** (`RatingScreen`): each criterion slider gets a marker (a small tick or diamond in a Theme colour distinct from the thumb, never the system blue) at the mean of the user's OTHER rated, not removed brews of the same shelf entry (the brew being rated is left out), with its number next to the slider ("Your average for this coffee 7.5"), only once the user has set a score for that criterion in this rating, and only when at least one other rated brew has that criterion. Editing an existing rating shows the markers at once (the score is set). The marker updates when the user moves the slider no further (it is a fixed average, not the live score). It never changes the slider's value or behaviour.
+  - A community marker slot: the same row model gets an optional community value (mean and number of raters), drawn as a second marker with its own label while non-nil and hidden while nil (M4; free users see only the overall, ADR 0027 addendum and M4 scope). No server call, no contract change here.
+  - **Top of the coffee screen** (`ShelfEntryEditorScreen`): a compact summary row at the very top for a stored entry with rated brews: the mean overall score and the number of rated brews ("Overall 7.4, rated brews 3"), a tap scrolls to or expands the dimension section of M2-T44 (which stays as it is). Empty and one-brew states as in M2-T44, no zeros.
+  - **Brew list rows** (`BrewListScreen`): each rated row shows its own overall score and, next to it, the coffee's average overall ("avg 7.4") so a brew is read against the others at a glance; unrated rows show neither; one rated brew shows no average.
+  - All numbers come from the existing pure function `StatisticsRules.coffeeAverages` (extend it with an "excluding this brew" parameter; no second implementation) and are tested with fixtures: the brew being rated is excluded; a removed brew; an unrated brew; an older vocabulary version; two bags of the same bean (each own brews only); one other rated brew; none.
+  - VoiceOver: the slider keeps its label and value ("Aroma, 7 of 10"); the marker is one extra element or the slider's hint, read as "Your average for this coffee, 7.5 of 10", available after the score is set; the summary row and the brew list averages have labels and values; 44-point targets, Dynamic Type (marker labels stack or move under the slider at accessibility sizes), colours only from Theme, strings through the catalogue in en and de (no plural forms), no typed text.
+  - Tests: unit tests of the pure function change and of the rating model's marker state (hidden before the score is set, shown after, shown when editing, excluded brew); UI tests with the harness (M2-T33, Debug-only) for the marker after moving a slider, for the summary row, and for the brew list averages. The strengthened navigation test stays green.
+  - Mac: the `ios` job. Marked `needs-mac-verification` until it passes.
+
 ## M3 Aggregation
 
 Goal: aggregates per bean and per method stay correct under create, edit, delete and replay. Not yet planned.
@@ -1084,7 +1101,7 @@ Scope: stream aggregator, rater markers, recipe histogram buckets, nightly ranki
 
 Goal: subscribers see Explore; free users see the give-to-get teaser. Not yet planned.
 
-Scope: StoreKit 2 purchase and restore, transaction verification, App Store Server Notifications route, entitlement on the profile, paid API routes, Explore screens (bean page, method breakdown, top recipes, rankings), paywall; the community mean and number of raters per dimension appear next to the user's own averages on the shelf entry screen of M2-T44, labelled as the bean's community numbers (free users see the community overall only for beans they rated, the rest is paid); the privacy manifest gains a purchase-history entry when StoreKit 2 lands (from the review of #84).
+Scope: StoreKit 2 purchase and restore, transaction verification, App Store Server Notifications route, entitlement on the profile, paid API routes, Explore screens (bean page, method breakdown, top recipes, rankings), paywall; the community mean and number of raters per dimension appear next to the user's own averages on the shelf entry screen of M2-T44, labelled as the bean's community numbers and as a second marker on the rating sliders of M2-T48 (shown after the user has set their own score, so it does not anchor the rating) (free users see the community overall only for beans they rated, the rest is paid); the privacy manifest gains a purchase-history entry when StoreKit 2 lands (from the review of #84).
 
 ## M5 Hardening
 
