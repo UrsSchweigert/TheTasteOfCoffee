@@ -188,14 +188,14 @@ jobs:
           base=""
           checked=0
           for page in 1 2; do
-            runs="$(gh api "repos/$REPO/actions/workflows/deploy.yml/runs?event=workflow_run&status=success&branch=main&per_page=50&page=$page" --jq '.workflow_runs[] | "\(.id) \(.head_sha)"' 2>/dev/null)" || break
+            runs="$(gh api "repos/$REPO/actions/workflows/deploy.yml/runs?event=workflow_run&status=success&branch=main&per_page=50&page=$page" --jq '.workflow_runs[] | "\(.id) \(.head_sha)"')" || break
             [ -n "$runs" ] || break
             while read -r id cand; do
               [[ "$id" =~ ^[0-9]+$ ]] || continue
               sha_ok "$cand" || continue
               checked=$((checked + 1))
               [ "$checked" -le 40 ] || break
-              ok="$(gh api "repos/$REPO/actions/runs/$id/jobs?per_page=100" --jq '[.jobs[] | select(.name == "deploy dev" and .conclusion == "success")] | length' 2>/dev/null)" || continue
+              ok="$(gh api "repos/$REPO/actions/runs/$id/jobs?per_page=100" --jq '[.jobs[] | select(.name == "deploy dev" and .conclusion == "success")] | length')" || continue
               if [[ "$ok" =~ ^[0-9]+$ ]] && [ "$ok" -ge 1 ]; then base="$cand"; break; fi
             done <<< "$runs"
             if [ -n "$base" ] || [ "$checked" -ge 40 ]; then break; fi
@@ -203,13 +203,18 @@ jobs:
           [ -n "$base" ] || deploy_now "no earlier successful dev deploy found"
           echo "Last deployed commit: $base"
           if [ "$base" = "$HEAD_SHA" ]; then skip "$base is already deployed"; fi
-          out="$(gh api "repos/$REPO/compare/$base...$HEAD_SHA" --jq '.status, (.files // [] | length), (.files // [] | .[] | .filename, (.previous_filename // empty))' 2>/dev/null)" || deploy_now "could not compare with $base"
+          # Lines: status, ahead_by, file count, then the file names. A missing or non-array
+          # `files` (GitHub may omit it for a huge diff) gives "x" as the count: unknown.
+          out="$(gh api "repos/$REPO/compare/$base...$HEAD_SHA" --jq '.status, (if (.ahead_by | type) == "number" then .ahead_by else "x" end), (if (.files | type) == "array" then (.files | length) else "x" end), (if (.files | type) == "array" then (.files[] | .filename, (.previous_filename // empty)) else empty end)')" || deploy_now "could not compare with $base"
           status="$(printf '%s\n' "$out" | sed -n 1p)"
-          count="$(printf '%s\n' "$out" | sed -n 2p)"
-          files="$(printf '%s\n' "$out" | tail -n +3)"
+          ahead="$(printf '%s\n' "$out" | sed -n 2p)"
+          count="$(printf '%s\n' "$out" | sed -n 3p)"
+          files="$(printf '%s\n' "$out" | tail -n +4)"
           case "$status" in identical|ahead) ;; *) deploy_now "$base is not an ancestor of $HEAD_SHA (compare: $status)" ;; esac
           [[ "$count" =~ ^[0-9]+$ ]] || deploy_now "unreadable file list"
+          [[ "$ahead" =~ ^[0-9]+$ ]] || deploy_now "unreadable ahead_by"
           [ "$count" -lt 300 ] || deploy_now "the compare lists 300 files or more, which may be truncated"
+          if [ "$count" -eq 0 ] && [ "$ahead" -gt 0 ]; then deploy_now "$ahead commits but no files listed since $base"; fi
           first="$(printf '%s\n' "$files" | deployable)"
           if [ -n "$first" ]; then
             deploy_now "a deployable path changed since $base: $first"

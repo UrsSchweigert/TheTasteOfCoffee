@@ -17,7 +17,11 @@ const yaml = createRequire(join(root, 'contracts', 'package.json'))('yaml');
 const wf = yaml.parse(readFileSync(join(root, '.github', 'workflows', 'deploy.yml'), 'utf8'));
 const step = wf.jobs.gate.steps.find((s) => s.id === 'changes');
 const hasJq = spawnSync('jq', ['--version']).status === 0;
-const opts = { skip: hasJq ? false : 'jq is not installed' };
+// Without jq the fake gh cannot answer: skip locally, but fail in CI (a skip would hide it).
+const opts = { skip: hasJq || process.env.CI ? false : 'jq is not installed' };
+test('jq is available (required in CI)', () => {
+  if (process.env.CI) assert.ok(hasJq, 'jq must be on PATH in CI');
+});
 
 const sha = (n) => n.toString(16).padStart(40, '0');
 const H = 'b'.repeat(40); // head of the CI run
@@ -74,12 +78,19 @@ function gate(fixtures, { head = H } = {}) {
 
 const run = (id, head) => ({ id, head_sha: head });
 const job = (name, conclusion) => ({ name, conclusion });
-const compare = (files, status = 'ahead') => ({ status, files: files.map((f) => (typeof f === 'string' ? { filename: f } : f)) });
+// extra overrides or removes fields: { files: undefined } omits the key, { files: null } sends null.
+const compare = (files, status = 'ahead', extra = {}) => ({
+  status,
+  ahead_by: status === 'identical' ? 0 : 1,
+  files: files.map((f) => (typeof f === 'string' ? { filename: f } : f)),
+  ...extra,
+});
 const deployedBase = { runs: { 1: [run(10, B1)] }, jobs: { 10: [job('gate', 'success'), job('deploy dev', 'success')] } };
 
 test('the step is wired: workflow_run only, after a positive decision, output wins over decide', () => {
   assert.equal(step.if, "github.event_name == 'workflow_run' && steps.decide.outputs.deploy == 'true'");
   assert.equal(wf.jobs.gate.outputs.deploy, '${{ steps.changes.outputs.deploy || steps.decide.outputs.deploy }}');
+  assert.equal(wf.jobs['deploy-dev'].name, 'deploy dev', 'the BASE search looks for this job name');
   assert.ok(!step.uses && !step['working-directory'], 'inline script, no checkout needed');
   assert.deepEqual(Object.keys(step.env).sort(), ['GH_TOKEN', 'HEAD_SHA', 'REPO']);
 });
@@ -148,6 +159,20 @@ test('300 files or more may be truncated: deploys', opts, () => {
   const many = Array.from({ length: 300 }, (_, i) => `docs/f${i}.md`);
   assert.equal(gate({ ...deployedBase, compare: compare(many) }).deploy, 'true');
   assert.equal(gate({ ...deployedBase, compare: compare(many.slice(0, 299)) }).deploy, 'false');
+});
+test('a compare without a usable file list is unknown, not "nothing changed": deploys', opts, () => {
+  for (const extra of [{ files: undefined }, { files: null }, { files: 'x' }, { files: {} }]) {
+    const r = gate({ ...deployedBase, compare: compare([], 'ahead', { ahead_by: 3, ...extra }) });
+    assert.equal(r.deploy, 'true', JSON.stringify(extra) + r.out);
+    assert.match(r.out, /unreadable file list/);
+  }
+  const noAhead = gate({ ...deployedBase, compare: compare(['docs/a.md'], 'ahead', { ahead_by: undefined }) });
+  assert.equal(noAhead.deploy, 'true', noAhead.out);
+});
+test('ahead with commits but an empty file list is suspicious: deploys', opts, () => {
+  const r = gate({ ...deployedBase, compare: compare([], 'ahead', { ahead_by: 2 }) });
+  assert.equal(r.deploy, 'true', r.out);
+  assert.match(r.out, /2 commits but no files/);
 });
 test('a bad head sha deploys', opts, () => {
   assert.equal(gate({ ...deployedBase, compare: compare(['docs/a.md']) }, { head: 'main; rm -rf /' }).deploy, 'true');
