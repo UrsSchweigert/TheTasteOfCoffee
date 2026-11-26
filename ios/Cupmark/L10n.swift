@@ -324,8 +324,6 @@ enum L10n {
     static var coffeeAveragesRatedCount: LocalizedStringKey { "coffee_averages.rated_count" }
     static var coffeeAveragesFooterMany: LocalizedStringKey { "coffee_averages.footer_many" }
     static var coffeeAveragesFooterSingle: LocalizedStringKey { "coffee_averages.footer_single" }
-    /// A method's averages header; the catalog value places `%1$@`, the method's label, and `%2$@`, its rated brews.
-    static func coffeeAveragesMethodHeader(method: String, brews: String) -> String { String(localized: "coffee_averages.method_header \(method) \(brews)") }
     /// The community mean next to the user's own (M4); `%1$@` is the mean, `%2$@` the number of raters.
     static func coffeeAveragesCommunity(mean: String, raters: String) -> String { String(localized: "coffee_averages.community \(mean) \(raters)") }
     // Averages in context (M2-T48): the summary row on a coffee's screen, the brew list rows and

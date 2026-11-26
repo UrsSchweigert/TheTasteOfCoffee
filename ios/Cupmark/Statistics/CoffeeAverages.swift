@@ -73,6 +73,43 @@ struct CoffeeAverages: Equatable, Sendable {
     }
 }
 
+// MARK: - The method switcher (M2-T52)
+
+/// What the one averages section of a bag shows: every rated brew, or one method's.
+enum CoffeeAveragesChoice: Hashable, Sendable {
+    case all
+    case method(Vocabulary.Method)
+}
+
+/// The rated-brew count and the rows the section shows for one choice.
+struct CoffeeAveragesShown: Equatable, Sendable {
+    let ratedBrews: Int
+    let rows: [CoffeeAverageRow]
+}
+
+extension CoffeeAverages {
+    /// The options of the switcher: "All Methods" and each method of `methods` (at least
+    /// `StatisticsRules.minimumRatedBrews` rated brews), in vocabulary order. Only "All" while
+    /// no method qualifies; the view then shows no switcher.
+    var choices: [CoffeeAveragesChoice] {
+        [.all] + methods.map { entry in CoffeeAveragesChoice.method(entry.method) }
+    }
+
+    /// `choice` if it is still offered, else `.all`: a method whose brews were removed drops out.
+    func resolved(_ choice: CoffeeAveragesChoice) -> CoffeeAveragesChoice {
+        choices.contains(choice) ? choice : .all
+    }
+
+    /// The count and rows for `choice` (after `resolved`): `.all` is the unfiltered numbers,
+    /// a method is that method's entry. No second computation.
+    func shown(for choice: CoffeeAveragesChoice) -> CoffeeAveragesShown {
+        if case .method(let method) = resolved(choice), let entry = methods.first(where: { $0.method == method }) {
+            return CoffeeAveragesShown(ratedBrews: entry.ratedBrews, rows: entry.rows)
+        }
+        return CoffeeAveragesShown(ratedBrews: ratedBrews, rows: rows)
+    }
+}
+
 extension StatisticsRules {
     /// The averages of the rated brews of the shelf entry `shelfEntry` (M2-T44):
     /// - a brew counts if it belongs to that entry (not to another bag of the same bean), has

@@ -71,3 +71,12 @@ The owner asked (2026-11-26) for the averages of a bag on each row of the shelf,
 - **Which brews count:** as in M2-T44: not removed, rated; brews of other beans never count.
 - **Count:** the shelf counts brews that scored `overall`; the coffee screen's summary counts rated brews. Every vocabulary version defines `overall` and a rating cannot be saved without it, so the two are equal today.
 - **Where:** one pure function, `StatisticsRules.shelfAverages(of:bags:)`, with tests; one batched read for the whole list.
+
+## Addendum M2-T52: one averages section with a method switcher on the bag screen (lead, ADR 0014)
+
+After M2-T44 a bag's screen listed the averages over all ratings and then one more section per method with enough rated brews. The owner found two kinds of rating sections confusing (2026-11-26) and asked for one section with a drop-down. On the device, offline, no route, no cost. The rules:
+
+- **Options:** a menu `Picker` "Method" with "All Methods" and each method that has at least `StatisticsRules.minimumRatedBrews` rated, not removed brews of this bag, in vocabulary order, labelled from the vocabulary. With no such method the picker is not shown. The per-method sections are removed.
+- **Effect:** the rated-brew count, the criterion rows and the footer follow the choice. "All Methods" is the output of M2-T44 as before; a method shows its `CoffeeMethodAverages` entry (its rows and its rated-brew count). Same pure data, `CoffeeAverages.methods`; no second computation.
+- **State:** view state only. It is not persisted (no `UserDefaults`) and resets when the screen is left. A choice whose method no longer qualifies (a brew was removed) shows "All Methods".
+- **Kept:** the summary row at the top, its scroll anchor `coffee-averages-section` (now on the picker row, so the tap lands above the count and rows), the community slot (the "All Methods" rows only, as before), the empty and one-brew states and `coffee-averages-count`.

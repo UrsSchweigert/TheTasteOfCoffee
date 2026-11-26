@@ -1128,6 +1128,18 @@ Planning notes (planned 2026-11-25):
   - Existing tests that tap `sign-out` are moved to the settings route; a static or UI test fails if `sign-out` is back on the shelf toolbar.
   - VoiceOver, Dynamic Type, en and de strings (existing keys reused), no typed text. Mac: the `ios` job; `needs-mac-verification` until it passes.
 
+### M2-T52 The bag's averages: one section with a method switcher
+- status: needs-mac-verification (written on Linux; Swift, XCTest and the UI tests have not run)
+- owner: ios-engineer
+- depends: M2-T44, M2-T50
+- implements: owner feedback of 2026-11-26 (the bag screen still has two kinds of rating sections, one over all ratings and one more per method; the owner wants ONE section with a drop-down switcher, "All methods" or one specific method); ADR 0027 addendum M2-T52
+- acceptance:
+  - The bag screen has one averages section: a menu `Picker` row ("Method"; "All Methods" plus each method with at least `StatisticsRules.minimumRatedBrews` rated brews of this bag, vocabulary labels, vocabulary order) above the criterion rows. The separate per-method sections are removed.
+  - The rows, the rated-brew count and the footer follow the choice: "All Methods" equals today's all-ratings numbers; a method shows that method's rows and its rated-brew count.
+  - The choice is view state only (resets when the screen is left; not persisted, no UserDefaults); an option that disappears (a brew removed) falls back to "All Methods".
+  - The summary row at the top of the screen and its scroll anchor `coffee-averages-section`, the community slot for M4, the empty and one-brew states and `coffee-averages-count` keep working; 44-point target, VoiceOver label and value for the picker, Dynamic Type, Theme colours, en and de strings from the catalogue (orphaned keys removed), nothing typed.
+  - The numbers come from `CoffeeAverages.methods`, no second implementation. Tests: unit tests of the options, the fallback, "All" equals the unfiltered rows, a method equals its entry; a UI test with the harness that picks a method and sees the count change and the per-method sections gone. Mac: the `ios` job; `needs-mac-verification` until it passes.
+
 ## M3 Aggregation
 
 Goal: aggregates per bean and per method stay correct under create, edit, delete and replay. Not yet planned.
