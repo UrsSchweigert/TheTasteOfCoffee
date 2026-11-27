@@ -62,3 +62,4 @@ What this costs, what it rules out, when to revisit.
 - [0034 Reference recipes: published brew numbers, kept apart from community data](0034-reference-recipes-published-numbers-not-community-data.md)
 - [0035 Community aggregates are rebuilt every night from the source of truth](0035-nightly-rebuild-of-community-aggregates.md)
 - [0036 Xcode Cloud is the TestFlight route; GitHub Actions stays the CI](0036-xcode-cloud-is-the-testflight-route.md)
+- [0037 Fewer and shorter macOS CI runs](0037-fewer-macos-ci-runs.md)

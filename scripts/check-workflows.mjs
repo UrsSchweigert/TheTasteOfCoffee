@@ -57,6 +57,8 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const STRICT_FILES = new Map([
   // Untrusted PR code runs here: read-only token, no secrets.
   ['ci.yml', { readOnly: true }],
+  // The weekly, report-only accessibility audits: the same rules as ci.yml, and nothing gates on it.
+  ['ios-audits.yml', { readOnly: true }],
   // claude-code-action fetches a GitHub OIDC token and exchanges it for the
   // Claude GitHub App token, which does all of its writes.
   // It declares no environment; its `sub` (issue_comment runs on the default
