@@ -19,6 +19,8 @@ const FILES = [
   'docs/05-system-design.md',
   'docs/06-cost-estimate.md',
   'docs/07-open-questions.md',
+  'backend/README.md',
+  'infra/README.md',
   '.claude/agents/backend-engineer.md',
   '.claude/agents/infra-engineer.md',
   '.claude/agents/reviewer.md',
@@ -77,7 +79,8 @@ test('the file list never includes the ADRs', () => {
 test('docs/05 names the three workers and the run log keys', () => {
   const text = read('docs/05-system-design.md') ?? '';
   for (const phrase of ['nightly-aggregates', 'apple-idp', 'health check']) assert.ok(text.includes(phrase), phrase);
-  for (const key of ['operation', 'status', 'dry_run', 'items_written', 'items_deleted', 'users_seen', 'brews_orphaned', 'FAILED', 'stage', 'error']) {
-    assert.ok(text.includes('`' + key) || text.includes(key), key);
+  for (const key of ['operation', 'status', 'dry_run', 'items_written', 'items_deleted', 'users_seen', 'brews_orphaned', 'stage', 'error']) {
+    assert.ok(text.includes('`' + key), key);
   }
+  assert.ok(text.includes('`status: FAILED`'));
 });

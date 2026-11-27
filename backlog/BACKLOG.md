@@ -1365,6 +1365,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - docs say rule 6 (bag dose) is skipped when the brew has no `dose_dg` or the shelf entry has no bag size, a known evasion the owner may close later by tuning.
   - docs/05 (Data model, rater marker row) and `.claude/agents/backend-engineer.md` ("Give-to-get checks the `RATER#` item") still mention `RATER#`; fix both.
   - docs/05 documents the nightly log line's extra keys beyond ADR 0035 point 13 (`operation`, `status`, `dry_run`, `items_written`, `items_deleted`) and the failure line (`status: FAILED`, `stage`, `error`).
+  - Follow-ups found in review (not done here): `contracts/openapi.yaml` lines ~812-813 and ~1635-1637 still say the aggregator subtracts / counts only brews written while consent was true: reword (contract-keeper) in the next change that touches the iOS path list anyway. `site/index.html:77` is fixed by M2-T53. `scripts/docs-rebuild.test.mjs` is not yet a CI step (`ci.yml` runs each script test explicitly): add the step in the next change to `ci.yml` (it is in the iOS path list).
 
 ### M3-T13 Post-deploy checks for the nightly job
 - status: todo
