@@ -1324,8 +1324,9 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - infra/README.md documents the job, the dry-run event, how to disable the schedule, the flag (turn it on in a pull request when `users_seen` or the Cognito console shows more than 100 users), the alarms, and the owner's one-time subscription step.
 
 ### M3-T10 Replay and load test of the rebuild
-- status: todo
+- status: in-review (CI step open)
 - owner: backend-engineer
+- follow-up: the code and tests exist (in-memory half run; the DynamoDB Local half and the 60 s budget on a CI runner have not run). Add the CI step to the backend job after the integration step: `Replay and load test (DynamoDB Local)`, env `DYNAMODB_ENDPOINT: http://localhost:8000` and `REQUIRE_DYNAMODB_LOCAL: "1"`, run `npm run test:replay` (about 20 s), together with the docs-rebuild test step, in one small ci.yml change after #122 merges. The task is done when that step has passed in CI.
 - depends: M3-T8
 - implements: ADR 0035 (scale trigger); docs/05-system-design.md, Non-functional
 - acceptance:
