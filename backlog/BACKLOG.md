@@ -1369,8 +1369,9 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - Follow-ups found in review (not done here): `contracts/openapi.yaml` lines ~812-813 and ~1635-1637 still say the aggregator subtracts / counts only brews written while consent was true: reword (contract-keeper) in the next change that touches the iOS path list anyway. `site/index.html:77` is fixed by M2-T53. `scripts/docs-rebuild.test.mjs` is not yet a CI step (`ci.yml` runs each script test explicitly): add the step in the next change to `ci.yml` (it is in the iOS path list).
 
 ### M3-T13 Post-deploy checks for the nightly job
-- status: todo
+- status: done
 - owner: infra-engineer
+- needs: human (M3-T14 and M3-T15 run it; the owner, after the dev deploy, with their own AWS CLI credentials and no token: `scripts/smoke/post-deploy-checks.sh dev --nightly-only` for the read-only checks, then `scripts/smoke/post-deploy-checks.sh dev --dry-run-job` for the one dry-run invocation; `scripts/smoke/nightly-checks.sh prod` works too, read-only)
 - depends: M3-T9
 - implements: M1-T7 (`scripts/smoke/post-deploy-checks.sh`); ADR 0035
 - acceptance:
