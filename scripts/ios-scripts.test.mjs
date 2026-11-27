@@ -2028,3 +2028,23 @@ test('brew photos: the stand-in for the picker is Debug-only and the section rea
     assert.ok(opens > closes, `${match[0]} at ${match.index} is outside #if DEBUG`);
   }
 });
+
+test('consent texts: the old "already counted stay counted" rule does not return under ios/ or site/ (M2-T53)', () => {
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+  const old = [/already counted stay counted/i, /bereits gezählte bleiben gezählt/i];
+  const hits = [];
+  const walk = (dir) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      if (e.name === 'node_modules' || e.name === '.git' || e.name === 'build') continue;
+      const p = join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (/\.(swift|xcstrings|html|md|json|strings|mjs)$/.test(e.name)) {
+        const text = readFileSync(p, 'utf8');
+        if (old.some((re) => re.test(text))) hits.push(relative(root, p));
+      }
+    }
+  };
+  walk(join(root, 'ios'));
+  walk(join(root, 'site'));
+  assert.deepEqual(hits, []);
+});

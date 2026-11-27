@@ -1140,6 +1140,16 @@ Planning notes (planned 2026-11-25):
   - The summary row at the top of the screen and its scroll anchor `coffee-averages-section`, the community slot for M4, the empty and one-brew states and `coffee-averages-count` keep working; 44-point target, VoiceOver label and value for the picker, Dynamic Type, Theme colours, en and de strings from the catalogue (orphaned keys removed), nothing typed.
   - The numbers come from `CoffeeAverages.methods`, no second implementation. Tests: unit tests of the options, the fallback, "All" equals the unfiltered rows, a method equals its entry; a UI test with the harness that picks a method and sees the count change and the per-method sections gone. Mac: the `ios` job; `needs-mac-verification` until it passes.
 
+### M2-T53 Consent texts follow the nightly rebuild
+- status: needs-mac-verification
+- owner: ios-engineer
+- depends: M2-T29
+- implements: owner decision of 2026-11-26/27 (ADR 0035): withdrawing sharing removes the user's ratings from the community numbers at the next successful nightly update, the personal log is untouched; re-consent counts all rated brews again, ratings made before the first consent too; deleting a brew or the account removes its ratings at the next successful nightly update; community numbers are up to about a day old
+- acceptance:
+  - Strings only, en and de, same keys: `settings.consent.footer`, `onboarding.consent.message`, `account_deletion.confirm.message`, `account_deletion.settings_footer`, with their comments; the companion pages `site/index.html` and `site/de/index.html` (privacy section) say the same. No typed text controls, no plural variations.
+  - The old phrases ("already counted stay counted", "bereits gezählte bleiben gezählt") appear nowhere under `ios/` or `site/`; a static test in `scripts/ios-scripts.test.mjs` fails if they return, and `scripts/site.test.mjs` pins the new site wording.
+  - `scripts/check-ios-strings.mjs` passes. Mac: the `ios` job; `needs-mac-verification` until it passes.
+
 ## M3 Aggregation
 
 Goal: community aggregates per bean and per method, and the rankings, are rebuilt every night from the source of truth, so they converge on create, edit, delete, consent change and account deletion with no incremental bookkeeping. A failed run changes nothing.
