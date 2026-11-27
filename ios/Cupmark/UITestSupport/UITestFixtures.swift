@@ -112,6 +112,16 @@ enum UITestFixtures {
         for (position, brew) in photoBrews(of: ratedBrews).enumerated() {
             try store.addBrewPhoto(to: brew, jpeg: photo, createdAt: now.addingTimeInterval(TimeInterval(-60 * position)))
         }
+        // With `-CupmarkUITestSecondRatedBrew` (M2-T52) the first method has a second rated brew,
+        // so the bag's averages offer it in the method switcher. Off by default: other tests
+        // count the fixture's three rated brews.
+        if ProcessInfo.processInfo.arguments.contains("-CupmarkUITestSecondRatedBrew"), let firstMethod = methods.first {
+            let second = try StoredBrew(
+                try brewInput(method: firstMethod, index: methods.count + 1, daysAgo: 1, rated: true, now: now),
+                serverID: brewID(methods.count + 1)
+            )
+            try store.addBrew(second, shelfEntry: entry, syncState: .synced)
+        }
         let newestMethod = try methods.first ?? first(Vocabulary.Method.self)
         let unrated = try StoredBrew(
             try brewInput(method: newestMethod, index: methods.count, daysAgo: 0, rated: false, now: now),

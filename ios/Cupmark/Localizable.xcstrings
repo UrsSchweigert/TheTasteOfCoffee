@@ -2809,24 +2809,6 @@
         }
       }
     },
-    "coffee_averages.method_header %@ %@" : {
-      "comment" : "Header of the averages of one brew method on a shelf entry; the first %@ is the method label, the second the number of rated brews with it.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@, bewertete Zubereitungen: %2$@"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@, rated brews: %2$@"
-          }
-        }
-      }
-    },
     "coffee_averages.rated_count" : {
       "comment" : "Label of the number of rated brews the averages of a shelf entry rest on.",
       "extractionState" : "manual",
