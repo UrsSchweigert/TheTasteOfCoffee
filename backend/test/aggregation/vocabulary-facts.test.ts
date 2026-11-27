@@ -44,6 +44,17 @@ describe('src/generated/vocabulary-facts.ts (M3-T5)', () => {
   });
 });
 
+describe('catch-all ids agree with the contract', () => {
+  it('the hand-written catch-all sets are the NON_PARENT_IDS of contracts/lib/vocabulary.mjs', () => {
+    const root = join(VOCABULARY_DIR, '..', '..');
+    const text = readFileSync(join(root, 'contracts', 'lib', 'vocabulary.mjs'), 'utf8');
+    const list = /export const NON_PARENT_IDS = \[([^\]]*)\]/.exec(text)?.[1] ?? '';
+    expect([...list.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]).sort()).toEqual(['blend', 'mixed', 'other', 'unknown']);
+    expect(readFileSync(join(root, 'backend', 'src', 'aggregation', 'rebuild', 'rebuild.ts'), 'utf8')).toContain("new Set(['other', 'unknown'])");
+    expect(readFileSync(join(root, 'backend', 'scripts', 'codegen', 'vocabulary-facts.ts'), 'utf8')).toContain("new Set(['blend', 'other', 'unknown'])");
+  });
+});
+
 describe('vocabulary facts generator', () => {
   const published = (shelf: unknown, bean: unknown): VersionFiles => {
     const versionFiles = { shelf, bean };

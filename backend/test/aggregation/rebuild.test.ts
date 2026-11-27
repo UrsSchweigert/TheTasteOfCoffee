@@ -253,23 +253,36 @@ describe('plausibility, orphans and counts', () => {
     expect(withOrphan.counts.brews_orphaned).toBe(1);
   });
 
-  it('withdrawing consent gives the output of a history without that user; re-consent restores it', () => {
+  it('withdrawing consent gives the output of a history without that user; re-consent restores the original output', () => {
     const base = crowd(6, { perUser: 2, overall: (u, i) => 4 + ((u + i) % 6) });
-    const all = rebuild(input(base));
-    const withdrawn = rebuild(input({ ...base, consentByUser: new Map(['u1', 'u2', 'u3', 'u4', 'u5'].map((u) => [u, true])) }));
+    const original = rebuild(input(base));
+    const five = ['u1', 'u2', 'u3', 'u4', 'u5'];
+    const withdrawn = rebuild(input({ ...base, consentByUser: new Map(five.map((u) => [u, true])) }));
     const without = rebuild(input({ brews: base.brews.filter((b) => b.userId !== 'u6'), shelfEntries: base.shelfEntries.filter((e) => e.userId !== 'u6') }));
     expect(withdrawn.aggregates).toEqual(without.aggregates);
     expect(withdrawn.rankings).toEqual(without.rankings);
-    expect(rebuild(input(base))).toEqual(all);
-    expect(all.aggregates).not.toEqual(withdrawn.aggregates);
+    expect(original.aggregates).not.toEqual(withdrawn.aggregates);
+    // The same user flips off and then on again: the consent map is rebuilt, the data is the same.
+    const consent = new Map([...five, 'u6'].map((u) => [u, true]));
+    consent.set('u6', false);
+    expect(rebuild(input({ ...base, consentByUser: consent })).aggregates).toEqual(without.aggregates);
+    consent.set('u6', true);
+    expect(rebuild(input({ ...base, consentByUser: consent }))).toEqual(original);
   });
 
-  it('a deleted brew is simply absent: the output equals a history that never had it', () => {
-    const base = crowd(5, { perUser: 3, extra: (_, i) => ({ at: T0 + i * DAY }) });
-    const without = { ...base, brews: base.brews.filter((b) => b.brew.brew_id !== 'u2b1') };
-    const result = rebuild(input(without));
-    expect(find(result.aggregates, 'bean1').criteria.overall.weighted_count).toBe(14 * L);
-    expect(find(result.aggregates, 'bean1').criteria.overall.weighted_count).not.toBe(rebuild(input(base)).aggregates[0]?.criteria.overall.weighted_count);
+  it('a deleted brew is simply absent: the whole output equals a history built without it', () => {
+    const at = (i: number): number => T0 + i * DAY;
+    const build = (skip?: string) => {
+      const brews = [];
+      for (let u = 1; u <= 5; u += 1) for (let i = 0; i < 3; i += 1) if (`u${String(u)}b${String(i)}` !== skip) brews.push(brew({ user: `u${String(u)}`, id: `u${String(u)}b${String(i)}`, at: at(i), rating: rated(5 + ((u + i) % 5)) }));
+      return input({ brews, shelfEntries: [1, 2, 3, 4, 5].map((u) => entry({ user: `u${String(u)}` })) });
+    };
+    const never = rebuild(build('u2b1'));
+    const base = crowd(5, { perUser: 3, overall: (u, i) => 5 + ((u + i) % 5), extra: (_, i) => ({ at: at(i) }) });
+    const deleted = rebuild(input({ ...base, brews: base.brews.filter((b) => b.brew.brew_id !== 'u2b1') }));
+    expect(deleted).toEqual(never);
+    expect(find(deleted.aggregates, 'bean1').criteria.overall.weighted_count).toBe(14 * L);
+    expect(deleted).not.toEqual(rebuild(build()));
   });
 
   it('a moved brew (new shelf entry, new bean) moves its cup', () => {
@@ -333,10 +346,61 @@ describe('rankings', () => {
     expect(result.counts.beans_ranked).toBe(4);
   });
 
-  it('is independent of the order of the input', () => {
+  it('is independent of the order of the input, including beans and the consent map', () => {
     const base = crowd(6, { perUser: 3, overall: (u, i) => 4 + ((u * 3 + i) % 6) });
-    const reversed = input({ brews: [...base.brews].reverse(), shelfEntries: [...base.shelfEntries].reverse() });
-    expect(JSON.stringify(rebuild(reversed))).toBe(JSON.stringify(rebuild(input(base))));
+    const other = crowd(5, { bean: 'beanB', perUser: 2 }); // same user ids, another bean
+    const shelfEntries = [...base.shelfEntries, ...other.shelfEntries.map((e) => ({ ...e, entry: { ...e.entry, shelf_entry_id: 'e2' } }))];
+    const brews = [...base.brews, ...other.brews.map((b) => brew({ user: b.userId, id: `x${b.brew.brew_id}`, entry: 'e2', at: T0 + DAY }))];
+    const beans = [bean('bean1', { verified: true, operator_attributes: { process: 'washed' } }), bean('beanB', { verified: true, operator_attributes: { process: 'washed' } })];
+    const consentOrder = ['u1', 'u2', 'u3', 'u4', 'u5', 'u6'];
+    const forward = input({ brews, shelfEntries, beans, consentByUser: new Map(consentOrder.map((u) => [u, true])) });
+    const shuffled = input({ brews: [...brews].reverse(), shelfEntries: [...shelfEntries].reverse(), beans: [...beans].reverse(), consentByUser: new Map([...consentOrder].reverse().map((u) => [u, true])) });
+    expect(JSON.stringify(rebuild(shuffled))).toBe(JSON.stringify(rebuild(forward)));
+    expect(rebuild(forward).rankings.length).toBeGreaterThan(2);
+  });
+
+  it('band weights change the order: a bean can lead in a band and trail overall', () => {
+    // Bean X: each of 5 users has 1 cup at 9 on a banded entry and 4 cups at 3 on an unbanded entry, one day.
+    // Bean level n = 5 (mean 4.2); band level n = 1 (mean 9). Bean Y: 5 users, 1 cup at 8, banded.
+    const brews = [];
+    const shelfEntries = [];
+    for (let u = 1; u <= 5; u += 1) {
+      const x = `x${String(u)}`;
+      shelfEntries.push(entry({ user: x, id: 'eb', bean: 'beanX', priceBand: 'under_15' }), entry({ user: x, id: 'en', bean: 'beanX' }));
+      brews.push(brew({ user: x, id: `${x}a`, entry: 'eb', at: T0, rating: rated(9) }));
+      for (let i = 1; i <= 4; i += 1) brews.push(brew({ user: x, id: `${x}n${String(i)}`, entry: 'en', at: T0 + i * 10 * MIN, rating: rated(3) }));
+      const y = `y${String(u)}`;
+      shelfEntries.push(entry({ user: y, bean: 'beanY', priceBand: 'under_15' }));
+      brews.push(brew({ user: y, id: `${y}a`, at: T0, rating: rated(8) }));
+    }
+    const result = rebuild(input({ brews, shelfEntries }));
+    const list = (kind: string) => result.rankings.find((r) => r.facet.kind === kind)?.bean_ids;
+    expect(list('all')).toEqual(['beanY', 'beanX']);
+    expect(list('price_band')).toEqual(['beanX', 'beanY']);
+  });
+
+  it('the 5-rater boundary holds per method facet: 5 raters split 3 and 2 give no method list, 5 in one method do', () => {
+    const split = (v60: number, espresso: number) => {
+      const users = v60 + espresso;
+      const base = crowd(users);
+      const brews = base.brews.map((b, i) => (i < v60 ? b : brew({ user: b.userId, id: b.brew.brew_id, at: T0, method: 'espresso' })));
+      return rebuild(input({ ...base, brews }));
+    };
+    const kinds = (r: ReturnType<typeof split>) => r.rankings.map((x) => (x.facet.kind === 'method' ? `method/${x.facet.value}` : x.facet.kind));
+    expect(kinds(split(3, 2))).toEqual(['all']);
+    expect(kinds(split(4, 1))).toEqual(['all']);
+    expect(kinds(split(5, 0))).toEqual(['all', 'method/v60']);
+    expect(find(split(3, 2).aggregates, 'bean1').raters).toBe(5);
+  });
+
+  it('the 5-rater boundary holds per price band: 4 in a band give no band list, 5 do', () => {
+    const run = (inBand: number) => {
+      const base = crowd(5);
+      const shelfEntries = base.shelfEntries.map((e, i) => entry({ user: e.userId, priceBand: i < inBand ? 'under_15' : 'from_80' }));
+      return rebuild(input({ brews: base.brews, shelfEntries })).rankings.flatMap((r) => (r.facet.kind === 'price_band' ? [r.facet.value] : []));
+    };
+    expect(run(4)).toEqual([]);
+    expect(run(5)).toEqual(['under_15']);
   });
 
   it('ranks origin, process and roast level only for operator-verified beans, using the operator values', () => {

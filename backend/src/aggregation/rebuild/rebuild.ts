@@ -22,7 +22,7 @@ import { RebuildInputError, type AggregateItem, type Criterion, type RankFacet, 
 const SEPARATOR = '\u0000';
 const key = (...parts: readonly string[]): string => parts.join(SEPARATOR);
 
-/** Attribute ids that name no value: they get no ranking (ADR 0035 point 14). Origins that name no place are already left out of ORIGIN_COUNTRY. */
+/** Attribute ids that name no value: they get no ranking (ADR 0035 point 14). The catch-all ids of NON_PARENT_IDS in contracts/lib/vocabulary.mjs (a .mjs the typed backend does not import); a test pins that they agree. Origins that name no place are already left out of ORIGIN_COUNTRY. */
 const UNRANKED_ATTRIBUTES: ReadonlySet<string> = new Set(['other', 'unknown']);
 
 function compareText(a: string, b: string): number {

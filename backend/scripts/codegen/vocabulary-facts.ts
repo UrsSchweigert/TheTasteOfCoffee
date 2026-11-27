@@ -20,7 +20,7 @@ function fail(message: string): never {
 
 const ID = /^[a-z][a-z0-9_]*$/;
 
-/** Origin ids that name no place: a blend, "other", "unknown". They roll up to no country and get no ranking (ADR 0035 point 14). */
+/** Origin ids that name no place: a blend, "other", "unknown". They roll up to no country and get no ranking (ADR 0035 point 14). The catch-all ids of NON_PARENT_IDS in contracts/lib/vocabulary.mjs without `mixed` (no origin); a test pins that they agree. */
 const NON_PLACE_ORIGINS: ReadonlySet<string> = new Set(['blend', 'other', 'unknown']);
 
 function entries(file: unknown, list: string, where: string): JsonObject[] {
