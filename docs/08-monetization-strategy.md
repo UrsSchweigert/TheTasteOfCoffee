@@ -1,6 +1,6 @@
 # Monetization strategy
 
-Status: proposal for the owner, written 2026-11-27. Nothing here is decided. It changes no code, contract, infrastructure or other document. Where it disagrees with docs/03 (price points, what is in scope), it says so and leaves the decision to the owner.
+Status: adopted by the owner on 2026-11-27 as the plan to follow from M4 ("we will follow this plan"). It is a plan, not a set of final decisions: each price, tier and revenue line still gets its own ADR when M4 reaches it, and every [R], [E] and [A] claim must be checked first. The paragraph below describes how the document was written. Nothing here changes code, contracts, infrastructure or other documents. It changes no code, contract, infrastructure or other document. Where it disagrees with docs/03 (price points, what is in scope), it says so and leaves the decision to the owner.
 
 ## How to read the claims
 
