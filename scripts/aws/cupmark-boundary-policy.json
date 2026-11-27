@@ -37,6 +37,15 @@
       ]
     },
     {
+      "Sid": "WeeklyTableExportWrites",
+      "Effect": "Allow",
+      "Action": [
+        "s3:AbortMultipartUpload",
+        "s3:PutObjectAcl"
+      ],
+      "Resource": "arn:aws:s3:::cupmark-*-backups-*/exports/*"
+    },
+    {
       "Sid": "AccountDeletionOfLabelPhotos",
       "Effect": "Allow",
       "Action": [

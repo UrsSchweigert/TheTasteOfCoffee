@@ -471,7 +471,7 @@ function policyDocumentProblems(
 }
 
 /** Service principals a stage role may trust. Each new one needs a reviewed pull request. */
-export const TRUSTED_SERVICE_PRINCIPALS: readonly string[] = ['lambda.amazonaws.com'];
+export const TRUSTED_SERVICE_PRINCIPALS: readonly string[] = ['lambda.amazonaws.com', 'scheduler.amazonaws.com'];
 
 const GITHUB_PROVIDER_ARN = `arn:aws:iam::${ACCOUNT_PLACEHOLDER}:oidc-provider/${GITHUB_OIDC_HOST}`;
 
