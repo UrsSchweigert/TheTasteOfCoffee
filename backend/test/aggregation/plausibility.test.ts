@@ -60,12 +60,12 @@ function verdicts(
   runTime = RUN,
 ): Record<string, Verdict> {
   const out: Record<string, Verdict> = {};
-  for (const v of judgeBrews(brews, entries, consents, runTime)) out[`${v.userId}/${v.brewId}`] = v.verdict;
+  for (const v of judgeBrews(brews, entries, consents, runTime).verdicts) out[`${v.userId}/${v.brewId}`] = v.verdict;
   return out;
 }
 /** The verdict of the first brew of a one-brew history. */
 function only(brews: readonly PlausibilityBrew[], e = entry(), c = consent('u1'), runTime = RUN): Verdict {
-  const [first] = judgeBrews(brews, [e], c, runTime);
+  const [first] = judgeBrews(brews, [e], c, runTime).verdicts;
   if (!first) throw new Error('no verdict');
   return first.verdict;
 }
@@ -315,38 +315,53 @@ describe('the contract and the judge agree', () => {
 
   it('every reason id of the contract is produced, and nothing else is', () => {
     const { brews, entries, consents } = everyReason();
-    const emitted = new Set(judgeBrews(brews, entries, consents, RUN).map((v) => v.verdict));
+    const emitted = new Set(judgeBrews(brews, entries, consents, RUN).verdicts.map((v) => v.verdict));
     expect(emitted).toEqual(new Set([...contractIds, 'counted']));
-  });
-
-  it('fails when the contract gains an id the judge never emits', () => {
-    const { brews, entries, consents } = everyReason();
-    const emitted = new Set<string>(judgeBrews(brews, entries, consents, RUN).map((v) => v.verdict));
-    const grown = [...contractIds, 'a_new_reason'];
-    expect(grown.filter((id) => !emitted.has(id))).toEqual(['a_new_reason']);
-    // ...and the real contract has no such id.
-    expect(contractIds.filter((id) => !emitted.has(id))).toEqual([]);
   });
 
   it('every verdict the judge emits is in the contract or is "counted"', () => {
     const { brews, entries, consents } = everyReason();
-    for (const v of judgeBrews(brews, entries, consents, RUN)) expect([...contractIds, 'counted']).toContain(v.verdict);
+    for (const v of judgeBrews(brews, entries, consents, RUN).verdicts) expect([...contractIds, 'counted']).toContain(v.verdict);
+  });
+});
+
+describe('orphan brews (shelf entry missing) never throw', () => {
+  const orphan = (id: string, at: number) => brew(id, at, { shelfEntryId: 'missing' });
+  it('an orphan of a consenting user is left out of every rule and only counted', () => {
+    const r = judgeBrews([orphan('o', T0), brew('a', T0 + HOUR)], [entry()], consent('u1'), RUN);
+    expect(r.verdicts).toEqual([{ userId: 'u1', brewId: 'a', verdict: 'counted' }]);
+    expect(r.orphanBrews).toBe(1);
+  });
+  it('an orphan of a non-consenting user or a user without a profile is no_consent', () => {
+    const r = judgeBrews([orphan('o', T0), { ...orphan('p', T0), userId: 'gone' }], [], new Map([['u1', false]]), RUN);
+    expect(r.verdicts).toEqual([
+      { userId: 'gone', brewId: 'p', verdict: 'no_consent' },
+      { userId: 'u1', brewId: 'o', verdict: 'no_consent' },
+    ]);
+    expect(r.orphanBrews).toBe(0);
+  });
+  it("another user's shelf entry with the same id does not rescue an orphan", () => {
+    const r = judgeBrews([brew('a', T0)], [entry({ userId: 'u2' })], consent('u1'), RUN);
+    expect(r.verdicts).toEqual([]);
+    expect(r.orphanBrews).toBe(1);
+  });
+  it('an orphan changes no other verdict (no burst place, no dose, no cap slot, no history)', () => {
+    const base = series(STRAIGHT_LINING_MIN_BREWS - 1, T0, 3 * HOUR, { scores: uniform(8), doseDg: 250 });
+    const orphans = Array.from({ length: 20 }, (_, i) => orphan(`o${String(i)}`, T0 + i * SEC));
+    const bag = [entry({ bagGrams: 250 })];
+    const withOrphans = judgeBrews([...base, ...orphans], bag, consent('u1'), RUN);
+    expect(withOrphans.verdicts).toEqual(judgeBrews(base, bag, consent('u1'), RUN).verdicts);
+    expect(withOrphans.orphanBrews).toBe(20);
   });
 });
 
 describe('input errors fail closed', () => {
-  it('a brew without a shelf entry throws', () => {
-    expect(() => judgeBrews([brew('a', T0, { shelfEntryId: 'missing' })], [entry()], consent('u1'), RUN)).toThrow(PlausibilityInputError);
-  });
-  it("another user's shelf entry with the same id is not used", () => {
-    expect(() => judgeBrews([brew('a', T0)], [entry({ userId: 'u2' })], consent('u1'), RUN)).toThrow(PlausibilityInputError);
-  });
   it('a repeated brew or shelf entry throws', () => {
     expect(() => judgeBrews([brew('a', T0), brew('a', T0 + HOUR)], [entry()], consent('u1'), RUN)).toThrow(PlausibilityInputError);
     expect(() => judgeBrews([brew('a', T0)], [entry(), entry()], consent('u1'), RUN)).toThrow(PlausibilityInputError);
   });
   it('an empty input gives an empty result', () => {
-    expect(judgeBrews([], [], new Map(), RUN)).toEqual([]);
+    expect(judgeBrews([], [], new Map(), RUN)).toEqual({ verdicts: [], orphanBrews: 0 });
   });
 });
 
@@ -414,7 +429,7 @@ function generate(seed: number): History {
   return { brews, entries, consents };
 }
 
-const run = (h: History): BrewVerdict[] => [...judgeBrews(h.brews, h.entries, h.consents, RUN)];
+const run = (h: History): BrewVerdict[] => [...judgeBrews(h.brews, h.entries, h.consents, RUN).verdicts];
 
 function shuffled<T>(xs: readonly T[], r: () => number): T[] {
   const out = [...xs];
@@ -468,7 +483,7 @@ describe('determinism and order independence', () => {
   it('the run time is the only clock: the same input at another run time can differ, at the same one never', () => {
     const h = generate(9);
     expect(run(h)).toEqual(run(h));
-    const later = [...judgeBrews(h.brews, h.entries, h.consents, RUN + 30 * DAY)];
+    const later = [...judgeBrews(h.brews, h.entries, h.consents, RUN + 30 * DAY).verdicts];
     expect(later.filter((v) => v.verdict === 'brewed_in_future')).toEqual([]);
   });
 });
@@ -482,21 +497,31 @@ describe('properties across generated histories', () => {
     const before = run(h);
     const flipped = new Map(h.consents);
     flipped.set('u2', flipped.get('u2') !== true);
-    const after = [...judgeBrews(h.brews, h.entries, flipped, RUN)];
+    const after = [...judgeBrews(h.brews, h.entries, flipped, RUN).verdicts];
     for (const [i, v] of before.entries()) {
       if (v.userId !== 'u2') expect(after[i]).toEqual(v);
     }
   });
 
-  it.each(seeds)('seed %i: removing a brew rejected by any rule before the dose rule changes no other verdict, nor does a bag-dose reject', (seed) => {
+  it.each(seeds)('seed %i: removing a brew rejected by rules 1 to 5 changes no other verdict', (seed) => {
     const h = generate(seed);
     const before = byKey(run(h));
     for (const v of run(h)) {
-      if (v.verdict === 'counted' || v.verdict === 'straight_lining' || v.verdict === 'daily_cap_exceeded') continue;
+      if (v.verdict === 'counted' || v.verdict === 'bag_dose_exceeded' || v.verdict === 'straight_lining' || v.verdict === 'daily_cap_exceeded') continue;
       const without = { ...h, brews: h.brews.filter((b) => !(b.userId === v.userId && b.brewId === v.brewId)) };
       const after = byKey(run(without));
       for (const [k, verdict] of after) expect(verdict).toBe(before.get(k));
     }
+  });
+
+  it('a bag-dose reject still holds a place in the burst window (rule 5 runs before rule 6)', () => {
+    const a = brew('a', T0, { doseDg: 3000 });
+    const rest = series(5, T0 + SEC, SEC, {}, 'r').map((b) => ({ ...b, shelfEntryId: 'e2' }));
+    const entries = [entry({ bagGrams: 250 }), entry({ shelfEntryId: 'e2' })];
+    const v = verdicts([a, ...rest], entries);
+    expect(v['u1/a']).toBe('bag_dose_exceeded');
+    expect(v['u1/r04']).toBe('burst');
+    expect(verdicts(rest, entries)['u1/r04']).toBe('counted');
   });
 
   it('a cup over the daily cap still used the bag: removing it can change a later dose verdict (and nothing else)', () => {

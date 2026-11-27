@@ -35,7 +35,14 @@ export interface BrewVerdict {
   readonly verdict: Verdict;
 }
 
-/** The input is not what a scan of a consistent table gives (a brew without its shelf entry, a duplicate). The run must fail. */
+export interface JudgeResult {
+  /** One verdict per judged brew, sorted by user id then brew id. */
+  readonly verdicts: readonly BrewVerdict[];
+  /** Brews of consenting users whose shelf entry is missing: left out of every rule and every number, counted only (no ids). Not a contract reason. */
+  readonly orphanBrews: number;
+}
+
+/** The input is not what a scan of a consistent table gives (a duplicate brew or shelf entry). The run must fail. */
 export class PlausibilityInputError extends Error {
   constructor(message: string) {
     super(message);

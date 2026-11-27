@@ -1,12 +1,20 @@
 // Pure plausibility judge (ADR 0035 point 4, M3-T4). No I/O, no clock: the run
 // time is a parameter. A brew gets the reason of the first rule that rejects
 // it, or `counted`. Each rule sees only the brews that passed the rules before
-// it, so a rejected brew takes no place in a burst window, a bag's running dose,
-// a straight-lining history or the daily cap. Rejected brews are only left out
-// of the numbers: nothing here reads or changes stored items.
+// it. A brew rejected by rules 1 to 5 takes no place in a later rule's window,
+// dose, history or cap. A brew rejected by rule 6 (bag dose) still held a place
+// in the burst window of rule 5, and a brew rejected by rule 7 or 8 still used
+// the bag in rule 6. Rejected brews are only left out of the numbers: nothing
+// here reads or changes stored items.
 import { utcDay } from '../age.ts';
 import { RULES, type Judged } from './rules.ts';
-import { PlausibilityInputError, type BrewVerdict, type PlausibilityBrew, type PlausibilityShelfEntry } from './types.ts';
+import {
+  PlausibilityInputError,
+  type BrewVerdict,
+  type JudgeResult,
+  type PlausibilityBrew,
+  type PlausibilityShelfEntry,
+} from './types.ts';
 
 const SEPARATOR = '\u0000';
 
@@ -21,17 +29,23 @@ function compareCanonical(a: Judged, b: Judged): number {
 }
 
 /**
- * The verdict of every brew, sorted by user id then brew id (so the output does
- * not depend on the input order). Throws `PlausibilityInputError` for a brew
- * whose shelf entry is missing or a repeated (user, brew) pair: the run fails
- * closed instead of guessing.
+ * The verdict of every judged brew, sorted by user id then brew id (so the
+ * output does not depend on the input order).
+ *
+ * A brew whose shelf entry is missing (an interrupted account deletion, or a
+ * Scan that is not a snapshot) cannot be judged by the rules that need the
+ * entry. If its user has no consent it is `no_consent`; otherwise it is left
+ * out of every rule and only counted in `orphanBrews`. It is never given a
+ * contract reason id. Throws `PlausibilityInputError` only for a repeated
+ * (user, brew) pair or a repeated shelf entry: one Scan never returns an item
+ * twice, so that is a bug and the run fails closed.
  */
 export function judgeBrews(
   brews: readonly PlausibilityBrew[],
   shelfEntries: readonly PlausibilityShelfEntry[],
   consentByUser: ReadonlyMap<string, boolean>,
   runTimeMs: number,
-): readonly BrewVerdict[] {
+): JudgeResult {
   const entries = new Map<string, PlausibilityShelfEntry>();
   for (const entry of shelfEntries) {
     const key = entry.userId + SEPARATOR + entry.shelfEntryId;
@@ -40,14 +54,18 @@ export function judgeBrews(
   }
 
   const seen = new Set<string>();
-  const all: Judged[] = brews.map((brew) => {
+  const all: Judged[] = [];
+  const unconsentedOrphans: BrewVerdict[] = [];
+  let orphanBrews = 0;
+  for (const brew of brews) {
     const key = brew.userId + SEPARATOR + brew.brewId;
     if (seen.has(key)) throw new PlausibilityInputError('a brew appears twice');
     seen.add(key);
     const entry = entries.get(brew.userId + SEPARATOR + brew.shelfEntryId);
-    if (!entry) throw new PlausibilityInputError('a brew has no shelf entry');
-    return { brew, entry, day: utcDay(brew.brewedAtMs) };
-  });
+    if (entry) all.push({ brew, entry, day: utcDay(brew.brewedAtMs) });
+    else if (consentByUser.get(brew.userId) !== true) unconsentedOrphans.push({ userId: brew.userId, brewId: brew.brewId, verdict: 'no_consent' });
+    else orphanBrews += 1;
+  }
   all.sort(compareCanonical);
 
   const verdicts = new Map<Judged, BrewVerdict['verdict']>();
@@ -58,7 +76,9 @@ export function judgeBrews(
     live = live.filter((item) => !rejected.has(item));
   }
 
-  return all
-    .map((item): BrewVerdict => ({ userId: item.brew.userId, brewId: item.brew.brewId, verdict: verdicts.get(item) ?? 'counted' }))
-    .sort((a, b) => compareText(a.userId, b.userId) || compareText(a.brewId, b.brewId));
+  const judged = all.map((item): BrewVerdict => ({ userId: item.brew.userId, brewId: item.brew.brewId, verdict: verdicts.get(item) ?? 'counted' }));
+  return {
+    verdicts: [...judged, ...unconsentedOrphans].sort((a, b) => compareText(a.userId, b.userId) || compareText(a.brewId, b.brewId)),
+    orphanBrews,
+  };
 }

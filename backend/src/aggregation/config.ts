@@ -23,7 +23,10 @@ export const BURST_COUNT = 5;
 /** Rule 6: the running dose of a shelf entry may not exceed bag size x this percentage / 100 (1.10, kept as an integer so no float is involved). */
 export const BAG_DOSE_MARGIN_PERCENT = 110;
 
-/** Rule 6 unit conversions: doses are decigrams, bag sizes grams (x this), and the margin is a percentage (/ this). */
+/**
+ * Rule 6 unit facts, not tunable thresholds: doses are decigrams (the contract's `DoseDg`, so
+ * this follows the contract), bag sizes are grams (x this), and the margin is a percentage (/ this).
+ */
 export const DECIGRAMS_PER_GRAM = 10;
 export const PERCENT_DENOMINATOR = 100;
 

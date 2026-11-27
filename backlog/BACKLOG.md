@@ -1206,6 +1206,12 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - Table-driven tests, each with a brew just inside and just outside its bound: no consent (absent profile and `false` are both no consent); unrated; future (exactly +5 minutes counts, +5 minutes 1 ms does not); before roast date (same UTC day counts); burst (5 in 60 s count, the 6th does not; a sliding window, not fixed minutes); bag dose (running dose exactly at the limit counts, the next brew does not; a bag without a known size is not judged by this rule, which a test pins); straight-lining (9 identical brews count, 10 do not; one differing brew breaks it); daily cap (the 10th cup counts, the 11th does not, ordered by `brewedAt` then brew id).
   - Property tests: the verdicts do not depend on the input order; flipping consent changes only that user's verdicts; removing a rejected brew changes no other verdict, except through the rules that count (cap, burst and dose are stated and tested explicitly).
   - Every reason id of the contract is produced by at least one test, and a test fails if the contract gains an id the judge never emits.
+- decision (resolved ambiguities, inherited by T5 and T6):
+  - Sequential model: each rule sees the brews that passed the rules before it. A brew rejected by rules 1 to 5 takes no place in any later rule. A brew rejected by rule 6 still held a place in the burst window (rule 5 runs first); a brew rejected by rule 7 or 8 still used the bag in rule 6.
+  - Burst: half-open window (a brew exactly 60 s after another is outside it), ordered by `brewedAt` then brew id, across all beans of one user; the earliest 5 count and rejected brews take no place in the window.
+  - Bag dose: integer test `(running + dose) x 100 > grams x 10 x 110`; a brew over the limit adds nothing, so a smaller later brew that fits counts; no dose or no bag size means not judged.
+  - Straight-lining: the history is the user's brews that passed rules 1 to 6; 10 or more with all scores one single value reject all of them.
+  - Orphans: a brew whose shelf entry is missing never throws. A non-consenting or profile-less user's orphan is `no_consent`; a consenting user's orphan is left out of every rule and returned as `orphanBrews` (a count), never given a contract reason id. Only duplicate brews or shelf entries throw `PlausibilityInputError`.
 
 ### M3-T5 Rebuild core (pure)
 - status: todo
@@ -1222,6 +1228,9 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - Per criterion the sum of squares is kept as well; each optional part (buy-again, each intensity dimension, notes, each recipe histogram) carries its own distinct-rater count. Every item is stamped with the run day.
   - The ranking facets are `all`, method, process, roast level, price band and origin (`RANK#ORIGIN#<id>`, by country; region beans roll up to their country; `blend`, `other`, `unknown` unranked). Origin, process and roast level rank only beans with operator-verified attributes. The price band facet uses weight groups (user, bean, band, day) and the 5-rater minimum within the band.
   - Tests: the spread (mean and variance from sums) is exact against a BigInt reference; a bean with 5 raters of whom one logged buy-again carries a part count of 1.
+  - Bag size grams: a generated `BAG_SIZE_GRAMS` map from the published `contracts/vocabulary/*/shelf.json` versions (extend the codegen; `check:generated` covers it). An unknown or absent id maps to `undefined`, so rule 6 does not judge. Resolve against the shelf entry's own `vocabulary_version`, or check that the grams are identical across versions.
+  - Boundary conversions before `judgeBrews`: scores are converted to half-points at one boundary, and timestamps are decoded through the schemas (a NaN `brewedAtMs` is outside the judge's contract). Brews are mapped to `PlausibilityBrew` and shelf entries to `PlausibilityShelfEntry`; `judgeBrews` returns `{ verdicts, orphanBrews }`.
+  - `users_seen` is counted over all scanned brews, including rejected and orphan ones.
 
 ### M3-T6 Oracle fixture and property tests for the rebuild
 - status: todo
@@ -1241,6 +1250,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
     - exact arithmetic: all sums are safe integers and the rational mean `sum / (L x votes)` matches a BigInt reference computation.
   - A test that the rebuild of an empty history is empty and does not throw.
   - The oracle fixture includes a bean with 5 raters where only one carries buy-again and one intensity, with the part counts written out, and a price band case with weight groups per band.
+  - The per-rule property "a brew rejected by the rule leaves the output equal to a history without it" is stated per rule and holds for rules 1 to 5 only (no consent, unrated, future, before roast, burst). It does not hold for bag dose (a dose reject still holds a place in the burst window), straight-lining (judges the whole history) or the daily cap (a cap reject still used the bag in rule 6); those three are tested with explicit examples instead.
 
 ### M3-T7 Repository: paged scan reader, aggregate persistence, single read path
 - status: todo
@@ -1271,6 +1281,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - The handler takes no input that selects users or beans (invariant 3 does not apply to it, since it is not a user route, and a test shows an event carrying a user id is ignored).
   - Tests with a fake repository: success, scan failure, rebuild failure, write failure, dry run, an empty table.
   - A test with an injected now using `readAggregate`: last success on day D, a read on D+3 is still served and a read on D+4 is "not available" (the scan failing on the nights between), so a withdrawn or deleted user's ratings stop being served.
+  - The log line also has the fixed key `brews_orphaned` (a count of brews of consenting users whose shelf entry was missing in the scan; no ids). An orphan is expected now and then (an interrupted account deletion, a brew moved while the Scan paged) and never fails the run (ADR 0035 point 7 fails only on page errors, exhausted throttles and undecodable items).
 
 ### M3-T9 Infra: nightly schedule, permissions, timeout and memory
 - status: todo
@@ -1328,6 +1339,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - A grep test or review check: no remaining doc says the aggregator subtracts, "counts only brews whose author had consent at write time", or "one rating per user-bean-day".
   - The doc-grep test excludes `docs/decisions/` (ADR text is history: ADR 0034 says deleted brews "are subtracted (D2)").
   - docs/05 data model lists the sum of squares per criterion, the run-day stamp and the per-part rater counts; docs/05 and docs/04 F4 say give-to-get is decided in M4 from the user's own shelf or brews (no rater marker); docs/06 and the "three small workers" text follow ADR 0035 point 14.
+  - docs say rule 6 (bag dose) is skipped when the brew has no `dose_dg` or the shelf entry has no bag size, a known evasion the owner may close later by tuning.
 
 ### M3-T13 Post-deploy checks for the nightly job
 - status: todo
