@@ -124,7 +124,8 @@ export class CupmarkData extends Construct {
       encryption: dynamodb.TableEncryption.DEFAULT,
       pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true, recoveryPeriodInDays: 35 },
       deletionProtection: true,
-      // The aggregator applies the difference between old and new brew (docs/05).
+      // The stream stays on (NEW_AND_OLD_IMAGES) for later consumers; nothing reads it today.
+      // The community aggregates are rebuilt nightly by a scan (ADR 0035), not from the stream.
       stream: dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,
       tableClass: dynamodb.TableClass.STANDARD,
       removalPolicy: RemovalPolicy.RETAIN,
@@ -220,7 +221,7 @@ export class CupmarkData extends Construct {
     new CfnOutput(this, 'TableName', { value: this.table.tableName, description: 'DynamoDB table' });
     new CfnOutput(this, 'TableStreamArn', {
       value: streamArn,
-      description: 'DynamoDB stream (NEW_AND_OLD_IMAGES) for the aggregator',
+      description: 'DynamoDB stream (NEW_AND_OLD_IMAGES); enabled, with no consumer today',
     });
     new CfnOutput(this, 'PhotoBucketName', { value: this.photoBucket.bucketName, description: 'Label photo bucket' });
     new CfnOutput(this, 'BackupBucketName', { value: this.backupBucket.bucketName, description: 'Weekly export bucket' });

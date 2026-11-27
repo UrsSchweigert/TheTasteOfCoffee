@@ -19,7 +19,7 @@ import type { StageName } from './config.ts';
 export const BACKEND_DIST_DIR = fileURLToPath(new URL('../../backend/dist/', import.meta.url));
 
 /** The handlers in backend/src/handlers/ that infra deploys. */
-export type BackendHandler = 'api' | 'health' | 'apple-idp';
+export type BackendHandler = 'api' | 'health' | 'apple-idp' | 'nightly-aggregates';
 
 export const LOG_RETENTION = logs.RetentionDays.TWO_WEEKS;
 
@@ -57,7 +57,8 @@ export interface FunctionSpec {
   readonly description: string;
   readonly memorySize: number;
   readonly timeout: Duration;
-  readonly concurrency: number;
+  /** Reserved concurrency cap; omit it for no reservation (the nightly job). */
+  readonly concurrency?: number;
   readonly environment: Readonly<Record<string, string>>;
   readonly statements: readonly iam.PolicyStatement[];
 }
@@ -103,7 +104,7 @@ export function cupmarkFunction(scope: Construct, spec: FunctionSpec): lambda.Fu
     code: backendBundle(spec.part),
     memorySize: spec.memorySize,
     timeout: spec.timeout,
-    reservedConcurrentExecutions: spec.concurrency,
+    ...(spec.concurrency === undefined ? {} : { reservedConcurrentExecutions: spec.concurrency }),
     role,
     logGroup,
     environment: { ...spec.environment, NODE_OPTIONS: '--enable-source-maps' },

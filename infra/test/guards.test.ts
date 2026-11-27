@@ -185,6 +185,26 @@ describe('(a) forbidden and unreviewed resource types', () => {
     expectViolation(violations, 'resource-type', /AWS::SQS::Queue is not on the reviewed allow list/);
   });
 
+  it('fails on an SNS subscription: the owner subscribes by hand (invariant 8, ADR 0035)', () => {
+    const violations = violationsAfter((stack) => {
+      new CfnResource(stack, 'Sub', {
+        type: 'AWS::SNS::Subscription',
+        properties: { Protocol: 'email', TopicArn: 'arn:aws:sns:eu-central-1:123456789012:cupmark-dev-alerts' },
+      });
+    });
+    expectViolation(violations, 'resource-type', /AWS::SNS::Subscription is not on the reviewed allow list/);
+  });
+
+  it('fails on a stream event source mapping: the nightly job replaced the stream aggregator (ADR 0035)', () => {
+    const violations = violationsAfter((stack) => {
+      new CfnResource(stack, 'Mapping', {
+        type: 'AWS::Lambda::EventSourceMapping',
+        properties: { FunctionName: 'cupmark-dev-x', EventSourceArn: 'arn:aws:dynamodb:eu-central-1:123456789012:table/cupmark-dev-main/stream/x' },
+      });
+    });
+    expectViolation(violations, 'resource-type', /AWS::Lambda::EventSourceMapping is not on the reviewed allow list/);
+  });
+
   it('fails on a custom resource (not reviewed)', () => {
     const violations = violationsAfter((stack) => {
       new CfnResource(stack, 'Custom', { type: 'Custom::Anything', properties: { ServiceToken: 'arn' } });
@@ -272,7 +292,7 @@ describe('(c) names', () => {
 
   it('fails on a schedule in the default group', () => {
     const violations = violationsAfter((stack) => {
-      new scheduler.CfnSchedule(stack, 'Nightly', {
+      new scheduler.CfnSchedule(stack, 'DefaultGroupSchedule', {
         scheduleExpression: 'cron(0 3 * * ? *)',
         flexibleTimeWindow: { mode: 'OFF' },
         target: { arn: 'arn:aws:lambda:eu-central-1:123456789012:function:cupmark-dev-rank', roleArn: 'arn:aws:iam::123456789012:role/cupmark-dev-x' },

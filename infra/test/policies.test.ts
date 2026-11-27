@@ -88,6 +88,8 @@ function arnOf(value: unknown, resources: Record<string, { Type: string; Propert
         return `arn:aws:dynamodb:${prefix}:table/${String(r.Properties.TableName)}`;
       case 'AWS::S3::Bucket':
         return `arn:aws:s3:::${arnOf(r.Properties.BucketName, resources)}`;
+      case 'AWS::Lambda::Function':
+        return `arn:aws:lambda:${prefix}:function:${String(r.Properties.FunctionName)}`;
       case 'AWS::Logs::LogGroup':
         return `arn:aws:logs:${prefix}:log-group:${String(r.Properties.LogGroupName)}:*`;
       case 'AWS::Cognito::UserPool':
@@ -111,7 +113,7 @@ describe.each(STAGES)('stage %s', (stage) => {
 
   it('has roles to check', () => {
     expect(roles.map((r) => r.Properties.RoleName).sort()).toEqual(
-      [`cupmark-${stage}-api`, `cupmark-${stage}-apple-idp`, `cupmark-${stage}-export-scheduler`, `cupmark-${stage}-health`].sort(),
+      [`cupmark-${stage}-api`, `cupmark-${stage}-apple-idp`, `cupmark-${stage}-export-scheduler`, `cupmark-${stage}-health`, `cupmark-${stage}-nightly-aggregates`, `cupmark-${stage}-nightly-scheduler`].sort(),
     );
   });
 
@@ -153,7 +155,7 @@ describe.each(STAGES)('stage %s', (stage) => {
 
   it('CupmarkCfnExecution lets CloudFormation read the Lambda code from the Cupmark asset bucket', () => {
     const functions = Object.values(template.Resources).filter((r) => r.Type === 'AWS::Lambda::Function');
-    expect(functions).toHaveLength(3);
+    expect(functions).toHaveLength(4);
     for (const fn of functions) {
       const code = fn.Properties.Code as { S3Bucket: { 'Fn::Sub': string }; S3Key: string };
       const bucket = code.S3Bucket['Fn::Sub'].replace('${AWS::AccountId}', FAKE_ACCOUNT);
@@ -281,6 +283,43 @@ describe('the boundary stays narrow', () => {
         }
       }
     }
+  });
+
+  it('allows dynamodb:Scan only on the table ARN of a Cupmark table, never on an index or a stream (M3-T9)', () => {
+    const statements = boundary.filter((s) => list(s.Action).includes('dynamodb:Scan'));
+    expect(statements).toHaveLength(1);
+    expect(statements[0]).toMatchObject({ Sid: 'NightlyAggregatesScan', Effect: 'Allow', Action: 'dynamodb:Scan' });
+    for (const stage of STAGES) {
+      const table = `arn:aws:dynamodb:${REGION}:${FAKE_ACCOUNT}:table/cupmark-${stage}-main`;
+      expect(allows(boundary, 'dynamodb:Scan', table)).toBe(true);
+      for (const other of [
+        `${table}/index/gsi1`,
+        `${table}/stream/2026-01-01T00:00:00.000`,
+        `arn:aws:dynamodb:${REGION}:${FAKE_ACCOUNT}:table/derschweigert-main`,
+        `arn:aws:dynamodb:${REGION}:${FAKE_ACCOUNT}:table/other`,
+        `arn:aws:dynamodb:eu-west-1:${FAKE_ACCOUNT}:table/cupmark-${stage}-main`,
+        `arn:aws:dynamodb:${REGION}:999999999999:table/cupmark-${stage}-main`,
+      ]) {
+        expect(allows(boundary, 'dynamodb:Scan', other), other).toBe(false);
+      }
+    }
+  });
+
+  it('allows lambda:InvokeFunction only on Cupmark functions of this account and region (M3-T9)', () => {
+    const statements = boundary.filter((s) => list(s.Action).includes('lambda:InvokeFunction'));
+    expect(statements).toHaveLength(1);
+    expect(statements[0]).toMatchObject({ Sid: 'NightlySchedulerInvokesCupmarkFunctions', Effect: 'Allow', Action: 'lambda:InvokeFunction' });
+    for (const stage of STAGES) {
+      expect(allows(boundary, 'lambda:InvokeFunction', `arn:aws:lambda:${REGION}:${FAKE_ACCOUNT}:function:cupmark-${stage}-nightly-aggregates`)).toBe(true);
+    }
+    for (const other of [
+      `arn:aws:lambda:${REGION}:${FAKE_ACCOUNT}:function:derschweigert-site`,
+      `arn:aws:lambda:eu-west-1:${FAKE_ACCOUNT}:function:cupmark-dev-api`,
+      `arn:aws:lambda:${REGION}:999999999999:function:cupmark-dev-api`,
+    ]) {
+      expect(allows(boundary, 'lambda:InvokeFunction', other), other).toBe(false);
+    }
+    expect(allows(boundary, 'lambda:UpdateFunctionCode', `arn:aws:lambda:${REGION}:${FAKE_ACCOUNT}:function:cupmark-dev-api`)).toBe(false);
   });
 
   it.each(['backups', 'deletion-log'])('allows no delete and no version listing in the %s bucket', (part) => {

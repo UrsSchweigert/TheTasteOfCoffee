@@ -7,9 +7,11 @@ import {
   PROJECT_TAG_KEY,
   PROJECT_TAG_VALUE,
   REGION,
+  STAGE_SETTINGS,
   stackName,
 } from './config.ts';
-import type { StageName } from './config.ts';
+import type { StageName, StageSettings } from './config.ts';
+import { CupmarkNightly } from './nightly.ts';
 import { CupmarkApi } from './api.ts';
 import type { OpenFoodFactsSettings } from './api.ts';
 import { CupmarkData } from './data.ts';
@@ -22,6 +24,8 @@ export interface CupmarkStageProps {
   readonly account?: string | undefined;
   /** OFF_CONTACT and OFF_LOOKUP_CAP of the API function (ADR 0019); none by default. */
   readonly openFoodFacts?: OpenFoodFactsSettings;
+  /** Tests only: replaces STAGE_SETTINGS[stage] (the flags change through a pull request, not at deploy). */
+  readonly settings?: StageSettings;
 }
 
 /**
@@ -59,6 +63,7 @@ export class CupmarkStage extends Stage {
   public readonly identity: CupmarkIdentity;
   public readonly api: CupmarkApi;
   public readonly weeklyExport: CupmarkExport;
+  public readonly nightly: CupmarkNightly;
 
   public constructor(scope: Construct, props: CupmarkStageProps) {
     const env: Environment =
@@ -84,6 +89,12 @@ export class CupmarkStage extends Stage {
     });
 
     this.weeklyExport = new CupmarkExport(this.core, 'Export', { stage: props.stage, data: this.data });
+    this.nightly = new CupmarkNightly(this.core, 'Nightly', {
+      stage: props.stage,
+      data: this.data,
+      jobsGroup: this.weeklyExport.group,
+      settings: props.settings ?? STAGE_SETTINGS[props.stage],
+    });
 
     // Resource tags (in the template), on top of the stack tags above.
     Tags.of(this).add(PROJECT_TAG_KEY, PROJECT_TAG_VALUE);
