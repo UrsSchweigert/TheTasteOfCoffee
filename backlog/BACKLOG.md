@@ -1408,7 +1408,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - It touches only `cupmark-` resources (invariant 9), and a test fails if it names any other.
 
 ### M3-T14 Owner dev deploy of the nightly job
-- status: todo (owner: dev deploy; agents never run cdk deploy)
+- status: todo (owner). The dev stack deployed on 2026-11-27 through the pipeline (Deploy run 89, commit 780f7d5, after the scheduler trust fix in M3-T9b). Open: run `scripts/smoke/post-deploy-checks.sh dev --nightly-only` and `--dry-run-job` and report the result
 - owner: human
 - needs: human (the owner re-applies the guardrails with the `dynamodb:Scan` change from M3-T9, approves and runs the dev deploy; agents never run `cdk deploy`)
 - depends: M3-T9, M3-T11
