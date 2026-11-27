@@ -106,14 +106,15 @@ describe('WeightedAccumulator', () => {
     expect(() => { new WeightedAccumulator().add(weightOf(1), hp); }).toThrow(AggregationArithmeticError);
   });
 
-  it.each([0, -1, WEIGHT_DENOMINATOR + 1, 1.5])('refuses the weight %s', (weight) => {
+  it.each([0, -1, 1, 7, 2519, WEIGHT_DENOMINATOR + 1, 1.5])('refuses the weight %s', (weight) => {
     expect(() => { new WeightedAccumulator().add(weight, 10); }).toThrow(AggregationArithmeticError);
   });
 
   it('addWeight adds weights and fails closed', () => {
     expect(addWeight(0, weightOf(4))).toBe(630);
-    expect(() => addWeight(MAX, 1)).toThrow(AggregationArithmeticError);
+    expect(() => addWeight(MAX, weightOf(1))).toThrow(AggregationArithmeticError);
     expect(() => addWeight(0, 0)).toThrow(AggregationArithmeticError);
+    for (const bad of [1, 7, 2519]) expect(() => addWeight(0, bad)).toThrow(AggregationArithmeticError);
   });
 });
 
@@ -181,6 +182,15 @@ describe('integerSquareRoot', () => {
     expect(integerSquareRoot(n)).toBe(root);
   });
 
+  it('is exact and quick for a very large input', () => {
+    const root = 3n ** 120n;
+    const start = performance.now();
+    expect(integerSquareRoot(root * root)).toBe(root);
+    expect(integerSquareRoot(root * root - 1n)).toBe(root - 1n);
+    expect(integerSquareRoot(root * root + 2n * root)).toBe(root);
+    expect(performance.now() - start).toBeLessThan(200);
+  });
+
   it('throws for a negative number', () => {
     expect(() => integerSquareRoot(-1n)).toThrow(AggregationArithmeticError);
   });
@@ -203,6 +213,13 @@ describe('mean and spread from integers', () => {
   it('identical scores have spread exactly 0, not a float residue', () => {
     expect(spreadPointsTenths(totalsOf(Array.from({ length: 7 }, () => ({ n: 1, hp: 17 }))))).toBe(0);
     expect(meanPointsTenths(totalsOf([{ n: 1, hp: 17 }]))).toBe(85);
+  });
+
+  it('rounds the exact tie half up: 2 and 3 half-points at equal weight give mean 12.5 tenths, so 13', () => {
+    // mean 2.5 hp = 1.25 points = 12.5 tenths exactly
+    expect(meanPointsTenths(totalsOf([{ n: 1, hp: 2 }, { n: 1, hp: 3 }]))).toBe(13);
+    // spread: sd 0.5 hp = 0.25 points = 2.5 tenths exactly, rounds to 3
+    expect(spreadPointsTenths(totalsOf([{ n: 1, hp: 2 }, { n: 1, hp: 3 }]))).toBe(3);
   });
 
   it('rounds half up only at the end', () => {

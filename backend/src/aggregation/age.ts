@@ -23,7 +23,7 @@ export function ageInDays(stampDay: string, readDay: string): number {
   return dayNumber(readDay) - dayNumber(stampDay);
 }
 
-/** True when the item may still be served: age at most `MAX_AGE_DAYS`. A stamp from the future is not served. */
+/** True when the item may still be served: age at most `MAX_AGE_DAYS`. A stamp day after the read day (clock skew around UTC midnight) fails closed: not served. */
 export function isServable(stampDay: string, readDay: string): boolean {
   const age = ageInDays(stampDay, readDay);
   return age >= 0 && age <= MAX_AGE_DAYS;

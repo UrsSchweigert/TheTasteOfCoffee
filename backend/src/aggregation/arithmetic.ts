@@ -65,7 +65,7 @@ export class WeightedAccumulator {
 
   /** One counted cup: `weight` from `weightOf(n)`, `halfPoints` an integer from 2 to 20. */
   add(weight: number, halfPoints: number): void {
-    if (!Number.isInteger(weight) || weight < 1 || weight > WEIGHT_DENOMINATOR) throw new AggregationArithmeticError('weight is outside 1 to the weight denominator');
+    assertWeight(weight);
     if (!Number.isInteger(halfPoints) || halfPoints < MIN_HALF_POINTS || halfPoints > MAX_HALF_POINTS) throw new AggregationArithmeticError('score is outside the half-point range');
     const weighted = safeMul(weight, halfPoints, 'weighted score');
     const weightedSquare = safeMul(weighted, halfPoints, 'weighted square');
@@ -89,7 +89,7 @@ export class WeightedAccumulator {
 
 /** A weighted count (events, not scores): `count += weight`, asserted safe. */
 export function addWeight(count: number, weight: number, what = 'weighted count'): number {
-  if (!Number.isInteger(weight) || weight < 1 || weight > WEIGHT_DENOMINATOR) throw new AggregationArithmeticError('weight is outside 1 to the weight denominator');
+  assertWeight(weight);
   return safeAdd(count, weight, what);
 }
 
@@ -104,15 +104,24 @@ function checkTotals(totals: WeightedTotals): { w: bigint; s: bigint; ss: bigint
   return { w: BigInt(weightedCount), s: BigInt(sum), ss: BigInt(sumOfSquares) };
 }
 
-/** Largest integer r with r x r <= n (n a non-negative BigInt). Exact: a float start, then corrected in BigInt. */
+/** Largest integer r with r x r <= n (n a non-negative BigInt). Newton iteration on BigInt: exact for any size. */
 export function integerSquareRoot(n: bigint): bigint {
   if (n < 0n) throw new AggregationArithmeticError('square root of a negative number');
   if (n < 2n) return n;
-  let x = BigInt(Math.floor(Math.sqrt(Number(n))));
-  // The float start is off by at most a few units for the sizes of the rebuild; the loops make it exact.
-  while (x * x > n) x -= 1n;
-  while ((x + 1n) * (x + 1n) <= n) x += 1n;
-  return x;
+  // Start at a power of two above the root, so the sequence decreases monotonically to the floor.
+  let x = 1n << BigInt((n.toString(2).length + 1) >> 1);
+  for (;;) {
+    const next = (x + n / x) >> 1n;
+    if (next >= x) return x;
+    x = next;
+  }
+}
+
+/** A weight that `weightOf` can produce: L / n for n from 1 to the daily cap. */
+function assertWeight(weight: number): void {
+  if (!Number.isInteger(weight) || weight < 1 || WEIGHT_DENOMINATOR % weight !== 0 || WEIGHT_DENOMINATOR / weight > DAILY_CAP) {
+    throw new AggregationArithmeticError('weight is not L / n for a group size n from 1 to the daily cap');
+  }
 }
 
 /** Variance in half-points squared as the exact fraction `(W x SS - S^2) / W^2`. Never negative. */
