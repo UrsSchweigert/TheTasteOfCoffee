@@ -43,7 +43,7 @@ export interface History {
   readonly shelfEntries: readonly RebuildShelfEntry[];
   readonly beans: readonly Bean[];
   /** Counts of what the stream contains, for the report. */
-  readonly counts: { readonly creates: number; readonly edits: number; readonly deletes: number; readonly consentEvents: number; readonly flippedUsers: number };
+  readonly counts: { readonly creates: number; readonly edits: number; readonly moves: number; readonly deletes: number; readonly consentEvents: number; readonly flippedUsers: number };
 }
 
 const isoOf = (ms: number): string => new Date(ms).toISOString();
@@ -61,6 +61,7 @@ export function generateHistory(seed: number): History {
   let entryNumber = 0;
   let brewNumber = 0;
   let edits = 0;
+  let moves = 0;
   let deletes = 0;
   let flippedUsers = 0;
   const bands = PriceBandSchema.options;
@@ -151,7 +152,9 @@ export function generateHistory(seed: number): History {
         for (let n = rng.int(1, 2); n > 0; n -= 1) {
           edits += 1;
           const moved = rng.chance(0.3);
-          const rerated = rng.chance(0.6);
+          if (moved) moves += 1;
+          // Either the rating is replaced and the parameters kept, or the parameters are replaced and the rating kept.
+          const ratingChanges = rng.chance(0.6);
           const current = values;
           events.push({
             kind: 'edit',
@@ -160,8 +163,8 @@ export function generateHistory(seed: number): History {
             values: {
               ...current,
               brewed_at: moved ? isoOf(Math.min(RUN_MS, at + rng.int(-3, 3) * DAY_MS + rng.int(0, 3600) * 1000)) : current.brewed_at,
-              parameters: rerated ? current.parameters : parametersOf(rng, mode),
-              ...(rerated && !rng.chance(0.1) ? { rating: ratingOf(rng, liner) } : {}),
+              parameters: ratingChanges ? current.parameters : parametersOf(rng, mode),
+              ...(ratingChanges && !rng.chance(0.1) ? { rating: ratingOf(rng, liner) } : {}),
             },
           });
         }
@@ -173,7 +176,7 @@ export function generateHistory(seed: number): History {
     }
   });
 
-  return { events, shelfEntries, beans, counts: { creates: brewNumber, edits, deletes, consentEvents: events.filter((e) => e.kind === 'consent').length, flippedUsers } };
+  return { events, shelfEntries, beans, counts: { creates: brewNumber, edits, moves, deletes, consentEvents: events.filter((e) => e.kind === 'consent').length, flippedUsers } };
 }
 
 // ---- the table side ----

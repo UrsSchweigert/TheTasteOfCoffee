@@ -36,6 +36,7 @@ describe('the generated history', () => {
     const { counts } = fixture.history;
     expect(counts.creates).toBe(BREWS_CREATED);
     expect(counts.edits).toBeGreaterThan(500);
+    expect(counts.moves).toBeGreaterThan(50);
     expect(counts.deletes).toBeGreaterThan(200);
     expect(counts.flippedUsers).toBeGreaterThan(10);
     expect(new Set(fixture.history.events.flatMap((e) => (e.kind === 'create' ? [e.user] : []))).size).toBe(USERS);
@@ -70,6 +71,8 @@ describe('the full job on the in-memory table', () => {
     // The scan took more than 40 pages (the failure test needs page 40 to exist).
     expect(first.stats.scanPages).toBeGreaterThan(FAILING_PAGE);
     expect(first.stats.scanPages).toBe(Math.ceil(Number(first.log.items_scanned) / SCAN_PAGE_SIZE));
+    // The handler's own per-reason counts are the oracle's.
+    expect(first.log.reasons).toEqual(fixture.expected.result.counts.reasons);
     // Exact: the table holds what the oracle says, and every number is a safe integer (the run's own assertion never tripped).
     const written = itemsOf(table);
     expect(dump(written, isAggregateKey)).toBe(fixture.expected.text);

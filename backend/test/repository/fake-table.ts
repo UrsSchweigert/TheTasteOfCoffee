@@ -12,6 +12,7 @@ export type Item = Record<string, unknown>;
 const order = (item: Item): string => `${String(item.pk)}\u0000${String(item.sk)}`;
 
 export class FakeTable {
+  /** Read-only for callers: change the table only through put, remove and the commands. A direct `items.set` on an existing key leaves a stale cached key-ordered view (the Scan cache). */
   public readonly items = new Map<string, Item>();
   public readonly scanLimits: (number | undefined)[] = [];
   public scanCalls = 0;
