@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
 import { generateAggregationFromDir } from './aggregation.ts';
 import { generateExportSource } from './csv-export.ts';
+import { generateVocabularyFactsSource } from './vocabulary-facts.ts';
 import { readVocabularyDir, generateVocabularySource } from './vocabulary.ts';
 import { generateContractSource } from './zod-from-openapi.ts';
 
@@ -15,6 +16,7 @@ export const GENERATED_VOCABULARY_FILE = join(BACKEND_DIR, 'src', 'generated', '
 /** The aggregation contract version the backend builds against (M3-T3). A new version is a deliberate change here. */
 export const AGGREGATION_DIR = join(BACKEND_DIR, '..', 'contracts', 'aggregation', 'v1');
 export const GENERATED_AGGREGATION_FILE = join(BACKEND_DIR, 'src', 'generated', 'aggregation.ts');
+export const GENERATED_VOCABULARY_FACTS_FILE = join(BACKEND_DIR, 'src', 'generated', 'vocabulary-facts.ts');
 export const GENERATED_EXPORT_FILE = join(BACKEND_DIR, 'src', 'generated', 'export.ts');
 
 /** Parses YAML as strictly as contracts/lib/openapi.mjs does: duplicate keys throw. */
@@ -42,6 +44,11 @@ export function generateAggregationFromContract(): string {
   return generateAggregationFromDir(AGGREGATION_DIR);
 }
 
+/** Generated source for the bag size grams and origin countries of the published vocabulary (M3-T5), as on disk now. */
+export function generateVocabularyFactsFromContract(): string {
+  return generateVocabularyFactsSource(readVocabularyDir(VOCABULARY_DIR));
+}
+
 /** Every generated file and its fresh source. */
 export function generatedFiles(): { file: string; source: string }[] {
   return [
@@ -49,5 +56,6 @@ export function generatedFiles(): { file: string; source: string }[] {
     { file: GENERATED_VOCABULARY_FILE, source: generateVocabularyFromContract() },
     { file: GENERATED_EXPORT_FILE, source: generateExportFromContract() },
     { file: GENERATED_AGGREGATION_FILE, source: generateAggregationFromContract() },
+    { file: GENERATED_VOCABULARY_FACTS_FILE, source: generateVocabularyFactsFromContract() },
   ];
 }
