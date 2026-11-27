@@ -1182,7 +1182,9 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - Item shapes also carry, per criterion, the integer sum of squares (weight x half-points squared; bound 1,008,000 per cup, ADR 0035), the run day stamp, and a distinct-rater count for each optional part: buy-again, each intensity dimension, the flavour notes and each recipe parameter histogram. The eight criteria need none (all are required, ADR 0026).
 
 ### M3-T3 Rebuild configuration and exact arithmetic
-- status: todo
+- status: done
+- decision (loading): the backend generates, it does not read the JSON at run time. `backend/scripts/codegen/aggregation.ts` writes `backend/src/generated/aggregation.ts` (`REASON_IDS`, `ReasonId`, `HISTOGRAM_PARAMETERS`) from `contracts/aggregation/v1/`; `npm run generate` writes it and `npm run check:generated` and a test fail on drift. The Lambda bundle needs no file outside itself, and the ids and edges are written once, in the contract. Later tasks import from `src/generated/aggregation.ts`.
+- built: `backend/src/aggregation/config.ts` (all thresholds, the per-cup bounds, `MAX_AGE_DAYS`, `REFRESH_AFTER_DAYS`), `arithmetic.ts` (`weightOf`, checked `safeAdd`/`safeMul`, `WeightedAccumulator`, BigInt variance, mean and spread), `age.ts` (age of a stamp, servable, stamp refresh); tests in `backend/test/aggregation/`. The bag-dose margin is kept as an integer percentage (110) so no float is involved.
 - owner: backend-engineer
 - depends: M3-T2
 - implements: ADR 0035 (weights, thresholds); docs/05-system-design.md, Aggregation pipeline

@@ -61,7 +61,7 @@ A field that a method does not allow must be absent; the server answers 400 (M2-
 
 ## Aggregation contract (M3-T2, ADR 0035)
 
-`aggregation/v1/` holds what the nightly rebuild and its readers agree on besides the vocabulary. It sits outside `vocabulary/v<N>/` on purpose: it adds no vocabulary list, so no vocabulary version changes and no published version is edited. The backend (M3-T4 and later) loads `reasons.json` and `histogram_buckets.json` at runtime, or uses types generated from them (M3-T3 decides); it does not import `REASON_IDS` or the scale map from `contracts/lib`, which exist for the checks only. One runtime source, and it never writes the ids or edges again. Not in `openapi.yaml`: no route returns aggregates in M3.
+`aggregation/v1/` holds what the nightly rebuild and its readers agree on besides the vocabulary. It sits outside `vocabulary/v<N>/` on purpose: it adds no vocabulary list, so no vocabulary version changes and no published version is edited. The backend (M3-T4 and later) loads `reasons.json` and `histogram_buckets.json` at runtime, or uses types generated from them (M3-T3 decided: types and data are generated into `backend/src/generated/aggregation.ts` by `npm run generate`, and `check:generated` fails on drift); it does not import `REASON_IDS` or the scale map from `contracts/lib`, which exist for the checks only. One runtime source, and it never writes the ids or edges again. Not in `openapi.yaml`: no route returns aggregates in M3.
 
 | File | Holds | Schema |
 | --- | --- | --- |
