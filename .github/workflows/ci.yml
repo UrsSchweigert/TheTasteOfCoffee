@@ -207,6 +207,12 @@ jobs:
       # sets, and every text and tint pairing at 4.5:1 or better in both appearances.
       - name: iOS colours are named, and contrast holds
         run: node scripts/check-ios-colours.mjs
+      # The docs that describe the nightly rebuild stay in step with it (M3-T12), and
+      # the operator checks for the nightly job (M3-T13).
+      - name: Docs rebuild tests
+        run: node --test scripts/docs-rebuild.test.mjs
+      - name: Nightly checks tests
+        run: node --test scripts/nightly-checks.test.mjs
 
   # Builds the app and runs its unit tests and, from M2-T33, its UI tests
   # (CupmarkUITests) on the iOS Simulator (M0-T6). Both are in the Cupmark
@@ -310,6 +316,12 @@ jobs:
           DYNAMODB_ENDPOINT: http://localhost:8000
           REQUIRE_DYNAMODB_LOCAL: '1'
         run: npm run test:integration
+      # Replays the nightly rebuild against DynamoDB Local (M3-T10); not part of npm test.
+      - name: Replay tests (DynamoDB Local)
+        env:
+          DYNAMODB_ENDPOINT: http://localhost:8000
+          REQUIRE_DYNAMODB_LOCAL: '1'
+        run: npm run test:replay
       - name: Build
         run: npm run build
       - name: Generated contract is up to date
