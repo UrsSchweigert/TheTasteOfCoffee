@@ -510,7 +510,7 @@ No token is needed, only your own AWS CLI credentials (CloudShell or a profile).
 ```bash
 scripts/smoke/post-deploy-checks.sh dev --nightly-only      # reads only
 scripts/smoke/post-deploy-checks.sh dev --dry-run-job       # the same, plus one dry-run invocation
-scripts/smoke/nightly-checks.sh prod                        # the script itself, either stage, reads only
+scripts/smoke/nightly-checks.sh prod                        # the script itself, either stage, reads only (--dry-run-job is dev only)
 ```
 
 It checks the function (timeout 300, 512 MB, arm64, no VPC, async `MaximumRetryAttempts` 0), the nightly and weekly-export schedules in `cupmark-<stage>-jobs` (expression, state: dev `ENABLED`, prod `DISABLED`, as in `src/config.ts`), the two role policies against the expected scoped statements (no `dynamodb:*`, no wildcard resource, the `LeadingKeys` condition `BEAN#*`/`RANK#*` on the writes), and, only while the stage's `failureAlarms.enabled` is true, the two alarms (`ALARM` fails) and the topic (subscriber endpoints are never read; no account id is printed). The dry run prints the counts, the per-reason counts and a `NIGHTLY_MEASURE` line with the same key names as the `REPLAY_MEASURE` line of `npm run test:replay` in `backend/` (`items_scanned`, `brews_seen`, `brews_counted`, `duration_ms`, `timeout_ms`, `share_of_timeout`, `items_written`, `items_deleted`; plus `max_memory_used_mb` from the Lambda REPORT line), and fails above the ADR 0035 bounds: 60 s, half of the timeout, 60% of the memory. Right after a deploy with the flag on, the missing-run alarm is in `ALARM` until the first scheduled run, so that check fails once by design.

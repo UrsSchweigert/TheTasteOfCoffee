@@ -109,6 +109,7 @@ function world(stage = 'dev', alarmsOn = false) {
       ScheduleExpression: 'cron(0 2 * * ? *)',
       ScheduleExpressionTimezone: 'UTC',
       State: stage === 'dev' ? 'ENABLED' : 'DISABLED',
+      FlexibleTimeWindow: { Mode: 'FLEXIBLE', MaximumWindowInMinutes: 15 },
       Target: { Arn: `arn:aws:lambda:eu-central-1:${ACCOUNT}:function:${p}-nightly-aggregates`, Input: '{}', RetryPolicy: { MaximumRetryAttempts: 1 } },
     },
     [`scheduler get-schedule ${p}-weekly-export`]: {
@@ -117,7 +118,10 @@ function world(stage = 'dev', alarmsOn = false) {
       ScheduleExpression: 'cron(0 3 ? * SUN *)',
       ScheduleExpressionTimezone: 'UTC',
       State: 'ENABLED',
-      Target: { Arn: 'arn:aws:scheduler:::aws-sdk:dynamodb:exportTableToPointInTime' },
+      Target: {
+        Arn: 'arn:aws:scheduler:::aws-sdk:dynamodb:exportTableToPointInTime',
+        Input: JSON.stringify({ TableArn: `arn:aws:dynamodb:eu-central-1:${ACCOUNT}:table/${p}-main`, S3Bucket: `cupmark-${stage}-backups-${ACCOUNT}` }),
+      },
     },
     [`iam list-role-policies ${p}-nightly-aggregates`]: { PolicyNames: [`${p}-nightly-aggregates`] },
     [`iam list-attached-role-policies ${p}-nightly-aggregates`]: { AttachedPolicies: [] },
@@ -212,6 +216,9 @@ const failures = [
   ['a wrong cron', (f) => { f['scheduler get-schedule cupmark-dev-nightly-aggregates'].ScheduleExpression = 'cron(0 5 * * ? *)'; }, /FAIL {2}schedule .*expected cron\(0 2/],
   ['a disabled dev schedule', (f) => { f['scheduler get-schedule cupmark-dev-nightly-aggregates'].State = 'DISABLED'; }, /FAIL {2}schedule .*ENABLED; got .* DISABLED/],
   ['a schedule input that is a dry run', (f) => { f['scheduler get-schedule cupmark-dev-nightly-aggregates'].Target.Input = '{"dry_run":true}'; }, /FAIL {2}schedule cupmark-dev-nightly-aggregates: expected the target/],
+  ['a function that uses a foreign role', (f) => { f['lambda get-function-configuration'].Role = `arn:aws:iam::${ACCOUNT}:role/DerSchweigert-api-role`; }, /FAIL {2}function role: expected the role cupmark-dev-nightly-aggregates, the function uses another role; its policy is not read/],
+  ['a window that is not flexible', (f) => { f['scheduler get-schedule cupmark-dev-nightly-aggregates'].FlexibleTimeWindow = { Mode: 'OFF' }; }, /FAIL {2}schedule .*FLEXIBLE window of 15 minutes/],
+  ['an export of another table', (f) => { f['scheduler get-schedule cupmark-dev-weekly-export'].Target.Input = JSON.stringify({ TableArn: 'arn:aws:dynamodb:eu-central-1:123456789012:table/other' }); }, /FAIL {2}schedule .*weekly-export: unexpected target/],
   ['a wrong weekly export cron', (f) => { f['scheduler get-schedule cupmark-dev-weekly-export'].ScheduleExpression = 'cron(0 3 * * ? *)'; }, /FAIL {2}schedule .*weekly-export: expected/],
   ['dynamodb:* on the function role', (f) => { f['iam get-role-policy cupmark-dev-nightly-aggregates'].Statement[1].Action = 'dynamodb:*'; }, /FAIL {2}role cupmark-dev-nightly-aggregates: the policy is not the scoped one/],
   ['a wildcard resource', (f) => { f['iam get-role-policy cupmark-dev-nightly-aggregates'].Statement[1].Resource = '*'; }, /FAIL {2}role cupmark-dev-nightly-aggregates: the policy is not the scoped one/],
@@ -296,6 +303,8 @@ test('--dry-run-job invokes once with {"dry_run": true}, prints the figures and 
 });
 
 const dryFailures = [
+  ['a null duration', (f) => { f['lambda invoke'].out.LogResult = b64(logTail(runLine({ duration_ms: null }))); }, /FAIL {2}dry run: the run log line says/],
+  ['a null share', (f) => { f['lambda invoke'].out.LogResult = b64(logTail(runLine({ share_of_timeout: null }))); }, /FAIL {2}dry run: the run log line says/],
   ['a function error', (f) => { f['lambda invoke'].out.FunctionError = 'Unhandled'; f['lambda invoke'].response = { errorType: 'ResourceNotFoundException' }; }, /FAIL {2}dry run: the function returned an error \(Unhandled, ResourceNotFoundException\)/],
   ['a log line without the fixed keys', (f) => { f['lambda invoke'].out.LogResult = b64(logTail(JSON.stringify({ operation: 'nightly-aggregates', status: 'OK', dry_run: true }))); }, /FAIL {2}dry run: the log tail has no run log line with the fixed keys/],
   ['no log line at all', (f) => { f['lambda invoke'].out.LogResult = b64('START\nEND\n'); }, /FAIL {2}dry run: the log tail has no run log line/],
@@ -347,7 +356,7 @@ test('post-deploy-checks.sh --dry-run-job and --nightly-only run these checks wi
 });
 
 test('usage errors and refusals: no AWS call', opts, () => {
-  for (const [stage, args] of [['staging', []], ['dev', ['--payload']], ['dev', ['--dry-run-job', 'x']], ['cupmark-dev', []], ['../x', []]]) {
+  for (const [stage, args] of [['staging', []], ['dev', ['--payload']], ['prod', ['--dry-run-job']], ['dev', ['--dry-run-job', 'x']], ['cupmark-dev', []], ['../x', []]]) {
     const r = run(world('dev'), { stage, args });
     assert.equal(r.status, 2, `${stage} ${args.join(' ')}: ${r.all}`);
     assert.equal(r.calls.length, 0);
@@ -362,7 +371,7 @@ test('read-only: every call is on the allow-list, in eu-central-1, and names onl
     'iam list-role-policies', 'iam list-attached-role-policies', 'iam get-role-policy', 'cloudwatch describe-alarms', 'sns get-topic-attributes',
   ]);
   for (const stage of ['dev', 'prod']) {
-    const r = run(world(stage, true), { stage, alarmsOn: true, args: ['--dry-run-job'] });
+    const r = run(world(stage, true), { stage, alarmsOn: true, args: stage === 'dev' ? ['--dry-run-job'] : [] });
     assert.equal(r.status, 0, r.all);
     for (const call of r.calls) {
       assert.ok(allowed.has(`${call[0]} ${call[1]}`), `unexpected call ${call.join(' ')}`);
@@ -391,4 +400,28 @@ test('the script source has no write verbs, no keys and no other project names',
   // Every resource name in the script is built from the cupmark-<stage> prefix.
   for (const m of src.matchAll(/^(?:FN|SCHEDULE|EXPORT_SCHEDULE|GROUP|SCHED_ROLE|TOPIC|ERRORS_ALARM|MISSING_ALARM|TABLE)="([^"]+)"/gm)) assert.match(m[1], /^\$P(-[a-z-]+)?$/);
   assert.match(src, /^P="cupmark-\$STAGE"$/m);
+});
+
+test('a foreign role is never read: no iam call names it', opts, () => {
+  const f = world('dev');
+  f['lambda get-function-configuration'].Role = `arn:aws:iam::${ACCOUNT}:role/DerSchweigert-api-role`;
+  const r = run(f);
+  assert.equal(r.status, 1);
+  for (const call of r.calls) assert.ok(!call.join(' ').includes('DerSchweigert'), call.join(' '));
+  assert.ok(!r.calls.some((c) => c[0] === 'iam' && c.includes('cupmark-dev-nightly-aggregates')), 'no IAM call for the function role either');
+  assert.ok(!r.all.includes('DerSchweigert'));
+});
+
+test('aws_json refuses a verb that is not on the allow-list (exit 2), and aws is called only there', opts, () => {
+  const src = readFileSync(SCRIPT, 'utf8');
+  const lines = src.split('\n').filter((l) => !l.trimStart().startsWith('#') && /(^|[|;&(]|\$\()\s*aws /.test(l.replace(/"[^"]*"/g, '"').replace(/'[^']*'/g, "'")));
+  assert.deepEqual(lines.map((l) => l.trim()), ['aws "$1" "$2" --region "$REGION" --output json "${@:3}"']);
+  const fn = src.slice(src.indexOf('aws_json() {'), src.indexOf('echo "Nightly job checks for'));
+  const dir = mkdtempSync(join(work, 'allow-'));
+  const r = spawnSync('bash', ['-c', `set -euo pipefail; REGION=eu-central-1; ${fn}\naws_json iam delete-role --role-name cupmark-dev-x`], {
+    env: { PATH: '/usr/bin:/bin', HOME: dir },
+    encoding: 'utf8',
+  });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /not on the allow-list/);
 });

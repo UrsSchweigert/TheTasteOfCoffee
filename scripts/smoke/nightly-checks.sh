@@ -59,6 +59,10 @@ DRY_RUN=0
 if [[ $# -eq 2 ]]; then
   [[ "$2" == "--dry-run-job" ]] || usage
   DRY_RUN=1
+  if [[ "$STAGE" != "dev" ]]; then
+    echo "--dry-run-job is allowed on dev only; prod gets the read-only checks." >&2
+    exit 2
+  fi
 fi
 
 P="cupmark-$STAGE"
@@ -149,7 +153,7 @@ fi
 check_schedule() { # name expected-expression expected-state
   local name="$1" expression="$2" state="$3"
   if aws_json scheduler get-schedule --group-name "$GROUP" --name "$name" >"$tmp/sched.json" 2>"$tmp/err"; then
-    if jq -e --arg e "$expression" --arg s "$state" '.ScheduleExpression == $e and .State == $s and .ScheduleExpressionTimezone == "UTC" and .GroupName == "'"$GROUP"'"' "$tmp/sched.json" >/dev/null; then
+    if jq -e --arg e "$expression" --arg s "$state" --arg g "$GROUP" '.ScheduleExpression == $e and .State == $s and .ScheduleExpressionTimezone == "UTC" and .GroupName == $g' "$tmp/sched.json" >/dev/null; then
       pass "schedule $GROUP/$name: $expression UTC, $state"
     else
       fail "schedule $GROUP/$name: expected $expression UTC $state; got $(jq -r '.ScheduleExpression' "$tmp/sched.json") $(jq -r '.ScheduleExpressionTimezone' "$tmp/sched.json") $(jq -r '.State' "$tmp/sched.json")"
@@ -162,13 +166,17 @@ check_schedule() { # name expected-expression expected-state
 if check_schedule "$SCHEDULE" "$EXPECTED_CRON" "$EXPECTED_STATE"; then
   if jq -e --arg fn "$FN" '.Target.Input == "{}" and ((.Target.Arn // "") | endswith(":function:" + $fn)) and .Target.RetryPolicy.MaximumRetryAttempts == 1' "$tmp/sched.json" >/dev/null; then
     pass "schedule $SCHEDULE: starts $FN with the empty event {} and one Scheduler retry"
+    if ! jq -e '.FlexibleTimeWindow.Mode == "FLEXIBLE" and .FlexibleTimeWindow.MaximumWindowInMinutes == 15' "$tmp/sched.json" >/dev/null; then
+      fail "schedule $SCHEDULE: expected a FLEXIBLE window of 15 minutes"
+    fi
   else
     fail "schedule $SCHEDULE: expected the target $FN, input {} (never a dry run) and MaximumRetryAttempts 1"
   fi
 fi
 if check_schedule "$EXPORT_SCHEDULE" "$EXPECTED_EXPORT_CRON" "ENABLED"; then
-  if jq -e --arg t "$EXPORT_TARGET" '.Target.Arn == $t' "$tmp/sched.json" >/dev/null; then
-    pass "schedule $EXPORT_SCHEDULE: calls dynamodb exportTableToPointInTime"
+  if jq -e --arg t "$EXPORT_TARGET" --arg table ":table/$TABLE" '.Target.Arn == $t
+    and ((.Target.Input // "{}" | fromjson | .TableArn // "") | endswith($table))' "$tmp/sched.json" >/dev/null; then
+    pass "schedule $EXPORT_SCHEDULE: calls dynamodb exportTableToPointInTime on $TABLE"
   else
     fail "schedule $EXPORT_SCHEDULE: unexpected target"
   fi
@@ -199,10 +207,12 @@ role_policies() { # role-name: the single inline policy document in $tmp/policy.
 # Statements as {sid, effect, actions, resources, condition} with actions and resources as sorted lists.
 NORMALISE='[.Statement | if type == "array" then .[] else . end | {sid: (.Sid // ""), effect: .Effect, actions: ([.Action] | flatten | sort), resources: ([.Resource] | flatten | sort), condition: (.Condition // null)}]'
 
-if [[ -n "$ROLE_NAME" ]] && role_policies "$ROLE_NAME"; then
-  if [[ "$ROLE_NAME" != "$FN" ]]; then
-    fail "function role: expected the role $FN, the function uses '$ROLE_NAME'"
-  elif jq -e --arg table "arn:aws:dynamodb:$REGION:" --arg tablename ":table/$TABLE" --arg logs ":log-group:/aws/lambda/$FN:*" "$NORMALISE"' as $s
+# The role name AWS reports is compared with the expected one BEFORE any IAM call: a role
+# that is not ours is never read (invariant 9).
+if [[ -n "$ROLE_NAME" && "$ROLE_NAME" != "$FN" ]]; then
+  fail "function role: expected the role $FN, the function uses another role; its policy is not read"
+elif [[ -n "$ROLE_NAME" ]] && role_policies "$FN"; then
+  if jq -e --arg table "arn:aws:dynamodb:$REGION:" --arg tablename ":table/$TABLE" --arg logs ":log-group:/aws/lambda/$FN:*" "$NORMALISE"' as $s
     | ($s | map(.sid) | sort) == ["Logs", "ScanTable", "WriteAggregates"]
     and ($s | all(.effect == "Allow"))
     and ($s | all(.actions | all(. != "*" and (endswith(":*") | not) and (test("\\*") | not))))
@@ -296,7 +306,7 @@ if [[ $DRY_RUN -eq 1 ]]; then
     KEYS='["operation","status","dry_run","duration_ms","share_of_timeout","items_scanned","users_seen","brews_seen","brews_counted","brews_orphaned","reasons","beans_with_aggregates","beans_ranked","items_written","items_deleted"]'
     if [[ -z "$json_line" ]] || ! jq -e --argjson keys "$KEYS" '. as $o | type == "object" and ($keys | all(. as $k | $o | has($k)))' <<<"$json_line" >/dev/null 2>&1; then
       fail "dry run: the log tail has no run log line with the fixed keys (operation, status, dry_run, duration_ms, share_of_timeout, items_scanned, users_seen, brews_*, reasons, items_written, items_deleted)"
-    elif ! jq -e '.operation == "nightly-aggregates" and .status == "OK" and .dry_run == true' <<<"$json_line" >/dev/null; then
+    elif ! jq -e '.operation == "nightly-aggregates" and .status == "OK" and .dry_run == true and (.duration_ms | type == "number") and (.share_of_timeout | type == "number")' <<<"$json_line" >/dev/null; then
       fail "dry run: the run log line says status $(jq -r '.status' <<<"$json_line"), dry_run $(jq -r '.dry_run' <<<"$json_line")"
     elif ! jq -e '.items_written == 0 and .items_deleted == 0' <<<"$json_line" >/dev/null; then
       fail "dry run: the log line reports writes (items_written $(jq -r '.items_written' <<<"$json_line"), items_deleted $(jq -r '.items_deleted' <<<"$json_line")); a dry run must write nothing. Stop and tell the maintainers"
