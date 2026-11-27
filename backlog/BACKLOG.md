@@ -1271,6 +1271,8 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
 ### M3-T7 Repository: paged scan reader, aggregate persistence, single read path
 - status: in-review (code and tests; the DynamoDB Local suite test/integration/aggregates.test.ts is written but was not run in the sandbox, no Docker)
 - owner: backend-engineer
+- decision: undecodable OLD `AGG#`/`RANK#` items do not fail the Scan (kept as key-only entries, then overwritten or deleted; `readAggregate` still throws `CorruptItemError` on them) because failing would block the run that repairs them. A deliberate departure from the literal ADR 0035 point 7 text.
+- M4 note: map `CorruptItemError` to a generic 500 that carries nothing about the bean. The threshold is per part (ADR 0035 point 10), so a served note, intensity or bucket may come from one user among 5 or more raters; per-value suppression, if wanted, is an M4 decision.
 - depends: M3-T5
 - implements: docs/05-system-design.md, Data model, Aggregation pipeline; ADR 0035; ADR 0034; CLAUDE.md invariant 4
 - acceptance:
@@ -1357,6 +1359,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - The doc-grep test excludes `docs/decisions/` (ADR text is history: ADR 0034 says deleted brews "are subtracted (D2)").
   - docs/05 data model lists the sum of squares per criterion, the run-day stamp and the per-part rater counts; docs/05 and docs/04 F4 say give-to-get is decided in M4 from the user's own shelf or brews (no rater marker); docs/06 and the "three small workers" text follow ADR 0035 point 14.
   - docs say rule 6 (bag dose) is skipped when the brew has no `dose_dg` or the shelf entry has no bag size, a known evasion the owner may close later by tuning.
+  - docs/05 (Data model, rater marker row) and `.claude/agents/backend-engineer.md` ("Give-to-get checks the `RATER#` item") still mention `RATER#`; fix both.
 
 ### M3-T13 Post-deploy checks for the nightly job
 - status: todo

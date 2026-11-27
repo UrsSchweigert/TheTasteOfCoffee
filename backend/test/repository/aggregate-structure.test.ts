@@ -65,9 +65,11 @@ describe('one read path for aggregates', () => {
     expect(exported).toEqual([]);
   });
 
-  it('(b) readAggregate exists once, in aggregate-read.ts, and is called from nowhere else in src except the repository class', () => {
-    const callers = all.filter((f) => /\breadAggregate\(/.test(read(f))).map(rel);
-    expect(callers).toEqual(['repository/aggregate-read.ts', 'repository/aggregate-repository.ts']);
+  it('(b) only aggregate-repository.ts imports aggregate-read.ts and its free function (callers use the repository method)', () => {
+    const importers = all.filter((f) => /^(import|export) (?!type\b)[^;]*from '[^']*aggregate-read(\.ts)?'/m.test(read(f))).map(rel);
+    expect(importers).toEqual(['repository/aggregate-repository.ts']);
+    const defined = all.filter((f) => /export async function readAggregate\b/.test(read(f))).map(rel);
+    expect(defined).toEqual(['repository/aggregate-read.ts']);
   });
 
   it('keys.ts has no rater marker', () => {

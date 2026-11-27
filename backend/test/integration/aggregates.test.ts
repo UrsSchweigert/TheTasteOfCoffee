@@ -5,6 +5,7 @@
 import { BatchWriteCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { canonical } from '../../src/repository/aggregate-schemas.ts';
 import { AggregateRepository } from '../../src/repository/index.ts';
 import { BEAN, OTHER_BEAN, RUN_DAY, RUN_MS, DAY, profileItem, runNight, seedCrowd, sub } from '../repository/aggregate-fixtures.ts';
 import { FakeTable } from '../repository/fake-table.ts';
@@ -62,7 +63,15 @@ describe.skipIf(!local.reachable)('aggregates on DynamoDB Local', () => {
     await seed((t) => {
       seedCrowd(t, 6, { brewsEach: 2 });
     });
-    const scan = await repo(new Date(RUN_MS)).scanForRebuild();
+    let pages = 0;
+    const counting = {
+      send: (command: unknown) => {
+        if (command instanceof ScanCommand) pages += 1;
+        return (documentClient as unknown as { send(c: unknown): Promise<unknown> }).send(command);
+      },
+    } as unknown as DynamoDBDocumentClient;
+    const scan = await repo(new Date(RUN_MS), counting).scanForRebuild();
+    expect(pages).toBeGreaterThanOrEqual(2);
     expect(scan.brews).toHaveLength(12);
     expect(new Set(scan.brews.map((b) => b.brew.brew_id)).size).toBe(12);
     expect(scan.shelfEntries).toHaveLength(6);
@@ -98,12 +107,12 @@ describe.skipIf(!local.reachable)('aggregates on DynamoDB Local', () => {
     await runNight(r);
     expect((await r.readAggregate(BEAN)).kind).toBe('served');
     expect((await r.readAggregate(OTHER_BEAN)).kind).toBe('served');
-    const first = (await everything()).map((i) => JSON.stringify(i)).sort();
+    const first = (await everything()).map((i) => canonical(i)).sort();
 
     const again = await runNight(r, RUN_MS + 60_000);
     expect(again.written).toBe(0);
     expect(again.deleted).toBe(0);
-    expect((await everything()).map((i) => JSON.stringify(i)).sort()).toEqual(first);
+    expect((await everything()).map((i) => canonical(i)).sort()).toEqual(first);
 
     // Next day: rankings move to the new day, unchanged AGG items stay.
     const next = await runNight(r, RUN_MS + DAY);

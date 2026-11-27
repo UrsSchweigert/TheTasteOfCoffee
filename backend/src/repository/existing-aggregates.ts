@@ -8,7 +8,7 @@ import type { AggregateItem, RankingItem } from '../aggregation/rebuild/types.ts
 import { AGGREGATE_ITEM_TYPE, RANKING_ITEM_TYPE, RankingBody, canonical, parseAggregateBody } from './aggregate-schemas.ts';
 import type { RankingBodyValue } from './aggregate-schemas.ts';
 import { InvalidValuesError } from './errors.ts';
-import { aggregateAllKey, aggregateMethodKey, rankingKey } from './keys.ts';
+import { PREFIX, aggregateAllKey, aggregateMethodKey, parseBeanPk, rankingKey } from './keys.ts';
 import type { Key } from './keys.ts';
 
 /** One item to put: its key attributes, `type` and the contract attributes. */
@@ -112,6 +112,11 @@ export class ExistingAggregates {
     const deletes: Key[] = [];
     for (const [text, found] of [...this.#aggregates, ...this.#rankings]) {
       if (!wanted.has(text)) deletes.push(found.key);
+    }
+    // Guard before any request: only aggregate and ranking keys may ever be deleted.
+    for (const key of deletes) {
+      const aggregate = parseBeanPk(key.pk) !== undefined && key.sk.startsWith(PREFIX.aggregate);
+      if (!aggregate && !key.pk.startsWith(PREFIX.ranking)) throw new InvalidValuesError('refusing to delete a key that is not an aggregate or ranking key');
     }
     return { puts, deletes, unchangedAggregates, unchangedRankings };
   }

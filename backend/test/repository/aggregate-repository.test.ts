@@ -15,6 +15,7 @@ import {
   aggregateMethodKey,
   rankingKey,
 } from '../../src/repository/index.ts';
+import { ExistingAggregates, keyText } from '../../src/repository/existing-aggregates.ts';
 import type { AggregateRead } from '../../src/repository/index.ts';
 import { FakeTable } from './fake-table.ts';
 import { BEAN, BREWED_MS, DAY, OTHER_BEAN, RUN_DAY, RUN_MS, aggItem, beanItem, brewItem, profileItem, runNight, seedCrowd, shelfItem, storedAggregate, storedRanking, sub, ulid } from './aggregate-fixtures.ts';
@@ -580,5 +581,22 @@ describe('readAggregate', () => {
     await runNight(repoOf(table));
     const key = rankingKey({ kind: 'all' }, RUN_DAY);
     expect(table.get(key.pk, key.sk)).toEqual({ ...key, type: 'RANKING', bean_ids: [BEAN], run_day: RUN_DAY });
+  });
+});
+
+describe('the delete guard', () => {
+  it.each([
+    [`USER#${sub(1)}`, 'PROFILE'],
+    [`USER#${sub(1)}`, `SHELF#${ulid(5)}`],
+    [`BEAN#${BEAN}`, 'META'],
+    [`BEAN#${BEAN}`, `PHOTO#${ulid(7)}`],
+    ['BEAN#not-an-id', 'AGG#ALL'],
+    [`DELETED#${sub(1)}`, 'META'],
+  ])('throws before any request when a delete key is %s / %s', async (pk, sk) => {
+    const table = new FakeTable();
+    const key = { pk, sk };
+    const existing = new ExistingAggregates(new Map([[keyText(key), { key, body: undefined }]]), new Map());
+    await expect(repoOf(table).replaceAggregates({ aggregates: [], rankings: [] }, existing, RUN_DAY)).rejects.toThrow(InvalidValuesError);
+    expect(table.batchCalls).toBe(0);
   });
 });

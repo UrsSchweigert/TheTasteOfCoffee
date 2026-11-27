@@ -6,6 +6,11 @@
 // the repository uses, and the existing aggregate and ranking items for the
 // writer to compare. Every other item is skipped by its key prefix.
 //
+// A Scan is not a snapshot: a brew edited or moved during it (a `brewed_at` edit changes
+// its sort key) can be seen twice (the rebuild then fails the night, closed) or missed
+// for a night. Both are rare and repaired the next night, with the 3-day age limit as
+// backstop.
+//
 // Fail closed: a page error, a throttle that exhausted the SDK's retries, or an
 // item of a kept type that does not decode throws, and the caller gets nothing:
 // the result is built only after the last page. The one tolerance is an old
