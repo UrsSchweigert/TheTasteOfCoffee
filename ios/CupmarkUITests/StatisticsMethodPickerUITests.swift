@@ -46,7 +46,7 @@ final class StatisticsMethodPickerUITests: XCTestCase {
             }
         }
         if swipes > 0 {
-            UITestKit.scrollToTop(app, until: element("statistics-method-picker", in: app))
+            UITestKit.scrollToTop(app, until: element("statistics-method-picker", in: app), swipes: steps)
         }
         return found
     }

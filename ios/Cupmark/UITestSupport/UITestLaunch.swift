@@ -67,7 +67,7 @@ struct UITestLaunch: Equatable, Sendable {
     }
 
     /// Turns the UIKit animations off when the launch asked for it (the SwiftUI ones are turned
-    /// off by `UITestRootView`). Called once, on the main actor, before the screen is made.
+    /// off by `UITestRootView`). Called once, on the main actor, from the root view's `.task` (after the first frame, before the screen is made).
     @MainActor
     func applyAnimationSetting() {
         if animationsDisabled {

@@ -33,26 +33,35 @@ enum UITestKit {
         app.descendants(matching: .any).matching(identifier: identifier).firstMatch
     }
 
-    /// A cheap picture of the scrolled list: the number of built cells and the frames of the
-    /// first and the last. Empty when the screen has no cells (then nothing is known).
+    /// A cheap picture of the scrolled list: the frames of the first and the last built cell
+    /// and their number, read from one snapshot. Empty when the screen has no cells (then
+    /// nothing is known).
     @MainActor
     static func fingerprint(_ app: XCUIApplication) -> String {
-        let cells = app.cells
-        let count = cells.count
-        guard count > 0 else {
+        let cells = app.cells.allElementsBoundByIndex
+        guard let first = cells.first, let last = cells.last else {
             return ""
         }
-        return "\(count)|\(cells.element(boundBy: 0).frame)|\(cells.element(boundBy: count - 1).frame)"
+        return "\(cells.count)|\(first.frame)|\(last.frame)"
     }
 
-    /// Swipes up once and returns whether the content moved. False means the end of the scroll.
-    /// A screen without cells is taken as moving, so a caller never stops early on it.
+    /// Swipes up and returns whether the content moved. False means the end of the scroll, and
+    /// only after TWO swipes in a row moved nothing: a single swipe can be swallowed (right
+    /// after a menu closed, during a scroll in progress), and the "absent" proofs of the tests
+    /// rest on this answer, so a swallowed swipe must not end a scan at the top and let an
+    /// absence pass vacuously. A screen without cells is taken as moving, so a caller never
+    /// stops early on it.
     @MainActor
     @discardableResult
     static func swipeUpIfPossible(_ app: XCUIApplication, velocity: XCUIGestureVelocity = .default) -> Bool {
         let before = fingerprint(app)
         app.swipeUp(velocity: velocity)
-        return before.isEmpty || before != fingerprint(app)
+        let after = fingerprint(app)
+        if before.isEmpty || before != after {
+            return true
+        }
+        app.swipeUp(velocity: velocity)
+        return fingerprint(app) != after
     }
 
     /// Scrolls the list back to its first row with the status bar tap (the system scrolls to the
@@ -62,8 +71,9 @@ enum UITestKit {
         if top.exists && top.isHittable {
             return
         }
+        // The status bar belongs to SpringBoard and may exist without being hittable.
         let statusBar = app.statusBars.firstMatch
-        if statusBar.exists {
+        if statusBar.exists && statusBar.isHittable {
             statusBar.tap()
         }
         for _ in 0..<swipes {
@@ -116,7 +126,9 @@ enum UITestKit {
             // Far away: a normal swipe. Close: a slow one, which does not overshoot the band.
             let far = position > 1 || position < 0
             let velocity: XCUIGestureVelocity = far ? .default : .slow
-            if position > band.upperBound {
+            // In the band but not hittable (behind a bar): away from the nearer edge.
+            let up = position > band.upperBound || (band.contains(position) && position > 0.5)
+            if up {
                 app.swipeUp(velocity: velocity)
             } else {
                 app.swipeDown(velocity: velocity)
