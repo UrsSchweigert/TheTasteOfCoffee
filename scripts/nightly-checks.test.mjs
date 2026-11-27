@@ -425,3 +425,18 @@ test('aws_json refuses a verb that is not on the allow-list (exit 2), and aws is
   assert.equal(r.status, 2);
   assert.match(r.stderr, /not on the allow-list/);
 });
+
+// The tests above copy the scripts and chmod the copies, so a script committed without
+// the executable bit passed them while `post-deploy-checks.sh` failed on the owner's Mac
+// with "Permission denied". Git's recorded mode is what a checkout gives the owner.
+test('every shell script under scripts/smoke and scripts/aws is committed executable (100755)', () => {
+  const r = spawnSync('git', ['ls-files', '-s', '--', 'scripts/smoke/*.sh', 'scripts/aws/*.sh'], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+  if (r.status !== 0) return; // not a git checkout (an exported tarball): nothing to check
+  const lines = r.stdout.split('\n').filter(Boolean);
+  assert.ok(lines.length > 0, 'no scripts found');
+  const bad = lines.filter((l) => !l.startsWith('100755'));
+  assert.deepEqual(bad, [], 'these scripts are not executable in git: git update-index --chmod=+x <file>');
+});
