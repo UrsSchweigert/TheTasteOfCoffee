@@ -1249,7 +1249,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - `users_seen` is counted over all scanned brews, including rejected and orphan ones.
 
 ### M3-T6 Oracle fixture and property tests for the rebuild
-- status: todo
+- status: done
 - owner: backend-engineer
 - depends: M3-T5
 - implements: ADR 0035; CLAUDE.md, Definition of done (tests demonstrate acceptance)
