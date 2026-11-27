@@ -13,6 +13,7 @@ import type { StageName } from './config.ts';
 import { CupmarkApi } from './api.ts';
 import type { OpenFoodFactsSettings } from './api.ts';
 import { CupmarkData } from './data.ts';
+import { CupmarkExport } from './export.ts';
 import { CupmarkIdentity } from './identity.ts';
 
 export interface CupmarkStageProps {
@@ -57,6 +58,7 @@ export class CupmarkStage extends Stage {
   public readonly data: CupmarkData;
   public readonly identity: CupmarkIdentity;
   public readonly api: CupmarkApi;
+  public readonly weeklyExport: CupmarkExport;
 
   public constructor(scope: Construct, props: CupmarkStageProps) {
     const env: Environment =
@@ -80,6 +82,8 @@ export class CupmarkStage extends Stage {
       appClient: this.identity.appClient,
       openFoodFacts: props.openFoodFacts ?? {},
     });
+
+    this.weeklyExport = new CupmarkExport(this.core, 'Export', { stage: props.stage, data: this.data });
 
     // Resource tags (in the template), on top of the stack tags above.
     Tags.of(this).add(PROJECT_TAG_KEY, PROJECT_TAG_VALUE);

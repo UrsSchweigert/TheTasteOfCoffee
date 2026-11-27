@@ -1298,10 +1298,10 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - This test runs in the nightly or on-demand CI job, not on every pull request, if it takes more than 60 seconds; the workflow change is part of this task.
 
 ### M3-T11 Weekly export to S3
-- status: todo
+- status: done (code and tests; the human step below is open before the deploy in M3-T14)
 - owner: infra-engineer
 - depends: M1-T1
-- needs: human (the owner re-applies the guardrails if the scheduler role needs an action the boundary does not allow; `dynamodb:ExportTableToPointInTime` is already in the boundary, S3 write to the backup bucket must be checked before deploy)
+- needs: human (checked 2026-11-27: `dynamodb:ExportTableToPointInTime` on `table/cupmark-*` and `s3:PutObject` on `cupmark-*/*` are in `scripts/aws/cupmark-boundary-policy.json`, but `s3:AbortMultipartUpload` and `s3:PutObjectAcl`, which AWS lists for the caller of an export, are not. The role is capped by the boundary, so the export may fail with AccessDenied until the owner adds both on `arn:aws:s3:::cupmark-*/*` and re-applies the guardrails with `scripts/aws/apply-guardrails.sh` before M3-T14. This task did not edit the boundary file. `test/policies.test.ts` pins the gap and must then expect none. The schedule group `cupmark-<stage>-jobs` is created here; M3-T9 must reuse it, not create it again)
 - implements: docs/05-system-design.md, Persistence and recovery; unchanged from the earlier plan
 - acceptance:
   - A weekly EventBridge Scheduler schedule uses the universal target `ExportTableToPointInTime` (no Lambda) for the stage's table, writing to `cupmark-<stage>-backups-<account>` with a dated prefix, full export, DynamoDB JSON.
