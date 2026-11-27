@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "reasons": [
+    { "id": "no_consent" },
+    { "id": "unrated" },
+    { "id": "brewed_in_future" },
+    { "id": "brewed_before_roast" },
+    { "id": "burst" },
+    { "id": "bag_dose_exceeded" },
+    { "id": "straight_lining" },
+    { "id": "daily_cap_exceeded" }
+  ]
+}

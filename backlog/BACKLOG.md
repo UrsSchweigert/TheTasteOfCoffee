@@ -1170,7 +1170,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - No code and no other doc changes in this task (docs follow in M3-T12).
 
 ### M3-T2 Contract: plausibility reason ids and histogram buckets
-- status: todo
+- status: done
 - owner: contract-keeper
 - depends: M3-T1
 - implements: ADR 0035; docs/04-specification.md, F4 (recipe parameters); docs/05-system-design.md, Data model (aggregate items); CLAUDE.md invariants 1 and 2
@@ -1192,6 +1192,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - An integer accumulator adds weighted half-point scores and asserts `Number.isSafeInteger` after every addition; overflow fails the run. A test pushes sums to the stated bound (200 users x 10 cups x 20 half-points x L) with room to spare, and a test with a forced overflow fails closed.
   - Property test: adding the same weighted values in any order gives the same sum.
   - A named constant `MAX_AGE_DAYS = 3` (age limit of a stamped aggregate, ADR 0035 point 7a) and the sum-of-squares bound (400 x L per cup) beside the sum bound, with the same safe-integer assertion; the bound test covers both.
+  - Decide whether the backend loads `contracts/aggregation/v1/` directly at runtime or generates types from it (if generating, extend `backend/scripts/generate-contract.ts` and its `--check`); one runtime source, no copy of the ids or edges elsewhere.
 
 ### M3-T4 Plausibility rules (pure)
 - status: todo
@@ -1263,7 +1264,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
 - acceptance:
   - `backend/src/handlers/nightly-aggregates.ts` (bundled like the other handlers): scan, then `rebuild`, then `replaceAggregates`. The run time is taken once at the start and passed in (no clock reads in the core).
   - Fail closed: if the scan, the rebuild (including the integer-bound assertion) or the write throws, the handler throws, so the run is reported as failed; when the scan fails, nothing is written (a test counts writes and asserts zero). No partial scan result ever reaches the writer.
-  - One structured log line per run with fixed keys only, no user ids and no free text: duration, items scanned, brews seen, brews counted, per-reason counts (every contract reason id present, zero included), beans with aggregates, beans ranked, and the share of the timeout used (for the scale trigger). A test fails if the line contains a user id or a bean id. Logs only: no custom CloudWatch metrics (they bill per metric).
+  - One structured log line per run with fixed keys only, no user ids and no free text: duration, items scanned, brews seen, brews counted, per-reason counts (every contract reason id present, zero included), beans with aggregates, beans ranked, and the share of the timeout used (for the scale trigger). A test fails if the line contains a user id or a bean id. The numbers go to the log only: no custom CloudWatch metrics (they bill per metric). A failed run is announced by the alarms of M3-T9 (ADR 0035, Addendum 2026-11-27).
   - A dry-run event (`{ "dry_run": true }`) does the scan and the rebuild, logs the same line and writes nothing, so the owner can tune thresholds on dev data (M3-T15) without changing the table.
   - The handler takes no input that selects users or beans (invariant 3 does not apply to it, since it is not a user route, and a test shows an event carrying a user id is ignored).
   - Tests with a fake repository: success, scan failure, rebuild failure, write failure, dry run, an empty table.
@@ -1278,10 +1279,13 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
 - acceptance:
   - A Lambda `cupmark-<stage>-nightly-aggregates` (names, tags and the log group with retention as the other functions), eu-central-1, no VPC, timeout 300 seconds, memory 512 MB (both are stage constants in `infra/src/config.ts`, with a comment on how M3-T10 chose them), reserved and provisioned concurrency absent, one retry at most.
   - Its role: `dynamodb:Scan` on the table ARN only (no `index/*`, no `stream/*`), `dynamodb:BatchWriteItem` and `dynamodb:PutItem` and `DeleteItem` on the table ARN only, and the log permissions of the existing helper. No other permission, no `*` resource, nothing outside `cupmark-`. The role carries the boundary like the others.
-  - An EventBridge Scheduler schedule in the stack's `cupmark-<stage>-jobs` group, once a day at 02:00 UTC, with a flexible time window of 15 minutes, a role that may only `lambda:InvokeFunction` this function, and a dead-letter-free configuration (a failed run is visible in the Lambda's error metric and logs; no new queue). The schedule is created disabled on `prod` until the owner enables it (stage flag).
+  - An EventBridge Scheduler schedule in the stack's `cupmark-<stage>-jobs` group, once a day at 02:00 UTC, with a flexible time window of 15 minutes, a role that may only `lambda:InvokeFunction` this function, and a dead-letter-free configuration (no new queue; a failed run is visible in the logs and raises the alarm below). The schedule is created disabled on `prod` until the owner enables it (stage flag).
+  - Failure alarms (ADR 0035, Addendum 2026-11-27, owner decision): two CloudWatch alarms per stage and an SNS topic `cupmark-<stage>-alerts`. Alarm 1: `AWS/Lambda` `Errors` for `cupmark-<stage>-nightly-aggregates`, Sum, `>= 1` over a 1-day period. Alarm 2: `Invocations`, Sum, `< 1` over a period of 25 hours (a named stage constant), treat-missing-data `breaching`; on `prod` it exists only while the schedule is enabled (same stage flag). Both alarm actions publish to the topic. Names start with `cupmark-<stage>-`, tagged `project=cupmark`. The topic policy allows only `cloudwatch.amazonaws.com` of this account to `sns:Publish` (conditioned on `cupmark-*` alarm ARNs). The stack creates no `AWS::SNS::Subscription` and holds no email address or phone number (invariant 8); the `AWS::SNS::Subscription` allowance in `infra/src/guards.ts` is removed so a subscription fails the guard.
+  - Boundary check: `scripts/aws/cupmark-boundary-policy.json` has no `cloudwatch:*` or `sns:*` action and none is needed (alarms and the topic are created by CloudFormation under `scripts/aws/cupmark-cfn-execution-policy.json`, which already allows `cloudwatch:*` and `sns:*` on `cupmark-*` alarm and topic ARNs only; the job's role never touches them). If the implementer finds the deploy needs an action that neither file allows, they list exactly which (for example `cloudwatch:PutMetricAlarm`, `sns:CreateTopic`, `sns:SetTopicAttributes`, `sns:TagResource`) in the task for the owner to add, as in the Scan note, and do not add one silently.
   - The stack no longer describes the stream as "for the aggregator": the `TableStreamArn` output description and the comment on the table's `stream` property are reworded; the `AWS::Lambda::EventSourceMapping` allowance in `infra/src/guards.ts` is removed or its reason updated, so a stream mapping now fails the guard. The assertion that the stream is enabled stays.
   - Assertion tests: the function's timeout and memory; the exact action list and resource of the role (Scan on the table ARN and nothing on indexes); the schedule expression and target; no event source mapping; no resource type that the forbidden list names; every resource is named `cupmark-` and tagged `project=cupmark`; `cdk synth` succeeds for `dev` and `prod`.
-  - infra/README.md documents the job, the dry-run event and how to disable the schedule.
+  - Alarm assertion tests: both alarms exist with the `cupmark-<stage>-` prefix and the tag; the exact namespace, metric, dimension (the function name), statistic, period (86,400 and the 25-hour constant), threshold, comparison operator and evaluation periods; `TreatMissingData` is `breaching` on the Invocations alarm; both alarm actions are the topic and nothing else; the topic is named `cupmark-<stage>-alerts`; its policy allows only CloudWatch alarms to publish; there is no `AWS::SNS::Subscription` and no endpoint string (no `@`, no phone number) anywhere in the template; apart from the two alarms per stage, no resource with a monthly fee (counted against the forbidden list), and no custom metric.
+  - infra/README.md documents the job, the dry-run event, how to disable the schedule, the alarms, and the owner's one-time subscription step.
 
 ### M3-T10 Replay and load test of the rebuild
 - status: todo
@@ -1329,7 +1333,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
 - depends: M3-T9
 - implements: M1-T7 (`scripts/smoke/post-deploy-checks.sh`); ADR 0035
 - acceptance:
-  - `scripts/smoke/post-deploy-checks.sh <stage>` additionally checks, read-only: the function exists with the expected timeout, memory and no VPC; the schedule exists in `cupmark-<stage>-jobs`, has the expected expression and state; the function's role has no `dynamodb:*` and no wildcard resource (`iam get-role-policy` and `simulate-principal-policy` are not used: the check reads the policy and compares with the expected statements). It invokes nothing and writes nothing.
+  - `scripts/smoke/post-deploy-checks.sh <stage>` additionally checks, read-only: the function exists with the expected timeout, memory and no VPC; the schedule exists in `cupmark-<stage>-jobs`, has the expected expression and state; the function's role has no `dynamodb:*` and no wildcard resource (`iam get-role-policy` and `simulate-principal-policy` are not used: the check reads the policy and compares with the expected statements); the two alarms exist and their state is readable (`cloudwatch describe-alarms`; `OK` or `INSUFFICIENT_DATA` is reported, `ALARM` fails the check), and the topic `cupmark-<stage>-alerts` exists (`sns get-topic-attributes`; it never lists or reads subscriber endpoints). It invokes nothing and writes nothing.
   - A flag `--dry-run-job` (off by default, used by the owner in M3-T15) invokes the function once with `{ "dry_run": true }`, prints its log line and fails on a function error or on a log line without the fixed keys. It never runs the writing job.
   - The script's tests (the existing harness with a stubbed `aws` command) cover the pass and each failure.
   - It touches only `cupmark-` resources (invariant 9), and a test fails if it names any other.
@@ -1343,6 +1347,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
 - acceptance:
   - The owner has re-applied `scripts/aws/apply-guardrails.sh` with the updated boundary, and the new stack changes of M3-T9 and M3-T11 appear in the `cdk diff` for `cupmark-dev-core` and no other stack or resource.
   - The owner approves and the deploy to dev succeeds; `scripts/smoke/post-deploy-checks.sh dev` passes.
+  - After the deploy the owner subscribes their own email address to the topic `cupmark-dev-alerts` (AWS console or `aws sns subscribe --protocol email`) and confirms the subscription mail. The address is typed by the owner only and is never written into the repository (invariant 8).
   - The prod stage is not deployed in M3.
 
 ### M3-T15 Owner checks the first dev runs and tunes thresholds
@@ -1355,6 +1360,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - A dry run on dev completes and logs every reason id; the share of the timeout used is recorded in the task.
   - After the first real scheduled run, the aggregate items exist for beans with data and no bean with fewer than 5 raters is readable through `readAggregate`.
   - A threshold change, if any, is a separate pull request through `backend-engineer` with its tests updated.
+  - The owner triggers a test failure once on dev and confirms the alert mail arrives: invoke the function with a payload that makes the handler throw (a test-only event the handler of M3-T8 rejects, if the owner wants the real error path), or put the alarm in ALARM with `aws cloudwatch set-alarm-state --alarm-name cupmark-dev-<errors-alarm> --state-value ALARM --state-reason test` (the alarm returns to `OK` by itself at its next evaluation). The result is recorded in the task.
 
 ### M3-T16 Removed: stream aggregator, rater markers, difference-apply
 - status: removed (superseded by the nightly rebuild, 2026-11-26)
@@ -1374,7 +1380,7 @@ Scope: StoreKit 2 purchase and restore, transaction verification, App Store Serv
 
 Goal: ready for strangers. Not yet planned.
 
-Scope: App Attest, per-user write caps, budgets and alarms, operator CLI for the review queue and catalogue curation, restore drill from point-in-time recovery and from the S3 export, privacy review, performance against the 300 ms target, Swift 6 readiness (about 55 warnings today, mostly SwiftData `#Predicate` key paths that are not `Sendable`, plus test and sync isolation warnings).
+Scope: App Attest, per-user write caps, budgets and the other alarms (the nightly job's failure alarms and the `cupmark-<stage>-alerts` topic already exist from M3-T9, ADR 0035 Addendum 2026-11-27; M5 reuses that topic and decides each further alarm separately), operator CLI for the review queue and catalogue curation, restore drill from point-in-time recovery and from the S3 export, privacy review, performance against the 300 ms target, Swift 6 readiness (about 55 warnings today, mostly SwiftData `#Predicate` key paths that are not `Sendable`, plus test and sync isolation warnings).
 
 From M1-T4d (ADR 0016, D10): the operator CLI reads label photos from `labels/<photo_id>.jpg` (it needs `s3:GetObject` on `labels/*`) by following the bean's `PHOTO#` items. On verification it copies the photo to `verified/`, where it expires after 90 days, and removes the user-side `PHOTO#` link, so the verified photo is no longer tied to the user.
 
