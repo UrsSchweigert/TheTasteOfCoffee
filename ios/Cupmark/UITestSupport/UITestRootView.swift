@@ -23,7 +23,14 @@ struct UITestRootView: View {
                     .accessibilityLabel(Text(L10n.shelfLoading))
             }
         }
+        // M2-T54: with `-CupmarkUITestDisableAnimations` no SwiftUI animation runs either.
+        .transaction { transaction in
+            if launch.animationsDisabled {
+                transaction.animation = nil
+            }
+        }
         .task {
+            launch.applyAnimationSetting()
             if harness == nil {
                 harness = UITestHarness(launch: launch, vocabulary: vocabulary)
             }

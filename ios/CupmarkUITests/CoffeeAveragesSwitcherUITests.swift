@@ -13,15 +13,7 @@ final class CoffeeAveragesSwitcherUITests: XCTestCase {
 
     @MainActor
     private func launchShelf() -> XCUIApplication {
-        let app = XCUIApplication()
-        app.launchArguments = [
-            "-CupmarkUITestScreen", "shelf",
-            "-CupmarkUITestSecondRatedBrew",
-            "-AppleLanguages", "(en)",
-            "-AppleLocale", "en_US",
-        ]
-        app.launch()
-        return app
+        UITestKit.launch(screen: "shelf", extraArguments: ["-CupmarkUITestSecondRatedBrew"])
     }
 
     @MainActor
@@ -37,7 +29,8 @@ final class CoffeeAveragesSwitcherUITests: XCTestCase {
         add(attachment)
     }
 
-    /// Scrolls down until `identifier` exists (a list builds only the rows near the window).
+    /// Scrolls down until `identifier` exists and can be tapped (a list builds only the rows
+    /// near the window); gives up at the end of the list instead of swiping on (M2-T54).
     @MainActor
     private func scrollTo(_ identifier: String, in app: XCUIApplication, attempts: Int = 15) -> XCUIElement? {
         let target = element(identifier, in: app)
@@ -45,7 +38,9 @@ final class CoffeeAveragesSwitcherUITests: XCTestCase {
             if target.exists && target.isHittable {
                 return target
             }
-            app.swipeUp()
+            if !UITestKit.swipeUpIfPossible(app) {
+                break
+            }
         }
         return target.exists ? target : nil
     }
@@ -117,10 +112,15 @@ final class CoffeeAveragesSwitcherUITests: XCTestCase {
         XCTAssertEqual(pickers.count, 1, "one switcher")
         let counts = app.descendants(matching: .any).matching(identifier: "coffee-averages-count")
         XCTAssertEqual(counts.count, 1, "one count, no per-method sections")
+        // Scroll the whole screen once, looking at every step (the end is a swipe that moves nothing).
         for _ in 0..<15 {
-            app.swipeUp()
             let headers = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "rated brews:"))
             XCTAssertEqual(headers.count, 0, "no per-method section header")
+            if !UITestKit.swipeUpIfPossible(app) {
+                break
+            }
         }
+        let lastHeaders = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "rated brews:"))
+        XCTAssertEqual(lastHeaders.count, 0, "no per-method section header at the end")
     }
 }

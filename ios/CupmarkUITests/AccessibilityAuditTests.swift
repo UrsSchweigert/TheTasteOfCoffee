@@ -219,6 +219,8 @@ final class AccessibilityAuditTests: XCTestCase {
             "-CupmarkUITestScreen", screen.rawValue,
             "-AppleLanguages", "(en)",
             "-AppleLocale", "en_US",
+            // M2-T54: no animations, so no query waits for one to settle.
+            "-CupmarkUITestDisableAnimations",
         ]
         // The default size is the simulator's own. Pinning any size, even the default one, makes
         // the audit report every text as unable to change its size.
@@ -327,15 +329,9 @@ final class AccessibilityAuditTests: XCTestCase {
         return containers.allElementsBoundByIndex.contains { container in container.frame.contains(frame) }
     }
 
-    /// Swipes the screen up until `element` can be tapped.
+    /// Scrolls the screen until `element` can be tapped; stops at the end of the scroll.
     @MainActor
     private func scrollUntilHittable(_ element: XCUIElement, in app: XCUIApplication, attempts: Int = 15) throws {
-        for _ in 0..<attempts {
-            if element.exists && element.isHittable {
-                return
-            }
-            app.swipeUp()
-        }
-        XCTAssertTrue(element.exists && element.isHittable, "\(element) is not on screen after \(attempts) swipes")
+        XCTAssertTrue(UITestKit.scrollUntilHittable(element, in: app, attempts: attempts), "\(element) is not on screen after scrolling")
     }
 }

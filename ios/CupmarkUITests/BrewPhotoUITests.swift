@@ -12,14 +12,7 @@ final class BrewPhotoUITests: XCTestCase {
 
     @MainActor
     private func launchRating() -> XCUIApplication {
-        let app = XCUIApplication()
-        app.launchArguments = [
-            "-CupmarkUITestScreen", "rating",
-            "-AppleLanguages", "(en)",
-            "-AppleLocale", "en_US",
-        ]
-        app.launch()
-        return app
+        UITestKit.launch(screen: "rating")
     }
 
     /// The first element with `identifier`, whatever its type (SwiftUI picks the type).
@@ -28,39 +21,19 @@ final class BrewPhotoUITests: XCTestCase {
         app.descendants(matching: .any).matching(identifier: identifier).firstMatch
     }
 
-    /// Swipes up until `element` can be tapped.
+    /// Scrolls until `element` can be tapped; stops at the end of the scroll.
     @MainActor
-    private func scrollUntilHittable(_ element: XCUIElement, in app: XCUIApplication, attempts: Int = 20) {
-        for _ in 0..<attempts {
-            if element.exists && element.isHittable {
-                return
-            }
-            app.swipeUp()
-        }
-        XCTAssertTrue(element.exists && element.isHittable, "\(element) is not on screen after \(attempts) swipes")
+    private func scrollUntilHittable(_ element: XCUIElement, in app: XCUIApplication, attempts: Int = 15) {
+        XCTAssertTrue(UITestKit.scrollUntilHittable(element, in: app, attempts: attempts), "\(element) is not on screen after scrolling")
     }
 
     /// Scrolls `element` into the middle band of the window, so no other control and not the home
-    /// indicator is over it, and returns whether it got there.
+    /// indicator is over it, and returns whether it is on screen and can be tapped. The photo
+    /// section is at the end of the form, where an element cannot reach the middle: the scroll
+    /// stops there (`UITestKit.scrollToMiddle`) instead of swiping on 25 times.
     @MainActor
-    private func scrollToMiddle(_ element: XCUIElement, in app: XCUIApplication, attempts: Int = 25) -> Bool {
-        let window = app.windows.firstMatch.frame
-        for _ in 0..<attempts {
-            if element.exists && element.isHittable {
-                let middle = element.frame.midY
-                if middle > window.height * 0.25 && middle < window.height * 0.7 {
-                    return true
-                }
-                if middle >= window.height * 0.7 {
-                    app.swipeUp(velocity: .slow)
-                } else {
-                    app.swipeDown(velocity: .slow)
-                }
-            } else {
-                app.swipeUp()
-            }
-        }
-        return element.exists && element.isHittable
+    private func scrollToMiddle(_ element: XCUIElement, in app: XCUIApplication, attempts: Int = 15) -> Bool {
+        UITestKit.scrollToMiddle(element, in: app, band: 0.25...0.7, attempts: attempts)
     }
 
     /// Attaches the accessibility tree and prints the section's failure text, so a failed run
@@ -103,11 +76,7 @@ final class BrewPhotoUITests: XCTestCase {
     /// the sheet animates.
     @MainActor
     private func dialogButton(_ title: String, in app: XCUIApplication) -> XCUIElement {
-        let inSheet = app.sheets.buttons[title].firstMatch
-        if inSheet.waitForExistence(timeout: 5) {
-            return inSheet
-        }
-        return app.buttons.matching(NSPredicate(format: "label == %@", title)).firstMatch
+        UITestKit.dialogButton(title, in: app)
     }
 
     @MainActor
