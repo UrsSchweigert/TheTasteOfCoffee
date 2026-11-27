@@ -92,19 +92,19 @@
       }
     },
     "account_deletion.confirm.message" : {
-      "comment" : "Message of the final confirmation of account deletion: what is deleted.",
+      "comment" : "Message of the final confirmation of account deletion: what is deleted, and that the ratings leave the community figures at the next successful nightly update (ADR 0035).",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Deine Daten, die Etikettenfotos nicht bestätigter Bohnen und deine Anmeldung werden gelöscht. Deine Bewertungen verschwinden beim nächsten nächtlichen Update aus den Werten der Community. Das lässt sich nicht rückgängig machen."
+            "value" : "Deine Daten, die Etikettenfotos nicht bestätigter Bohnen und deine Anmeldung werden gelöscht. Deine Bewertungen verschwinden bei der nächsten erfolgreichen nächtlichen Aktualisierung aus den Werten der Community. Das lässt sich nicht rückgängig machen."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Your data, the label photos of unverified beans and your sign-in are deleted. Your ratings leave the community figures at the next nightly update. This cannot be undone."
+            "value" : "Your data, the label photos of unverified beans and your sign-in are deleted. Your ratings leave the community figures at the next successful nightly update. This cannot be undone."
           }
         }
       }
@@ -326,19 +326,19 @@
       }
     },
     "account_deletion.settings_footer" : {
-      "comment" : "Footer below the Delete Account row in Settings.",
+      "comment" : "Footer below the Delete Account row in Settings. Ends with when the user's ratings leave the community figures: the next successful nightly update (ADR 0035).",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Löscht deine Daten, die Etikettenfotos nicht bestätigter Bohnen und deine Anmeldung, auf dem Server und auf diesem iPhone. Deine Bewertungen verschwinden beim nächsten nächtlichen Update aus den Werten der Community."
+            "value" : "Löscht deine Daten, die Etikettenfotos nicht bestätigter Bohnen und deine Anmeldung, auf dem Server und auf diesem iPhone. Deine Bewertungen verschwinden bei der nächsten erfolgreichen nächtlichen Aktualisierung aus den Werten der Community."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Deletes your data, the label photos of unverified beans and your sign-in, on the server and on this iPhone. Your ratings leave the community figures at the next nightly update."
+            "value" : "Deletes your data, the label photos of unverified beans and your sign-in, on the server and on this iPhone. Your ratings leave the community figures at the next successful nightly update."
           }
         }
       }
@@ -4592,19 +4592,19 @@
       }
     },
     "onboarding.consent.message" : {
-      "comment" : "Consent page: what is shared if the user agrees. Must stay plain and exact: ratings with method and recipe values, no identity, shown only from 5 raters.",
+      "comment" : "Consent page: what is shared if the user agrees. Must stay plain and exact: ratings with method and recipe values, no identity, shown only from 5 raters; all rated brews count, earlier ones too; turning off removes them at the next successful nightly update; figures usually up to a day old (ADR 0035).",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cupmark kann für jeden Kaffee Werte der Community zeigen, etwa durchschnittliche Bewertungen und die häufigsten Aromen. Diese Werte sehen Abonnentinnen und Abonnenten sowie Personen, die denselben Kaffee bewertet haben. Wenn du zustimmst, fließen alle deine bewerteten Zubereitungen in diese Werte ein, auch frühere, solange das Teilen an ist, zusammen mit der Zubereitungsart und den Rezeptwerten, aber nie mit deinem Namen oder deinem Konto. Die Werte eines Kaffees werden erst gezeigt, wenn ihn mindestens 5 verschiedene Personen bewertet haben. Schaltest du das Teilen aus, werden deine Bewertungen beim nächsten nächtlichen Update wieder entfernt. Die Werte sind bis zu etwa einen Tag alt."
+            "value" : "Cupmark kann für jeden Kaffee Werte der Community zeigen, etwa durchschnittliche Bewertungen und die häufigsten Aromen. Diese Werte sehen Abonnentinnen und Abonnenten sowie Personen, die denselben Kaffee bewertet haben. Wenn du zustimmst, fließen alle deine bewerteten Zubereitungen in diese Werte ein, auch frühere, solange das Teilen an ist, zusammen mit der Zubereitungsart und den Rezeptwerten, aber nie mit deinem Namen oder deinem Konto. Die Werte eines Kaffees werden erst gezeigt, wenn ihn mindestens 5 verschiedene Personen bewertet haben. Schaltest du das Teilen aus, werden deine Bewertungen bei der nächsten erfolgreichen nächtlichen Aktualisierung wieder entfernt. Die Werte sind in der Regel bis zu einen Tag alt."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cupmark can show community figures for each coffee, such as average scores and the most common flavour notes. Subscribers, and people who rated the same coffee, see these figures. If you agree, all your rated brews are counted into them, including earlier ones, while sharing is on, together with the brew method and recipe values, but never with your name or account. A coffee's figures are shown only once at least 5 different people have rated it. If you turn sharing off, your ratings are removed again at the next nightly update. The figures are up to about a day old."
+            "value" : "Cupmark can show community figures for each coffee, such as average scores and the most common flavour notes. Subscribers, and people who rated the same coffee, see these figures. If you agree, then while sharing is on all your rated brews, including earlier ones, are counted into them, together with the brew method and recipe values, but never with your name or account. A coffee's figures are shown only once at least 5 different people have rated it. If you turn sharing off, your ratings are removed again at the next successful nightly update. The figures are usually up to a day old."
           }
         }
       }
@@ -6230,19 +6230,19 @@
       }
     },
     "settings.consent.footer" : {
-      "comment" : "Footer below the consent switch in Settings: what is shared, who sees it, that turning it off removes the ratings at the next nightly update, that turning it on again counts all rated brews, that deletion removes them the same way, that figures are up to a day old (ADR 0035), and that the personal log keeps working.",
+      "comment" : "Footer below the consent switch in Settings: what is shared, who sees it, that turning it off removes the ratings at the next successful nightly update, that turning it on (now or later) counts all rated brews, that deletion removes them the same way, that figures are usually up to a day old (ADR 0035), and that the personal log keeps working.",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Solange eingeschaltet, fließen deine Bewertungen mit Zubereitungsart und Rezeptwerten ohne deinen Namen und ohne dein Konto in die Werte der Community für jeden Kaffee ein. Diese Werte sehen Abonnentinnen und Abonnenten sowie Personen, die denselben Kaffee bewertet haben. Die Werte eines Kaffees werden erst gezeigt, wenn ihn mindestens 5 verschiedene Personen bewertet haben. Sonst wird nichts geteilt. Wenn du das Teilen ausschaltest, werden deine Bewertungen beim nächsten nächtlichen Update aus den Werten entfernt. Schaltest du es wieder ein, zählen alle deine bewerteten Zubereitungen wieder, auch die von vor deiner ersten Zustimmung. Wenn du eine Zubereitung oder dein Konto löschst, werden die zugehörigen Bewertungen ebenfalls beim nächsten nächtlichen Update entfernt. Die Werte sind bis zu etwa einen Tag alt. Regal, Zubereitungen, Rezepte und Statistik funktionieren in beiden Fällen gleich."
+            "value" : "Solange eingeschaltet, fließen deine Bewertungen mit Zubereitungsart und Rezeptwerten ohne deinen Namen und ohne dein Konto in die Werte der Community für jeden Kaffee ein. Diese Werte sehen Abonnentinnen und Abonnenten sowie Personen, die denselben Kaffee bewertet haben. Die Werte eines Kaffees werden erst gezeigt, wenn ihn mindestens 5 verschiedene Personen bewertet haben. Sonst wird nichts geteilt. Wenn du das Teilen ausschaltest, werden deine Bewertungen bei der nächsten erfolgreichen nächtlichen Aktualisierung aus den Werten entfernt. Schaltest du es ein, jetzt oder später wieder, zählen alle deine bewerteten Zubereitungen, auch frühere. Wenn du eine Zubereitung oder dein Konto löschst, werden die zugehörigen Bewertungen ebenfalls bei der nächsten erfolgreichen nächtlichen Aktualisierung entfernt. Die Werte sind in der Regel bis zu einen Tag alt. Regal, Zubereitungen, Rezepte und Statistik funktionieren in beiden Fällen gleich."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "While on, your ratings, with their brew method and recipe values, are counted without your name or account into community figures for each coffee. Subscribers, and people who rated the same coffee, see these figures. A coffee's figures are shown only once at least 5 different people have rated it. Nothing else is shared. Turning sharing off removes your ratings from the figures at the next nightly update. Turning it on again counts all your rated brews again, including those from before you first agreed. Deleting a brew, or your account, removes its ratings the same way. The figures are up to about a day old. Your shelf, brews, recipes and statistics work the same either way."
+            "value" : "While on, your ratings, with their brew method and recipe values, are counted without your name or account into community figures for each coffee. Subscribers, and people who rated the same coffee, see these figures. A coffee's figures are shown only once at least 5 different people have rated it. Nothing else is shared. Turning sharing off removes your ratings from the figures at the next successful nightly update. Turning it on, now or again later, counts all your rated brews, including earlier ones. Deleting a brew, or your account, removes its ratings the same way. The figures are usually up to a day old. Your shelf, brews, recipes and statistics work the same whether sharing is on or off."
           }
         }
       }
