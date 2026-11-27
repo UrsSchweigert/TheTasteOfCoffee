@@ -1822,10 +1822,12 @@ test('check-xcode-project: the scheme tests both test targets, so the ios job ru
   const testables = xcodeProject.schemeReferences(schemeText()).filter((ref) => ref.testable);
   assert.deepEqual(testables.map((ref) => ref.BlueprintName), ['CupmarkTests', 'CupmarkUITests']);
   assert.equal(testables[1].BlueprintIdentifier, UI_TARGET);
-  // The ios job runs the scheme's whole test action: no -only-testing, -skip-testing or test plan.
+  // The ios job runs the scheme's whole test action, except the report-only audit class
+  // (ios-audits.yml runs that): the one -skip-testing below, and no -only-testing or test plan.
   const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
   assert.match(workflow, /xcodebuild test-without-building \\\s*-project Cupmark\.xcodeproj \\\s*-scheme Cupmark/);
-  assert.doesNotMatch(workflow, /-only-testing|-skip-testing|-testPlan/);
+  assert.doesNotMatch(workflow, /-only-testing|-testPlan/);
+  assert.deepEqual(workflow.match(/^ +-skip-testing:[A-Za-z/]+(?= )/gm)?.map((l) => l.trim()), ['-skip-testing:CupmarkUITests/AccessibilityAuditTests']);
 });
 
 test('check-xcode-project: finds a missing or doubled id, a missing list, a hosted UI test and a scheme without the UI tests', () => {
@@ -2029,6 +2031,26 @@ test('brew photos: the stand-in for the picker is Debug-only and the section rea
     const closes = (before.match(/^#(?:endif|else)$/gm) ?? []).length;
     assert.ok(opens > closes, `${match[0]} at ${match.index} is outside #if DEBUG`);
   }
+});
+
+test('consent texts: the old "already counted stay counted" rule does not return under ios/ or site/ (M2-T53)', () => {
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+  const old = [/already counted stay counted/i, /bereits gezählte bleiben gezählt/i];
+  const hits = [];
+  const walk = (dir) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      if (e.name === 'node_modules' || e.name === '.git' || e.name === 'build') continue;
+      const p = join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (/\.(swift|xcstrings|html|md|json|strings|mjs)$/.test(e.name)) {
+        const text = readFileSync(p, 'utf8');
+        if (old.some((re) => re.test(text))) hits.push(relative(root, p));
+      }
+    }
+  };
+  walk(join(root, 'ios'));
+  walk(join(root, 'site'));
+  assert.deepEqual(hits, []);
 });
 
 // M2-T12: the team is set. Xcode Cloud numbers its builds itself (build 6 reached TestFlight).

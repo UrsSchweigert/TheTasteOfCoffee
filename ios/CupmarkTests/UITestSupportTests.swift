@@ -25,6 +25,14 @@ final class UITestSupportTests: XCTestCase {
         XCTAssertNil(UITestLaunch(arguments: ["/path/Cupmark", UITestLaunch.argument, "nowhere"]))
     }
 
+    func testAnimationsStayOnUnlessTheLaunchTurnsThemOff() {
+        let screen = [UITestLaunch.argument, "shelf"]
+        XCTAssertEqual(UITestLaunch(arguments: screen)?.animationsDisabled, false)
+        XCTAssertEqual(UITestLaunch(arguments: screen + [UITestLaunch.disableAnimationsArgument])?.animationsDisabled, true)
+        // The flag alone starts nothing.
+        XCTAssertNil(UITestLaunch(arguments: [UITestLaunch.disableAnimationsArgument]))
+    }
+
     func testEveryAuditedScreenOfTheTaskHasAValue() {
         // The twelve screens of the acceptance, plus not configured.
         XCTAssertEqual(UITestLaunch.Screen.allCases.count, 13)

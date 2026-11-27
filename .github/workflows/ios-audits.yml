@@ -1,0 +1,98 @@
+# Report-only accessibility audits of the iOS app (M2-T33). The audits
+# (CupmarkUITests/AccessibilityAuditTests, `performAccessibilityAudit()` on each
+# screen at two text sizes) never fail on a finding, so a pull request gains
+# nothing from running them: ci.yml skips that class, and this workflow runs it
+# every Monday and on demand. Nothing gates on it; it is not a required check.
+# A red run means the run itself broke (the build, or a screen did not appear).
+#
+# Findings are `AUDIT-ISSUE` lines in the test log. The Audits step prints the
+# full log, and then, with the same lines on their own, the findings; they are
+# also in the run summary. Nothing is uploaded: no artifact, no secret.
+#
+# Same safety rules as ci.yml (strict, read-only in scripts/check-workflows.mjs):
+# read-only token, actions pinned to a commit SHA, no secrets, timeout on the job.
+# The runner image and the Xcode version match the `ios` job in ci.yml; change
+# them together.
+name: iOS accessibility audits
+on:
+  workflow_dispatch:
+  schedule:
+    # Mondays, 04:17 UTC.
+    - cron: '17 4 * * 1'
+permissions:
+  contents: read
+concurrency:
+  group: ios-audits-${{ github.ref }}
+  cancel-in-progress: false
+defaults:
+  run:
+    shell: bash
+jobs:
+  audits:
+    name: audits
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      XCODE_APP: /Applications/Xcode_16.4.app
+      SIMULATOR_DESTINATION: platform=iOS Simulator,name=iPhone 16,OS=latest
+      DERIVED_DATA: ${{ github.workspace }}/ios/DerivedData
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          if [ ! -d "$XCODE_APP" ]; then
+            echo "$XCODE_APP is not on this runner image. Installed:"
+            ls -d /Applications/Xcode*.app
+            exit 1
+          fi
+          sudo xcode-select --switch "$XCODE_APP"
+          xcodebuild -version
+      - name: Available simulators
+        run: xcrun simctl list devices available
+      # Only the audit class. The log goes to a file as well, so the findings can
+      # be listed on their own afterwards.
+      - name: Audits
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/audits.log"
+          status=0
+          xcodebuild test \
+            -project Cupmark.xcodeproj \
+            -scheme Cupmark \
+            -configuration Debug \
+            -destination "$SIMULATOR_DESTINATION" \
+            -derivedDataPath "$DERIVED_DATA" \
+            -only-testing:CupmarkUITests/AccessibilityAuditTests \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$log" || status=$?
+          echo "AUDIT_LOG=$log" >> "$GITHUB_ENV"
+          echo "AUDIT_STATUS=$status" >> "$GITHUB_ENV"
+          exit 0
+      # One finding per line, easy to read and to search; also in the run summary.
+      - name: Audit findings
+        run: |
+          set -euo pipefail
+          findings="$RUNNER_TEMP/findings.txt"
+          grep -h 'AUDIT-ISSUE' "$AUDIT_LOG" | sed 's/^.*AUDIT-ISSUE/AUDIT-ISSUE/' | sort -u > "$findings" || true
+          count="$(wc -l < "$findings" | tr -d ' ')"
+          echo "$count distinct AUDIT-ISSUE line(s):"
+          cat "$findings"
+          {
+            echo "### Accessibility audit findings: $count"
+            echo "Report only; nothing gates on this run."
+            echo '```'
+            cat "$findings"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      # xcodebuild's own exit status, from the Audits step: a test that could not
+      # run (for example a screen that did not appear) turns the run red.
+      - name: Test run result
+        run: |
+          set -euo pipefail
+          echo "xcodebuild exit status: $AUDIT_STATUS"
+          [ "$AUDIT_STATUS" = "0" ]

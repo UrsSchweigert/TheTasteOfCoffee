@@ -27,11 +27,15 @@ defaults:
 jobs:
   # Decides whether the change can affect the app, so the macOS `ios` job can
   # be skipped when it cannot (M0-T9). No third-party action: a plain
-  # `git diff --name-only --no-renames` against the PR base (a file moved out
-  # of ios/ counts as a change to ios/). Pushes to main always run ios.
-  # Any doubt (unknown event, missing base, failed diff) means ios=true.
+  # `git diff --name-only --no-renames` (a file moved out of ios/ counts as a
+  # change to ios/). A pull request is compared with its base commit; a push to
+  # main with the commit the push replaced (github.event.before).
+  # Any doubt (unknown event, missing or all-zero or unreachable base, failed
+  # diff) means ios=true.
   # ios=true when a changed path starts with one of IOS_PATHS; a path ending
-  # in `/` is a directory prefix. IOS_PATHS covers ios/ and everything the iOS
+  # in `/` is a directory prefix. Markdown directly under ios/ (the README) is not
+  # part of the app and is skipped; Markdown deeper down is not, because the app
+  # folders are synchronized and Xcode bundles every file in them. IOS_PATHS covers ios/ and everything the iOS
   # generators read: the scripts themselves, the contracts/lib modules they
   # import, and their inputs (M2-T6). scripts/check-workflows.test.mjs derives
   # that list from the scripts and fails if an entry is missing.
@@ -45,13 +49,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          # Full history, so the PR base commit is present for the diff.
+          # Full history, so the base commit (PR base, or the commit before a push) is present for the diff.
           fetch-depth: 0
       - name: Paths that affect the app
         id: diff
         env:
           EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
           IOS_PATHS: >-
             ios/
             contracts/vocabulary/
@@ -72,13 +78,27 @@ jobs:
           set -euo pipefail
           ios=true
           reason="fail-safe default"
-          if [ "$EVENT_NAME" = "push" ]; then
-            reason="push: always run ios"
-          elif [ "$EVENT_NAME" != "pull_request" ]; then
+          from=""
+          to=""
+          known=true
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            from="$BASE_SHA"
+            to="HEAD"
+          elif [ "$EVENT_NAME" = "push" ]; then
+            from="$BEFORE_SHA"
+            to="$AFTER_SHA"
+          else
+            known=false
             reason="event $EVENT_NAME: always run ios"
-          elif [ -z "$BASE_SHA" ] || ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
-            reason="base commit ${BASE_SHA:-<none>} not available"
-          elif ! list="$(mktemp)" || ! git diff --name-only --no-renames -z "$BASE_SHA" HEAD > "$list"; then
+          fi
+          if [ "$known" != "true" ]; then
+            :
+          elif [ -z "${from//0/}" ] || [ -z "$to" ]; then
+            # Empty, or all zeros (a push that creates the branch).
+            reason="no base commit (${from:-<none>}): always run ios"
+          elif ! git cat-file -e "$from^{commit}" 2>/dev/null || ! git cat-file -e "$to^{commit}" 2>/dev/null; then
+            reason="base commit $from or head commit $to not available"
+          elif ! list="$(mktemp)" || ! git diff --name-only --no-renames -z "$from" "$to" > "$list"; then
             reason="git diff failed"
           else
             ios=false
@@ -86,6 +106,12 @@ jobs:
             # -z: NUL-separated, so no path is quoted or split.
             while IFS= read -r -d '' path; do
               [ -n "$path" ] || continue
+              # Markdown directly under ios/ (the README) is not part of the app. Deeper ones are:
+              # Cupmark/, CupmarkTests/ and CupmarkUITests/ are synchronized folders, so Xcode
+              # copies any file in them, Markdown included, into the target.
+              if [[ "$path" == ios/*.md && "$path" != ios/*/* ]]; then
+                continue
+              fi
               for prefix in $IOS_PATHS; do
                 if [[ "$path" == "$prefix" ]] || [[ "$prefix" == */ && "$path" == "$prefix"* ]]; then
                   ios=true
@@ -181,11 +207,21 @@ jobs:
       # sets, and every text and tint pairing at 4.5:1 or better in both appearances.
       - name: iOS colours are named, and contrast holds
         run: node scripts/check-ios-colours.mjs
+      # The docs that describe the nightly rebuild stay in step with it (M3-T12), and
+      # the operator checks for the nightly job (M3-T13).
+      - name: Docs rebuild tests
+        run: node --test scripts/docs-rebuild.test.mjs
+      - name: Nightly checks tests
+        run: node --test scripts/nightly-checks.test.mjs
 
   # Builds the app and runs its unit tests and, from M2-T33, its UI tests
-  # (CupmarkUITests: an accessibility audit of each screen at two text sizes)
-  # on the iOS Simulator (M0-T6). Both are in the Cupmark scheme's test action,
-  # which `xcodebuild test-without-building` runs whole.
+  # (CupmarkUITests) on the iOS Simulator (M0-T6). Both are in the Cupmark
+  # scheme's test action, which `xcodebuild test-without-building` runs, except
+  # the report-only per-screen accessibility audits (class AccessibilityAuditTests,
+  # no assertions of its own): `-skip-testing:CupmarkUITests/AccessibilityAuditTests`.
+  # They are report-only and run weekly and on demand in ios-audits.yml. What gates
+  # here is everything else, including AccessibilityVoiceOverTests: the smoke tests
+  # (each screen appears in UI-test mode, the timer starts), navigation and VoiceOver.
   # The runner image and the Xcode version are pinned, so an upgrade is a
   # deliberate change here. Signing is off; no certificates or secrets.
   # Skipped when `changes` finds nothing that can affect the app (M0-T9).
@@ -237,6 +273,7 @@ jobs:
             -configuration Debug \
             -destination "$SIMULATOR_DESTINATION" \
             -derivedDataPath "$DERIVED_DATA" \
+            -skip-testing:CupmarkUITests/AccessibilityAuditTests \
             CODE_SIGNING_ALLOWED=NO
 
   backend:
@@ -279,6 +316,12 @@ jobs:
           DYNAMODB_ENDPOINT: http://localhost:8000
           REQUIRE_DYNAMODB_LOCAL: '1'
         run: npm run test:integration
+      # Replays the nightly rebuild against DynamoDB Local (M3-T10); not part of npm test.
+      - name: Replay tests (DynamoDB Local)
+        env:
+          DYNAMODB_ENDPOINT: http://localhost:8000
+          REQUIRE_DYNAMODB_LOCAL: '1'
+        run: npm run test:replay
       - name: Build
         run: npm run build
       - name: Generated contract is up to date

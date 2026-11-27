@@ -6,6 +6,14 @@
 #
 #   export CUPMARK_ACCESS_TOKEN   # set at run time (read -rs), never stored or committed
 #   scripts/smoke/post-deploy-checks.sh dev [--lookups-only]
+#   scripts/smoke/post-deploy-checks.sh dev --nightly-only [--dry-run-job]   # no token needed
+#   scripts/smoke/post-deploy-checks.sh dev --dry-run-job                    # same, with the dry run
+#
+# --nightly-only runs only the read-only checks of the nightly aggregates job (function,
+# schedules, role policies, alarms when the stage flag is on) and no API call; --dry-run-job
+# adds the one invocation with {"dry_run": true} (M3-T13, M3-T15) and implies --nightly-only.
+# Both are done by scripts/smoke/nightly-checks.sh, which can also be run on its own and
+# for prod. The API checks below do not run in this mode.
 #
 # dev only: any other stage, prod included, is refused. The API URL is always the output
 # ApiUrl of cupmark-dev-core (aws cloudformation describe-stacks with your own
@@ -45,17 +53,26 @@ export AWS_PAGER=""
 
 usage() {
   echo "Usage: CUPMARK_ACCESS_TOKEN=... $0 dev [--lookups-only]" >&2
+  echo "       $0 dev [--nightly-only] [--dry-run-job]" >&2
   exit 2
 }
-[[ $# -ge 1 && $# -le 2 ]] || usage
+[[ $# -ge 1 && $# -le 3 ]] || usage
 if [[ "$1" != "dev" ]]; then
   echo "Refusing stage '$1': these checks write test data and run against dev only." >&2
   exit 2
 fi
 LOOKUPS_ONLY=0
-if [[ $# -eq 2 ]]; then
-  [[ "$2" == "--lookups-only" ]] || usage
-  LOOKUPS_ONLY=1
+if [[ $# -ge 2 ]]; then
+  case "$2" in
+    --lookups-only) [[ $# -eq 2 ]] || usage; LOOKUPS_ONLY=1 ;;
+    --dry-run-job) [[ $# -eq 2 ]] || usage; exec "$(dirname "${BASH_SOURCE[0]}")/nightly-checks.sh" dev --dry-run-job ;;
+    --nightly-only)
+      [[ $# -eq 2 || "$3" == "--dry-run-job" ]] || usage
+      # No token, no API: only the owner's AWS CLI credentials.
+      exec "$(dirname "${BASH_SOURCE[0]}")/nightly-checks.sh" dev ${3:+"$3"}
+      ;;
+    *) usage ;;
+  esac
 fi
 
 TOKEN="${CUPMARK_ACCESS_TOKEN:-}"

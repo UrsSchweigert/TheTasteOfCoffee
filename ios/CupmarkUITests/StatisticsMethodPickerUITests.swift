@@ -13,14 +13,7 @@ final class StatisticsMethodPickerUITests: XCTestCase {
 
     @MainActor
     private func launchStatistics() -> XCUIApplication {
-        let app = XCUIApplication()
-        app.launchArguments = [
-            "-CupmarkUITestScreen", "statistics",
-            "-AppleLanguages", "(en)",
-            "-AppleLocale", "en_US",
-        ]
-        app.launch()
-        return app
+        UITestKit.launch(screen: "statistics")
     }
 
     /// The first element with `identifier`, whatever its type (SwiftUI picks the type).
@@ -29,20 +22,31 @@ final class StatisticsMethodPickerUITests: XCTestCase {
         app.descendants(matching: .any).matching(identifier: identifier).firstMatch
     }
 
-    /// Whether `identifier` is somewhere on the screen. A list builds only the rows near the
+    /// Which of `identifiers` are somewhere on the screen. A list builds only the rows near the
     /// window, so an element far down does not exist until it is scrolled to: scroll down in
-    /// steps, then back to the top. "Absent" is only believed after scrolling the whole screen.
+    /// steps to the end of the list (a swipe that moves nothing), looking after every step, then
+    /// back to the top. "Absent" is only believed after scrolling the whole screen. One scan
+    /// answers for both rows of a state (M2-T54), where each used to scroll the list on its own.
     @MainActor
-    private func isOnScreen(_ identifier: String, in app: XCUIApplication, steps: Int = 8) -> Bool {
-        var found = element(identifier, in: app).exists
-        var swipes = 0
-        while !found && swipes < steps {
-            app.swipeUp()
-            swipes += 1
-            found = element(identifier, in: app).exists
+    private func scan(_ identifiers: [String], in app: XCUIApplication, steps: Int = 10) -> Set<String> {
+        var found = Set<String>()
+        func look() {
+            for identifier in identifiers where !found.contains(identifier) && element(identifier, in: app).exists {
+                found.insert(identifier)
+            }
         }
-        for _ in 0..<swipes {
-            app.swipeDown()
+        look()
+        var swipes = 0
+        while found.count < identifiers.count && swipes < steps {
+            let moved = UITestKit.swipeUpIfPossible(app)
+            swipes += 1
+            look()
+            if !moved {
+                break
+            }
+        }
+        if swipes > 0 {
+            UITestKit.scrollToTop(app, until: element("statistics-method-picker", in: app), swipes: steps)
         }
         return found
     }
@@ -69,8 +73,10 @@ final class StatisticsMethodPickerUITests: XCTestCase {
         XCTAssertTrue(total.waitForExistence(timeout: 10), "the brew total is shown")
         // Four brews in the fixture: one unrated, three rated, of three methods.
         XCTAssertTrue(total.label.contains("4"), "all methods count every brew: \(total.label)")
-        XCTAssertTrue(isOnScreen("statistics-best-method", in: app), "all methods compare methods")
-        XCTAssertFalse(isOnScreen("statistics-method-below", in: app), "no empty state of a method yet")
+        let rows = ["statistics-best-method", "statistics-method-below"]
+        let allMethods = scan(rows, in: app)
+        XCTAssertTrue(allMethods.contains("statistics-best-method"), "all methods compare methods")
+        XCTAssertFalse(allMethods.contains("statistics-method-below"), "no empty state of a method yet")
 
         // Pick the first method the menu offers.
         picker.tap()
@@ -88,12 +94,13 @@ final class StatisticsMethodPickerUITests: XCTestCase {
         option.tap()
 
         XCTAssertTrue(element("statistics-brews-total", in: app).waitForExistence(timeout: 10))
-        guard isOnScreen("statistics-method-below", in: app) else {
+        let oneMethod = scan(rows, in: app)
+        guard oneMethod.contains("statistics-method-below") else {
             attachDiagnostics(app, "missing: the empty state of the method")
             XCTFail("a method below the threshold did not show its empty state")
             return
         }
-        XCTAssertFalse(isOnScreen("statistics-best-method", in: app), "one method has nothing to compare")
+        XCTAssertFalse(oneMethod.contains("statistics-best-method"), "one method has nothing to compare")
         // The first method has two of the fixture's four brews (one rated, the newest unrated).
         let methodTotal = element("statistics-brews-total", in: app).label
         XCTAssertTrue(methodTotal.contains("2"), "the total is that of the method: \(methodTotal)")
@@ -109,8 +116,9 @@ final class StatisticsMethodPickerUITests: XCTestCase {
         }
         all.tap()
         XCTAssertTrue(element("statistics-brews-total", in: app).waitForExistence(timeout: 10))
-        XCTAssertTrue(isOnScreen("statistics-best-method", in: app), "the best method is back")
-        XCTAssertFalse(isOnScreen("statistics-method-below", in: app))
+        let allAgain = scan(rows, in: app)
+        XCTAssertTrue(allAgain.contains("statistics-best-method"), "the best method is back")
+        XCTAssertFalse(allAgain.contains("statistics-method-below"))
         XCTAssertTrue(element("statistics-brews-total", in: app).label.contains("4"), "all methods again")
     }
 }

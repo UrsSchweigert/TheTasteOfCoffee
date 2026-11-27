@@ -12,14 +12,7 @@ final class BrewPhotoViewerUITests: XCTestCase {
 
     @MainActor
     private func launchShelf() -> XCUIApplication {
-        let app = XCUIApplication()
-        app.launchArguments = [
-            "-CupmarkUITestScreen", "shelf",
-            "-AppleLanguages", "(en)",
-            "-AppleLocale", "en_US",
-        ]
-        app.launch()
-        return app
+        UITestKit.launch(screen: "shelf")
     }
 
     /// The first element with `identifier`, whatever its type (SwiftUI picks the type).
@@ -46,26 +39,11 @@ final class BrewPhotoViewerUITests: XCTestCase {
     }
 
     /// Scrolls `element` into the middle band of the window, so no other control and not the home
-    /// indicator is over it, and returns whether it got there.
+    /// indicator is over it, and returns whether it is on screen and can be tapped. Stops at the
+    /// end of the scroll (`UITestKit.scrollToMiddle`) instead of swiping on 25 times.
     @MainActor
-    private func scrollToMiddle(_ element: XCUIElement, in app: XCUIApplication, attempts: Int = 25) -> Bool {
-        let window = app.windows.firstMatch.frame
-        for _ in 0..<attempts {
-            if element.exists && element.isHittable {
-                let middle = element.frame.midY
-                if middle > window.height * 0.25 && middle < window.height * 0.7 {
-                    return true
-                }
-                if middle >= window.height * 0.7 {
-                    app.swipeUp(velocity: .slow)
-                } else {
-                    app.swipeDown(velocity: .slow)
-                }
-            } else {
-                app.swipeUp()
-            }
-        }
-        return element.exists && element.isHittable
+    private func scrollToMiddle(_ element: XCUIElement, in app: XCUIApplication, attempts: Int = 15) -> Bool {
+        UITestKit.scrollToMiddle(element, in: app, band: 0.25...0.7, attempts: attempts)
     }
 
     /// Scrolls `element` to the middle and taps its centre; a tap that did not land (`landed`
@@ -114,11 +92,7 @@ final class BrewPhotoViewerUITests: XCTestCase {
     /// an unscoped subscript, which matches twice while the sheet animates.
     @MainActor
     private func dialogButton(_ title: String, in app: XCUIApplication) -> XCUIElement {
-        let inSheet = app.sheets.buttons[title].firstMatch
-        if inSheet.waitForExistence(timeout: 5) {
-            return inSheet
-        }
-        return app.buttons.matching(NSPredicate(format: "label == %@", title)).firstMatch
+        UITestKit.dialogButton(title, in: app)
     }
 
     // MARK: - Tests

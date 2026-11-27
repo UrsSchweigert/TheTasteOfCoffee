@@ -886,6 +886,7 @@ Planning notes (planned 2026-11-25):
   - `performAccessibilityAudit()` runs at the default text size and the largest accessibility size on these screens: sign-in, scanner fallback, lookup result, pick-list entry, shelf, brew form, timer, rating, recipes, statistics, onboarding and settings. It reports its findings in the log (`AUDIT-ISSUE` lines) and does not fail the build: the owner decided on 2026-11-26 that the app needs the essentials (labels, values, 44-point targets, text that scales and nothing cut off), not a full accessibility certification. The remaining findings are judged on a device in M2-T34.
   - Every slider, stepper and pick list has a VoiceOver label and value, for example "Aroma, 7.5 of 10". Scores and steppers support the adjustable action.
   - Mac: the `ios` job. The VoiceOver walk-through on a device is in M2-T34.
+  - Note (ADR 0037): the audits no longer run on pull requests. The `AUDIT-ISSUE` lines are in the weekly or manual run of `.github/workflows/ios-audits.yml`, not in the `ios` job log. The smoke tests in `AccessibilityVoiceOverTests` gate that each screen appears and the timer starts.
 
 ### M2-T34 Device run against dev
 - status: done (the owner ran the device flow against dev and reported it passed, 2026-11-26)
@@ -1140,6 +1141,31 @@ Planning notes (planned 2026-11-25):
   - The summary row at the top of the screen and its scroll anchor `coffee-averages-section`, the community slot for M4, the empty and one-brew states and `coffee-averages-count` keep working; 44-point target, VoiceOver label and value for the picker, Dynamic Type, Theme colours, en and de strings from the catalogue (orphaned keys removed), nothing typed.
   - The numbers come from `CoffeeAverages.methods`, no second implementation. Tests: unit tests of the options, the fallback, "All" equals the unfiltered rows, a method equals its entry; a UI test with the harness that picks a method and sees the count change and the per-method sections gone. Mac: the `ios` job; `needs-mac-verification` until it passes.
 
+### M2-T53 Consent texts follow the nightly rebuild
+- status: needs-mac-verification
+- owner: ios-engineer
+- depends: M2-T29
+- implements: owner decision of 2026-11-26/27 (ADR 0035): withdrawing sharing removes the user's ratings from the community numbers at the next successful nightly update, the personal log is untouched; re-consent counts all rated brews again, ratings made before the first consent too; deleting a brew or the account removes its ratings at the next successful nightly update; community numbers are up to about a day old
+- acceptance:
+  - Strings only, en and de, same keys: `settings.consent.footer`, `onboarding.consent.message`, `account_deletion.confirm.message`, `account_deletion.settings_footer`, with their comments; the companion pages `site/index.html` and `site/de/index.html` (privacy section) say the same. No typed text controls, no plural variations.
+  - The old phrases ("already counted stay counted", "bereits gezählte bleiben gezählt") appear nowhere under `ios/` or `site/`; a static test in `scripts/ios-scripts.test.mjs` fails if they return, and `scripts/site.test.mjs` pins the new site wording.
+  - `scripts/check-ios-strings.mjs` passes. Mac: the `ios` job; `needs-mac-verification` until it passes.
+
+### M2-T54 Faster UI tests on the macOS runner
+- status: needs-mac-verification
+- owner: ios-engineer
+- depends: M2-T52
+- implements: owner request of 2026-11-27 (the macOS CI runs are too slow). Measured on the last green run: the `ios` job's Test step took 35.5 minutes and the 32 UI test cases summed to 1,666 s: `BrewPhotoViewerUITests` 584 s (5 tests), `BrewPhotoUITests` 407 s (2), `StatisticsMethodPickerUITests` 172 s (1), the accessibility tests 142 s (14), `CoffeeAveragesSwitcherUITests` 77 s, `CoffeeAveragesUITests` 70 s (2), `StartingPointsUITests` 69 s, `AveragesInContextUITests` 65 s (3).
+- cause (read from the code, not yet measured on a Mac): the scroll helpers swiped 12 to 25 times (slow swipes, about 3 to 4 s each with the wait for the app to be idle) for an element that can never reach the middle band of the window because it sits at the end of the list (the photo section of the rating form, the first photo of the gallery at the top, the starting points at the end of the recipe list), or for an element that is not in the list at all (the "absent" checks of the statistics, the empty state in the wrong bag, the no-per-method-headers loop); the confirmation dialog helper waited 5 s for an action sheet before looking for the button (up to 4 times per test) where the dialog is not an action sheet; animations ran and each query waited for them.
+- acceptance:
+  - No test loses an assertion: every test keeps what it proves. A list is still scrolled to its end before something is believed absent (two swipes in a row that move nothing are the end, since one can be swallowed), a tap still happens on a hittable element, and the lessons stay (a List builds only rows near the window, menu option identifiers may not survive on iOS 17+, main-actor test classes, no `try` in assert messages).
+  - `CupmarkUITests/UITestKit.swift` holds the shared launch (with `-CupmarkUITestDisableAnimations`), the scroll helpers that stop at the end of the scroll (`scrollToMiddle`, `scrollUntilHittable`, `swipeUpIfPossible`, `scrollToTop`) and the dialog button lookup, which waits once for whichever button shows first.
+  - `-CupmarkUITestDisableAnimations` (Debug only, inside `UITestSupport/`, optional beside `-CupmarkUITestScreen`): `UIView.setAnimationsEnabled(false)` and no SwiftUI animation in `UITestRootView`. Without it the app animates as always; a unit test checks the flag. `scripts/check-ios-accessibility.mjs` and `scripts/ios-scripts.test.mjs` stay green.
+  - `StatisticsMethodPickerUITests` scans the list once per state for both rows (three scans instead of six) and returns to the top with the status bar tap.
+  - Estimated saving (to be confirmed by the per-class sums in the next macOS run's job log): `BrewPhotoViewerUITests` 584 s to about 200 s, `BrewPhotoUITests` 407 s to about 90 s, `StatisticsMethodPickerUITests` 172 s to about 60 s, `CoffeeAveragesSwitcherUITests` 77 s to about 35 s, `CoffeeAveragesUITests` 70 s to about 40 s, `StartingPointsUITests` 69 s to about 40 s, `AveragesInContextUITests` 65 s to about 50 s, the accessibility tests 142 s to about 120 s; about 1,666 s to about 900 s (the Test step from about 35 to about 22 minutes).
+  - Not done, as follow-ups if the next run is still slow: one launch for several viewer tests (a launch screen that opens the gallery or the viewer directly), and typed element queries instead of `.any` descendants.
+  - Mac: the `ios` job; `needs-mac-verification` until the run is green and the per-class sums are compared with the estimates above.
+
 ## M3 Aggregation
 
 Goal: community aggregates per bean and per method, and the rankings, are rebuilt every night from the source of truth, so they converge on create, edit, delete, consent change and account deletion with no incremental bookkeeping. A failed run changes nothing.
@@ -1369,14 +1395,16 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - Follow-ups found in review (not done here): `contracts/openapi.yaml` lines ~812-813 and ~1635-1637 still say the aggregator subtracts / counts only brews written while consent was true: reword (contract-keeper) in the next change that touches the iOS path list anyway. `site/index.html:77` is fixed by M2-T53. `scripts/docs-rebuild.test.mjs` is not yet a CI step (`ci.yml` runs each script test explicitly): add the step in the next change to `ci.yml` (it is in the iOS path list).
 
 ### M3-T13 Post-deploy checks for the nightly job
-- status: todo
+- status: done
 - owner: infra-engineer
+- needs: human (M3-T14 and M3-T15 run it; the owner, after the dev deploy, with their own AWS CLI credentials and no token: `scripts/smoke/post-deploy-checks.sh dev --nightly-only` for the read-only checks, then `scripts/smoke/post-deploy-checks.sh dev --dry-run-job` for the one dry-run invocation; `scripts/smoke/nightly-checks.sh prod` works too, read-only; the dry run is dev only)
 - depends: M3-T9
 - implements: M1-T7 (`scripts/smoke/post-deploy-checks.sh`); ADR 0035
 - acceptance:
-  - `scripts/smoke/post-deploy-checks.sh <stage>` additionally checks, read-only: the function exists with the expected timeout, memory and no VPC; the schedule exists in `cupmark-<stage>-jobs`, has the expected expression and state; the function's role has no `dynamodb:*` and no wildcard resource (`iam get-role-policy` and `simulate-principal-policy` are not used: the check reads the policy and compares with the expected statements); only when the stage's `failureAlarms.enabled` is true: the two alarms exist and their state is readable (`cloudwatch describe-alarms`; `OK` or `INSUFFICIENT_DATA` is reported, `ALARM` fails the check), and the topic `cupmark-<stage>-alerts` exists (`sns get-topic-attributes`; it never lists or reads subscriber endpoints). It invokes nothing and writes nothing.
-  - A flag `--dry-run-job` (off by default, used by the owner in M3-T15) invokes the function once with `{ "dry_run": true }`, prints its log line and fails on a function error or on a log line without the fixed keys. It never runs the writing job.
-  - The script's tests (the existing harness with a stubbed `aws` command) cover the pass and each failure.
+  - The nightly checks (`scripts/smoke/nightly-checks.sh <stage>`) run through `scripts/smoke/post-deploy-checks.sh dev --nightly-only` or `--dry-run-job`; they need no token, and the default token run of `post-deploy-checks.sh` is unchanged. They check, read-only: the function exists with the expected timeout, memory and no VPC; the schedule exists in `cupmark-<stage>-jobs`, has the expected expression, window and state; the function's role (its name is compared with `cupmark-<stage>-nightly-aggregates` before any IAM call, so a foreign role is never read) has no `dynamodb:*` and no wildcard resource (`iam get-role-policy`, read-only and scoped to this function's role, reads the inline policy, which is compared with the expected statements; `simulate-principal-policy` is not used); only when the stage's `failureAlarms.enabled` is true: the two alarms exist and their state is readable (`cloudwatch describe-alarms`; `OK` or `INSUFFICIENT_DATA` is reported, `ALARM` fails the check), and the topic `cupmark-<stage>-alerts` exists (`sns get-topic-attributes`; it never lists or reads subscriber endpoints). It invokes nothing and writes nothing.
+  - A flag `--dry-run-job` (off by default, used by the owner in M3-T15) invokes the function once with `{ "dry_run": true }`, prints its log line and fails on a function error or on a log line without the fixed keys. It never runs the writing job, and it is allowed on dev only (prod gets the read-only checks).
+  - The script's tests (`scripts/nightly-checks.test.mjs`, a stubbed `aws` command) cover the pass and each failure.
+  - Follow-up (small `ci.yml` change, by the owner of CI): `scripts/nightly-checks.test.mjs` is not a CI step yet (`ci.yml` runs each script test by name); add it in the same change as the replay test and docs-rebuild test steps.
   - It touches only `cupmark-` resources (invariant 9), and a test fails if it names any other.
 
 ### M3-T14 Owner dev deploy of the nightly job

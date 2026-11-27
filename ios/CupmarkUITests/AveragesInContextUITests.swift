@@ -15,14 +15,7 @@ final class AveragesInContextUITests: XCTestCase {
 
     @MainActor
     private func launch(_ screen: String) -> XCUIApplication {
-        let app = XCUIApplication()
-        app.launchArguments = [
-            "-CupmarkUITestScreen", screen,
-            "-AppleLanguages", "(en)",
-            "-AppleLocale", "en_US",
-        ]
-        app.launch()
-        return app
+        UITestKit.launch(screen: screen)
     }
 
     /// The first element with `identifier`, whatever its type (SwiftUI picks the type).
@@ -40,26 +33,12 @@ final class AveragesInContextUITests: XCTestCase {
         add(attachment)
     }
 
-    /// Scrolls `element` into the middle band of the window and returns whether it got there.
+    /// Scrolls `element` into the middle band of the window and returns whether it is on screen
+    /// and can be tapped. Stops at the end of the scroll (`UITestKit.scrollToMiddle`), where an
+    /// element at the end of a list cannot reach the middle, instead of swiping on 25 times.
     @MainActor
-    private func scrollToMiddle(_ element: XCUIElement, in app: XCUIApplication, attempts: Int = 25) -> Bool {
-        let window = app.windows.firstMatch.frame
-        for _ in 0..<attempts {
-            if element.exists && element.isHittable {
-                let middle = element.frame.midY
-                if middle > window.height * 0.15 && middle < window.height * 0.8 {
-                    return true
-                }
-                if middle >= window.height * 0.8 {
-                    app.swipeUp(velocity: .slow)
-                } else {
-                    app.swipeDown(velocity: .slow)
-                }
-            } else {
-                app.swipeUp()
-            }
-        }
-        return element.exists && element.isHittable
+    private func scrollToMiddle(_ element: XCUIElement, in app: XCUIApplication, attempts: Int = 15) -> Bool {
+        UITestKit.scrollToMiddle(element, in: app, band: 0.15...0.8, attempts: attempts)
     }
 
     /// The elements whose identifier starts with `prefix`.
