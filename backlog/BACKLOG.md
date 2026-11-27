@@ -478,7 +478,7 @@ Planning notes (planned 2026-11-25):
   - Nothing else changes. The values are configuration, not secrets (invariant 8 holds).
 
 ### M2-T11 Sign in with Apple through the Cognito hosted UI with PKCE
-- status: needs-mac-verification (unit tests pass in the `ios` job in #58; the real sign-in against dev is verified in M2-T34)
+- status: done (unit tests in #58; the real sign-in against dev passed on a device in M2-T34)
 - owner: ios-engineer
 - depends: M2-T8, M2-T9
 - implements: docs/03-project-brief.md (Sign in with Apple only); docs/05-system-design.md, Security (60-minute access tokens, refresh token in the Keychain); infra/src/identity.ts (public client, `openid`, `cupmark://auth`)
@@ -528,7 +528,7 @@ Planning notes (planned 2026-11-25):
   - Mac: ends `needs-mac-verification` until the owner reports a TestFlight build installed on a device.
 
 ### M2-T13 Barcode scanner
-- status: needs-mac-verification (unit tests passed in the `ios` job in #57; the camera scan is verified on a device in M2-T34)
+- status: done (unit tests in #57; the camera scan passed on a device in M2-T34)
 - owner: ios-engineer
 - depends: M0-T6
 - implements: docs/04-specification.md, F1 step 1, Input model (camera scan, EAN-13 and UPC-A)
@@ -707,7 +707,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T23 Label photo: JPEG on the device
-- status: needs-mac-verification (the encoder tests pass in the `ios` job in #61; a real HEIC capture is verified on a device in M2-T34)
+- status: done (encoder tests in #61; a real capture passed on a device in M2-T34)
 - owner: ios-engineer
 - depends: M2-T22
 - implements: docs/04-specification.md, F1 step 4; ADR 0016 (HEIC to JPEG on the device, at most 4096 px a side and 8 MiB); D12
@@ -728,7 +728,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the conversion is tested in the `ios` job. The task ends `needs-mac-verification` until a real HEIC capture passes on a device in M2-T34.
 
 ### M2-T24 Label photo: presigned upload and completion
-- status: needs-mac-verification (the unit tests pass in the `ios` job in #62; a real upload to dev is verified in M2-T34)
+- status: done (unit tests in #62; a real upload to dev passed on a device in M2-T34)
 - owner: ios-engineer
 - depends: M2-T23
 - implements: ADR 0016; contracts/openapi.yaml, `createLabelPhotoUpload`, `completeLabelPhoto`
@@ -888,7 +888,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job. The VoiceOver walk-through on a device is in M2-T34.
 
 ### M2-T34 Device run against dev
-- status: todo
+- status: done (the owner ran the device flow against dev and reported it passed, 2026-11-26)
 - owner: human
 - needs: human. On a device, with a TestFlight build (M2-T12) or a build from Xcode, and a test Apple ID, the owner runs the flow below and reports the result on the task's issue.
 - depends: M1-T7, M2-T10, M2-T12, M2-T33
