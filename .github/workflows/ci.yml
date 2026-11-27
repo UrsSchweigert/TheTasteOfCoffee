@@ -33,8 +33,9 @@ jobs:
   # Any doubt (unknown event, missing or all-zero or unreachable base, failed
   # diff) means ios=true.
   # ios=true when a changed path starts with one of IOS_PATHS; a path ending
-  # in `/` is a directory prefix. A Markdown file under ios/ (the README) is not
-  # part of the app and is skipped. IOS_PATHS covers ios/ and everything the iOS
+  # in `/` is a directory prefix. Markdown directly under ios/ (the README) is not
+  # part of the app and is skipped; Markdown deeper down is not, because the app
+  # folders are synchronized and Xcode bundles every file in them. IOS_PATHS covers ios/ and everything the iOS
   # generators read: the scripts themselves, the contracts/lib modules they
   # import, and their inputs (M2-T6). scripts/check-workflows.test.mjs derives
   # that list from the scripts and fails if an entry is missing.
@@ -105,8 +106,10 @@ jobs:
             # -z: NUL-separated, so no path is quoted or split.
             while IFS= read -r -d '' path; do
               [ -n "$path" ] || continue
-              # Markdown under ios/ (the README) is not part of the app.
-              if [[ "$path" == ios/* && "$path" == *.md ]]; then
+              # Markdown directly under ios/ (the README) is not part of the app. Deeper ones are:
+              # Cupmark/, CupmarkTests/ and CupmarkUITests/ are synchronized folders, so Xcode
+              # copies any file in them, Markdown included, into the target.
+              if [[ "$path" == ios/*.md && "$path" != ios/*/* ]]; then
                 continue
               fi
               for prefix in $IOS_PATHS; do
@@ -209,9 +212,10 @@ jobs:
   # (CupmarkUITests) on the iOS Simulator (M0-T6). Both are in the Cupmark
   # scheme's test action, which `xcodebuild test-without-building` runs, except
   # the report-only per-screen accessibility audits (class AccessibilityAuditTests,
-  # which never gate): `-skip-testing:CupmarkUITests/AccessibilityAuditTests`.
-  # They run weekly and on demand in ios-audits.yml. The VoiceOver value and
-  # navigation UI tests (AccessibilityVoiceOverTests) and the other UI tests run here.
+  # no assertions of its own): `-skip-testing:CupmarkUITests/AccessibilityAuditTests`.
+  # They are report-only and run weekly and on demand in ios-audits.yml. What gates
+  # here is everything else, including AccessibilityVoiceOverTests: the smoke tests
+  # (each screen appears in UI-test mode, the timer starts), navigation and VoiceOver.
   # The runner image and the Xcode version are pinned, so an upgrade is a
   # deliberate change here. Signing is off; no certificates or secrets.
   # Skipped when `changes` finds nothing that can affect the app (M0-T9).

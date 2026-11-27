@@ -468,16 +468,53 @@ test('path filter: deleting or moving a file out of ios/ gives ios=true', () => 
   assert.equal(filterAfter((repo, git) => git('mv', 'ios/Cupmark/RootView.swift', 'docs/RootView.swift')).ios, 'true');
 });
 
-test('path filter: markdown under ios/ is not an app change, anything else under ios/ is', () => {
+test('path filter: only Markdown directly under ios/ is not an app change', () => {
   assert.equal(filterAfter(editing('ios/README.md')).ios, 'false');
-  assert.equal(filterAfter(editing('ios/CupmarkUITests/NOTES.md', 'ios/Cupmark/deep/dir/x.md', 'docs/README.md')).ios, 'false');
+  assert.equal(filterAfter(editing('ios/README.md', 'docs/README.md')).ios, 'false');
+  // The three folders are synchronized: Xcode bundles any file in them, Markdown included.
+  assert.equal(filterAfter(editing('ios/CupmarkUITests/NOTES.md')).ios, 'true');
+  assert.equal(filterAfter(editing('ios/Cupmark/deep/dir/x.md')).ios, 'true');
+  assert.equal(filterAfter(editing('ios/Cupmark/Foo.md')).ios, 'true');
+  assert.equal(filterAfter(editing('ios/CupmarkTests/Bar.md')).ios, 'true');
+  // Renaming or deleting such a file is a change of the app too (--no-renames lists the old path).
+  const withFoo = (repo, git) => {
+    mkdirSync(join(repo, 'ios', 'Cupmark'), { recursive: true });
+    writeFileSync(join(repo, 'ios', 'Cupmark', 'Foo.md'), 'x\n');
+    git('add', '-A');
+    git('commit', '-q', '-m', 'foo');
+  };
+  const run = (change) => {
+    // Foo.md is committed before the base, so the second commit is the rename alone.
+    const repo = mkdtempSync(join(tmpdir(), 'ci-repo-'));
+    try {
+      const git = (...args) => {
+        const r = spawnSync('git', args, { cwd: repo, encoding: 'utf8', env: { PATH: process.env.PATH, ...GIT_ENV } });
+        assert.equal(r.status, 0, r.stderr);
+        return r.stdout.trim();
+      };
+      git('init', '-q', '-b', 'main');
+      mkdirSync(join(repo, 'docs'), { recursive: true });
+      writeFileSync(join(repo, 'docs', 'a.md'), 'a\n');
+      withFoo(repo, git);
+      const base = git('rev-parse', 'HEAD');
+      change(repo, git);
+      git('add', '-A');
+      git('commit', '-q', '-m', 'change');
+      const r = runShell(changesStep.run, { ...GIT_ENV, ...changesStep.env, EVENT_NAME: 'pull_request', BASE_SHA: base, BEFORE_SHA: '', AFTER_SHA: git('rev-parse', 'HEAD') }, repo);
+      assert.equal(r.status, 0, r.stdout);
+      return /^ios=(true|false)$/m.exec(r.output)?.[1];
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  };
+  assert.equal(run((repo, git) => git('mv', 'ios/Cupmark/Foo.md', 'docs/Foo.md')), 'true', 'moved out of ios/Cupmark');
+  assert.equal(run((repo, git) => git('rm', '-q', 'ios/Cupmark/Foo.md')), 'true', 'deleted');
+  assert.equal(run((repo) => writeFileSync(join(repo, 'ios', 'README.md'), 'r\n')), 'false', 'README.md alone');
   // The skip is the ios/ prefix and the lower-case .md extension, nothing broader.
   assert.equal(filterAfter(editing('ios/README.md', 'ios/Cupmark/RootView.swift')).ios, 'true');
   assert.equal(filterAfter(editing('ios/README.md', 'ios/README.md.swift')).ios, 'true');
-  assert.equal(filterAfter(editing('ios/README.md', 'ios/Cupmark/Localizable.xcstrings')).ios, 'true');
   assert.equal(filterAfter(editing('ios/README.md', 'ios/mdfile')).ios, 'true');
   assert.equal(filterAfter(editing('ios/README.MD')).ios, 'true', 'only lower-case .md is skipped; any doubt runs ios');
-  // Outside ios/ the skip does not apply: markdown in the other app inputs still counts.
   assert.equal(filterAfter(editing('contracts/vocabulary/README.md')).ios, 'true');
   assert.equal(filterAfter(editing('contracts/i18n/NOTES.md')).ios, 'true');
 });
@@ -486,6 +523,7 @@ test('path filter: a push to main is compared with the commit it replaced', () =
   const push = (change) => filterAfter(change, { event: 'push' });
   assert.equal(push(editing('docs/README.md', 'backend/src/a.ts')).ios, 'false');
   assert.equal(push(editing('ios/README.md')).ios, 'false');
+  assert.equal(push(editing('ios/Cupmark/Foo.md')).ios, 'true');
   assert.equal(push(() => {}).ios, 'false', 'an empty diff');
   assert.equal(push(editing('.github/workflows/claude.yml')).ios, 'false');
   assert.equal(push(editing('ios/Cupmark/RootView.swift')).ios, 'true');
@@ -539,12 +577,23 @@ test('the skipped class holds only the 13 audits; the navigation and VoiceOver t
   assert.equal(audits.length, 13, 'one audit per screen');
   assert.ok(audits.every((n) => /Audit$/.test(n)), `a test that is not an audit is in the skipped class: ${audits}`);
   assert.match(bodyOf('AccessibilityAuditTests'), /performAccessibilityAudit\(for: types\)/);
-  assert.deepEqual(tests(bodyOf('AccessibilityVoiceOverTests')).sort(), [
+  const gating = tests(bodyOf('AccessibilityVoiceOverTests'));
+  for (const name of [
     'testABrewStepperHasALabelAndAValueAndIncrements',
     'testAPickListHasALabelAndAValue',
     'testARatingScoreHasALabelAndAValueOnItsScale',
     'testBackFromARatingShowsTheBrewList',
-  ]);
+    'testTimerStarts',
+  ]) {
+    assert.ok(gating.includes(name), `${name} is not in the gating class`);
+  }
+  // A smoke test per audited screen: the audits' screen-appears check moved here, so it still gates.
+  const audited = [...bodyOf('AccessibilityAuditTests').matchAll(/auditAtBothSizes\(\.(\w+)/g)].map((m) => m[1]);
+  const smoked = new Set([...bodyOf('AccessibilityVoiceOverTests').matchAll(/(?:appears|launch)\(\.(\w+)/g)].map((m) => m[1]));
+  assert.equal(audited.length, 13);
+  for (const screen of audited) assert.ok(smoked.has(screen), `no smoke test launches ${screen} in the gating class`);
+  // The skipped class asserts nothing: CI does not run it, so an assertion there would not gate.
+  assert.doesNotMatch(bodyOf('AccessibilityAuditTests'), /XCTAssert|XCTFail|XCTUnwrap|did not appear|did not start/);
   assert.doesNotMatch(bodyOf('AccessibilityVoiceOverTests'), /performAccessibilityAudit/);
   const uiDir = join(root, 'ios', 'CupmarkUITests');
   for (const f of readdirSync(uiDir).filter((n) => n.endsWith('.swift') && n !== 'AccessibilityAuditTests.swift')) {

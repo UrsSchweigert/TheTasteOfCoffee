@@ -11,10 +11,12 @@ import XCTest
 /// essentials, not a full accessibility certification). Apple's checker is unsure about
 /// system-styled SwiftUI text and its findings go to the log as `AUDIT-ISSUE` lines, to be
 /// judged on a device in M2-T34. Because they only report, they do not run on pull requests:
-/// CI skips `AccessibilityAuditTests` and `.github/workflows/ios-audits.yml` runs that class
-/// weekly and on demand. The tests that DO fail and gate every pull request are the screen not
-/// appearing and the navigation and VoiceOver label and value tests in `AccessibilityVoiceOverTests`
-/// (keep them in that class: skipping `AccessibilityAuditTests` must not skip them).
+/// CI skips `AccessibilityAuditTests`, and `.github/workflows/ios-audits.yml` runs that class
+/// weekly and on demand. `AccessibilityAuditTests` has no assertion of its own: a screen that
+/// does not appear is printed as an `AUDIT-ISSUE` line. What gates every pull request is in
+/// `AccessibilityVoiceOverTests`: the smoke tests (each screen appears in UI-test mode, and the
+/// timer starts), back navigation and the VoiceOver label and value tests. Keep every
+/// assertion out of `AccessibilityAuditTests`: CI skips that class, so it would not gate.
 ///
 /// The language is pinned to English so the values read in the VoiceOver tests are known.
 /// Nothing is typed anywhere (invariant 1): the tests only tap, swipe and drag.
@@ -91,7 +93,7 @@ final class AccessibilityAuditTests: AccessibilityUITestCase {
     func testNotConfiguredPassesTheAudit() throws {
         // The root's navigation bar, then the message under it.
         try auditAtBothSizes(.notConfigured, prepare: { app in
-            XCTAssertTrue(app.staticTexts.firstMatch.waitForExistence(timeout: 5), "the message did not appear")
+            _ = app.staticTexts.firstMatch.waitForExistence(timeout: 5)
         }, ready: { app in app.navigationBars.firstMatch })
     }
 
@@ -133,7 +135,8 @@ final class AccessibilityAuditTests: AccessibilityUITestCase {
             let start = app.buttons["brew-timer-start"]
             try scrollUntilHittable(start, in: app)
             start.tap()
-            XCTAssertTrue(app.buttons["brew-timer-stop"].waitForExistence(timeout: 5), "the timer did not start")
+            // The smoke test in AccessibilityVoiceOverTests gates on the timer starting.
+            _ = app.buttons["brew-timer-stop"].waitForExistence(timeout: 5)
         }, ready: { app in app.buttons["brew-save"] })
     }
 
@@ -169,7 +172,12 @@ final class AccessibilityAuditTests: AccessibilityUITestCase {
         for size in TextSize.allCases {
             try XCTContext.runActivity(named: "\(screen.rawValue) at \(size.rawValue)") { _ in
                 let app = launch(screen, size: size)
-                XCTAssertTrue(ready(app).waitForExistence(timeout: timeout), "\(screen.rawValue) did not appear")
+                // Report, never fail: the smoke tests in AccessibilityVoiceOverTests gate on the screen appearing.
+                if !ready(app).waitForExistence(timeout: timeout) {
+                    print("AUDIT-ISSUE screen=\(screen.rawValue) size=\(size.rawValue) type=none detail=screen was not shown, not audited")
+                    app.terminate()
+                    return
+                }
                 try prepare(app)
                 // At the pinned largest size the Dynamic Type check cannot work: the size no longer
                 // changes. The other checks (clipping, hit regions, contrast) still run.
@@ -257,8 +265,96 @@ final class AccessibilityAuditTests: AccessibilityUITestCase {
     }
 }
 
-/// Gating UI tests: back navigation, and the VoiceOver label, value and adjusting of controls.
+/// Gating UI tests: each screen appears (smoke), the timer starts, back navigation, and the
+/// VoiceOver label, value and adjusting of controls.
 final class AccessibilityVoiceOverTests: AccessibilityUITestCase {
+    // MARK: - Smoke: every screen appears in UI-test mode
+    //
+    // The audits are skipped on pull requests and never fail, so these tests keep the check that
+    // each screen starts and shows its main control (and that the timer starts) in the gate.
+    // No audit: one launch at the standard size each. Same ready elements as the audits.
+
+    @MainActor
+    private func appears(_ screen: Screen, timeout: TimeInterval = 15, ready: (XCUIApplication) -> XCUIElement) {
+        let app = launch(screen, size: .standard)
+        XCTAssertTrue(ready(app).waitForExistence(timeout: timeout), "\(screen.rawValue) did not appear")
+    }
+
+    @MainActor
+    func testSignInAppears() throws {
+        appears(.signIn) { app in app.buttons["sign-in-with-apple"] }
+    }
+
+    @MainActor
+    func testNotConfiguredAppears() throws {
+        let app = launch(.notConfigured, size: .standard)
+        // The root's navigation bar, then the message under it.
+        XCTAssertTrue(app.navigationBars.firstMatch.waitForExistence(timeout: 15), "not-configured did not appear")
+        XCTAssertTrue(app.staticTexts.firstMatch.waitForExistence(timeout: 5), "the message did not appear")
+    }
+
+    @MainActor
+    func testOnboardingAppears() throws {
+        // Onboarding shows once the root has waited for the server's profile (5 s, no pull here).
+        appears(.onboarding, timeout: 30) { app in app.buttons["onboarding-next"] }
+    }
+
+    @MainActor
+    func testShelfAppears() throws {
+        appears(.shelf) { app in app.buttons["shelf-scan"] }
+    }
+
+    @MainActor
+    func testScannerFallbackAppears() throws {
+        appears(.scannerFallback) { app in app.buttons["scanner-pick-list"] }
+    }
+
+    @MainActor
+    func testLookupResultAppears() throws {
+        appears(.lookupResult) { app in app.buttons["add-to-shelf"] }
+    }
+
+    @MainActor
+    func testPickListEntryAppears() throws {
+        appears(.beanEntry) { app in app.buttons["bean-entry-save"] }
+    }
+
+    @MainActor
+    func testBrewFormAppears() throws {
+        appears(.brewForm) { app in app.buttons["brew-save"] }
+    }
+
+    @MainActor
+    func testTimerStarts() throws {
+        let app = launch(.timer, size: .standard)
+        XCTAssertTrue(app.buttons["brew-save"].waitForExistence(timeout: 15), "timer did not appear")
+        // The timer is further down the form: scroll to it and start it.
+        let start = app.buttons["brew-timer-start"]
+        try scrollUntilHittable(start, in: app)
+        start.tap()
+        XCTAssertTrue(app.buttons["brew-timer-stop"].waitForExistence(timeout: 5), "the timer did not start")
+    }
+
+    @MainActor
+    func testRatingAppears() throws {
+        appears(.rating) { app in app.buttons["rating-save"] }
+    }
+
+    @MainActor
+    func testRecipesAppear() throws {
+        appears(.recipes) { app in app.buttons["recipe-row"].firstMatch }
+    }
+
+    @MainActor
+    func testStatisticsAppear() throws {
+        appears(.statistics) { app in app.cells.firstMatch }
+    }
+
+    @MainActor
+    func testSettingsAppear() throws {
+        appears(.settings) { app in app.switches["settings-consent"] }
+    }
+
     // MARK: - Navigation
 
     /// M2-T40: back from a brew's rating shows the brew list, not an empty screen with a
