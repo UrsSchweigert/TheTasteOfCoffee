@@ -1192,6 +1192,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - An integer accumulator adds weighted half-point scores and asserts `Number.isSafeInteger` after every addition; overflow fails the run. A test pushes sums to the stated bound (200 users x 10 cups x 20 half-points x L) with room to spare, and a test with a forced overflow fails closed.
   - Property test: adding the same weighted values in any order gives the same sum.
   - A named constant `MAX_AGE_DAYS = 3` (age limit of a stamped aggregate, ADR 0035 point 7a) and the sum-of-squares bound (400 x L per cup) beside the sum bound, with the same safe-integer assertion; the bound test covers both.
+  - Decide whether the backend loads `contracts/aggregation/v1/` directly at runtime or generates types from it (if generating, extend `backend/scripts/generate-contract.ts` and its `--check`); one runtime source, no copy of the ids or edges elsewhere.
 
 ### M3-T4 Plausibility rules (pure)
 - status: todo

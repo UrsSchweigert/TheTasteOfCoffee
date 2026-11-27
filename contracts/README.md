@@ -61,7 +61,7 @@ A field that a method does not allow must be absent; the server answers 400 (M2-
 
 ## Aggregation contract (M3-T2, ADR 0035)
 
-`aggregation/v1/` holds what the nightly rebuild and its readers agree on besides the vocabulary. It sits outside `vocabulary/v<N>/` on purpose: it adds no vocabulary list, so no vocabulary version changes and no published version is edited. Backend code loads these files (or types generated from them); it never writes the ids or edges again. Not in `openapi.yaml`: no route returns aggregates in M3.
+`aggregation/v1/` holds what the nightly rebuild and its readers agree on besides the vocabulary. It sits outside `vocabulary/v<N>/` on purpose: it adds no vocabulary list, so no vocabulary version changes and no published version is edited. The backend (M3-T4 and later) loads `reasons.json` and `histogram_buckets.json` at runtime, or uses types generated from them (M3-T3 decides); it does not import `REASON_IDS` or the scale map from `contracts/lib`, which exist for the checks only. One runtime source, and it never writes the ids or edges again. Not in `openapi.yaml`: no route returns aggregates in M3.
 
 | File | Holds | Schema |
 | --- | --- | --- |
@@ -81,7 +81,7 @@ Checks live in `lib/aggregation.mjs` and run in `test/aggregation.test.mjs`. Bot
 
 ### Aggregate item shapes
 
-Two item kinds, written only by the nightly rebuild and read only through `readAggregate` (ADR 0035 point 10): `AGG#ALL` (a bean, all methods) and `AGG#METHOD#<method>` (a bean and one method). Both have the same attributes, so one type serves both. Rankings (`RANK#<facet>`) hold ordered bean ids and the rater count of the facet, nothing else. Attribute names are snake_case. Every key of every map is an id from the vocabulary (criterion, intensity dimension, intensity level, flavour note, `yes`/`no`) or from `aggregation/v1/histogram_buckets.json`; every value is a non-negative integer; the only other string is `run_day`, an ISO date. No user id, no list of raters, no text.
+Two item kinds, written only by the nightly rebuild and read only through `readAggregate` (ADR 0035 point 10): `AGG#ALL` (a bean, all methods) and `AGG#METHOD#<method>` (a bean and one method). Both have the same attributes, so one type serves both. Rankings (`RANK#<facet>`) hold ordered bean ids, the rater count of the facet and the `run_day` stamp, nothing else. Attribute names are snake_case. Every key of every map is an id from the vocabulary (criterion, intensity dimension, intensity level, flavour note) or one of the fixed attribute names defined here (`yes` and `no` under `buy_again`; `criteria.json` defines buy_again as a boolean, not a list), or from `aggregation/v1/histogram_buckets.json`; every value is a non-negative integer; the only other string is `run_day`, an ISO date. No user id, no list of raters, no text.
 
 | Attribute | Shape | Meaning |
 | --- | --- | --- |

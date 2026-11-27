@@ -198,3 +198,25 @@ test('README documents every reason id, every parameter and the item attributes 
     assert.ok(readme.includes(`\`${attribute}\``), attribute);
   }
 });
+
+test('a first ratio bucket above the lowest possible ratio is rejected (exact comparison)', () => {
+  const copy = clone(buckets);
+  copy.parameters.ratio.sets[0].buckets[0].from = 2; // the lowest ratio is 1 tenth
+  assert.ok(checkBuckets(copy, vocabulary).some((p) => p.includes('above the lowest value')));
+});
+
+test('every vocabulary version from the bucket version up to the latest still fits the buckets', () => {
+  const later = listVersions().filter((version) => version >= buckets.vocabulary_version);
+  for (const version of later) {
+    assert.deepEqual(checkBuckets(buckets, loadVocabulary(version)), [], `vocabulary v${version}: add aggregation/v2/ for the change`);
+  }
+});
+
+test('drift check fails: a later vocabulary version with a new method, or a widened range', () => {
+  const withMethod = clone(vocabulary);
+  withMethod.brew.methods.push({ id: 'turkish_sand' });
+  assert.ok(checkBuckets(buckets, withMethod).some((p) => p.includes('turkish_sand') && p.includes('no bucket set')));
+  const wider = clone(vocabulary);
+  wider.brew.ranges.water_temp_c.maximum = 105;
+  assert.ok(checkBuckets(buckets, wider).length > 0);
+});

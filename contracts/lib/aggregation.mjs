@@ -76,14 +76,14 @@ export function requiredCover(parameter, ranges) {
     const dose = ranges.dose_g;
     const water = ranges.water_g;
     // dose_dg = dose_g x 10 (ADR 0004); ratio tenths = 100 x water_g / dose_dg.
-    const lowest = Math.ceil((100 * water.minimum) / (dose.maximum * 10));
     const highest = Math.floor((100 * water.maximum) / (dose.minimum * 10));
-    return { lowest: 0, highest, lowestValue: lowest };
+    // Exact: a bucket from starts at or below the lowest ratio when from x dose_max_dg <= 100 x water_min.
+    return { lowest: 0, highest, startsAtOrBelowLowest: (from) => from * dose.maximum * 10 <= 100 * water.minimum };
   }
   const range = ranges[parameter === 'grind_normalised' ? 'grind_normalised' : parameter];
   const scale = parameter === 'grind_normalised' ? 2 : 1;
   const step = range.multipleOf * scale;
-  return { lowest: range.minimum * scale, highest: range.maximum * scale, lowestValue: range.minimum * scale, step };
+  return { lowest: range.minimum * scale, highest: range.maximum * scale, startsAtOrBelowLowest: (from) => from <= range.minimum * scale, step };
 }
 
 /**
@@ -135,7 +135,7 @@ export function checkBuckets(content, vocabulary) {
         if (!Number.isInteger(bucket.from) || !Number.isInteger(bucket.to)) problems.push(`${where}.${bucket.id}: edges must be integers`);
         if (bucket.from >= bucket.to) problems.push(`${where}.${bucket.id}: empty or reversed (from ${bucket.from}, to ${bucket.to})`);
         if (index === 0) {
-          if (bucket.from > cover.lowestValue) problems.push(`${where}: first bucket starts at ${bucket.from}, above the lowest value ${cover.lowestValue}`);
+          if (!cover.startsAtOrBelowLowest(bucket.from)) problems.push(`${where}: first bucket starts at ${bucket.from}, above the lowest value`);
           if (name !== 'ratio' && bucket.from !== cover.lowest) problems.push(`${where}: first bucket starts at ${bucket.from}, expected ${cover.lowest}`);
         } else if (bucket.from !== previousTo) {
           problems.push(`${where}.${bucket.id}: from ${bucket.from} is not the previous to ${previousTo} (gap or overlap)`);
