@@ -86,13 +86,15 @@ describe('the Cupmark app', () => {
         'AWS::ApiGatewayV2::Route': API_ROUTES.length,
         // One invoke permission per route, scoped to that route's path.
         'AWS::Lambda::Permission': API_ROUTES.length,
-        // api, health and the deploy-time apple-idp (ADR 0015).
-        'AWS::Lambda::Function': 3,
-        'AWS::IAM::Role': 4,
-        // M3-T11: the weekly export: a role, a schedule group and a schedule, no Lambda.
+        // api, health, the nightly aggregates (M3-T9) and the deploy-time apple-idp (ADR 0015).
+        'AWS::Lambda::Function': 4,
+        // The nightly function's async retries are off (M3-T9).
+        'AWS::Lambda::EventInvokeConfig': 1,
+        'AWS::IAM::Role': 6,
+        // M3-T11 and M3-T9: one jobs group, the weekly export schedule (no Lambda) and the nightly one.
         'AWS::Scheduler::ScheduleGroup': 1,
-        'AWS::Scheduler::Schedule': 1,
-        'AWS::Logs::LogGroup': 3,
+        'AWS::Scheduler::Schedule': 2,
+        'AWS::Logs::LogGroup': 4,
         'Custom::CupmarkAppleIdentityProvider': 1,
       });
       expect(Object.keys(template).sort()).toEqual(['Description', 'Outputs', 'Parameters', 'Resources', 'Rules']);

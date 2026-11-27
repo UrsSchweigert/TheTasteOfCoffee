@@ -12,6 +12,7 @@ export type Item = Record<string, unknown>;
 const order = (item: Item): string => `${String(item.pk)}\u0000${String(item.sk)}`;
 
 export class FakeTable {
+  /** Read-only for callers: change the table only through put, remove and the commands. A direct `items.set` on an existing key leaves a stale cached key-ordered view (the Scan cache). */
   public readonly items = new Map<string, Item>();
   public readonly scanLimits: (number | undefined)[] = [];
   public scanCalls = 0;
@@ -28,9 +29,26 @@ export class FakeTable {
   /** Always returns every request as unprocessed. */
   public neverProcess = false;
 
+  /** The items in key order, kept between Scan pages (the replay test scans 20,000 items in many pages). Valid while `version` and the size are unchanged. */
+  #sorted: { version: number; size: number; items: Item[] } | undefined;
+  #version = 0;
+
   public put(item: Item): this {
     this.items.set(order(item), structuredClone(item));
+    this.#version += 1;
     return this;
+  }
+
+  public remove(pk: string, sk: string): void {
+    this.items.delete(`${pk}\u0000${sk}`);
+    this.#version += 1;
+  }
+
+  #inKeyOrder(): Item[] {
+    if (this.#sorted?.version !== this.#version || this.#sorted.size !== this.items.size) {
+      this.#sorted = { version: this.#version, size: this.items.size, items: [...this.items.values()].sort((a, b) => (order(a) < order(b) ? -1 : order(a) > order(b) ? 1 : 0)) };
+    }
+    return this.#sorted.items;
   }
 
   public get(pk: string, sk: string): Item | undefined {
@@ -59,7 +77,7 @@ export class FakeTable {
       if (this.failScanOnCall === this.scanCalls) throw new Error('injected scan failure');
       const { Limit, ExclusiveStartKey } = command.input;
       this.scanLimits.push(Limit);
-      const all = [...this.items.values()].sort((a, b) => (order(a) < order(b) ? -1 : order(a) > order(b) ? 1 : 0));
+      const all = this.#inKeyOrder();
       const after = ExclusiveStartKey === undefined ? -1 : all.findIndex((i) => order(i) === `${String(ExclusiveStartKey.pk)}\u0000${String(ExclusiveStartKey.sk)}`);
       const page = all.slice(after + 1, after + 1 + (Limit ?? all.length));
       const last = page[page.length - 1];
@@ -94,6 +112,7 @@ export class FakeTable {
         } else if (request.DeleteRequest !== undefined) {
           const { pk, sk } = request.DeleteRequest.Key ?? {};
           this.items.delete(`${String(pk)}\u0000${String(sk)}`);
+          this.#version += 1;
           this.writes.push({ op: 'delete', pk: String(pk), sk: String(sk) });
         }
       }

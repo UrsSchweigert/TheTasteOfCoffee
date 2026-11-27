@@ -505,7 +505,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the unit tests run in the `ios` job. The task ends `needs-mac-verification` until the real sign-in against dev passes in M2-T34.
 
 ### M2-T12 Development team and TestFlight through Xcode Cloud
-- status: todo
+- status: done (the team is set in the project; the owner set up Xcode Cloud and build 6 was accepted by TestFlight and installed on a device, 2026-11-26; Xcode Cloud numbers its builds itself, no script; README "TestFlight (Xcode Cloud)" and ADR 0036)
 - progress (2026-11-26, lead): the first Xcode Cloud build (1) was refused with ITMS-90022 and ITMS-90713, both because the app had no icon. Done in the app-icon PR: `Assets.xcassets/AppIcon.appiconset` with one 1024-point icon (a placeholder bean, to be replaced by a real design) and `ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon`. Also done there: `INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO` and `PrivacyInfo.xcprivacy` (no tracking; collected data: user id, other user content, photos, all linked and for app functionality; file timestamp API, reason C617.1). Still to do here: the team setting, the build number, the README and the ADR (Release uses Dev.xcconfig on purpose: the internal TestFlight build talks to the dev stage).
 - owner: ios-engineer
 - needs: human. On the owner's Mac, in Xcode: Integrate, then Create Workflow. Grant Xcode Cloud access to the GitHub repository. Pick team `2F695PTZC6` and the App Store Connect app of `app.cupmark.Cupmark`. Create an internal TestFlight group. Start the first build and report its build number once it is installed from TestFlight.
@@ -517,7 +517,7 @@ Planning notes (planned 2026-11-25):
   - The upload is accepted by App Store Connect:
     - `ITSAppUsesNonExemptEncryption` is `NO` (system HTTPS only);
     - `PrivacyInfo.xcprivacy` declares no tracking and the required-reason APIs the app uses, for example `UserDefaults`.
-  - The build number comes from Xcode Cloud (`CI_BUILD_NUMBER`), either through `ios/ci_scripts/ci_pre_xcodebuild.sh` or through Xcode Cloud's managed versioning, as documented.
+  - The build number comes from Xcode Cloud itself (build 6 was the first accepted), as documented.
   - ios/README.md, "TestFlight (Xcode Cloud)", documents the workflow:
     - start condition: manual, or a tag on `main`;
     - action: Archive iOS, scheme `Cupmark`, Release;
@@ -1317,10 +1317,10 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - The log line also has the fixed key `brews_orphaned` (a count of brews of consenting users whose shelf entry was missing in the scan; no ids). An orphan is expected now and then (an interrupted account deletion, a brew moved while the Scan paged) and never fails the run (ADR 0035 point 7 fails only on page errors, exhausted throttles and undecodable items).
 
 ### M3-T9 Infra: nightly schedule, permissions, timeout and memory
-- status: todo
+- status: done (code and tests; the owner's guardrail re-apply below is open before the deploy in M3-T14)
 - owner: infra-engineer
 - depends: M3-T8
-- needs: human (this task adds `dynamodb:Scan` to `scripts/aws/cupmark-boundary-policy.json`; the owner reviews it and re-applies the guardrails with `scripts/aws/apply-guardrails.sh` before the deploy in M3-T14. The boundary today lacks `dynamodb:Scan`, so the job's role would be denied at run time)
+- needs: human (this task adds two narrow statements to `scripts/aws/cupmark-boundary-policy.json`, because the boundary lacked both actions and the roles would be denied at run time: `NightlyAggregatesScan` (`dynamodb:Scan` on `arn:aws:dynamodb:${REGION}:${ACCOUNT}:table/cupmark-*-main` only; the `-main` ending keeps it off index and stream ARNs, since IAM `*` also matches `/`) and `NightlySchedulerInvokesCupmarkFunctions` (`lambda:InvokeFunction` on `function:cupmark-*` of this account and region, for the Scheduler role). Owner steps, before M3-T14: 1. review the diff of `scripts/aws/cupmark-boundary-policy.json`; 2. run `scripts/aws/apply-guardrails.sh` (dry run) and read its output; 3. run `scripts/aws/apply-guardrails.sh --apply` with an admin or SSO identity, not root. Agents never run it. No other file needs a change: the execution policy already allows `scheduler:*`, `cloudwatch:*` and `sns:*` on `cupmark-*`. After the first dev deploy, check that the schedule fires at 02:00 UTC and that `AWS::Scheduler::Schedule` accepted the 15 minute window; when the alarm flag is turned on, check that CloudWatch accepts the 25 hour alarm period)
 - implements: ADR 0035; docs/05-system-design.md, Components (Jobs: EventBridge Scheduler); CLAUDE.md invariants 5, 6 and 9
 - acceptance:
   - A Lambda `cupmark-<stage>-nightly-aggregates` (names, tags and the log group with retention as the other functions), eu-central-1, no VPC, timeout 300 seconds, memory 512 MB (both are stage constants in `infra/src/config.ts`, with a comment on how M3-T10 chose them), reserved and provisioned concurrency absent, one retry at most.
@@ -1334,8 +1334,9 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - infra/README.md documents the job, the dry-run event, how to disable the schedule, the flag (turn it on in a pull request when `users_seen` or the Cognito console shows more than 100 users), the alarms, and the owner's one-time subscription step.
 
 ### M3-T10 Replay and load test of the rebuild
-- status: todo
+- status: in-review (CI step open)
 - owner: backend-engineer
+- follow-up: the code and tests exist (in-memory half run; the DynamoDB Local half and the 60 s budget on a CI runner have not run). Add the CI step to the backend job after the integration step: `Replay and load test (DynamoDB Local)`, env `DYNAMODB_ENDPOINT: http://localhost:8000` and `REQUIRE_DYNAMODB_LOCAL: "1"`, run `npm run test:replay` (about 20 s), together with the docs-rebuild test step, in one small ci.yml change after #122 merges. The task is done when that step has passed in CI.
 - depends: M3-T8
 - implements: ADR 0035 (scale trigger); docs/05-system-design.md, Non-functional
 - acceptance:
@@ -1360,7 +1361,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - infra/README.md gives the restore-from-export outline for M5's restore drill.
 
 ### M3-T12 Docs: rebuild, withdrawal wording, privacy
-- status: todo
+- status: done
 - owner: planner (docs only; the lead applies it under ADR 0014)
 - depends: M3-T1
 - implements: ADR 0035; docs/05-system-design.md; docs/07-open-questions.md D1, D2; docs/04-specification.md F4
@@ -1375,16 +1376,19 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - docs say rule 6 (bag dose) is skipped when the brew has no `dose_dg` or the shelf entry has no bag size, a known evasion the owner may close later by tuning.
   - docs/05 (Data model, rater marker row) and `.claude/agents/backend-engineer.md` ("Give-to-get checks the `RATER#` item") still mention `RATER#`; fix both.
   - docs/05 documents the nightly log line's extra keys beyond ADR 0035 point 13 (`operation`, `status`, `dry_run`, `items_written`, `items_deleted`) and the failure line (`status: FAILED`, `stage`, `error`).
+  - Follow-ups found in review (not done here): `contracts/openapi.yaml` lines ~812-813 and ~1635-1637 still say the aggregator subtracts / counts only brews written while consent was true: reword (contract-keeper) in the next change that touches the iOS path list anyway. `site/index.html:77` is fixed by M2-T53. `scripts/docs-rebuild.test.mjs` is not yet a CI step (`ci.yml` runs each script test explicitly): add the step in the next change to `ci.yml` (it is in the iOS path list).
 
 ### M3-T13 Post-deploy checks for the nightly job
-- status: todo
+- status: done
 - owner: infra-engineer
+- needs: human (M3-T14 and M3-T15 run it; the owner, after the dev deploy, with their own AWS CLI credentials and no token: `scripts/smoke/post-deploy-checks.sh dev --nightly-only` for the read-only checks, then `scripts/smoke/post-deploy-checks.sh dev --dry-run-job` for the one dry-run invocation; `scripts/smoke/nightly-checks.sh prod` works too, read-only; the dry run is dev only)
 - depends: M3-T9
 - implements: M1-T7 (`scripts/smoke/post-deploy-checks.sh`); ADR 0035
 - acceptance:
-  - `scripts/smoke/post-deploy-checks.sh <stage>` additionally checks, read-only: the function exists with the expected timeout, memory and no VPC; the schedule exists in `cupmark-<stage>-jobs`, has the expected expression and state; the function's role has no `dynamodb:*` and no wildcard resource (`iam get-role-policy` and `simulate-principal-policy` are not used: the check reads the policy and compares with the expected statements); only when the stage's `failureAlarms.enabled` is true: the two alarms exist and their state is readable (`cloudwatch describe-alarms`; `OK` or `INSUFFICIENT_DATA` is reported, `ALARM` fails the check), and the topic `cupmark-<stage>-alerts` exists (`sns get-topic-attributes`; it never lists or reads subscriber endpoints). It invokes nothing and writes nothing.
-  - A flag `--dry-run-job` (off by default, used by the owner in M3-T15) invokes the function once with `{ "dry_run": true }`, prints its log line and fails on a function error or on a log line without the fixed keys. It never runs the writing job.
-  - The script's tests (the existing harness with a stubbed `aws` command) cover the pass and each failure.
+  - The nightly checks (`scripts/smoke/nightly-checks.sh <stage>`) run through `scripts/smoke/post-deploy-checks.sh dev --nightly-only` or `--dry-run-job`; they need no token, and the default token run of `post-deploy-checks.sh` is unchanged. They check, read-only: the function exists with the expected timeout, memory and no VPC; the schedule exists in `cupmark-<stage>-jobs`, has the expected expression, window and state; the function's role (its name is compared with `cupmark-<stage>-nightly-aggregates` before any IAM call, so a foreign role is never read) has no `dynamodb:*` and no wildcard resource (`iam get-role-policy`, read-only and scoped to this function's role, reads the inline policy, which is compared with the expected statements; `simulate-principal-policy` is not used); only when the stage's `failureAlarms.enabled` is true: the two alarms exist and their state is readable (`cloudwatch describe-alarms`; `OK` or `INSUFFICIENT_DATA` is reported, `ALARM` fails the check), and the topic `cupmark-<stage>-alerts` exists (`sns get-topic-attributes`; it never lists or reads subscriber endpoints). It invokes nothing and writes nothing.
+  - A flag `--dry-run-job` (off by default, used by the owner in M3-T15) invokes the function once with `{ "dry_run": true }`, prints its log line and fails on a function error or on a log line without the fixed keys. It never runs the writing job, and it is allowed on dev only (prod gets the read-only checks).
+  - The script's tests (`scripts/nightly-checks.test.mjs`, a stubbed `aws` command) cover the pass and each failure.
+  - Follow-up (small `ci.yml` change, by the owner of CI): `scripts/nightly-checks.test.mjs` is not a CI step yet (`ci.yml` runs each script test by name); add it in the same change as the replay test and docs-rebuild test steps.
   - It touches only `cupmark-` resources (invariant 9), and a test fails if it names any other.
 
 ### M3-T14 Owner dev deploy of the nightly job
@@ -1439,9 +1443,9 @@ Goal: TestFlight, then App Store. Not yet planned. Mostly human tasks.
 
 Launch checklist (from M3, 2026-11-27): decide the `failureAlarms.enabled` flag before launch, and turn it on when the users exceed 100 (`users_seen` in the nightly log line or the Cognito console; ADR 0035 Addendum 2).
 
-Privacy wording (from M3, 2026-11-26): withdrawing sharing removes the user's ratings from the community numbers at the next successful nightly update, not from their own log; the privacy policy, the App Privacy answers and the companion page say so.
+Privacy wording (from M3, 2026-11-26): the privacy policy, the App Privacy answers and the companion page say: "If you withdraw sharing, your ratings are removed from the community numbers at the next successful nightly update. Your own log is not changed."
 
-Scope: App Store listing, screenshots, privacy nutrition labels, privacy policy and terms, TestFlight round with the persona interviews, production deployment, launch checklist.
+Scope: App Store listing, screenshots, privacy nutrition labels, privacy policy and terms (with the sentence above: "If you withdraw sharing, your ratings are removed from the community numbers at the next successful nightly update. Your own log is not changed."), TestFlight round with the persona interviews, production deployment, launch checklist.
 
 ### M2-T35 Failed saves put edited fields back
 - status: done (built and tested by the macOS `ios` job in #64; ADR 0025 addendum M2-T35)
