@@ -45,7 +45,7 @@ test('the committed ci.yml passes the strict check', () => {
 });
 
 test('every strict file is committed and passes with its own policy', () => {
-  assert.deepEqual([...STRICT_FILES.keys()].sort(), ['aws-oidc-check.yml', 'ci.yml', 'claude.yml', 'deploy.yml']);
+  assert.deepEqual([...STRICT_FILES.keys()].sort(), ['aws-oidc-check.yml', 'ci.yml', 'claude.yml', 'deploy.yml', 'ios-audits.yml']);
   for (const [name, policy] of STRICT_FILES) {
     assert.deepEqual(checkWorkflow(readWorkflow(name), { strict: true, ...policy }), [], name);
   }
@@ -53,6 +53,7 @@ test('every strict file is committed and passes with its own policy', () => {
 
 test('only ci.yml gets the read-only rules', () => {
   assert.equal(STRICT_FILES.get('ci.yml')?.readOnly, true);
+  assert.equal(STRICT_FILES.get('ios-audits.yml')?.readOnly, true);
   assert.ok(!STRICT_FILES.get('claude.yml')?.readOnly);
   assert.ok(!STRICT_FILES.get('aws-oidc-check.yml')?.readOnly);
   assert.ok(!STRICT_FILES.get('deploy.yml')?.readOnly);
@@ -250,7 +251,7 @@ const BASE_FILES = [
  * function of the repo dir that edits files) as a second commit, and runs the
  * changes step there. Returns the step's stdout, exit status and ios output.
  */
-function filterAfter(change, { event = 'pull_request', base, iosPaths } = {}) {
+function filterAfter(change, { event = 'pull_request', base, before, iosPaths } = {}) {
   const repo = mkdtempSync(join(tmpdir(), 'ci-repo-'));
   const git = (...args) => {
     const r = spawnSync('git', args, { cwd: repo, encoding: 'utf8', env: { PATH: process.env.PATH, ...GIT_ENV } });
@@ -269,7 +270,16 @@ function filterAfter(change, { event = 'pull_request', base, iosPaths } = {}) {
     change(repo, git);
     git('add', '-A');
     git('commit', '-q', '--allow-empty', '-m', 'change');
-    const env = { ...GIT_ENV, ...changesStep.env, EVENT_NAME: event, BASE_SHA: base ?? baseSha };
+    const headSha = git('rev-parse', 'HEAD');
+    // A pull request run has BASE_SHA and an empty before; a push run has BEFORE_SHA and github.sha.
+    const env = {
+      ...GIT_ENV,
+      ...changesStep.env,
+      EVENT_NAME: event,
+      BASE_SHA: base ?? (event === 'pull_request' ? baseSha : ''),
+      BEFORE_SHA: before ?? (event === 'push' ? baseSha : ''),
+      AFTER_SHA: headSha,
+    };
     if (iosPaths !== undefined) env.IOS_PATHS = iosPaths.join(' ');
     const run = runShell(changesStep.run, env, repo);
     assert.equal(run.status, 0, run.stdout);
@@ -458,8 +468,109 @@ test('path filter: deleting or moving a file out of ios/ gives ios=true', () => 
   assert.equal(filterAfter((repo, git) => git('mv', 'ios/Cupmark/RootView.swift', 'docs/RootView.swift')).ios, 'true');
 });
 
-test('path filter: pushes and unknown events always run ios, and any doubt fails safe to ios=true', () => {
-  assert.equal(filterAfter(editing('docs/README.md'), { event: 'push' }).ios, 'true');
+test('path filter: markdown under ios/ is not an app change, anything else under ios/ is', () => {
+  assert.equal(filterAfter(editing('ios/README.md')).ios, 'false');
+  assert.equal(filterAfter(editing('ios/CupmarkUITests/NOTES.md', 'ios/Cupmark/deep/dir/x.md', 'docs/README.md')).ios, 'false');
+  // The skip is the ios/ prefix and the lower-case .md extension, nothing broader.
+  assert.equal(filterAfter(editing('ios/README.md', 'ios/Cupmark/RootView.swift')).ios, 'true');
+  assert.equal(filterAfter(editing('ios/README.md', 'ios/README.md.swift')).ios, 'true');
+  assert.equal(filterAfter(editing('ios/README.md', 'ios/Cupmark/Localizable.xcstrings')).ios, 'true');
+  assert.equal(filterAfter(editing('ios/README.md', 'ios/mdfile')).ios, 'true');
+  assert.equal(filterAfter(editing('ios/README.MD')).ios, 'true', 'only lower-case .md is skipped; any doubt runs ios');
+  // Outside ios/ the skip does not apply: markdown in the other app inputs still counts.
+  assert.equal(filterAfter(editing('contracts/vocabulary/README.md')).ios, 'true');
+  assert.equal(filterAfter(editing('contracts/i18n/NOTES.md')).ios, 'true');
+});
+
+test('path filter: a push to main is compared with the commit it replaced', () => {
+  const push = (change) => filterAfter(change, { event: 'push' });
+  assert.equal(push(editing('docs/README.md', 'backend/src/a.ts')).ios, 'false');
+  assert.equal(push(editing('ios/README.md')).ios, 'false');
+  assert.equal(push(() => {}).ios, 'false', 'an empty diff');
+  assert.equal(push(editing('.github/workflows/claude.yml')).ios, 'false');
+  assert.equal(push(editing('ios/Cupmark/RootView.swift')).ios, 'true');
+  assert.equal(push(editing('docs/README.md', '.github/workflows/ci.yml')).ios, 'true');
+  assert.equal(push(editing('docs/README.md', 'contracts/openapi.yaml')).ios, 'true');
+  assert.equal(push((repo, git) => git('rm', '-q', 'ios/Cupmark/RootView.swift')).ios, 'true');
+});
+
+test('path filter: a push with no usable before commit fails safe to ios=true', () => {
+  const push = (before) => filterAfter(editing('docs/README.md'), { event: 'push', before });
+  const zero = push('0'.repeat(40));
+  assert.equal(zero.ios, 'true');
+  assert.match(zero.log, /no base commit/);
+  assert.equal(push('').ios, 'true');
+  const gone = push('0123456789abcdef0123456789abcdef01234567');
+  assert.equal(gone.ios, 'true');
+  assert.match(gone.log, /not available/);
+  assert.equal(push('--output=/dev/null').ios, 'true');
+  // An object that exists but is not a commit (the empty blob): not usable either.
+  assert.equal(push('e69de29bb2d1d6434b8b29ae775ad8c2e48c5391').ios, 'true');
+});
+
+test('ci.yml: the push compares github.event.before with github.sha, through env only', () => {
+  assert.equal(changesStep.env.BEFORE_SHA, '${{ github.event.before }}');
+  assert.equal(changesStep.env.AFTER_SHA, '${{ github.sha }}');
+  assert.equal(changesStep.env.EVENT_NAME, '${{ github.event_name }}');
+});
+
+// The report-only accessibility audits are out of the pull request run; ios-audits.yml runs them.
+const iosTestStep = stepOf('ios', 'Test');
+const iosAudits = createRequire(join(root, 'contracts', 'package.json'))('yaml').parse(readWorkflow('ios-audits.yml'));
+
+test('ci.yml: the ios Test step skips only the audit class', () => {
+  assert.deepEqual(iosTestStep.run.match(/-skip-testing:\S+/g), ['-skip-testing:CupmarkUITests/AccessibilityAuditTests']);
+  assert.doesNotMatch(iosTestStep.run, /-only-testing/);
+  assert.match(iosTestStep.run, /xcodebuild test-without-building/);
+  // The build step skips nothing: the class is still compiled, so ios-audits.yml can run it.
+  assert.doesNotMatch(stepOf('ios', 'Build for testing').run, /-skip-testing|-only-testing/);
+});
+
+test('the skipped class holds only the 13 audits; the navigation and VoiceOver tests are in another class that CI runs', () => {
+  const source = readFileSync(join(root, 'ios', 'CupmarkUITests', 'AccessibilityAuditTests.swift'), 'utf8');
+  const bodyOf = (name) => {
+    const start = source.indexOf(`final class ${name}`);
+    assert.ok(start >= 0, `class ${name} is missing`);
+    const next = source.indexOf('\nfinal class ', start + 1);
+    return source.slice(start, next === -1 ? source.length : next);
+  };
+  const tests = (body) => [...body.matchAll(/func (test\w+)\(/g)].map((m) => m[1]);
+  const audits = tests(bodyOf('AccessibilityAuditTests'));
+  assert.equal(audits.length, 13, 'one audit per screen');
+  assert.ok(audits.every((n) => /Audit$/.test(n)), `a test that is not an audit is in the skipped class: ${audits}`);
+  assert.match(bodyOf('AccessibilityAuditTests'), /performAccessibilityAudit\(for: types\)/);
+  assert.deepEqual(tests(bodyOf('AccessibilityVoiceOverTests')).sort(), [
+    'testABrewStepperHasALabelAndAValueAndIncrements',
+    'testAPickListHasALabelAndAValue',
+    'testARatingScoreHasALabelAndAValueOnItsScale',
+    'testBackFromARatingShowsTheBrewList',
+  ]);
+  assert.doesNotMatch(bodyOf('AccessibilityVoiceOverTests'), /performAccessibilityAudit/);
+  const uiDir = join(root, 'ios', 'CupmarkUITests');
+  for (const f of readdirSync(uiDir).filter((n) => n.endsWith('.swift') && n !== 'AccessibilityAuditTests.swift')) {
+    assert.doesNotMatch(readFileSync(join(uiDir, f), 'utf8'), /class AccessibilityAuditTests\b/, f);
+  }
+});
+
+test('ios-audits.yml: manual and weekly only, same runner and Xcode as the ios job, runs only the audit class', () => {
+  assert.deepEqual(Object.keys(iosAudits.on).sort(), ['schedule', 'workflow_dispatch']);
+  assert.deepEqual(iosAudits.on.schedule, [{ cron: '17 4 * * 1' }]);
+  assert.deepEqual(iosAudits.permissions, { contents: 'read' });
+  assert.deepEqual(Object.keys(iosAudits.jobs), ['audits']);
+  const job = iosAudits.jobs.audits;
+  assert.equal(job['runs-on'], 'macos-15');
+  assert.equal(job['runs-on'], ci.jobs.ios['runs-on']);
+  assert.equal(job.env.XCODE_APP, ci.jobs.ios.env.XCODE_APP);
+  assert.equal(job.env.SIMULATOR_DESTINATION, ci.jobs.ios.env.SIMULATOR_DESTINATION);
+  assert.ok(Number.isInteger(job['timeout-minutes']) && job['timeout-minutes'] <= 60);
+  const text = readWorkflow('ios-audits.yml');
+  assert.deepEqual(text.match(/-only-testing:\S+/g), ['-only-testing:CupmarkUITests/AccessibilityAuditTests']);
+  assert.doesNotMatch(text, /-skip-testing|upload-artifact|secrets\.|pull_request/);
+  // Nothing in ci.yml waits for it: it gates nothing.
+  assert.ok(!JSON.stringify(ci).includes('ios-audits'));
+});
+
+test('path filter: unknown events always run ios, and any doubt fails safe to ios=true', () => {
   assert.equal(filterAfter(editing('docs/README.md'), { event: 'workflow_dispatch' }).ios, 'true');
   assert.equal(filterAfter(editing('docs/README.md'), { base: '' }).ios, 'true');
   const missing = filterAfter(editing('docs/README.md'), { base: '0123456789abcdef0123456789abcdef01234567' });

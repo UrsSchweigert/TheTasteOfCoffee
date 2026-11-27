@@ -7,25 +7,28 @@ import XCTest
 /// at the default text size and at the largest accessibility size. One test per screen; the
 /// activity names the size.
 ///
-/// The audit REPORTS and does not fail the build (owner, 2026-11-26: the app needs the
+/// The audits REPORT and do not fail the build (owner, 2026-11-26: the app needs the
 /// essentials, not a full accessibility certification). Apple's checker is unsure about
 /// system-styled SwiftUI text and its findings go to the log as `AUDIT-ISSUE` lines, to be
-/// judged on a device in M2-T34. The tests that DO fail are the screen not appearing and the
-/// VoiceOver label and value tests below.
+/// judged on a device in M2-T34. Because they only report, they do not run on pull requests:
+/// CI skips `AccessibilityAuditTests` and `.github/workflows/ios-audits.yml` runs that class
+/// weekly and on demand. The tests that DO fail and gate every pull request are the screen not
+/// appearing and the navigation and VoiceOver label and value tests in `AccessibilityVoiceOverTests`
+/// (keep them in that class: skipping `AccessibilityAuditTests` must not skip them).
 ///
 /// The language is pinned to English so the values read in the VoiceOver tests are known.
 /// Nothing is typed anywhere (invariant 1): the tests only tap, swipe and drag.
-final class AccessibilityAuditTests: XCTestCase {
+class AccessibilityUITestCase: XCTestCase {
     /// `UIPreferredContentSizeCategoryName` values: the default size ("Large") and the largest
     /// accessibility size.
-    private enum TextSize: String, CaseIterable {
+    fileprivate enum TextSize: String, CaseIterable {
         case standard = "UICTContentSizeCategoryL"
         case largestAccessibility = "UICTContentSizeCategoryAccessibilityXXXL"
     }
 
     /// The raw values of `UITestLaunch.Screen` in the app. The UI-test bundle cannot import the
     /// app, so they are written here once.
-    private enum Screen: String {
+    fileprivate enum Screen: String {
         case signIn = "sign-in"
         case notConfigured = "not-configured"
         case onboarding
@@ -45,6 +48,38 @@ final class AccessibilityAuditTests: XCTestCase {
         continueAfterFailure = false
     }
 
+    @MainActor
+    fileprivate func launch(_ screen: Screen, size: TextSize) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-CupmarkUITestScreen", screen.rawValue,
+            "-AppleLanguages", "(en)",
+            "-AppleLocale", "en_US",
+        ]
+        // The default size is the simulator's own. Pinning any size, even the default one, makes
+        // the audit report every text as unable to change its size.
+        if size != .standard {
+            app.launchArguments += ["-UIPreferredContentSizeCategoryName", size.rawValue]
+        }
+        app.launch()
+        return app
+    }
+
+    /// Swipes the screen up until `element` can be tapped.
+    @MainActor
+    fileprivate func scrollUntilHittable(_ element: XCUIElement, in app: XCUIApplication, attempts: Int = 15) throws {
+        for _ in 0..<attempts {
+            if element.exists && element.isHittable {
+                return
+            }
+            app.swipeUp()
+        }
+        XCTAssertTrue(element.exists && element.isHittable, "\(element) is not on screen after \(attempts) swipes")
+    }
+}
+
+/// One audit per screen, at two text sizes. Report-only; see the note above.
+final class AccessibilityAuditTests: AccessibilityUITestCase {
     // MARK: - The audited screens
 
     @MainActor
@@ -121,112 +156,6 @@ final class AccessibilityAuditTests: XCTestCase {
     @MainActor
     func testSettingsPassTheAudit() throws {
         try auditAtBothSizes(.settings) { app in app.switches["settings-consent"] }
-    }
-
-    // MARK: - Navigation
-
-    /// M2-T40: back from a brew's rating shows the brew list, not an empty screen with a
-    /// warning triangle. Uses the real shelf stack: bag, "Brews", a brew, Back.
-    @MainActor
-    func testBackFromARatingShowsTheBrewList() throws {
-        let app = launch(.shelf, size: .standard)
-        let rows = app.buttons.matching(identifier: "shelf-entry-row")
-        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 30), "the shelf did not appear")
-        // The fixture's first bag has the brews; try each bag until one lists a brew.
-        var opened = false
-        for index in 0..<rows.count {
-            rows.element(boundBy: index).tap()
-            let brews = app.buttons["shelf-entry-brews"]
-            XCTAssertTrue(brews.waitForExistence(timeout: 10), "the shelf entry did not open")
-            brews.tap()
-            if app.buttons["brew-list-row"].firstMatch.waitForExistence(timeout: 5) {
-                opened = true
-                break
-            }
-            app.navigationBars.buttons.firstMatch.tap()
-            app.navigationBars.buttons.firstMatch.tap()
-            XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 10))
-        }
-        XCTAssertTrue(opened, "no bag of the fixture lists a brew")
-        app.buttons["brew-list-row"].firstMatch.tap()
-        XCTAssertTrue(app.buttons["rating-save"].waitForExistence(timeout: 10), "the rating did not open")
-        app.navigationBars.buttons.firstMatch.tap()
-        XCTAssertTrue(app.buttons["brew-list-row"].firstMatch.waitForExistence(timeout: 10), "back from the rating did not show the brew list")
-        XCTAssertFalse(app.buttons["rating-save"].exists, "the rating is still shown")
-        XCTAssertFalse(app.buttons["shelf-entry-brews"].exists, "back went past the brew list to the shelf entry")
-        XCTAssertFalse(app.images["exclamationmark.triangle"].exists, "a placeholder for a missing destination is shown")
-    }
-
-    // MARK: - VoiceOver label, value and adjusting
-
-    /// A score reads "<criterion>, <score> of 10" and moves along its scale (the slider is the
-    /// adjustable element VoiceOver swipes up and down on).
-    @MainActor
-    func testARatingScoreHasALabelAndAValueOnItsScale() throws {
-        let app = launch(.rating, size: .standard)
-        XCTAssertTrue(app.buttons["rating-save"].waitForExistence(timeout: 15))
-        let slider = app.sliders.firstMatch
-        try scrollUntilHittable(slider, in: app)
-        XCTAssertFalse(slider.label.isEmpty, "the score has no VoiceOver label")
-        XCTAssertEqual(slider.value as? String, "Not set", "an unrated brew's score is not set")
-        slider.adjust(toNormalizedSliderPosition: 0.9)
-        let value = try XCTUnwrap(slider.value as? String, "the score has no VoiceOver value")
-        XCTAssertTrue(value.hasSuffix(" of 10"), "the score's value is not on its scale: \(value)")
-        slider.adjust(toNormalizedSliderPosition: 0.1)
-        let lower = try XCTUnwrap(slider.value as? String)
-        XCTAssertTrue(lower.hasSuffix(" of 10"), lower)
-        XCTAssertNotEqual(lower, value, "moving the score did not change its value")
-    }
-
-    /// A stepper reads its field and its value with the unit, and its increment sets it.
-    @MainActor
-    func testABrewStepperHasALabelAndAValueAndIncrements() throws {
-        let app = launch(.brewForm, size: .standard)
-        XCTAssertTrue(app.buttons["brew-save"].waitForExistence(timeout: 15))
-        let stepper = app.steppers.firstMatch
-        try scrollUntilHittable(stepper, in: app)
-        // SwiftUI composes the stepper's label from its title and its value, so it starts with the title.
-        XCTAssertTrue(stepper.label.hasPrefix("Dose"), "the stepper's label is \(stepper.label)")
-        XCTAssertEqual(stepper.value as? String, "Not set")
-        let increment = stepper.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "increment")).firstMatch
-        if increment.exists {
-            increment.tap()
-        } else {
-            // UIKit lists the stepper's buttons as decrement, then increment.
-            stepper.buttons.element(boundBy: stepper.buttons.count - 1).tap()
-        }
-        let value = try XCTUnwrap(stepper.value as? String)
-        XCTAssertTrue(value.hasSuffix(" g"), "the dose is not read with its unit: \(value)")
-    }
-
-    /// A pick list reads its title as the label and the pick as the value.
-    @MainActor
-    func testAPickListHasALabelAndAValue() throws {
-        let app = launch(.beanEntry, size: .standard)
-        XCTAssertTrue(app.buttons["bean-entry-save"].waitForExistence(timeout: 15))
-        let origin = app.buttons["bean-entry-origin"]
-        try scrollUntilHittable(origin, in: app)
-        XCTAssertEqual(origin.label, "Origin")
-        XCTAssertEqual(origin.value as? String, "Not set")
-    }
-
-    // MARK: - Helpers
-
-    @MainActor
-    private func launch(_ screen: Screen, size: TextSize) -> XCUIApplication {
-        let app = XCUIApplication()
-        app.launchArguments = [
-            "-CupmarkUITestScreen", screen.rawValue,
-            "-AppleLanguages", "(en)",
-            "-AppleLocale", "en_US",
-        ]
-        // The default size is the simulator's own. Pinning any size, even the default one, makes
-        // the audit report every text as unable to change its size.
-        if size != .standard {
-            app.launchArguments += ["-UIPreferredContentSizeCategoryName", size.rawValue]
-        }
-        app.launch()
-        return app
     }
 
     /// Launches `screen` at each size, waits for `ready`, runs `prepare` and audits.
@@ -326,16 +255,94 @@ final class AccessibilityAuditTests: XCTestCase {
         let frame = element.frame
         return containers.allElementsBoundByIndex.contains { container in container.frame.contains(frame) }
     }
+}
 
-    /// Swipes the screen up until `element` can be tapped.
+/// Gating UI tests: back navigation, and the VoiceOver label, value and adjusting of controls.
+final class AccessibilityVoiceOverTests: AccessibilityUITestCase {
+    // MARK: - Navigation
+
+    /// M2-T40: back from a brew's rating shows the brew list, not an empty screen with a
+    /// warning triangle. Uses the real shelf stack: bag, "Brews", a brew, Back.
     @MainActor
-    private func scrollUntilHittable(_ element: XCUIElement, in app: XCUIApplication, attempts: Int = 15) throws {
-        for _ in 0..<attempts {
-            if element.exists && element.isHittable {
-                return
+    func testBackFromARatingShowsTheBrewList() throws {
+        let app = launch(.shelf, size: .standard)
+        let rows = app.buttons.matching(identifier: "shelf-entry-row")
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 30), "the shelf did not appear")
+        // The fixture's first bag has the brews; try each bag until one lists a brew.
+        var opened = false
+        for index in 0..<rows.count {
+            rows.element(boundBy: index).tap()
+            let brews = app.buttons["shelf-entry-brews"]
+            XCTAssertTrue(brews.waitForExistence(timeout: 10), "the shelf entry did not open")
+            brews.tap()
+            if app.buttons["brew-list-row"].firstMatch.waitForExistence(timeout: 5) {
+                opened = true
+                break
             }
-            app.swipeUp()
+            app.navigationBars.buttons.firstMatch.tap()
+            app.navigationBars.buttons.firstMatch.tap()
+            XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 10))
         }
-        XCTAssertTrue(element.exists && element.isHittable, "\(element) is not on screen after \(attempts) swipes")
+        XCTAssertTrue(opened, "no bag of the fixture lists a brew")
+        app.buttons["brew-list-row"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["rating-save"].waitForExistence(timeout: 10), "the rating did not open")
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.buttons["brew-list-row"].firstMatch.waitForExistence(timeout: 10), "back from the rating did not show the brew list")
+        XCTAssertFalse(app.buttons["rating-save"].exists, "the rating is still shown")
+        XCTAssertFalse(app.buttons["shelf-entry-brews"].exists, "back went past the brew list to the shelf entry")
+        XCTAssertFalse(app.images["exclamationmark.triangle"].exists, "a placeholder for a missing destination is shown")
+    }
+
+    // MARK: - VoiceOver label, value and adjusting
+
+    /// A score reads "<criterion>, <score> of 10" and moves along its scale (the slider is the
+    /// adjustable element VoiceOver swipes up and down on).
+    @MainActor
+    func testARatingScoreHasALabelAndAValueOnItsScale() throws {
+        let app = launch(.rating, size: .standard)
+        XCTAssertTrue(app.buttons["rating-save"].waitForExistence(timeout: 15))
+        let slider = app.sliders.firstMatch
+        try scrollUntilHittable(slider, in: app)
+        XCTAssertFalse(slider.label.isEmpty, "the score has no VoiceOver label")
+        XCTAssertEqual(slider.value as? String, "Not set", "an unrated brew's score is not set")
+        slider.adjust(toNormalizedSliderPosition: 0.9)
+        let value = try XCTUnwrap(slider.value as? String, "the score has no VoiceOver value")
+        XCTAssertTrue(value.hasSuffix(" of 10"), "the score's value is not on its scale: \(value)")
+        slider.adjust(toNormalizedSliderPosition: 0.1)
+        let lower = try XCTUnwrap(slider.value as? String)
+        XCTAssertTrue(lower.hasSuffix(" of 10"), lower)
+        XCTAssertNotEqual(lower, value, "moving the score did not change its value")
+    }
+
+    /// A stepper reads its field and its value with the unit, and its increment sets it.
+    @MainActor
+    func testABrewStepperHasALabelAndAValueAndIncrements() throws {
+        let app = launch(.brewForm, size: .standard)
+        XCTAssertTrue(app.buttons["brew-save"].waitForExistence(timeout: 15))
+        let stepper = app.steppers.firstMatch
+        try scrollUntilHittable(stepper, in: app)
+        // SwiftUI composes the stepper's label from its title and its value, so it starts with the title.
+        XCTAssertTrue(stepper.label.hasPrefix("Dose"), "the stepper's label is \(stepper.label)")
+        XCTAssertEqual(stepper.value as? String, "Not set")
+        let increment = stepper.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "increment")).firstMatch
+        if increment.exists {
+            increment.tap()
+        } else {
+            // UIKit lists the stepper's buttons as decrement, then increment.
+            stepper.buttons.element(boundBy: stepper.buttons.count - 1).tap()
+        }
+        let value = try XCTUnwrap(stepper.value as? String)
+        XCTAssertTrue(value.hasSuffix(" g"), "the dose is not read with its unit: \(value)")
+    }
+
+    /// A pick list reads its title as the label and the pick as the value.
+    @MainActor
+    func testAPickListHasALabelAndAValue() throws {
+        let app = launch(.beanEntry, size: .standard)
+        XCTAssertTrue(app.buttons["bean-entry-save"].waitForExistence(timeout: 15))
+        let origin = app.buttons["bean-entry-origin"]
+        try scrollUntilHittable(origin, in: app)
+        XCTAssertEqual(origin.label, "Origin")
+        XCTAssertEqual(origin.value as? String, "Not set")
     }
 }
