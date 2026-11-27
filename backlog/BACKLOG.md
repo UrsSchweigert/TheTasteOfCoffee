@@ -1251,9 +1251,9 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - Structural tests: (a) no file outside `backend/src/repository/` and `backend/src/aggregation/` mentions the aggregate or ranking key builders; (b) within the repository, only `readAggregate` reads aggregate keys; (c) nothing under `backend/src/aggregation/` or the job handler imports or reads `contracts/reference/` (ADR 0034).
   - The unused rater-marker key builder and its prefix are removed from `keys.ts`, and the comment "written by the aggregator, M3" is corrected.
   - DynamoDB Local tests: a scan over more than one page returns every relevant item once; an injected failure on page 2 returns nothing; the replace deletes stale items and is idempotent.
-  - The Scan also returns the existing aggregate and ranking items (skipped by no prefix), so the writer can compare. `replaceAggregates` writes only new or changed items (an unchanged item is rewritten only when its run-day stamp is 2 or more days behind), plus the deletes; a test shows an unchanged second run writes nothing.
+  - The Scan also returns the existing aggregate and ranking items (skipped by no prefix), so the writer can compare. `replaceAggregates` writes only new or changed `AGG#` items (an unchanged one is rewritten only when its run-day stamp is 2 or more days behind), plus the deletes. Ranking items are keyed by the run day, so each night all are new and yesterday's are deleted (a cost bounded by ranked beans x facets); the changed-only rule does not apply to them. A test shows a second run on the same day with the same input writes nothing.
   - `keys.ts` gains the origin ranking facet (`RANK#ORIGIN#<id>`).
-  - `readAggregate` withholds each optional part (buy-again, each intensity dimension, notes, each recipe histogram) whose own distinct-rater count is below 5, while returning the rest; tests at 4 and 5 for each part, with an item that has 5 overall raters and 1 for a part. It returns "not available" for an item whose run-day stamp is more than `MAX_AGE_DAYS` old (tests at 3 days and 4 days). M4 serves only rounded means, spreads and shares, never raw sums or weighted counts.
+  - `readAggregate` withholds each optional part (buy-again, each intensity dimension, notes, each recipe histogram) whose own distinct-rater count is below 5, while returning the rest; tests at 4 and 5 for each part, with an item that has 5 overall raters and 1 for a part. It returns "not available" for an item with (UTC day of the read) - (stamp day) > `MAX_AGE_DAYS`, the stamp being the UTC day of the run's single run-time read (tests with an injected now: stamp day D, read on D+3 served, read on D+4 not available). M4 serves only rounded means, spreads and shares, never raw sums or weighted counts.
 
 ### M3-T8 Nightly job handler
 - status: todo
@@ -1267,7 +1267,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - A dry-run event (`{ "dry_run": true }`) does the scan and the rebuild, logs the same line and writes nothing, so the owner can tune thresholds on dev data (M3-T15) without changing the table.
   - The handler takes no input that selects users or beans (invariant 3 does not apply to it, since it is not a user route, and a test shows an event carrying a user id is ignored).
   - Tests with a fake repository: success, scan failure, rebuild failure, write failure, dry run, an empty table.
-  - A test with a fake repository where the scan fails on three consecutive nights: the items written earlier become "not available" through the age limit, so a withdrawn or deleted user's ratings stop being served.
+  - A test with an injected now using `readAggregate`: last success on day D, a read on D+3 is still served and a read on D+4 is "not available" (the scan failing on the nights between), so a withdrawn or deleted user's ratings stop being served.
 
 ### M3-T9 Infra: nightly schedule, permissions, timeout and memory
 - status: todo
