@@ -1197,7 +1197,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - Decide whether the backend loads `contracts/aggregation/v1/` directly at runtime or generates types from it (if generating, extend `backend/scripts/generate-contract.ts` and its `--check`); one runtime source, no copy of the ids or edges elsewhere.
 
 ### M3-T4 Plausibility rules (pure)
-- status: todo
+- status: done
 - owner: backend-engineer
 - depends: M3-T3
 - implements: ADR 0035 (plausibility); the reason ids of M3-T2

@@ -23,6 +23,10 @@ export const BURST_COUNT = 5;
 /** Rule 6: the running dose of a shelf entry may not exceed bag size x this percentage / 100 (1.10, kept as an integer so no float is involved). */
 export const BAG_DOSE_MARGIN_PERCENT = 110;
 
+/** Rule 6 unit conversions: doses are decigrams, bag sizes grams (x this), and the margin is a percentage (/ this). */
+export const DECIGRAMS_PER_GRAM = 10;
+export const PERCENT_DENOMINATOR = 100;
+
 /** Rule 7: a user needs at least this many rated brews to be judged for straight-lining. */
 export const STRAIGHT_LINING_MIN_BREWS = 10;
 
