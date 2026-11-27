@@ -33,7 +33,6 @@ import {
   beanMetaKey,
   brewRefKey,
   rankingKey,
-  raterMarkerKey,
   shelfEntryKey,
   userPk,
 } from '../../src/repository/index.ts';
@@ -780,26 +779,24 @@ describe.skipIf(!local.reachable)('repository on DynamoDB Local', () => {
     });
   });
 
-  describe('aggregate, rater marker and ranking keys (written in M3)', () => {
+  describe('aggregate and ranking keys (written by the nightly rebuild, M3)', () => {
     it('address distinct items in the bean partition and the ranking partitions', async () => {
       const { bean } = await repo.createBean({ vocabularyVersion: 1, openFoodFactsMatch: false, pickedAttributes: {} });
       const keys = [
         aggregateAllKey(bean.bean_id),
         aggregateMethodKey(bean.bean_id, 'v60'),
         aggregateMethodKey(bean.bean_id, 'espresso'),
-        raterMarkerKey(bean.bean_id, ALICE),
-        raterMarkerKey(bean.bean_id, BOB),
       ];
       for (const key of keys) {
         await documentClient.send(new PutCommand({ TableName: tableName, Item: { ...key }, ConditionExpression: 'attribute_not_exists(pk)' }));
       }
       const items = await partition(beanMetaKey(bean.bean_id).pk);
       expect(items.map((i) => i.sk).sort()).toEqual(
-        ['AGG#ALL', 'AGG#METHOD#espresso', 'AGG#METHOD#v60', 'META', `RATER#${ALICE.value}`, `RATER#${BOB.value}`].sort(),
+        ['AGG#ALL', 'AGG#METHOD#espresso', 'AGG#METHOD#v60', 'META'].sort(),
       );
       // The bean is still readable and still in the queue: the other items do not disturb it.
       expect((await repo.getBean(bean.bean_id))?.status).toBe('unverified');
-      // Only META is in the review queue; aggregates and markers carry no gsi1 keys.
+      // Only META is in the review queue; aggregates carry no gsi1 keys.
       expect((await reviewQueue()).filter((id) => id === bean.bean_id)).toHaveLength(1);
 
       const ranking = rankingKey({ kind: 'method', value: 'v60' }, '2026-11-25');

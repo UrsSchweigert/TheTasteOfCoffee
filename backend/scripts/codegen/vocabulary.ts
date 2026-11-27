@@ -90,7 +90,7 @@ export function readVocabularyDir(vocabularyDir: string): VersionFiles[] {
   return versions.sort((a, b) => a.version - b.version);
 }
 
-function isPublished({ version, files, hashes, lock }: VersionFiles): boolean {
+export function isPublished({ version, files, hashes, lock }: VersionFiles): boolean {
   const statuses = Object.values(files).map((file) => (isObject(file) ? file.status : undefined));
   if (statuses.length === 0 || !statuses.every((status) => status === 'published')) {
     if (statuses.some((status) => status === 'published')) fail(`v${String(version)}: some files are published, some are not`);

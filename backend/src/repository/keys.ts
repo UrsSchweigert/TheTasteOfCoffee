@@ -12,12 +12,13 @@ import {
   CalendarDateSchema,
   IdSchema,
   MethodSchema,
+  OriginSchema,
   PriceBandSchema,
   ProcessSchema,
   RoastLevelSchema,
   TimestampSchema,
 } from '../generated/contract.ts';
-import type { Method, PriceBand, Process, RoastLevel } from '../generated/contract.ts';
+import type { Method, Origin, PriceBand, Process, RoastLevel } from '../generated/contract.ts';
 import { InvalidKeyError } from './errors.ts';
 
 export interface Key {
@@ -41,7 +42,6 @@ export const PREFIX = {
   barcode: 'BARCODE#',
   aggregate: 'AGG#',
   aggregateMethod: 'AGG#METHOD#',
-  rater: 'RATER#',
   ranking: 'RANK#',
   lookups: 'LOOKUPS#',
   labelPhoto: 'PHOTO#',
@@ -242,7 +242,9 @@ function barcodePk(ean: string): string {
   return `${PREFIX.barcode}${canonicalBarcode(ean)}`;
 }
 
-// ---- aggregates, rater markers, rankings (written by the aggregator, M3) ----
+// ---- aggregates and rankings (written by the nightly rebuild, M3-T7; ADR 0035) ----
+// Only the aggregate store files of this directory use these builders, and only
+// `readAggregate` reads an aggregate item (a structural test pins both).
 
 export function aggregateAllKey(beanId: string): Key {
   return { pk: beanPk(beanId), sk: SORT_KEY.aggregateAll };
@@ -252,21 +254,17 @@ export function aggregateMethodKey(beanId: string, brewMethod: Method): Key {
   return { pk: beanPk(beanId), sk: `${PREFIX.aggregateMethod}${method(brewMethod)}` };
 }
 
-/** `RATER#<sub>` in the bean's partition: proves a distinct rater and drives give-to-get. */
-export function raterMarkerKey(beanId: string, user: UserId): Key {
-  return { pk: beanPk(beanId), sk: `${PREFIX.rater}${userPart(user)}` };
-}
-
 /**
  * A ranking facet (docs/04 F4: filtered by origin, process, roast level, method,
- * price band). Origin joins when vocabulary v2 has the list (ADR 0006, M1-T8).
+ * price band). Origin is ranked by country (ADR 0035 point 14).
  */
 export type RankingFacet =
   | { readonly kind: 'all' }
   | { readonly kind: 'method'; readonly value: Method }
   | { readonly kind: 'process'; readonly value: Process }
   | { readonly kind: 'roast_level'; readonly value: RoastLevel }
-  | { readonly kind: 'price_band'; readonly value: PriceBand };
+  | { readonly kind: 'price_band'; readonly value: PriceBand }
+  | { readonly kind: 'origin'; readonly value: Origin };
 
 function facetPart(facet: RankingFacet): string {
   // Checked at run time as well: a facet may come from a parsed query.
@@ -290,6 +288,8 @@ function facetPart(facet: RankingFacet): string {
       return pick(RoastLevelSchema, 'ROAST_LEVEL');
     case 'price_band':
       return pick(PriceBandSchema, 'PRICE_BAND');
+    case 'origin':
+      return pick(OriginSchema, 'ORIGIN');
     default:
       throw new InvalidKeyError('invalid ranking facet');
   }
@@ -338,4 +338,39 @@ export function parseReviewQueueSortKey(gsi1sk: string): { createdAtUtc: string;
   const date = new Date(createdAtUtc);
   if (Number.isNaN(date.getTime()) || date.toISOString() !== createdAtUtc) return undefined;
   return { createdAtUtc, beanId };
+}
+
+const FACET_PK = new RegExp(`^${PREFIX.ranking}(ALL|(METHOD|PROCESS|ROAST_LEVEL|PRICE_BAND|ORIGIN)#([a-z0-9_]+))$`);
+const FACET_KINDS = { METHOD: 'method', PROCESS: 'process', ROAST_LEVEL: 'roast_level', PRICE_BAND: 'price_band', ORIGIN: 'origin' } as const;
+
+/** The facet of a `RANK#<facet>` partition key, or undefined. Every part is checked against its vocabulary schema. */
+export function parseRankingPk(pk: string): RankingFacet | undefined {
+  const match = FACET_PK.exec(pk);
+  if (match === null) return undefined;
+  if (match[1] === 'ALL') return { kind: 'all' };
+  const tag = match[2];
+  if (tag !== 'METHOD' && tag !== 'PROCESS' && tag !== 'ROAST_LEVEL' && tag !== 'PRICE_BAND' && tag !== 'ORIGIN') return undefined;
+  const facet = { kind: FACET_KINDS[tag], value: match[3] };
+  try {
+    facetPart(facet as RankingFacet);
+  } catch (error) {
+    if (error instanceof InvalidKeyError) return undefined;
+    throw error;
+  }
+  return facet as RankingFacet;
+}
+
+const BEAN_PK = new RegExp(`^${PREFIX.bean}(${ULID})$`);
+
+/** The bean id of a `BEAN#<id>` partition key, or undefined. */
+export function parseBeanPk(pk: string): string | undefined {
+  return BEAN_PK.exec(pk)?.[1];
+}
+
+/** The kind (and method) of an aggregate sort key `AGG#ALL` or `AGG#METHOD#<method>`, or undefined. */
+export function parseAggregateSortKey(sk: string): { readonly kind: 'all' } | { readonly kind: 'method'; readonly method: Method } | undefined {
+  if (sk === SORT_KEY.aggregateAll) return { kind: 'all' };
+  if (!sk.startsWith(PREFIX.aggregateMethod)) return undefined;
+  const parsed = MethodSchema.safeParse(sk.slice(PREFIX.aggregateMethod.length));
+  return parsed.success ? { kind: 'method', method: parsed.data } : undefined;
 }

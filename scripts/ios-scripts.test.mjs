@@ -3,7 +3,9 @@
 // Run: node --test scripts/ios-scripts.test.mjs (needs `npm ci` in contracts/).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LANGUAGES, loadVocabulary } from '../contracts/lib/vocabulary.mjs';
@@ -2029,4 +2031,12 @@ test('brew photos: the stand-in for the picker is Debug-only and the section rea
     const closes = (before.match(/^#(?:endif|else)$/gm) ?? []).length;
     assert.ok(opens > closes, `${match[0]} at ${match.index} is outside #if DEBUG`);
   }
+});
+
+// M2-T12: the team is set. Xcode Cloud numbers its builds itself (build 6 reached TestFlight).
+test('the app and both test targets set the development team with automatic signing', () => {
+  const project = readFileSync(join(repoRoot, 'ios/Cupmark.xcodeproj/project.pbxproj'), 'utf8');
+  assert.equal((project.match(/DEVELOPMENT_TEAM = 2F695PTZC6;/g) ?? []).length, 6, 'Debug and Release of three targets');
+  assert.equal((project.match(/DEVELOPMENT_TEAM = /g) ?? []).length, 6);
+  assert.equal((project.match(/CODE_SIGN_STYLE = Automatic;/g) ?? []).length, 6);
 });

@@ -46,6 +46,18 @@
       "Resource": "arn:aws:s3:::cupmark-*-backups-*/exports/*"
     },
     {
+      "Sid": "NightlyAggregatesScan",
+      "Effect": "Allow",
+      "Action": "dynamodb:Scan",
+      "Resource": "arn:aws:dynamodb:${REGION}:${ACCOUNT}:table/cupmark-*-main"
+    },
+    {
+      "Sid": "NightlySchedulerInvokesCupmarkFunctions",
+      "Effect": "Allow",
+      "Action": "lambda:InvokeFunction",
+      "Resource": "arn:aws:lambda:${REGION}:${ACCOUNT}:function:cupmark-*"
+    },
+    {
       "Sid": "AccountDeletionOfLabelPhotos",
       "Effect": "Allow",
       "Action": [

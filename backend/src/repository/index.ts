@@ -19,3 +19,11 @@ export type { AccountPhotos, AccountTombstone, ExportItems, LabelPhoto } from '.
 export type { BeanRecord, BeanStatus, ListOptions, NewBean, OpenFoodFactsCacheEntry, Page, PendingLabelPhoto, RepositoryOptions } from './repository.ts';
 export { REVIEW_QUEUE_INDEX, STREAM_VIEW_TYPE, TABLE_ATTRIBUTES, tableKeySchema } from './table.ts';
 export type { TableKeySchema } from './table.ts';
+export { AggregateRepository } from './aggregate-repository.ts';
+export type { AggregateRepositoryOptions } from './aggregate-repository.ts';
+export type { AggregateRead, CriterionFigures, ServedAggregate } from './aggregate-read.ts';
+export { AGGREGATE_BATCH_ATTEMPTS, AGGREGATE_BATCH_CONCURRENCY, AGGREGATE_BATCH_SIZE } from './aggregate-write.ts';
+export type { WriteReport } from './aggregate-write.ts';
+export { SCAN_PAGE_SIZE } from './scan.ts';
+export type { RebuildScan } from './scan.ts';
+export type { ExistingAggregates } from './existing-aggregates.ts';

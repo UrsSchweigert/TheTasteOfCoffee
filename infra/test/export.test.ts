@@ -22,13 +22,13 @@ describe.each(STAGES)('stage %s', (stage) => {
 
   const tableId = ofType('AWS::DynamoDB::Table')[0]?.[0];
   const backupId = ofType('AWS::S3::Bucket').find(([, r]) => JSON.stringify(r.Properties.BucketName).includes(`cupmark-${stage}-backups-`))?.[0];
-  const [, schedule] = ofType('AWS::Scheduler::Schedule')[0] ?? [];
+  const [, schedule] = ofType('AWS::Scheduler::Schedule').find(([, r]) => r.Properties.Name === `cupmark-${stage}-weekly-export`) ?? [];
   const role = ofType('AWS::IAM::Role').find(([, r]) => r.Properties.RoleName === `cupmark-${stage}-export-scheduler`)?.[1];
 
-  it('has exactly one schedule and one schedule group, and no other scheduler resource', () => {
-    expect(ofType('AWS::Scheduler::Schedule')).toHaveLength(1);
+  it('has one shared schedule group, the weekly and the nightly schedule, and no other scheduler resource', () => {
+    expect(ofType('AWS::Scheduler::Schedule')).toHaveLength(2);
     expect(ofType('AWS::Scheduler::ScheduleGroup')).toHaveLength(1);
-    expect(Object.values(all).filter((r) => r.Type.startsWith('AWS::Scheduler::')).length).toBe(2);
+    expect(Object.values(all).filter((r) => r.Type.startsWith('AWS::Scheduler::')).length).toBe(3);
   });
 
   it('puts the schedule in the cupmark group, named with the prefix, weekly on Sunday 03:00 UTC, with no flexible window', () => {
@@ -76,8 +76,8 @@ describe.each(STAGES)('stage %s', (stage) => {
     expect(backupId).toBeDefined();
   });
 
-  it('adds no Lambda function: the three existing ones stay, and nothing invokes a function from the schedule', () => {
-    expect(ofType('AWS::Lambda::Function')).toHaveLength(3);
+  it('adds no Lambda function of its own: nothing invokes a function from the weekly schedule', () => {
+    expect(ofType('AWS::Lambda::Function')).toHaveLength(4);
     expect(JSON.stringify(schedule)).not.toContain('lambda');
     expect(JSON.stringify(role)).not.toContain('lambda:');
   });

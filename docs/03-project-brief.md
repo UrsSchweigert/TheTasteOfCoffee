@@ -54,6 +54,6 @@ Coffee feedback is prose and stars. It cannot be compared across people, it igno
 | --- | --- |
 | Cold start: aggregates are empty at launch | Give-to-get teaser; seed with roaster partnerships; show the paid tier only for beans that pass the 5-rater threshold |
 | Specialty bags often have no barcode or share one across lots | Fallback entry by pick lists plus a label photo; operator curates |
-| Rating manipulation by roasters or fans | One rating per user, bean and day counts toward aggregates; App Attest; outlier trimming |
+| Rating manipulation by roasters or fans | Every cup counts, but a user's cups of one bean on one day share one vote (at most 10 cups a day count); automatic plausibility rules; App Attest |
 | Free users object to their data being sold | Plain consent at onboarding; aggregates only; an opt-out that keeps the personal log working |
 | App Store commission cuts the margin | Enrol in the Small Business Program (15% instead of the standard rate) |

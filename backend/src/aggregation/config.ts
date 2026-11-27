@@ -37,6 +37,9 @@ export const STRAIGHT_LINING_MIN_BREWS = 10;
 export const MIN_HALF_POINTS = 2;
 export const MAX_HALF_POINTS = 20;
 
+/** Unit fact, not a threshold: a score in points (1 to 10 in steps of 0.5) times this is an integer in half-points. */
+export const HALF_POINTS_PER_POINT = 2;
+
 /** Age limit of a stamped aggregate (ADR 0035 point 7a): older than this many days is "not available". */
 export const MAX_AGE_DAYS = 3;
 

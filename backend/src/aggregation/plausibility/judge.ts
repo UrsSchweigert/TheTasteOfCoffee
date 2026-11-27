@@ -37,8 +37,10 @@ function compareCanonical(a: Judged, b: Judged): number {
  * entry. If its user has no consent it is `no_consent`; otherwise it is left
  * out of every rule and only counted in `orphanBrews`. It is never given a
  * contract reason id. Throws `PlausibilityInputError` only for a repeated
- * (user, brew) pair or a repeated shelf entry: one Scan never returns an item
- * twice, so that is a bug and the run fails closed.
+ * (user, brew) pair or a repeated shelf entry and the run fails closed. A Scan
+ * is not a snapshot: a brew edited or moved during it (a `brewed_at` edit changes
+ * its sort key) can be seen twice (the night fails closed) or missed for a night.
+ * Both are rare and repaired the next night, with the 3-day age limit as backstop.
  */
 export function judgeBrews(
   brews: readonly PlausibilityBrew[],
