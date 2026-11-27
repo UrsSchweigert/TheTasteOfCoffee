@@ -503,6 +503,18 @@ unset CUPMARK_ACCESS_TOKEN CODE VERIFIER
 
 The token is valid for 60 minutes. Signing in creates your user in the dev pool. A `FAIL` line says what to look at. A 503 from the lookup can have three causes: `OFF_CONTACT` is missing, Open Food Facts could not be reached, or its answer did not have the expected shape (`status`, `product.product_name`, `product.brands`). Nothing is cached then. A missing `image_id` on a hit that was cached earlier stays missing, because hits are never overwritten. A 500 on the label photo upload points to a presigner and SDK version skew. Report the output (it holds no token) in the M1-T7 issue.
 
+### After a deploy: the nightly job checks (M3-T13)
+
+No token is needed, only your own AWS CLI credentials (CloudShell or a profile). Read-only, except `--dry-run-job`, whose single invocation `{ "dry_run": true }` writes nothing by design:
+
+```bash
+scripts/smoke/post-deploy-checks.sh dev --nightly-only      # reads only
+scripts/smoke/post-deploy-checks.sh dev --dry-run-job       # the same, plus one dry-run invocation
+scripts/smoke/nightly-checks.sh prod                        # the script itself, either stage, reads only (--dry-run-job is dev only)
+```
+
+It checks the function (timeout 300, 512 MB, arm64, no VPC, async `MaximumRetryAttempts` 0), the nightly and weekly-export schedules in `cupmark-<stage>-jobs` (expression, state: dev `ENABLED`, prod `DISABLED`, as in `src/config.ts`), the two role policies against the expected scoped statements (no `dynamodb:*`, no wildcard resource, the `LeadingKeys` condition `BEAN#*`/`RANK#*` on the writes), and, only while the stage's `failureAlarms.enabled` is true, the two alarms (`ALARM` fails) and the topic (subscriber endpoints are never read; no account id is printed). The dry run prints the counts, the per-reason counts and a `NIGHTLY_MEASURE` line with the same key names as the `REPLAY_MEASURE` line of `npm run test:replay` in `backend/` (`items_scanned`, `brews_seen`, `brews_counted`, `duration_ms`, `timeout_ms`, `share_of_timeout`, `items_written`, `items_deleted`; plus `max_memory_used_mb` from the Lambda REPORT line), and fails above the ADR 0035 bounds: 60 s, half of the timeout, 60% of the memory. Right after a deploy with the flag on, the missing-run alarm is in `ALARM` until the first scheduled run, so that check fails once by design.
+
 ### If the first deploy fails
 
 What the first dev deploy (2026-11-26, four attempts) taught. Each of these cost an attempt.
