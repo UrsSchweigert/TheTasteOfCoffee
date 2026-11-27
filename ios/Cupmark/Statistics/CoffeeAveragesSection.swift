@@ -2,7 +2,9 @@ import SwiftUI
 
 /// "My brews of this coffee" on the shelf entry screen (M2-T44, ADR 0027 addendum): the
 /// user's own mean of each rating criterion over the rated brews of this bag, with the
-/// number of rated brews, and a breakdown by method once a method has enough rated brews.
+/// number of rated brews. One menu picker (M2-T52) switches between all methods and each
+/// method with enough rated brews; the count, the rows and the footer follow it. The choice is
+/// view state only: it resets when the screen is left.
 ///
 /// - Read-only and offline: it shows what `StatisticsRules.coffeeAverages` made from the
 ///   local store. Nothing is typed, nothing is sent.
@@ -20,21 +22,10 @@ struct CoffeeAveragesSection: View {
     /// The scroll anchor of the section, for `CoffeeSummaryRow`.
     static let anchor = "coffee-averages-section"
 
+    @State private var choice: CoffeeAveragesChoice = .all
+
     var body: some View {
-        Group {
-            summarySection
-            ForEach(averages.methods) { entry in
-                Section {
-                    ForEach(entry.rows) { row in
-                        CoffeeAverageRowView(row: row, label: label(row.criterion))
-                    }
-                } header: {
-                    Text(verbatim: L10n.coffeeAveragesMethodHeader(method: label(entry.method), brews: entry.ratedBrews.formatted()))
-                        .secondaryText()
-                }
-                .surfaceRow()
-            }
-        }
+        summarySection
     }
 
     private var summarySection: some View {
@@ -44,22 +35,24 @@ struct CoffeeAveragesSection: View {
                     .secondaryText()
                     .accessibilityIdentifier("coffee-averages-empty")
             } else {
+                if averages.choices.count > 1 {
+                    methodPicker
+                }
                 LabeledContent {
-                    Text(averages.ratedBrews, format: .number)
+                    Text(shown.ratedBrews, format: .number)
                 } label: {
                     Text(L10n.coffeeAveragesRatedCount)
                 }
                 .frame(minHeight: 44)
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("coffee-averages-count")
-                // Where the summary row at the top of the screen scrolls to (M2-T48).
-                .id(CoffeeAveragesSection.anchor)
+                .anchoredIf(averages.choices.count <= 1)
                 if averages.hasNoKnownScores {
                     // Rated, but only on criteria a newer vocabulary has.
                     Text(L10n.statisticsNoKnownScores)
                         .secondaryText()
                 }
-                ForEach(averages.rows) { row in
+                ForEach(shown.rows) { row in
                     CoffeeAverageRowView(row: row, label: label(row.criterion))
                 }
             }
@@ -67,7 +60,7 @@ struct CoffeeAveragesSection: View {
             Text(L10n.coffeeAveragesHeader)
                 .secondaryText()
         } footer: {
-            if averages.isSingleBrew {
+            if !averages.isEmpty, shown.ratedBrews == 1 {
                 Text(L10n.coffeeAveragesFooterSingle)
                     .secondaryText()
             } else if !averages.isEmpty {
@@ -78,9 +71,46 @@ struct CoffeeAveragesSection: View {
         .surfaceRow()
     }
 
+    private var shown: CoffeeAveragesShown {
+        averages.shown(for: choice)
+    }
+
+    /// The method switcher (M2-T52): "All Methods" and each method with enough rated brews.
+    /// It carries the scroll anchor of the summary row at the top of the screen (M2-T48), so
+    /// the tap lands on the picker with the count and rows right below it.
+    private var methodPicker: some View {
+        Picker(selection: Binding(get: { averages.resolved(choice) }, set: { choice = $0 })) {
+            Text(L10n.statisticsMethodAll)
+                .tag(CoffeeAveragesChoice.all)
+            ForEach(averages.methods) { entry in
+                Text(verbatim: label(entry.method))
+                    .tag(CoffeeAveragesChoice.method(entry.method))
+                    .accessibilityIdentifier("coffee-averages-method-option")
+            }
+        } label: {
+            Text(L10n.statisticsMethodPicker)
+        }
+        .pickerStyle(.menu)
+        .frame(minHeight: 44)
+        .accessibilityIdentifier("coffee-averages-method-picker")
+        .id(CoffeeAveragesSection.anchor)
+    }
+
     /// A vocabulary label from contracts/i18n, the id if the bundle has none.
     private func label<Item: VocabularyItem>(_ item: Item) -> String {
         (try? vocabulary.label(for: item, language: language)) ?? item.rawValue
+    }
+}
+
+private extension View {
+    /// The scroll anchor of the averages section on this row, while no picker carries it.
+    @ViewBuilder
+    func anchoredIf(_ condition: Bool) -> some View {
+        if condition {
+            id(CoffeeAveragesSection.anchor)
+        } else {
+            self
+        }
     }
 }
 
