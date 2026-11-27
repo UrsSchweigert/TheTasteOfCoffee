@@ -505,7 +505,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the unit tests run in the `ios` job. The task ends `needs-mac-verification` until the real sign-in against dev passes in M2-T34.
 
 ### M2-T12 Development team and TestFlight through Xcode Cloud
-- status: todo
+- status: done (the team is set in the project; the owner set up Xcode Cloud and build 6 was accepted by TestFlight and installed on a device, 2026-11-26; Xcode Cloud numbers its builds itself, no script; README "TestFlight (Xcode Cloud)" and ADR 0036)
 - progress (2026-11-26, lead): the first Xcode Cloud build (1) was refused with ITMS-90022 and ITMS-90713, both because the app had no icon. Done in the app-icon PR: `Assets.xcassets/AppIcon.appiconset` with one 1024-point icon (a placeholder bean, to be replaced by a real design) and `ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon`. Also done there: `INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO` and `PrivacyInfo.xcprivacy` (no tracking; collected data: user id, other user content, photos, all linked and for app functionality; file timestamp API, reason C617.1). Still to do here: the team setting, the build number, the README and the ADR (Release uses Dev.xcconfig on purpose: the internal TestFlight build talks to the dev stage).
 - owner: ios-engineer
 - needs: human. On the owner's Mac, in Xcode: Integrate, then Create Workflow. Grant Xcode Cloud access to the GitHub repository. Pick team `2F695PTZC6` and the App Store Connect app of `app.cupmark.Cupmark`. Create an internal TestFlight group. Start the first build and report its build number once it is installed from TestFlight.
@@ -517,7 +517,7 @@ Planning notes (planned 2026-11-25):
   - The upload is accepted by App Store Connect:
     - `ITSAppUsesNonExemptEncryption` is `NO` (system HTTPS only);
     - `PrivacyInfo.xcprivacy` declares no tracking and the required-reason APIs the app uses, for example `UserDefaults`.
-  - The build number comes from Xcode Cloud (`CI_BUILD_NUMBER`), either through `ios/ci_scripts/ci_pre_xcodebuild.sh` or through Xcode Cloud's managed versioning, as documented.
+  - The build number comes from Xcode Cloud itself (build 6 was the first accepted), as documented.
   - ios/README.md, "TestFlight (Xcode Cloud)", documents the workflow:
     - start condition: manual, or a tag on `main`;
     - action: Archive iOS, scheme `Cupmark`, Release;
@@ -1249,7 +1249,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - `users_seen` is counted over all scanned brews, including rejected and orphan ones.
 
 ### M3-T6 Oracle fixture and property tests for the rebuild
-- status: todo
+- status: done
 - owner: backend-engineer
 - depends: M3-T5
 - implements: ADR 0035; CLAUDE.md, Definition of done (tests demonstrate acceptance)
@@ -1350,7 +1350,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - infra/README.md gives the restore-from-export outline for M5's restore drill.
 
 ### M3-T12 Docs: rebuild, withdrawal wording, privacy
-- status: todo
+- status: done
 - owner: planner (docs only; the lead applies it under ADR 0014)
 - depends: M3-T1
 - implements: ADR 0035; docs/05-system-design.md; docs/07-open-questions.md D1, D2; docs/04-specification.md F4
@@ -1365,6 +1365,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - docs say rule 6 (bag dose) is skipped when the brew has no `dose_dg` or the shelf entry has no bag size, a known evasion the owner may close later by tuning.
   - docs/05 (Data model, rater marker row) and `.claude/agents/backend-engineer.md` ("Give-to-get checks the `RATER#` item") still mention `RATER#`; fix both.
   - docs/05 documents the nightly log line's extra keys beyond ADR 0035 point 13 (`operation`, `status`, `dry_run`, `items_written`, `items_deleted`) and the failure line (`status: FAILED`, `stage`, `error`).
+  - Follow-ups found in review (not done here): `contracts/openapi.yaml` lines ~812-813 and ~1635-1637 still say the aggregator subtracts / counts only brews written while consent was true: reword (contract-keeper) in the next change that touches the iOS path list anyway. `site/index.html:77` is fixed by M2-T53. `scripts/docs-rebuild.test.mjs` is not yet a CI step (`ci.yml` runs each script test explicitly): add the step in the next change to `ci.yml` (it is in the iOS path list).
 
 ### M3-T13 Post-deploy checks for the nightly job
 - status: todo
@@ -1429,9 +1430,9 @@ Goal: TestFlight, then App Store. Not yet planned. Mostly human tasks.
 
 Launch checklist (from M3, 2026-11-27): decide the `failureAlarms.enabled` flag before launch, and turn it on when the users exceed 100 (`users_seen` in the nightly log line or the Cognito console; ADR 0035 Addendum 2).
 
-Privacy wording (from M3, 2026-11-26): withdrawing sharing removes the user's ratings from the community numbers at the next successful nightly update, not from their own log; the privacy policy, the App Privacy answers and the companion page say so.
+Privacy wording (from M3, 2026-11-26): the privacy policy, the App Privacy answers and the companion page say: "If you withdraw sharing, your ratings are removed from the community numbers at the next successful nightly update. Your own log is not changed."
 
-Scope: App Store listing, screenshots, privacy nutrition labels, privacy policy and terms, TestFlight round with the persona interviews, production deployment, launch checklist.
+Scope: App Store listing, screenshots, privacy nutrition labels, privacy policy and terms (with the sentence above: "If you withdraw sharing, your ratings are removed from the community numbers at the next successful nightly update. Your own log is not changed."), TestFlight round with the persona interviews, production deployment, launch checklist.
 
 ### M2-T35 Failed saves put edited fields back
 - status: done (built and tested by the macOS `ios` job in #64; ADR 0025 addendum M2-T35)

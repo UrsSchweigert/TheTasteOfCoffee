@@ -61,7 +61,7 @@ Everything here is `RemovalPolicy.RETAIN` (CloudFormation `DeletionPolicy` and `
 | Billing | `PAY_PER_REQUEST` (on-demand), also for the index | No fixed fee (invariant 5). |
 | Point-in-time recovery | on, 35 days | Restore to any second of the last 35 days. |
 | Deletion protection | on | A stack or console delete cannot drop the table. |
-| Stream | `NEW_AND_OLD_IMAGES` | Enabled, with no consumer today: the community aggregates are rebuilt nightly by a scan (ADR 0035), not from the stream. A stream event source mapping fails the guard. |
+| Stream | `NEW_AND_OLD_IMAGES` | Enabled and read by nothing: the community aggregates are rebuilt nightly from a Scan (ADR 0035), so the stream costs nothing and cannot drift. |
 | Encryption | AWS-owned key (`SSEEnabled: false` in the template means "AWS-owned", not "unencrypted") | Encrypted at rest with no KMS key and no KMS request charges. |
 | TTL | on attribute `expires_at` (number, epoch seconds) | Only an Open Food Facts miss (`BARCODE#<ean>` / `OFF`) and the daily lookup counter (`USER#<id>` / `LOOKUPS#<date>`) carry it. Deletion happens some time after expiry, so reads still check the time. TTL deletes are free and appear in the stream. |
 | Table class | `STANDARD` | |
@@ -131,7 +131,7 @@ The Lambda `cupmark-<stage>-nightly-aggregates` (handler `index.handler` from `b
 
 | Part | Value |
 | --- | --- |
-| Schedule | `cupmark-<stage>-nightly-aggregates` in the group `cupmark-<stage>-jobs` (the one `src/export.ts` creates), `cron(0 2 * * ? *)` UTC, flexible window 15 minutes, one retry, no dead-letter queue, input `{}`. |
+| Schedule | `cupmark-<stage>-nightly-aggregates` in the group `cupmark-<stage>-jobs` (the one `src/export.ts` creates), `cron(0 2 * * ? *)` UTC, flexible window 15 minutes, one Scheduler retry (Lambda's own async retries are 0), no dead-letter queue, input `{}`. |
 | Scheduler role | `cupmark-<stage>-nightly-scheduler`: `lambda:InvokeFunction` on this function only; trusted by the Scheduler for this account and this one schedule. |
 | State | `dev` ENABLED. `prod` DISABLED until the owner enables it (`nightlyScheduleEnabled` in `STAGE_SETTINGS`, `src/config.ts`, in a pull request). |
 
@@ -143,6 +143,10 @@ The Lambda `cupmark-<stage>-nightly-aggregates` (handler `index.handler` from `b
 
 - `cupmark-<stage>-nightly-aggregates-errors`: `AWS/Lambda` `Errors` of the function, Sum, `>= 1` over 86,400 s.
 - `cupmark-<stage>-nightly-aggregates-missing-run`: `Invocations`, Sum, `< 1` over 25 hours (`MISSING_RUN_ALARM_PERIOD_HOURS`), missing data counts as breaching. On `prod` it exists only while the schedule is enabled.
+
+With the flag on, the missing-run alarm goes to ALARM right after the deploy and stays there until the first scheduled run has happened (missing data counts as breaching): expect one notification. If CloudWatch rejects the 90,000 s period, the fallback is `Period` 3600, `EvaluationPeriods` 25, `DatapointsToAlarm` 25 and missing data breaching (never a 1-day period with 2 evaluation periods).
+
+The function has Lambda's own asynchronous retries turned off (`MaximumRetryAttempts` 0 in an `AWS::Lambda::EventInvokeConfig`), so with the Scheduler's one retry a night runs at most twice. The role may write only partitions `BEAN#*` and `RANK#*` (`dynamodb:LeadingKeys` condition on the write actions; `Scan` carries no key and has its own statement).
 
 The topic policy lets only `cloudwatch.amazonaws.com` publish, for this account and alarms named `cupmark-<stage>-*`. The stack never subscribes anyone and holds no address (invariant 8; an `AWS::SNS::Subscription` fails the guard). **Owner, one time per stage after the flag is on:** subscribe your own address (console, or `aws sns subscribe --topic-arn <topic arn> --protocol email --notification-endpoint <address> --region eu-central-1`) and confirm the mail. To test, `aws cloudwatch set-alarm-state --alarm-name cupmark-<stage>-nightly-aggregates-errors --state-value ALARM --state-reason test`; the alarm returns to `OK` at its next evaluation. Cost: alarms are about 0.10 USD per alarm per month, the topic and a few mails are free tier.
 

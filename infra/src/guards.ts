@@ -162,6 +162,7 @@ export const ALLOWED_RESOURCE_TYPES: Readonly<Record<string, ResourceRule>> = {
   'AWS::S3::Bucket': { why: 'photo, backup and deletion-log buckets', names: [optionalName('BucketName')] },
   'AWS::S3::BucketPolicy': { why: 'TLS-only bucket policy', names: [] },
   'AWS::Lambda::Function': { why: 'API and worker functions', names: [optionalName('FunctionName')] },
+  'AWS::Lambda::EventInvokeConfig': { why: 'no Lambda async retries for the nightly job (retries are the Scheduler\'s)', names: [] },
   'AWS::Lambda::Permission': { why: 'API Gateway and Scheduler invoke', names: [] },
   'AWS::Logs::LogGroup': {
     why: '14-day log retention',

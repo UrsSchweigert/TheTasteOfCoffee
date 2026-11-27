@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 import { Template } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
 import { REGION, STAGES } from '../src/config.ts';
+import { REVIEW_QUEUE_INDEX } from '../src/data.ts';
 import { FAKE_ACCOUNT, testApp } from './helpers.ts';
 
 interface Statement {
@@ -303,6 +304,11 @@ describe('the boundary stays narrow', () => {
         expect(allows(boundary, 'dynamodb:Scan', other), other).toBe(false);
       }
     }
+  });
+
+  it('keeps the Scan pattern off index ARNs: IAM `*` spans `/`, so no index name may end in -main', () => {
+    expect(REVIEW_QUEUE_INDEX.indexName).toBe('gsi1');
+    expect(REVIEW_QUEUE_INDEX.indexName.endsWith('-main')).toBe(false);
   });
 
   it('allows lambda:InvokeFunction only on Cupmark functions of this account and region (M3-T9)', () => {

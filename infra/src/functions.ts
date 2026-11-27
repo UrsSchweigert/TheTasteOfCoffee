@@ -59,6 +59,8 @@ export interface FunctionSpec {
   readonly timeout: Duration;
   /** Reserved concurrency cap; omit it for no reservation (the nightly job). */
   readonly concurrency?: number;
+  /** Lambda's own asynchronous retries (0..2, default 2); omit to keep the default. */
+  readonly retryAttempts?: number;
   readonly environment: Readonly<Record<string, string>>;
   readonly statements: readonly iam.PolicyStatement[];
 }
@@ -104,6 +106,7 @@ export function cupmarkFunction(scope: Construct, spec: FunctionSpec): lambda.Fu
     code: backendBundle(spec.part),
     memorySize: spec.memorySize,
     timeout: spec.timeout,
+    ...(spec.retryAttempts === undefined ? {} : { retryAttempts: spec.retryAttempts }),
     ...(spec.concurrency === undefined ? {} : { reservedConcurrentExecutions: spec.concurrency }),
     role,
     logGroup,

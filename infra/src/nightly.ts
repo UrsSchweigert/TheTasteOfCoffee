@@ -29,12 +29,9 @@ import { jobsGroupName } from './export.ts';
 import { cupmarkFunction, functionName } from './functions.ts';
 
 /** Exactly what the job does to the table: a full scan, then batched puts and deletes of aggregate items. */
-export const NIGHTLY_TABLE_ACTIONS = [
-  'dynamodb:BatchWriteItem',
-  'dynamodb:DeleteItem',
-  'dynamodb:PutItem',
-  'dynamodb:Scan',
-] as const;
+export const NIGHTLY_WRITE_ACTIONS = ['dynamodb:BatchWriteItem', 'dynamodb:DeleteItem', 'dynamodb:PutItem'] as const;
+/** Partition-key patterns the job may write (keys.ts: `BEAN#<id>` / `AGG#...`, `RANK#<facet>`). */
+export const NIGHTLY_WRITE_PARTITIONS = ['BEAN#*', 'RANK#*'] as const;
 
 export interface CupmarkNightlyProps {
   readonly stage: StageName;
@@ -75,13 +72,24 @@ export class CupmarkNightly extends Construct {
       memorySize: NIGHTLY_MEMORY_MB,
       timeout: Duration.seconds(NIGHTLY_TIMEOUT_SECONDS),
       // No reserved and no provisioned concurrency: the schedule starts one run a day.
+      // The Scheduler invokes asynchronously, so Lambda would retry a throwing run twice by itself
+      // (up to 6 h). One retry at most overall: Lambda's are off, the Scheduler's one stays.
+      retryAttempts: 0,
       environment: { TABLE_NAME: data.table.tableName },
       statements: [
         new iam.PolicyStatement({
-          sid: 'RebuildAggregates',
-          actions: [...NIGHTLY_TABLE_ACTIONS],
-          // The table ARN only: no index/*, no stream/*.
+          sid: 'ScanTable',
+          actions: ['dynamodb:Scan'],
+          // The table ARN only: no index/*, no stream/*. Scan carries no key, so no key condition.
           resources: [data.table.tableArn],
+        }),
+        new iam.PolicyStatement({
+          sid: 'WriteAggregates',
+          actions: [...NIGHTLY_WRITE_ACTIONS],
+          resources: [data.table.tableArn],
+          // Only the partitions the rebuild owns: BEAN#<id> (AGG# items) and RANK#<facet>. Never
+          // USER#, DELETED# or BARCODE#. Key prefixes are in backend/src/repository/keys.ts.
+          conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': [...NIGHTLY_WRITE_PARTITIONS] } },
         }),
       ],
     });

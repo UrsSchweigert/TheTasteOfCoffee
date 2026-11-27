@@ -88,6 +88,8 @@ describe('the Cupmark app', () => {
         'AWS::Lambda::Permission': API_ROUTES.length,
         // api, health, the nightly aggregates (M3-T9) and the deploy-time apple-idp (ADR 0015).
         'AWS::Lambda::Function': 4,
+        // The nightly function's async retries are off (M3-T9).
+        'AWS::Lambda::EventInvokeConfig': 1,
         'AWS::IAM::Role': 6,
         // M3-T11 and M3-T9: one jobs group, the weekly export schedule (no Lambda) and the nightly one.
         'AWS::Scheduler::ScheduleGroup': 1,

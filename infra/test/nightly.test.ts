@@ -99,16 +99,42 @@ describe.each(STAGES)('stage %s, default settings', (stage) => {
   it('has a role with exactly the log and table statements, on the table ARN only, and the boundary', () => {
     const policies = role?.Properties.Policies as { PolicyDocument: { Statement: Statement[] } }[];
     const statements = policies.flatMap((p) => p.PolicyDocument.Statement);
-    expect(statements.map((s) => s.Sid)).toEqual(['Logs', 'RebuildAggregates']);
-    const table = statements[1];
-    expect(table?.Effect).toBe('Allow');
-    expect(table?.Action).toEqual(['dynamodb:BatchWriteItem', 'dynamodb:DeleteItem', 'dynamodb:PutItem', 'dynamodb:Scan']);
-    // Exactly the table ARN: no `/index/*`, no `/stream/*`, no wildcard.
-    expect(table?.Resource).toEqual({ 'Fn::GetAtt': [tableId, 'Arn'] });
+    expect(statements.map((s) => s.Sid)).toEqual(['Logs', 'ScanTable', 'WriteAggregates']);
+    // Scan carries no key, so it has no key condition; exactly the table ARN (no index, no stream).
+    expect(statements[1]).toEqual({ Sid: 'ScanTable', Effect: 'Allow', Action: 'dynamodb:Scan', Resource: { 'Fn::GetAtt': [tableId, 'Arn'] } });
+    // Writes: only BEAN# and RANK# partitions (DeleteItem and PutItem stay: batch sub-requests are authorised against them).
+    expect(statements[2]).toEqual({
+      Sid: 'WriteAggregates',
+      Effect: 'Allow',
+      Action: ['dynamodb:BatchWriteItem', 'dynamodb:DeleteItem', 'dynamodb:PutItem'],
+      Resource: { 'Fn::GetAtt': [tableId, 'Arn'] },
+      Condition: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['BEAN#*', 'RANK#*'] } },
+    });
     expect(JSON.stringify(role?.Properties.Policies)).not.toMatch(/"\*"|index|stream/);
     expect(role?.Properties.ManagedPolicyArns).toBeUndefined();
     // The boundary comes from the stage (Aspect on every role), as for the other roles.
     expect(JSON.stringify(role?.Properties.PermissionsBoundary)).toContain('CupmarkBoundary');
+  });
+
+  it('turns off Lambda\'s own async retries, so with the Scheduler\'s one retry a night runs at most twice', () => {
+    const configs = ofType(all, 'AWS::Lambda::EventInvokeConfig');
+    expect(configs).toHaveLength(1);
+    expect(configs[0]?.[1].Properties).toMatchObject({
+      FunctionName: { Ref: fn?.[0] },
+      MaximumRetryAttempts: 0,
+      Qualifier: '$LATEST',
+    });
+    // The other functions keep the default; only this one has a config.
+    expect(JSON.stringify(configs)).not.toMatch(/cupmark-[a-z]+-(api|health)/);
+  });
+
+  it('only the nightly function role may hold dynamodb:Scan, and only the scheduler roles lambda:InvokeFunction', () => {
+    for (const [, r] of ofType(all, 'AWS::IAM::Role')) {
+      const name = String(r.Properties.RoleName);
+      const text = JSON.stringify(r.Properties.Policies ?? []);
+      expect(text.includes('dynamodb:Scan'), name).toBe(name === fnName);
+      expect(text.includes('lambda:InvokeFunction'), name).toBe(name === `cupmark-${stage}-nightly-scheduler`);
+    }
   });
 
   it('has no event source mapping: the stream stays enabled and unread', () => {
