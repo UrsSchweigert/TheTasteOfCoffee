@@ -29,9 +29,9 @@ export function scoresOf(value: (criterion: keyof Scores) => number): Scores {
 }
 
 /** A score in points, 1 to 10 in half steps. */
-const score = (rng: Rng): number => rng.int(2, 20) / 2;
+export const score = (rng: Rng): number => rng.int(2, 20) / 2;
 
-function parametersOf(rng: Rng, mode: Mode): BrewParameters {
+export function parametersOf(rng: Rng, mode: Mode): BrewParameters {
   const method = rng.pick(MethodSchema.options);
   const parameters: { -readonly [K in keyof BrewParameters]: BrewParameters[K] } = { method };
   const doseChance = mode === 'clean' ? 0 : 0.5;
@@ -53,7 +53,7 @@ function parametersOf(rng: Rng, mode: Mode): BrewParameters {
   return parameters;
 }
 
-function ratingOf(rng: Rng, single: number | undefined, next: () => number = () => score(rng)): Rating {
+export function ratingOf(rng: Rng, single: number | undefined, next: () => number = () => score(rng)): Rating {
   const value = (): number => single ?? next();
   const rating: { -readonly [K in keyof Rating]: Rating[K] } = { scores: scoresOf(value) };
   const intensities: { acidity?: IntensityLevel; body?: IntensityLevel; bitterness?: IntensityLevel } = {};
@@ -69,7 +69,7 @@ function ratingOf(rng: Rng, single: number | undefined, next: () => number = () 
 
 const dayString = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
 
-function genBeans(rng: Rng, beanIds: readonly string[], present: number): Bean[] {
+export function genBeans(rng: Rng, beanIds: readonly string[], present: number): Bean[] {
   const beans: Bean[] = [];
   for (const id of beanIds) {
     if (!rng.chance(present)) continue;

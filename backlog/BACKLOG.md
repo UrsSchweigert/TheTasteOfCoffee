@@ -1324,7 +1324,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - infra/README.md documents the job, the dry-run event, how to disable the schedule, the flag (turn it on in a pull request when `users_seen` or the Cognito console shows more than 100 users), the alarms, and the owner's one-time subscription step.
 
 ### M3-T10 Replay and load test of the rebuild
-- status: todo
+- status: done (code and tests on the in-memory table; the DynamoDB Local half is written but was not run in the author's sandbox (no Docker), and its CI step (`npm run test:replay` in the backend job with `REQUIRE_DYNAMODB_LOCAL=1`, a separate small change because ci.yml triggers the macOS run) is open)
 - owner: backend-engineer
 - depends: M3-T8
 - implements: ADR 0035 (scale trigger); docs/05-system-design.md, Non-functional

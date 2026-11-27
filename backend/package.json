@@ -15,6 +15,7 @@
     "lint": "eslint . --max-warnings 0 && tsc --noEmit",
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:replay": "NODE_OPTIONS=\"--max-old-space-size=512 --expose-gc\" vitest run --config vitest.replay.config.ts",
     "dynamodb:start": "docker run --rm -d --name cupmark-dynamodb-local -p 127.0.0.1:8000:8000 amazon/dynamodb-local:3.3.2@sha256:6ada631ec7aa5fc83446855eb17233e3dad184fec47477e8140c6c569cfe0c86 -jar DynamoDBLocal.jar -inMemory",
     "dynamodb:stop": "docker stop cupmark-dynamodb-local",
     "build": "node scripts/build.ts"
