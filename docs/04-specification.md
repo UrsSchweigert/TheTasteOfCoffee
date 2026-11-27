@@ -107,12 +107,14 @@ The same numbers appear where the user looks at them, without scrolling to the s
 
 ## F4 Explore (paid)
 
-- Bean page: number of raters, mean and spread per criterion, most-picked flavour notes, buy-again share.
+- Bean page: number of raters, mean and spread per criterion (served as rounded numbers only, never raw sums or counts), most-picked flavour notes, buy-again share. Each optional part (buy-again, each intensity, the notes, each recipe parameter) is shown only when at least 5 distinct users contributed to that part, so one user cannot be read out of a part of a bean that has five raters overall.
 - Method breakdown: overall score per method for this bean.
-- Top recipes: the parameter ranges (ratio, temperature, grind, time) of the top-scoring quarter of brews per method.
-- Rankings: top beans filtered by origin, process, roast level, method, price band.
+- Top recipes: the parameter ranges (ratio, temperature, grind, time) of the top-scoring quarter of brews per method. Deferred to M4: M3 stores bucket counts of the parameters per method over all counted cups, which cannot give the top quarter, so the ranges need their own design (weights, ties, how few cups are enough) with the Explore screens (ADR 0035 point 14).
+- Rankings: top beans filtered by origin, process, roast level, method, price band. Origin is ranked by country; origin, process and roast level rank only beans whose attributes are operator-verified. A bean can rank in several price bands, because a price band belongs to a purchase (shelf entry), not to a bean.
 - An aggregate is shown only when at least 5 distinct users contributed to it.
-- Give-to-get: a free user sees the overall community score for beans they have rated themselves.
+- How cups count (ADR 0035): every cup counts. A user's plausible cups of one bean on one UTC day share one vote (each of n cups weighs 1/n), and at most 10 cups of a bean per user per day count. Automatic plausibility rules leave out implausible brews (not consented, unrated, in the future, before the roast date, a burst of brews, a dose above the bag, straight-lining, over the daily cap; a closed list of reason ids in `contracts/`). A left-out brew is never changed or flagged in the user's own log, and there is no review queue.
+- Freshness: the community numbers are rebuilt every night, so they are up to a day old (longer after a failed run, and not shown at all after 3 days without a successful run). Withdrawing sharing removes the user's ratings from the community numbers at the next successful nightly update; the personal log is not changed.
+- Give-to-get: a free user sees the overall community score for beans they have rated themselves. The mechanism is decided in M4, from the user's own shelf or brews (there is no per-bean rater list).
 
 ## Non-functional requirements
 

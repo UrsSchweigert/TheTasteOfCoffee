@@ -1350,7 +1350,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - infra/README.md gives the restore-from-export outline for M5's restore drill.
 
 ### M3-T12 Docs: rebuild, withdrawal wording, privacy
-- status: todo
+- status: done
 - owner: planner (docs only; the lead applies it under ADR 0014)
 - depends: M3-T1
 - implements: ADR 0035; docs/05-system-design.md; docs/07-open-questions.md D1, D2; docs/04-specification.md F4
@@ -1429,9 +1429,9 @@ Goal: TestFlight, then App Store. Not yet planned. Mostly human tasks.
 
 Launch checklist (from M3, 2026-11-27): decide the `failureAlarms.enabled` flag before launch, and turn it on when the users exceed 100 (`users_seen` in the nightly log line or the Cognito console; ADR 0035 Addendum 2).
 
-Privacy wording (from M3, 2026-11-26): withdrawing sharing removes the user's ratings from the community numbers at the next successful nightly update, not from their own log; the privacy policy, the App Privacy answers and the companion page say so.
+Privacy wording (from M3, 2026-11-26): the privacy policy, the App Privacy answers and the companion page say: "If you withdraw sharing, your ratings are removed from the community numbers at the next successful nightly update. Your own log is not changed."
 
-Scope: App Store listing, screenshots, privacy nutrition labels, privacy policy and terms, TestFlight round with the persona interviews, production deployment, launch checklist.
+Scope: App Store listing, screenshots, privacy nutrition labels, privacy policy and terms (with the sentence above: "If you withdraw sharing, your ratings are removed from the community numbers at the next successful nightly update. Your own log is not changed."), TestFlight round with the persona interviews, production deployment, launch checklist.
 
 ### M2-T35 Failed saves put edited fields back
 - status: done (built and tested by the macOS `ios` job in #64; ADR 0025 addendum M2-T35)

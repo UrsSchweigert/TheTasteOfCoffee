@@ -2,7 +2,9 @@
 
 AWS costs stay in single-digit USD a month up to 10,000 monthly active users, then sign-in dominates. All figures are approximate, in USD per month, and should be re-run in the AWS Pricing Calculator for Frankfurt.
 
-Assumptions: each active user makes 60 API calls and logs 8 brews a month; a brew causes about 3 table writes including aggregates; label photos average 300 KB.
+The nightly job adds a table Scan (about 3 USD a month at 50,000 users, an order-of-magnitude figure accepted by the owner; re-run it in the Pricing Calculator) and one write per changed aggregate item plus one write and one delete per ranking item each night. That rewrite is bounded by the number of aggregate items (beans and methods) and rankings, not by the number of brews; the `AGG#` items are written only when changed (or to refresh their stamp), the ranking items are new every night. The Scan cost is included in the DynamoDB line below.
+
+Assumptions: each active user makes 60 API calls and logs 8 brews a month; a brew causes about four write units in one transaction (the brew, its pointer and the shelf entry count; ADR 0010, ADR 0012) and no aggregate writes, because community aggregates are rebuilt by the nightly job (ADR 0035); label photos average 300 KB.
 
 | Line item | 1,000 users | 10,000 users | 50,000 users |
 | --- | --- | --- | --- |

@@ -13,7 +13,7 @@ flowchart LR
     gw["API Gateway HTTP API<br/>checks the token, throttles"]
     api["Lambda: API<br/>validates lists and ranges<br/>checks the entitlement"]
     ddb[("DynamoDB, on-demand<br/>one table, encrypted<br/>point-in-time recovery")]
-    agg["Lambda: aggregator<br/>running totals per bean<br/>and per method"]
+    agg["Lambda: nightly aggregates<br/>scans the table, rebuilds<br/>aggregates and rankings"]
     s3[("S3<br/>weekly table export<br/>private label photos<br/>catalogue image copies")]
   end
 
@@ -24,12 +24,12 @@ flowchart LR
   api --> ddb
   api -- unknown barcode, image copy --> off
   api -- catalogue images --> s3
-  ddb -- change stream --> agg
-  agg --> ddb
+  ddb -- nightly scan --> agg
+  agg -- rebuilt aggregates --> ddb
   ddb -- weekly export --> s3
 ```
 
-Every request passes the token check and server-side validation before it reaches the table. The aggregator keeps the paid tier's totals current, and the table exports itself to S3 weekly.
+Every request passes the token check and server-side validation before it reaches the table. Once a night a scheduled job rebuilds the community aggregates from the table (ADR 0035; the paid tier's numbers are up to a day old), and the table exports itself to S3 weekly. The table's change stream is enabled but nothing reads it.
 
 ## Components
 
@@ -38,10 +38,10 @@ Every request passes the token check and server-side validation before it reache
 | Client | Native iOS: SwiftUI, SwiftData local store, VisionKit scanner, StoreKit 2 | Scanning and offline storage run on the device at no cloud cost |
 | Identity | Cognito user pool, Lite tier, Sign in with Apple as the only provider | First 10,000 monthly active users are free; no passwords or emails to store |
 | API | API Gateway HTTP API with its built-in JWT authorizer | Cheaper than REST API; token check needs no extra Lambda |
-| Compute | Lambda on arm64, one API function plus three small workers | Billed per request; large permanent free allowance |
+| Compute | Lambda on arm64, one API function plus three small workers: the health check, the Apple identity provider function (`apple-idp`) and the nightly aggregates job (`nightly-aggregates`) | Billed per request; large permanent free allowance |
 | Data | DynamoDB, one table, on-demand capacity | No minimum fee; multi-AZ by default; encrypted at rest |
 | Files | S3, two private buckets: label photos and catalogue image copies, backups | Cents per GB; lifecycle rules delete or archive automatically |
-| Jobs | EventBridge Scheduler | Nightly rankings and weekly export, effectively free |
+| Jobs | EventBridge Scheduler | The nightly aggregates and rankings rebuild (a Lambda) and the weekly table export (a direct DynamoDB call, no Lambda), effectively free |
 | Secrets | Systems Manager Parameter Store (SecureString) | Free standard tier, unlike Secrets Manager |
 | Deploy | AWS CDK from GitHub Actions via OIDC | No long-lived access keys anywhere |
 
@@ -67,27 +67,39 @@ One DynamoDB table holds everything. The partition key decides who can reach an 
 | Label photo count | `USER#<id>` | `BEANPHOTOS#<beanId>` | How many label photos the caller completed for the bean; at most 3 |
 | Label photo upload counter | `USER#<id>` | `PHOTO_UPLOADS#<YYYY-MM-DD>` | The caller's new label photo uploads that UTC day; TTL |
 | Account tombstone | `DELETED#<id>` | `META` | Written first by `DELETE /account` (ADR 0017, Addendum): when the deletion began, the ids of the label photos deleted in full, whether the deletion log entry is written; TTL 2 hours after the last call. While it is in force, every write of that user is refused (401) |
-| Aggregate, all methods | `BEAN#<beanId>` | `AGG#ALL` | Rater count; count, sum and sum of squares per criterion; note counts |
-| Aggregate per method | `BEAN#<beanId>` | `AGG#METHOD#<method>` | Same, plus recipe histogram buckets |
-| Rater marker | `BEAN#<beanId>` | `RATER#<id>` | Proves a distinct rater; drives give-to-get |
+| Aggregate, all methods | `BEAN#<beanId>` | `AGG#ALL` | Rebuilt nightly (ADR 0035). The run-day stamp (`run_day`); the weight denominator; the distinct-rater count (a number, never a list or a user id); per criterion the weighted count, the weighted sum and the weighted sum of squares of the half-point scores (integers only, so mean and spread are computed exactly when read); counts for intensities, notes and buy-again; and a distinct-rater count for each optional part (buy-again, notes, each intensity dimension, each recipe histogram) |
+| Aggregate per method | `BEAN#<beanId>` | `AGG#METHOD#<method>` | The same, for one method, plus the recipe parameter histogram buckets |
 | Label photo, bean side | `BEAN#<beanId>` | `PHOTO#<photoId>` | A stripped label photo of the bean for the operator's review: creation time, no user id (ADR 0016) |
-| Ranking | `RANK#<facet>` | `<period>` | Precomputed top list; facet and period formats in ADR 0010 |
+| Ranking | `RANK#<facet>` | `<period>` | Precomputed top list, rebuilt nightly; `<period>` is the calendar day of the run, so only the last run's lists exist. Facets: all, method, process, roast level, price band and origin (origin by country); ADR 0010 and ADR 0035 point 14 |
 
 Ids in keys are server-generated ULIDs; `brewedAt` is fixed-width UTC (`toISOString()`), so brews list newest first. A brew, its pointer and the brew count of its shelf entry are always written in one transaction (ADR 0010, ADR 0012), so a shelf entry with brews cannot be deleted. `backend/src/repository/` builds every key and is the only code that talks to the table.
 
-The table's TTL attribute is `expires_at` (a number, epoch seconds). Only the items marked "TTL" above carry it: an Open Food Facts miss, the daily lookup and label photo upload counters, a pending label photo and an account tombstone. DynamoDB deletes such an item some time after that moment (usually within a few days), at no charge, so reads must still compare `expires_at` with the current time. TTL deletes appear in the stream like any other delete; the aggregator must ignore them (they are not brews). It also ignores tombstones (`ACCOUNT_TOMBSTONE`). The brew deletes of an account deletion are ordinary brew removes, which it subtracts (D2).
+The table's TTL attribute is `expires_at` (a number, epoch seconds). Only the items marked "TTL" above carry it: an Open Food Facts miss, the daily lookup and label photo upload counters, a pending label photo and an account tombstone. DynamoDB deletes such an item some time after that moment (usually within a few days), at no charge, so reads must still compare `expires_at` with the current time. Nothing reads the table's change stream, so TTL deletes and tombstones need no special handling there. The nightly job skips them by key prefix like every other item type it does not use. The brew deletes of an account deletion are ordinary deletes: the next successful nightly run no longer counts those brews (D2); nothing is adjusted.
 
 One sparse index (`gsi1`) lists unverified beans for the review queue: only an unverified bean's `META` item carries `gsi1pk=REVIEW#UNVERIFIED` and `gsi1sk=<createdAt UTC>#<beanId>`, and verifying or rejecting the bean removes both (infra/README.md). Rejecting a bean also deletes its `BARCODE#` pointer in the same transaction, so the barcode can be submitted again; the rejected `META` item stays for the operator and is never returned by the API (owner decision, 2026-11-25; M1-T4a). A rejected bean cannot be newly put on a shelf (404); shelf entries that already name it keep working, including a replace that keeps the same bean (M1-T11). The user id always comes from the verified token, never from the request body, so a user can only ever address their own `USER#` partition.
 
 ## Aggregation pipeline
 
-1. A brew is written to the user's partition.
-2. DynamoDB Streams hands the change to the aggregator Lambda in batches.
-3. The aggregator adds the scores to the running totals of the bean and of the bean-and-method item, using atomic counters. Edits and deletes apply the difference. It acts on brew items only and ignores every other item type in the stream (shelf entries, pointers, label photo items, counters and TTL deletes).
-4. Reading a bean page is then one or two item reads, with mean and spread computed from count, sum and sum of squares.
-5. A nightly job reads the aggregate items (one per bean) and writes the ranking lists.
+Community aggregates and rankings are rebuilt from nothing every night from the source of truth (ADR 0035). Nothing consumes the table's change stream, no totals are carried from one night to the next, and there are no per-day items or per-rater items. A new brew, an edit, a deletion, a consent change and an account deletion all show in the community numbers after the next successful run, and in no other way.
 
-This keeps the paid tier's read cost flat no matter how many brews exist. If ad hoc analysis is needed later, the weekly S3 export can be queried with Athena, paying per query.
+1. **Scan.** One Lambda, `cupmark-<stage>-nightly-aggregates`, started by an EventBridge Scheduler schedule, pages through the table with `Scan` (a fixed page size, eventually consistent reads). It reads brews, shelf entries, profiles and bean `META` items and skips every other item type by key prefix. The run time is read once and passed to a pure rebuild function. A page error, a throttle that exhausts its retries or an item that cannot be decoded throws: the run fails and nothing is written.
+2. **Filters.** Each brew is judged by the first rule that rejects it, in this order: not consented (no profile and `false` both mean no consent; the profile is read as it is at run time, so withdrawing consent removes the user's ratings and re-consent counts all their rated brews again), unrated, brewed in the future (more than 5 minutes after the run time), brewed before the shelf entry's roast date (the same UTC day is fine), a burst (more than 5 brews of one user within any 60 seconds; the earliest 5 count), bag dose over the bag size x 1.10 (the running dose of a shelf entry, oldest first), straight-lining (a user with at least 10 rated brews who gave the same one value for all eight criteria in every brew; all of that user's brews are rejected), and over the daily cap. The reason ids are a closed list in `contracts/`. The thresholds are in `backend/src/aggregation/config.ts` and are tuned from the per-reason counts in the logs (M3-T15). A rejected brew is only left out of the numbers: it is never deleted, edited or flagged, so the user's own log does not change. There is no review queue. Two limits to know. Rule 6 (bag dose) is skipped when the brew has no `dose_dg` or the shelf entry has no bag size; this is a known evasion the owner may close later by tuning. And a brew whose shelf entry is missing (an interrupted account deletion, or a Scan that is not a snapshot) cannot be judged by the rules that need the entry: it is an orphan, tolerated, counted in `brews_orphaned`, left out of the numbers and given no reason id.
+3. **Weights and cap.** Every cup counts. At most 10 cups of one bean per user per UTC day count (the first 10 by `brewedAt`, then brew id). A user's counted cups of one bean on one UTC day share one vote: each of n cups weighs `2520 / n` (2520 = lcm(1..10)), so every weight and every sum is an exact integer and a group weighs exactly 2520. At the method level the group is (user, bean, method, day). Distinct raters count users, never weights. Scores are integer half-points (2 to 20).
+4. **Write.** The result is written with `BatchWriteItem`, then aggregate and ranking items that the new set no longer contains are deleted, so a bean whose raters all left disappears. For the `AGG#` items the job compares the new items with those the Scan read and writes only new or different ones; an unchanged item is rewritten only to refresh its run-day stamp once the stamp is 2 or more days behind the run day. Ranking items are keyed by the day of the run, so every ranking item is new each night and yesterday's are deleted. A second run on the same day with the same input leaves the table unchanged. The write is not one transaction; if it fails part way the run fails and the next night repairs it. Until then a reader sees a mix of old and new items, which is safe because each item is self-consistent and every read goes through the 5-rater threshold item by item.
+5. **Failure rule.** The job fails closed. A failure in the scan, the rebuild (including the assertion that every sum stays a safe integer) or the write fails the run, and the previous night's items stay as they were, one day older. A failed or missing run raises an alarm only when the stage's `failureAlarms.enabled` flag is on (off until the app has more than 100 users; ADR 0035 Addendum 2).
+6. **Staleness.** Every aggregate and ranking item carries the run-day stamp. `readAggregate` answers "not available" for an item whose age, (UTC day of the read) minus (stamp day), is more than `MAX_AGE_DAYS` (3); a stamp in the future also fails closed. With the last success on day D, a read on D+3 is served and a read on D+4 is "not available". After a few failed nights the community numbers disappear instead of going on showing contributions a user took back. Community numbers are up to about a day old, longer after a failed run. The user's own numbers are computed on the device and are not affected.
+7. **Reading.** `readAggregate` in `backend/src/repository/` is the only function that returns aggregate data. It returns "not enough raters" below 5 distinct raters and withholds each optional part (buy-again, each intensity dimension, the notes, each recipe histogram) whose own distinct-rater count is below 5. Items below 5 raters are stored but never served. Mean and spread are computed only when read, exactly, from the stored integers (the spread is the standard deviation on the 0 to 10 scale, rounded to one decimal); the paid routes (M4) serve rounded means, spreads and shares only, never raw sums or weighted counts. Reading a bean page is one or two item reads, so the paid tier's read cost stays flat however many brews exist.
+8. **Scale trigger.** The invocation has a timeout of 300 seconds and 512 MB. When a run on the real table needs more than half of the timeout (150 seconds) or its peak heap exceeds 60% of the memory, a new ADR splits the scan into parallel segments; nothing is split on a guess.
+
+**Run log.** Each run writes one structured log line with fixed keys and no user id, bean id or text: `operation` (`nightly-aggregates`), `status` (`OK`), `dry_run`, `duration_ms`, `share_of_timeout`, `items_scanned`, `users_seen` (distinct users with at least one scanned brew; a count only), `brews_seen`, `brews_counted`, `brews_orphaned`, `reasons` (one count for every reason id, zeros included), `beans_with_aggregates`, `beans_ranked`, `items_written` and `items_deleted`. A failed run writes `operation`, `status: FAILED`, `dry_run`, `stage` (`scan`, `rebuild`, `write` or `configuration`), `error` (a class name, never a message) and, except for `configuration`, the timing keys, and then the function fails. No custom CloudWatch metrics are used (they bill per metric). Invoked with `{ "dry_run": true }` the job does everything except the write, and reports `items_written` and `items_deleted` as 0.
+
+**Rankings.** Facets are all, method, process, roast level, price band and origin. A bean is ranked in a facet only with at least 5 distinct raters counted in that facet. The price band belongs to a shelf entry, not a bean, so the price band facet is built from the counted cups whose shelf entry has that band (its own weight groups: user, bean, band, day), and a bean can appear in several bands; a shelf entry without a band adds to no band ranking. The origin facet is ranked by country (a region ranks under its country; `blend`, `other` and `unknown` have no ranking). Origin, process and roast level rank only beans whose attributes are operator-verified, so one user's pick cannot place a bean in a list.
+
+**Not in M3.** The parameter ranges of the top-scoring quarter of brews per method (docs/04 F4) are deferred to M4: M3 keeps recipe parameter bucket counts per method over all counted cups, and because the table is rebuilt every night, M4 can add another histogram without a migration. Give-to-get is decided in M4 from the user's own shelf or brews; there is no per-bean rater list.
+
+Reference recipes (`contracts/reference/`, ADR 0034) are never read by the job or the read path: they are never counted as raters and are shown beside community data, never inside it.
+
+If ad hoc analysis is needed later, the weekly S3 export can be queried with Athena, paying per query.
 
 ## Barcode lookup
 
@@ -127,7 +139,7 @@ The phone sends only the barcode and, later, the user's confirmation. The backen
 | --- | --- |
 | Identity | Sign in with Apple; only Apple's opaque user id is stored; no name is requested |
 | Tokens | Access tokens valid for 60 minutes; refresh token in the iOS Keychain |
-| Authorisation | Partition key derived from the token; paid and give-to-get checks in the API function |
+| Authorisation | Partition key derived from the token; paid checks in the API function; the give-to-get check is decided in M4 |
 | Input | Every field validated server-side against a closed list or a numeric range. With no text fields there is nothing to inject or moderate |
 | Abuse | API Gateway throttling; per-user daily write cap; App Attest on write routes |
 | Encryption | TLS in transit; DynamoDB encrypted at rest with the AWS-owned key and S3 with SSE-S3, both at no charge and with no KMS key (owner decision, 2026-11-25). The only KMS use is the AWS-managed `aws/ssm` key behind the cursor-signing SecureString (ADR 0013, owner-approved): no monthly fee, and decryption stays in the free tier |
