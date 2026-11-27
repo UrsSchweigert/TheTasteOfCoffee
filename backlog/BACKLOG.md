@@ -478,7 +478,7 @@ Planning notes (planned 2026-11-25):
   - Nothing else changes. The values are configuration, not secrets (invariant 8 holds).
 
 ### M2-T11 Sign in with Apple through the Cognito hosted UI with PKCE
-- status: needs-mac-verification (unit tests pass in the `ios` job in #58; the real sign-in against dev is verified in M2-T34)
+- status: done (unit tests in #58; the real sign-in against dev passed on a device in M2-T34)
 - owner: ios-engineer
 - depends: M2-T8, M2-T9
 - implements: docs/03-project-brief.md (Sign in with Apple only); docs/05-system-design.md, Security (60-minute access tokens, refresh token in the Keychain); infra/src/identity.ts (public client, `openid`, `cupmark://auth`)
@@ -528,7 +528,7 @@ Planning notes (planned 2026-11-25):
   - Mac: ends `needs-mac-verification` until the owner reports a TestFlight build installed on a device.
 
 ### M2-T13 Barcode scanner
-- status: needs-mac-verification (unit tests passed in the `ios` job in #57; the camera scan is verified on a device in M2-T34)
+- status: done (unit tests in #57; the camera scan passed on a device in M2-T34)
 - owner: ios-engineer
 - depends: M0-T6
 - implements: docs/04-specification.md, F1 step 1, Input model (camera scan, EAN-13 and UPC-A)
@@ -707,7 +707,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job.
 
 ### M2-T23 Label photo: JPEG on the device
-- status: needs-mac-verification (the encoder tests pass in the `ios` job in #61; a real HEIC capture is verified on a device in M2-T34)
+- status: done (encoder tests in #61; a real capture passed on a device in M2-T34)
 - owner: ios-engineer
 - depends: M2-T22
 - implements: docs/04-specification.md, F1 step 4; ADR 0016 (HEIC to JPEG on the device, at most 4096 px a side and 8 MiB); D12
@@ -728,7 +728,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the conversion is tested in the `ios` job. The task ends `needs-mac-verification` until a real HEIC capture passes on a device in M2-T34.
 
 ### M2-T24 Label photo: presigned upload and completion
-- status: needs-mac-verification (the unit tests pass in the `ios` job in #62; a real upload to dev is verified in M2-T34)
+- status: done (unit tests in #62; a real upload to dev passed on a device in M2-T34)
 - owner: ios-engineer
 - depends: M2-T23
 - implements: ADR 0016; contracts/openapi.yaml, `createLabelPhotoUpload`, `completeLabelPhoto`
@@ -888,7 +888,7 @@ Planning notes (planned 2026-11-25):
   - Mac: the `ios` job. The VoiceOver walk-through on a device is in M2-T34.
 
 ### M2-T34 Device run against dev
-- status: todo
+- status: done (the owner ran the device flow against dev and reported it passed, 2026-11-26)
 - owner: human
 - needs: human. On a device, with a TestFlight build (M2-T12) or a build from Xcode, and a test Apple ID, the owner runs the flow below and reports the result on the task's issue.
 - depends: M1-T7, M2-T10, M2-T12, M2-T33
@@ -1138,7 +1138,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
 
 - **Owner decisions (2026-11-26).**
   1. Nightly Scan: one scheduled job Scans the table and rebuilds all aggregates from scratch. The Scan reads the whole table anyway, so the rebuild adds compute, not read cost.
-  2. Withdrawal removes contributions: withdrawing consent costs one profile write and takes effect at the next nightly run (up to about a day). It removes the user's ratings from the community numbers only; the personal log is untouched. Re-consent counts all the user's rated brews again from the next run. Account deletion, brew deletion and edits converge on their own because the rebuild starts from current data.
+  2. Withdrawal removes contributions: withdrawing consent costs one profile write and takes effect at the next successful nightly run (up to about a day). It removes the user's ratings from the community numbers only; the personal log is untouched. Re-consent counts all the user's rated brews again from the next run. Account deletion, brew deletion and edits converge on their own because the rebuild starts from current data.
   3. Daily one-vote weights: every cup counts. A user's plausible cups of one bean on one UTC day share one vote, each cup weighing 1/n. Distinct raters count users, never weights.
   4. Cap 10: at most 10 cups of one bean per user per UTC day count; the excess is ignored.
 - **Removed from the plan** (superseded by the nightly rebuild): the DynamoDB stream mapping and aggregator Lambda trigger, day-slot items, rater-marker maintenance (`RATER#` items), difference-apply logic, the consent-change handling task (M3-T18) and the live-consent read mechanism. The table's stream stays enabled (M1-T1 pins it; unread, it costs nothing). Whether to switch it off is a Proposed addition for the owner, not part of this milestone.
@@ -1151,12 +1151,12 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
 - **M4 reads, M3 never serves.** No route returns aggregates in M3. The one read function (T7) exists so M4's paid routes have exactly one path to aggregate keys.
 
 ### M3-T1 ADR: nightly rebuild replaces the incremental aggregator
-- status: todo
+- status: done
 - owner: planner (the lead writes it under ADR 0014; the owner already decided the four points below, so it is recorded, not re-decided)
 - depends: none
 - implements: docs/05-system-design.md, Aggregation pipeline; docs/07-open-questions.md D1, D2; the owner decisions of 2026-11-26
 - acceptance:
-  - `docs/decisions/0035-nightly-aggregate-rebuild.md` supersedes the incremental stream design (ADR 0010 stays for key and ranking facet formats; the ADR says which parts of 0010 and 0017 it replaces: the "subtract on delete" mechanism of D2 and the "consent at write time" rule of D1).
+  - `docs/decisions/0035-nightly-rebuild-of-community-aggregates.md` supersedes the incremental stream design (ADR 0010 stays for key and ranking facet formats; the ADR says which parts of 0010 and 0017 it replaces: the "subtract on delete" mechanism of D2 and the "consent at write time" rule of D1).
   - It records:
     - the owner decisions of 2026-11-26 (nightly Scan, withdrawal removes contributions at the next run, daily one-vote weights, cap 10);
     - the weight definition exactly as in the planning notes: groups per (user, bean, UTC day) for bean-level and per (user, bean, method, UTC day) for method-level, `L = 2520`, the integer bound and the fail-closed assertion, distinct raters as distinct users;
@@ -1170,7 +1170,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - No code and no other doc changes in this task (docs follow in M3-T12).
 
 ### M3-T2 Contract: plausibility reason ids and histogram buckets
-- status: todo
+- status: done
 - owner: contract-keeper
 - depends: M3-T1
 - implements: ADR 0035; docs/04-specification.md, F4 (recipe parameters); docs/05-system-design.md, Data model (aggregate items); CLAUDE.md invariants 1 and 2
@@ -1179,9 +1179,12 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - Histogram bucket definitions for the recipe parameters the aggregates keep (dose-to-water ratio, grind coarseness, water temperature, brew time; the exact parameter set is the one docs/04 F4 names), each as an ordered list of bucket ids with exact numeric edges, per method where the method field rules (v3) differ. Edges are exact in binary floating point or scaled integers (ADR 0004). Tests: buckets are contiguous, non-overlapping, cover the vocabulary range of their field, and every id is unique.
   - The aggregate item shapes are documented in `contracts/README.md` (not in `openapi.yaml`, since no route returns them in M3): per criterion the integer half-point sum and weighted count, intensity and note counts, buy-again counts, bucket counts, distinct-rater count; no string field other than ids from the vocabulary or this file.
   - `scripts/check-no-free-text.sh` passes; backend regenerates its types and `npm run check:generated` passes.
+  - Item shapes also carry, per criterion, the integer sum of squares (weight x half-points squared; bound 1,008,000 per cup, ADR 0035), the run day stamp, and a distinct-rater count for each optional part: buy-again, each intensity dimension, the flavour notes and each recipe parameter histogram. The eight criteria need none (all are required, ADR 0026).
 
 ### M3-T3 Rebuild configuration and exact arithmetic
-- status: todo
+- status: done
+- decision (loading): the backend generates, it does not read the JSON at run time. `backend/scripts/codegen/aggregation.ts` writes `backend/src/generated/aggregation.ts` (`REASON_IDS`, `ReasonId`, `HISTOGRAM_PARAMETERS`) from `contracts/aggregation/v1/`; `npm run generate` writes it and `npm run check:generated` and a test fail on drift. The Lambda bundle needs no file outside itself, and the ids and edges are written once, in the contract. Later tasks import from `src/generated/aggregation.ts`.
+- built: `backend/src/aggregation/config.ts` (all thresholds, the per-cup bounds, `MAX_AGE_DAYS`, `REFRESH_AFTER_DAYS`), `arithmetic.ts` (`weightOf`, checked `safeAdd`/`safeMul`, `WeightedAccumulator`, BigInt variance, mean and spread), `age.ts` (age of a stamp, servable, stamp refresh); tests in `backend/test/aggregation/`. The bag-dose margin is kept as an integer percentage (110) so no float is involved.
 - owner: backend-engineer
 - depends: M3-T2
 - implements: ADR 0035 (weights, thresholds); docs/05-system-design.md, Aggregation pipeline
@@ -1190,6 +1193,8 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - Exact helpers: `weightOf(n)` returns `L / n` for 1 to 10 and throws for any other n; a test proves `n x weightOf(n) === L` for every n and that no division leaves a remainder.
   - An integer accumulator adds weighted half-point scores and asserts `Number.isSafeInteger` after every addition; overflow fails the run. A test pushes sums to the stated bound (200 users x 10 cups x 20 half-points x L) with room to spare, and a test with a forced overflow fails closed.
   - Property test: adding the same weighted values in any order gives the same sum.
+  - A named constant `MAX_AGE_DAYS = 3` (age limit of a stamped aggregate, ADR 0035 point 7a) and the sum-of-squares bound (400 x L per cup) beside the sum bound, with the same safe-integer assertion; the bound test covers both.
+  - Decide whether the backend loads `contracts/aggregation/v1/` directly at runtime or generates types from it (if generating, extend `backend/scripts/generate-contract.ts` and its `--check`); one runtime source, no copy of the ids or edges elsewhere.
 
 ### M3-T4 Plausibility rules (pure)
 - status: todo
@@ -1214,6 +1219,9 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - Beans below the minimum raters still get their aggregate item (so M4 can say "not enough raters yet" without a second read path), but no ranking entry; the read function of M3-T7 is the only gate.
   - Unit tests: a user with 3 cups of one bean on one day weighs 1/3 each and the day totals exactly one vote; two methods on one day give different n at bean and method level (state the numbers in the test); two users on the same bean give 2 raters; one user across 30 days gives 1 rater.
   - Exactness test: a hand-picked set whose naive floating-point mean would differ in the last digits gives an exact integer sum and the exact rational mean.
+  - Per criterion the sum of squares is kept as well; each optional part (buy-again, each intensity dimension, notes, each recipe histogram) carries its own distinct-rater count. Every item is stamped with the run day.
+  - The ranking facets are `all`, method, process, roast level, price band and origin (`RANK#ORIGIN#<id>`, by country; region beans roll up to their country; `blend`, `other`, `unknown` unranked). Origin, process and roast level rank only beans with operator-verified attributes. The price band facet uses weight groups (user, bean, band, day) and the 5-rater minimum within the band.
+  - Tests: the spread (mean and variance from sums) is exact against a BigInt reference; a bean with 5 raters of whom one logged buy-again carries a part count of 1.
 
 ### M3-T6 Oracle fixture and property tests for the rebuild
 - status: todo
@@ -1232,6 +1240,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
     - each plausibility rule: a brew rejected by the rule leaves the output equal to a history without it;
     - exact arithmetic: all sums are safe integers and the rational mean `sum / (L x votes)` matches a BigInt reference computation.
   - A test that the rebuild of an empty history is empty and does not throw.
+  - The oracle fixture includes a bean with 5 raters where only one carries buy-again and one intensity, with the part counts written out, and a price band case with weight groups per band.
 
 ### M3-T7 Repository: paged scan reader, aggregate persistence, single read path
 - status: todo
@@ -1245,6 +1254,9 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - Structural tests: (a) no file outside `backend/src/repository/` and `backend/src/aggregation/` mentions the aggregate or ranking key builders; (b) within the repository, only `readAggregate` reads aggregate keys; (c) nothing under `backend/src/aggregation/` or the job handler imports or reads `contracts/reference/` (ADR 0034).
   - The unused rater-marker key builder and its prefix are removed from `keys.ts`, and the comment "written by the aggregator, M3" is corrected.
   - DynamoDB Local tests: a scan over more than one page returns every relevant item once; an injected failure on page 2 returns nothing; the replace deletes stale items and is idempotent.
+  - The Scan also returns the existing aggregate and ranking items (skipped by no prefix), so the writer can compare. `replaceAggregates` writes only new or changed `AGG#` items (an unchanged one is rewritten only when its run-day stamp is 2 or more days behind), plus the deletes. Ranking items are keyed by the run day, so each night all are new and yesterday's are deleted (a cost bounded by ranked beans x facets); the changed-only rule does not apply to them. A test shows a second run on the same day with the same input writes nothing.
+  - `keys.ts` gains the origin ranking facet (`RANK#ORIGIN#<id>`).
+  - `readAggregate` withholds each optional part (buy-again, each intensity dimension, notes, each recipe histogram) whose own distinct-rater count is below 5, while returning the rest; tests at 4 and 5 for each part, with an item that has 5 overall raters and 1 for a part. It returns "not available" for an item with (UTC day of the read) - (stamp day) > `MAX_AGE_DAYS`, the stamp being the UTC day of the run's single run-time read (tests with an injected now: stamp day D, read on D+3 served, read on D+4 not available). M4 serves only rounded means, spreads and shares, never raw sums or weighted counts.
 
 ### M3-T8 Nightly job handler
 - status: todo
@@ -1254,10 +1266,11 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
 - acceptance:
   - `backend/src/handlers/nightly-aggregates.ts` (bundled like the other handlers): scan, then `rebuild`, then `replaceAggregates`. The run time is taken once at the start and passed in (no clock reads in the core).
   - Fail closed: if the scan, the rebuild (including the integer-bound assertion) or the write throws, the handler throws, so the run is reported as failed; when the scan fails, nothing is written (a test counts writes and asserts zero). No partial scan result ever reaches the writer.
-  - One structured log line per run with fixed keys only, no user ids and no free text: duration, items scanned, brews seen, brews counted, per-reason counts (every contract reason id present, zero included), beans with aggregates, beans ranked, and the share of the timeout used (for the scale trigger). A test fails if the line contains a user id or a bean id. Logs only: no custom CloudWatch metrics (they bill per metric).
+  - One structured log line per run with fixed keys only, no user ids and no free text: duration, items scanned, users seen (`users_seen`: the count of distinct users with a brew in the scan, a number only, so the owner can tell when the app passes 100 users, ADR 0035 Addendum 2), brews seen, brews counted, per-reason counts (every contract reason id present, zero included), beans with aggregates, beans ranked, and the share of the timeout used (for the scale trigger). A test fails if the line contains a user id or a bean id, and a test checks `users_seen` on a history with a known number of users (including users whose brews are all rejected, and an empty table giving 0). The numbers go to the log only: no custom CloudWatch metrics (they bill per metric). A failed run is announced by the alarms of M3-T9 (ADR 0035, Addendum 2026-11-27).
   - A dry-run event (`{ "dry_run": true }`) does the scan and the rebuild, logs the same line and writes nothing, so the owner can tune thresholds on dev data (M3-T15) without changing the table.
   - The handler takes no input that selects users or beans (invariant 3 does not apply to it, since it is not a user route, and a test shows an event carrying a user id is ignored).
   - Tests with a fake repository: success, scan failure, rebuild failure, write failure, dry run, an empty table.
+  - A test with an injected now using `readAggregate`: last success on day D, a read on D+3 is still served and a read on D+4 is "not available" (the scan failing on the nights between), so a withdrawn or deleted user's ratings stop being served.
 
 ### M3-T9 Infra: nightly schedule, permissions, timeout and memory
 - status: todo
@@ -1268,10 +1281,13 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
 - acceptance:
   - A Lambda `cupmark-<stage>-nightly-aggregates` (names, tags and the log group with retention as the other functions), eu-central-1, no VPC, timeout 300 seconds, memory 512 MB (both are stage constants in `infra/src/config.ts`, with a comment on how M3-T10 chose them), reserved and provisioned concurrency absent, one retry at most.
   - Its role: `dynamodb:Scan` on the table ARN only (no `index/*`, no `stream/*`), `dynamodb:BatchWriteItem` and `dynamodb:PutItem` and `DeleteItem` on the table ARN only, and the log permissions of the existing helper. No other permission, no `*` resource, nothing outside `cupmark-`. The role carries the boundary like the others.
-  - An EventBridge Scheduler schedule in the stack's `cupmark-<stage>-jobs` group, once a day at 02:00 UTC, with a flexible time window of 15 minutes, a role that may only `lambda:InvokeFunction` this function, and a dead-letter-free configuration (a failed run is visible in the Lambda's error metric and logs; no new queue). The schedule is created disabled on `prod` until the owner enables it (stage flag).
+  - An EventBridge Scheduler schedule in the stack's `cupmark-<stage>-jobs` group, once a day at 02:00 UTC, with a flexible time window of 15 minutes, a role that may only `lambda:InvokeFunction` this function, and a dead-letter-free configuration (no new queue; a failed run is visible in the logs and raises the alarm below). The schedule is created disabled on `prod` until the owner enables it (stage flag).
+  - Failure alarms (ADR 0035, Addendum 2026-11-27, owner decision; gated by ADR 0035 Addendum 2): a stage flag `failureAlarms: { enabled: boolean }` in `infra/src/config.ts`, default `false` for `dev` and `prod`. When `false` the stack creates no alarm and no topic. When `true`: two CloudWatch alarms per stage and an SNS topic `cupmark-<stage>-alerts`. Alarm 1: `AWS/Lambda` `Errors` for `cupmark-<stage>-nightly-aggregates`, Sum, `>= 1` over a 1-day period. Alarm 2: `Invocations`, Sum, `< 1` over a period of 25 hours (a named stage constant), treat-missing-data `breaching`; on `prod` it exists only while the schedule is enabled (same stage flag). Both alarm actions publish to the topic. Names start with `cupmark-<stage>-`, tagged `project=cupmark`. The topic policy allows only `cloudwatch.amazonaws.com` of this account to `sns:Publish` (conditioned on `cupmark-*` alarm ARNs). The stack creates no `AWS::SNS::Subscription` and holds no email address or phone number (invariant 8); the `AWS::SNS::Subscription` allowance in `infra/src/guards.ts` is removed so a subscription fails the guard.
+  - Boundary check: `scripts/aws/cupmark-boundary-policy.json` has no `cloudwatch:*` or `sns:*` action and none is needed (alarms and the topic are created by CloudFormation under `scripts/aws/cupmark-cfn-execution-policy.json`, which already allows `cloudwatch:*` and `sns:*` on `cupmark-*` alarm and topic ARNs only; the job's role never touches them). If the implementer finds the deploy needs an action that neither file allows, they list exactly which (for example `cloudwatch:PutMetricAlarm`, `sns:CreateTopic`, `sns:SetTopicAttributes`, `sns:TagResource`) in the task for the owner to add, as in the Scan note, and do not add one silently.
   - The stack no longer describes the stream as "for the aggregator": the `TableStreamArn` output description and the comment on the table's `stream` property are reworded; the `AWS::Lambda::EventSourceMapping` allowance in `infra/src/guards.ts` is removed or its reason updated, so a stream mapping now fails the guard. The assertion that the stream is enabled stays.
   - Assertion tests: the function's timeout and memory; the exact action list and resource of the role (Scan on the table ARN and nothing on indexes); the schedule expression and target; no event source mapping; no resource type that the forbidden list names; every resource is named `cupmark-` and tagged `project=cupmark`; `cdk synth` succeeds for `dev` and `prod`.
-  - infra/README.md documents the job, the dry-run event and how to disable the schedule.
+  - Alarm assertion tests, run for both flag states. Flag off: the template has no `AWS::CloudWatch::Alarm` and no `AWS::SNS::Topic`, and the default config of `dev` and `prod` is off. Flag on: both alarms exist with the `cupmark-<stage>-` prefix and the tag; the exact namespace, metric, dimension (the function name), statistic, period (86,400 and the 25-hour constant), threshold, comparison operator and evaluation periods; `TreatMissingData` is `breaching` on the Invocations alarm; both alarm actions are the topic and nothing else; the topic is named `cupmark-<stage>-alerts`; its policy allows only CloudWatch alarms to publish; there is no `AWS::SNS::Subscription` and no endpoint string (no `@`, no phone number) anywhere in the template; apart from the two alarms per stage, no resource with a monthly fee (counted against the forbidden list), and no custom metric. In both states the guard against `AWS::SNS::Subscription` stays.
+  - infra/README.md documents the job, the dry-run event, how to disable the schedule, the flag (turn it on in a pull request when `users_seen` or the Cognito console shows more than 100 users), the alarms, and the owner's one-time subscription step.
 
 ### M3-T10 Replay and load test of the rebuild
 - status: todo
@@ -1288,10 +1304,10 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - This test runs in the nightly or on-demand CI job, not on every pull request, if it takes more than 60 seconds; the workflow change is part of this task.
 
 ### M3-T11 Weekly export to S3
-- status: todo
+- status: done (code and tests; the owner's guardrail re-apply and first-run check below are open before the deploy in M3-T14)
 - owner: infra-engineer
 - depends: M1-T1
-- needs: human (the owner re-applies the guardrails if the scheduler role needs an action the boundary does not allow; `dynamodb:ExportTableToPointInTime` is already in the boundary, S3 write to the backup bucket must be checked before deploy)
+- needs: human (the boundary lacked `s3:AbortMultipartUpload` and `s3:PutObjectAcl`, which AWS lists for the caller of an export. This task adds the narrow statement `WeeklyTableExportWrites` for them on `arn:aws:s3:::cupmark-*-backups-*/exports/*` to `scripts/aws/cupmark-boundary-policy.json`. The owner reviews that diff, then runs `scripts/aws/apply-guardrails.sh` (dry run) and `scripts/aws/apply-guardrails.sh --apply` with an admin or SSO identity, not root, before M3-T14; agents never run it. After the first run the owner checks the real key layout under `exports/` (no trailing slash in the prefix) and fixes the restore paths in infra/README.md if needed. The schedule group `cupmark-<stage>-jobs` is created here; M3-T9 must reuse it, not create it again)
 - implements: docs/05-system-design.md, Persistence and recovery; unchanged from the earlier plan
 - acceptance:
   - A weekly EventBridge Scheduler schedule uses the universal target `ExportTableToPointInTime` (no Lambda) for the stage's table, writing to `cupmark-<stage>-backups-<account>` with a dated prefix, full export, DynamoDB JSON.
@@ -1306,10 +1322,12 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
 - implements: ADR 0035; docs/05-system-design.md; docs/07-open-questions.md D1, D2; docs/04-specification.md F4
 - acceptance:
   - docs/05: the components diagram and text no longer show a stream-driven aggregator (the nightly job replaces it); Data model drops the rater-marker row and describes the aggregate items as rebuilt nightly; "Aggregation pipeline" is rewritten (scan, filters, weights, cap, plausibility, write, failure rule, staleness, scale trigger); the TTL paragraph no longer says the aggregator ignores TTL deletes and tombstones.
-  - docs/07 D1: consent withdrawal removes the user's contributions from the community numbers at the next nightly run; re-consent counts all rated brews again; the personal log is untouched. D2: no subtraction; account deletion removes the user's brews and the next run no longer counts them. Both rows cite ADR 0035 and stay "decided by: lead (ADR 0014)".
+  - docs/07 D1: consent withdrawal removes the user's contributions from the community numbers at the next successful nightly run; re-consent counts all rated brews again; the personal log is untouched. D2: no subtraction; account deletion removes the user's brews and the next run no longer counts them. Both rows cite ADR 0035 and stay "decided by: lead (ADR 0014)".
   - docs/04 F4: every cup counts, one vote per bean per day (weights), at most 10 cups of a bean per day, automatic plausibility rules with the closed reason list, numbers are up to a day old.
-  - Privacy wording for M6 (privacy policy, App Privacy answers, companion page): "If you withdraw sharing, your ratings are removed from the community numbers at the next nightly update. Your own log is not changed." The M6 scope line in this file gets the same sentence.
+  - Privacy wording for M6 (privacy policy, App Privacy answers, companion page): "If you withdraw sharing, your ratings are removed from the community numbers at the next successful nightly update. Your own log is not changed." The M6 scope line in this file gets the same sentence.
   - A grep test or review check: no remaining doc says the aggregator subtracts, "counts only brews whose author had consent at write time", or "one rating per user-bean-day".
+  - The doc-grep test excludes `docs/decisions/` (ADR text is history: ADR 0034 says deleted brews "are subtracted (D2)").
+  - docs/05 data model lists the sum of squares per criterion, the run-day stamp and the per-part rater counts; docs/05 and docs/04 F4 say give-to-get is decided in M4 from the user's own shelf or brews (no rater marker); docs/06 and the "three small workers" text follow ADR 0035 point 14.
 
 ### M3-T13 Post-deploy checks for the nightly job
 - status: todo
@@ -1317,7 +1335,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
 - depends: M3-T9
 - implements: M1-T7 (`scripts/smoke/post-deploy-checks.sh`); ADR 0035
 - acceptance:
-  - `scripts/smoke/post-deploy-checks.sh <stage>` additionally checks, read-only: the function exists with the expected timeout, memory and no VPC; the schedule exists in `cupmark-<stage>-jobs`, has the expected expression and state; the function's role has no `dynamodb:*` and no wildcard resource (`iam get-role-policy` and `simulate-principal-policy` are not used: the check reads the policy and compares with the expected statements). It invokes nothing and writes nothing.
+  - `scripts/smoke/post-deploy-checks.sh <stage>` additionally checks, read-only: the function exists with the expected timeout, memory and no VPC; the schedule exists in `cupmark-<stage>-jobs`, has the expected expression and state; the function's role has no `dynamodb:*` and no wildcard resource (`iam get-role-policy` and `simulate-principal-policy` are not used: the check reads the policy and compares with the expected statements); only when the stage's `failureAlarms.enabled` is true: the two alarms exist and their state is readable (`cloudwatch describe-alarms`; `OK` or `INSUFFICIENT_DATA` is reported, `ALARM` fails the check), and the topic `cupmark-<stage>-alerts` exists (`sns get-topic-attributes`; it never lists or reads subscriber endpoints). It invokes nothing and writes nothing.
   - A flag `--dry-run-job` (off by default, used by the owner in M3-T15) invokes the function once with `{ "dry_run": true }`, prints its log line and fails on a function error or on a log line without the fixed keys. It never runs the writing job.
   - The script's tests (the existing harness with a stubbed `aws` command) cover the pass and each failure.
   - It touches only `cupmark-` resources (invariant 9), and a test fails if it names any other.
@@ -1331,6 +1349,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
 - acceptance:
   - The owner has re-applied `scripts/aws/apply-guardrails.sh` with the updated boundary, and the new stack changes of M3-T9 and M3-T11 appear in the `cdk diff` for `cupmark-dev-core` and no other stack or resource.
   - The owner approves and the deploy to dev succeeds; `scripts/smoke/post-deploy-checks.sh dev` passes.
+  - When `failureAlarms.enabled` is on (default off until more than 100 users, ADR 0035 Addendum 2), after the deploy the owner subscribes their own email address to the topic `cupmark-dev-alerts` (AWS console or `aws sns subscribe --protocol email`) and confirms the subscription mail. The address is typed by the owner only and is never written into the repository (invariant 8).
   - The prod stage is not deployed in M3.
 
 ### M3-T15 Owner checks the first dev runs and tunes thresholds
@@ -1343,6 +1362,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - A dry run on dev completes and logs every reason id; the share of the timeout used is recorded in the task.
   - After the first real scheduled run, the aggregate items exist for beans with data and no bean with fewer than 5 raters is readable through `readAggregate`.
   - A threshold change, if any, is a separate pull request through `backend-engineer` with its tests updated.
+  - When the flag is on (or temporarily on dev, if the owner wants to verify early, then turned off again), the owner triggers a test failure once on dev and confirms the alert mail arrives: invoke the function with a payload that makes the handler throw (a test-only event the handler of M3-T8 rejects, if the owner wants the real error path), or put the alarm in ALARM with `aws cloudwatch set-alarm-state --alarm-name cupmark-dev-<errors-alarm> --state-value ALARM --state-reason test` (the alarm returns to `OK` by itself at its next evaluation). The result is recorded in the task.
 
 ### M3-T16 Removed: stream aggregator, rater markers, difference-apply
 - status: removed (superseded by the nightly rebuild, 2026-11-26)
@@ -1350,7 +1370,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
 
 ### M3-T18 Removed: consent-change handling
 - status: removed (superseded by the nightly rebuild, 2026-11-26)
-- reason: withdrawal and re-consent are one profile write that the next nightly run applies; there is no consent-change task, no subtraction, no per-user recompute and no live-consent read.
+- reason: withdrawal and re-consent are one profile write that the next successful nightly run applies; there is no consent-change task, no subtraction, no per-user recompute and no live-consent read.
 
 ## M4 Paid tier
 
@@ -1362,7 +1382,7 @@ Scope: StoreKit 2 purchase and restore, transaction verification, App Store Serv
 
 Goal: ready for strangers. Not yet planned.
 
-Scope: App Attest, per-user write caps, budgets and alarms, operator CLI for the review queue and catalogue curation, restore drill from point-in-time recovery and from the S3 export, privacy review, performance against the 300 ms target, Swift 6 readiness (about 55 warnings today, mostly SwiftData `#Predicate` key paths that are not `Sendable`, plus test and sync isolation warnings).
+Scope: App Attest, per-user write caps, budgets and the other alarms (the nightly job's failure alarms and the `cupmark-<stage>-alerts` topic already exist from M3-T9, ADR 0035 Addendum 2026-11-27; M5 reuses that topic and decides each further alarm separately), operator CLI for the review queue and catalogue curation, restore drill from point-in-time recovery and from the S3 export, privacy review, performance against the 300 ms target, Swift 6 readiness (about 55 warnings today, mostly SwiftData `#Predicate` key paths that are not `Sendable`, plus test and sync isolation warnings).
 
 From M1-T4d (ADR 0016, D10): the operator CLI reads label photos from `labels/<photo_id>.jpg` (it needs `s3:GetObject` on `labels/*`) by following the bean's `PHOTO#` items. On verification it copies the photo to `verified/`, where it expires after 90 days, and removes the user-side `PHOTO#` link, so the verified photo is no longer tied to the user.
 
@@ -1370,7 +1390,9 @@ From M1-T4d (ADR 0016, D10): the operator CLI reads label photos from `labels/<p
 
 Goal: TestFlight, then App Store. Not yet planned. Mostly human tasks.
 
-Privacy wording (from M3, 2026-11-26): withdrawing sharing removes the user's ratings from the community numbers at the next nightly update, not from their own log; the privacy policy, the App Privacy answers and the companion page say so.
+Launch checklist (from M3, 2026-11-27): decide the `failureAlarms.enabled` flag before launch, and turn it on when the users exceed 100 (`users_seen` in the nightly log line or the Cognito console; ADR 0035 Addendum 2).
+
+Privacy wording (from M3, 2026-11-26): withdrawing sharing removes the user's ratings from the community numbers at the next successful nightly update, not from their own log; the privacy policy, the App Privacy answers and the companion page say so.
 
 Scope: App Store listing, screenshots, privacy nutrition labels, privacy policy and terms, TestFlight round with the persona interviews, production deployment, launch checklist.
 

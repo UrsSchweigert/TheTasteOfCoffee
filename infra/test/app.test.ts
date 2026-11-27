@@ -88,7 +88,10 @@ describe('the Cupmark app', () => {
         'AWS::Lambda::Permission': API_ROUTES.length,
         // api, health and the deploy-time apple-idp (ADR 0015).
         'AWS::Lambda::Function': 3,
-        'AWS::IAM::Role': 3,
+        'AWS::IAM::Role': 4,
+        // M3-T11: the weekly export: a role, a schedule group and a schedule, no Lambda.
+        'AWS::Scheduler::ScheduleGroup': 1,
+        'AWS::Scheduler::Schedule': 1,
         'AWS::Logs::LogGroup': 3,
         'Custom::CupmarkAppleIdentityProvider': 1,
       });

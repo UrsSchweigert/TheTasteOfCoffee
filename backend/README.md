@@ -9,7 +9,7 @@ Run in `backend/` with Node `^22.18.0` or 24 and later; `.npmrc` sets `engine-st
 | Command | What it does |
 | --- | --- |
 | `npm ci` | Install exactly what `package-lock.json` pins. |
-| `npm run generate` | Regenerate `src/generated/contract.ts` from `contracts/openapi.yaml`, `src/generated/vocabulary.ts` from the published versions in `contracts/vocabulary/` and the contract's `x-vocabulary*` tags, and `src/generated/export.ts` from the `x-csv-columns` and `x-csv-item-types` of `GET /export`. Commit the result. |
+| `npm run generate` | Regenerate `src/generated/contract.ts` from `contracts/openapi.yaml`, `src/generated/vocabulary.ts` from the published versions in `contracts/vocabulary/` and the contract's `x-vocabulary*` tags, `src/generated/export.ts` from the `x-csv-columns` and `x-csv-item-types` of `GET /export`, and `src/generated/aggregation.ts` from `contracts/aggregation/v1/` (reason ids, histogram buckets). Commit the result. |
 | `npm run check:generated` | Regenerate in memory and fail if a committed generated file differs. |
 | `npm run lint` | ESLint (typescript-eslint, strict type-checked, `any` banned) and `tsc --noEmit`. |
 | `npm test` | Vitest, unit tests only (no Docker needed). Includes the same no-drift check as `check:generated`. |
@@ -31,7 +31,8 @@ src/auth/user-id.ts    the caller's user id (`UserId`), from the token subject o
 src/repository/        the only module that talks to DynamoDB: key builders, typed reads and writes
 src/ids/ulid.ts        server-generated ids (ULIDs)
 src/contract/          runtime checks used by the generated schemas (dates, uniqueness)
-src/generated/         generated from contracts/ (contract.ts, vocabulary.ts, export.ts); never edit by hand
+src/aggregation/       nightly rebuild: config.ts (every threshold), arithmetic.ts (exact integer sums), age.ts (stamp age)
+src/generated/         generated from contracts/ (contract.ts, vocabulary.ts, export.ts, aggregation.ts); never edit by hand
 scripts/codegen/       the OpenAPI-to-zod generator
 scripts/               generate, check and build entry points
 test/                  Vitest unit tests; test/integration/ runs against DynamoDB Local

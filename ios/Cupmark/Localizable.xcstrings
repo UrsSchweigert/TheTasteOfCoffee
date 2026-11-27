@@ -2888,7 +2888,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Gesamt %1$@, bewertete Zubereitungen %2$@"
+            "value" : "Gesamt %1$@ (Zubereitungen: %2$@)"
           }
         },
         "en" : {
@@ -7046,7 +7046,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Alle Packungen %1$@, bewertete Zubereitungen %2$@"
+            "value" : "Alle Packungen %1$@ (Zubereitungen: %2$@)"
           }
         },
         "en" : {
