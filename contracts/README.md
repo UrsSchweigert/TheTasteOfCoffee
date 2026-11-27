@@ -7,6 +7,7 @@ Everything the app and the backend agree on. Owned by the `contract-keeper` agen
 - `vocabulary/schema/`: one JSON Schema per vocabulary file (`<name>.schema.json` for `<name>.json`), plus `common.schema.json` with the shared shapes.
 - `i18n/<lang>.json`: display labels for every id, German and English. Vocabulary files hold no display text.
 - `openapi.yaml`: the API, OpenAPI 3.1. See "The API" below.
+- `aggregation/v<N>/`: the plausibility reason ids and histogram buckets of the nightly aggregates, plus the aggregate item shapes (documented below). Not vocabulary, not API.
 - `lib/`, `test/`, `bin/`, `package.json`: the checks, the lock tool and the API lint (`bin/lint-openapi.mjs`, also run by `scripts/check-no-free-text.sh`). Run `npm ci && npm test` here (Node 22).
 
 ## Vocabulary v1
@@ -58,6 +59,48 @@ The rules in v3 (the D13 decision):
 
 A field that a method does not allow must be absent; the server answers 400 (M2-T5). `grinder` and `grind_setting` are new `BrewParameters` fields (`Grinder`, `GrindSetting`). `grind_setting` is a number from 0 to 240 in steps of 0.5, the widest scale, with `dependentRequired: { grind_setting: [grinder] }`; the server checks it against the scale of the grinder sent (M2-T5). A request that sends `grinder` must say `vocabulary_version` 3 or later. Both are export columns, after `grind_normalised`.
 
+## Aggregation contract (M3-T2, ADR 0035)
+
+`aggregation/v1/` holds what the nightly rebuild and its readers agree on besides the vocabulary. It sits outside `vocabulary/v<N>/` on purpose: it adds no vocabulary list, so no vocabulary version changes and no published version is edited. Backend code loads these files (or types generated from them); it never writes the ids or edges again. Not in `openapi.yaml`: no route returns aggregates in M3.
+
+| File | Holds | Schema |
+| --- | --- | --- |
+| `aggregation/v1/reasons.json` | The closed list of plausibility reason ids, in the order the rules run (ADR 0035 point 4): `no_consent`, `unrated`, `brewed_in_future`, `brewed_before_roast`, `burst`, `bag_dose_exceeded`, `straight_lining`, `daily_cap_exceeded` | `aggregation/schema/reasons.schema.json` |
+| `aggregation/v1/histogram_buckets.json` | The histogram buckets of the four recipe parameters of docs/04 F4: `ratio`, `grind_normalised`, `water_temp_c`, `brew_time_s` | `aggregation/schema/histogram_buckets.schema.json` |
+
+Checks live in `lib/aggregation.mjs` and run in `test/aggregation.test.mjs`. Both files are a closed list of ids and integers: no label, no text. Reason ids appear only in logs (M3-T8) and in the judge's result, never in the app, so they have no `i18n` labels; the i18n test covers vocabulary ids only. If a reason is ever shown to a person, add a labels namespace and a test then. Ids are stable forever and never reused; a new reason is a new id added at the end of the list with a new `aggregation/v<N+1>/` (copy, change, never edit `v1` once a backend has stored counts keyed by its ids).
+
+### Histogram buckets
+
+- A parameter has one or more `sets`. Each set names the `methods` it applies to and an ordered list of `buckets`. A method is in exactly one set per parameter. The sets of `water_temp_c` hold exactly the methods that the v3 `field_rules` allow (`cold_brew`, `moka_pot` and `cezve` have none); the other parameters cover all twelve methods. Ratio and brew time have sets per method group because espresso, filter, immersion and cold brew differ by an order of magnitude; the grind has one set because its rule does not differ by method.
+- A bucket is `{ id, from, to }` with integer edges in the parameter's scaled unit, `from` inclusive, `to` exclusive. Integers only, so the edges are exact (ADR 0004) and bucketing needs no floating point. The scale per parameter: `ratio` 10 (tenths of water per coffee, 15 is 1:1.5, 150 is 1:15), `grind_normalised` 2 (halves, so 1 to 10 is 2 to 20), `water_temp_c` 1, `brew_time_s` 1.
+- The ratio is derived, not stored on a brew: `100 x water_g` against `edge x dose_dg` (dose is in tenths of a gram), so a value is in a bucket when `100 x water_g >= from x dose_dg` and `100 x water_g < to x dose_dg`. Both sides are integers; there is no division. A cup with no water or no dose is not in the ratio histogram.
+- Buckets of a set are contiguous (each `from` is the previous `to`), do not overlap, and cover the vocabulary range of the field: the first bucket starts at the lowest value (ratio: 0), the last ends one step above the highest (ratio: above 3,000 tenths, the largest water over the smallest dose). The test derives these bounds from `vocabulary_version`.
+- Bucket ids are `<parameter>_<set>_from_<from>`, unique across the whole file, so one map can hold the buckets of every method group (the `AGG#ALL` item mixes methods). A cup that does not carry the parameter, or whose method has no set for it, adds to no bucket.
+- A change of any edge or set is a new `aggregation/v<N+1>/histogram_buckets.json`, never an edit of `v1` after a backend has used it. Removing or renaming an id is breaking and needs an ADR.
+
+### Aggregate item shapes
+
+Two item kinds, written only by the nightly rebuild and read only through `readAggregate` (ADR 0035 point 10): `AGG#ALL` (a bean, all methods) and `AGG#METHOD#<method>` (a bean and one method). Both have the same attributes, so one type serves both. Rankings (`RANK#<facet>`) hold ordered bean ids and the rater count of the facet, nothing else. Attribute names are snake_case. Every key of every map is an id from the vocabulary (criterion, intensity dimension, intensity level, flavour note, `yes`/`no`) or from `aggregation/v1/histogram_buckets.json`; every value is a non-negative integer; the only other string is `run_day`, an ISO date. No user id, no list of raters, no text.
+
+| Attribute | Shape | Meaning |
+| --- | --- | --- |
+| `run_day` | ISO date `YYYY-MM-DD` | UTC day of the run's single run-time read. A read on a day more than `MAX_AGE_DAYS` (3) after it is "not available" (ADR 0035 point 7a) |
+| `weight_denominator` | integer, 2520 (`L`) | Weights are `L / n`; stored so a reader can check the item |
+| `raters` | integer | Distinct users with at least one counted cup for the item (a count, never a list). The 5-rater threshold applies to it |
+| `criteria` | map `<criterion id>` to `{ weighted_count, sum, sum_of_squares }` | `weighted_count`: sum of weights of counted cups; `sum`: sum of weight x half-points (half-points are 2 to 20); `sum_of_squares`: sum of weight x half-points squared. All eight criteria are required on a rated cup, so each has the same `weighted_count` and needs no rater count of its own |
+| `intensities` | map `<dimension id>` to map `<level id>` to weighted count | Only cups that carry that dimension |
+| `notes` | map `<flavour note id>` to weighted count | Only cups that carry notes |
+| `buy_again` | `{ yes, no }`, weighted counts | Only cups that carry it (ADR 0026) |
+| `histograms` | map `<parameter>` to map `<bucket id>` to weighted count | Parameters of `histogram_buckets.json`; bucket ids from the file |
+| `raters_by_part` | `{ buy_again, notes, intensities: { <dimension id>: n }, histograms: { <parameter>: n } }` | Distinct users with at least one counted cup that carries that part. A reader withholds a part whose own count is below 5 (ADR 0035 point 10) |
+
+Notes:
+
+- Integers only. Per cup the bounds are 50,400 per `sum` and 1,008,000 per `sum_of_squares` (20 x 2520 and 400 x 2520). The builder asserts `Number.isSafeInteger` after every addition and fails the run on overflow (M3-T3). Mean and spread are computed on read, from integers, and never stored.
+- An item with no counted cup does not exist. A bean below 5 raters still has its item; it is stored, not served.
+- `run_day` is on every aggregate and ranking item. An unchanged `AGG#` item is rewritten only to refresh the stamp once it is 2 days behind the run (ADR 0035 point 8).
+
 ## File shapes
 
 Generators and tests rely on these rules.
@@ -83,6 +126,7 @@ Generators and tests rely on these rules.
 - Every method field rule names a method of its version and a `BrewParameters` field (including `grinder` and `grind_setting` from v3), never `method`; `grind_setting` is allowed only where `grinder` is.
 - A version directory holds nothing but vocabulary files, and every array is an id list.
 - `checkFieldRules` runs for every version from 3 on, and `lib/openapi.mjs` shares `isExactStep` with `lib/vocabulary.mjs`.
+- `aggregation/v1/` validates against its schemas; the reason ids are exactly the eight of ADR 0035; histogram buckets are contiguous, non-overlapping, cover the field ranges of the vocabulary version they name, name every method once per parameter (temperature only the methods whose field rule allows it), have unique ids and integer edges (`test/aggregation.test.mjs`).
 - A version marked `published` has a lock, and every file in it matches the lock byte for byte (CRLF is read as LF, so line endings cannot break it; `.gitattributes` also keeps `contracts/vocabulary/**` at LF). A changed, added or removed file fails, and so does a lock whose version directory is gone.
 
 ## Publishing a version

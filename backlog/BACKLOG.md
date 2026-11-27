@@ -1170,7 +1170,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - No code and no other doc changes in this task (docs follow in M3-T12).
 
 ### M3-T2 Contract: plausibility reason ids and histogram buckets
-- status: todo
+- status: done
 - owner: contract-keeper
 - depends: M3-T1
 - implements: ADR 0035; docs/04-specification.md, F4 (recipe parameters); docs/05-system-design.md, Data model (aggregate items); CLAUDE.md invariants 1 and 2
