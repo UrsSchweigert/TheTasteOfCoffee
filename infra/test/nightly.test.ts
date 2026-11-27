@@ -162,26 +162,24 @@ describe.each(STAGES)('stage %s, default settings', (stage) => {
     expect(ofType(all, 'AWS::SQS::Queue')).toEqual([]);
   });
 
-  it('gives the Scheduler a role that may only invoke this function, trusted for this schedule only', () => {
+  it('gives the Scheduler a role that may only invoke this function, trusted for this account only', () => {
     const doc = (schedulerRole?.Policies as { PolicyDocument: { Statement: Statement[] } }[])[0]?.PolicyDocument;
     expect(doc?.Statement).toEqual([
       { Sid: 'InvokeNightlyFunction', Effect: 'Allow', Action: 'lambda:InvokeFunction', Resource: { 'Fn::GetAtt': [fn?.[0], 'Arn'] } },
     ]);
-    expect(schedulerRole?.AssumeRolePolicyDocument).toMatchObject({
+    expect(schedulerRole?.AssumeRolePolicyDocument).toEqual({
+      Version: '2012-10-17',
       Statement: [
         {
+          Effect: 'Allow',
+          Action: 'sts:AssumeRole',
           Principal: { Service: 'scheduler.amazonaws.com' },
-          Condition: {
-            StringEquals: {
-              'aws:SourceAccount': { Ref: 'AWS::AccountId' },
-              'aws:SourceArn': {
-                'Fn::Join': ['', ['arn:aws:scheduler:eu-central-1:', { Ref: 'AWS::AccountId' }, `:schedule/cupmark-${stage}-jobs/${fnName}`]],
-              },
-            },
-          },
+          Condition: { StringEquals: { 'aws:SourceAccount': { Ref: 'AWS::AccountId' } } },
         },
       ],
     });
+    // Scheduler validates the role without the schedule ARN in context: no SourceArn here.
+    expect(JSON.stringify(schedulerRole?.AssumeRolePolicyDocument)).not.toContain('aws:SourceArn');
   });
 
   it('has no forbidden resource type, no subscription and only cupmark- names and project=cupmark tags', () => {

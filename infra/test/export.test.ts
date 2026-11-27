@@ -92,16 +92,13 @@ describe.each(STAGES)('stage %s', (stage) => {
           Action: 'sts:AssumeRole',
           Principal: { Service: 'scheduler.amazonaws.com' },
           Condition: {
-            StringEquals: {
-              'aws:SourceAccount': { Ref: 'AWS::AccountId' },
-              'aws:SourceArn': {
-                'Fn::Join': ['', ['arn:aws:scheduler:eu-central-1:', { Ref: 'AWS::AccountId' }, `:schedule/cupmark-${stage}-jobs/cupmark-${stage}-weekly-export`]],
-              },
-            },
+            StringEquals: { 'aws:SourceAccount': { Ref: 'AWS::AccountId' } },
           },
         },
       ],
     });
+    // Scheduler validates the role without the schedule ARN in context: no SourceArn here.
+    expect(JSON.stringify(role?.Properties.AssumeRolePolicyDocument)).not.toContain('aws:SourceArn');
     expect(JSON.stringify(role?.Properties.PermissionsBoundary)).toContain(':policy/CupmarkBoundary');
     expect(role?.Properties.ManagedPolicyArns).toBeUndefined();
   });

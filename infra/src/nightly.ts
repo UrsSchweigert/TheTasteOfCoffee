@@ -99,16 +99,11 @@ export class CupmarkNightly extends Construct {
       roleName,
       description: `Lets the Scheduler invoke ${fnName}`,
       assumedBy: new iam.ServicePrincipal('scheduler.amazonaws.com', {
-        // Confused-deputy guard: only this account, and only this one schedule.
+        // Account-only guard. Scheduler validates the role at create time without the schedule
+        // ARN in context, so an aws:SourceArn condition makes CreateSchedule fail. The role can
+        // only invoke this one function; the aws:SourceAccount condition remains.
         conditions: {
-          StringEquals: {
-            'aws:SourceAccount': Aws.ACCOUNT_ID,
-            'aws:SourceArn': Stack.of(this).formatArn({
-              service: 'scheduler',
-              resource: 'schedule',
-              resourceName: `${jobsGroupName(stage)}/${scheduleName}`,
-            }),
-          },
+          StringEquals: { 'aws:SourceAccount': Aws.ACCOUNT_ID },
         },
       }),
       inlinePolicies: {
