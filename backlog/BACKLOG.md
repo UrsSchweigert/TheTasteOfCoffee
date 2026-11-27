@@ -1288,7 +1288,11 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - `readAggregate` withholds each optional part (buy-again, each intensity dimension, notes, each recipe histogram) whose own distinct-rater count is below 5, while returning the rest; tests at 4 and 5 for each part, with an item that has 5 overall raters and 1 for a part. It returns "not available" for an item with (UTC day of the read) - (stamp day) > `MAX_AGE_DAYS`, the stamp being the UTC day of the run's single run-time read (tests with an injected now: stamp day D, read on D+3 served, read on D+4 not available). M4 serves only rounded means, spreads and shares, never raw sums or weighted counts.
 
 ### M3-T8 Nightly job handler
-- status: todo
+- status: in-review
+- built: `backend/src/handlers/nightly-aggregates.ts` (export `handler`, bundle `backend/dist/nightly-aggregates/index.mjs`, so the Lambda handler string for M3-T9 is `index.handler` and `BackendHandler` in `infra/src/functions.ts` needs the name `nightly-aggregates`); tests `backend/test/handlers/nightly-aggregates.test.ts`. Environment: `TABLE_NAME` (region from the Lambda runtime). `createNightlyHandler(deps)` is the testable core.
+- decision (duration and share): the wall clock is read once (the run time). Duration and share of the timeout come from `context.getRemainingTimeInMillis()` at start and end (share = used / remaining at start, which is the configured timeout), so M3-T9 needs no timeout environment variable.
+- decision (SDK retries): the client is created with `maxAttempts: 10` (`SDK_MAX_ATTEMPTS`) for throttled Scan pages.
+- decision (failure line): a failed run also logs one line with fixed keys (`status: FAILED`, `stage` scan, rebuild or write, the error class name, never its message) and rethrows.
 - owner: backend-engineer
 - depends: M3-T7
 - implements: ADR 0035; docs/05-system-design.md, Components (Jobs)
