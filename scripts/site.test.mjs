@@ -105,3 +105,14 @@ test('site: the privacy text says brew photos stay on the device and are never u
   assert.match(pages.en, /to photograph a label or a brew/);
   assert.match(pages.de, /um ein Etikett oder eine Zubereitung zu fotografieren/);
 });
+
+test('site: the privacy text follows the nightly rebuild of community averages (M2-T53, ADR 0035)', () => {
+  assert.match(pages.en, /all your rated brews count towards averages, including those made before you said yes/);
+  assert.match(pages.en, /removed from the community numbers at the next successful nightly update/);
+  assert.match(pages.en, /usually up to a day old; if the nightly update fails for more than three days, no averages are shown/);
+  assert.match(pages.de, /zählen alle Ihre bewerteten Zubereitungen mit, auch frühere/);
+  assert.match(pages.de, /bei der nächsten erfolgreichen nächtlichen Neuberechnung aus den Durchschnittswerten entfernt/);
+  assert.match(pages.de, /in der Regel bis zu einen Tag alt; schlägt die Neuberechnung länger als drei Tage fehl, werden keine Durchschnittswerte gezeigt/);
+  assert.doesNotMatch(pages.en, /subtracted from the averages|said yes when you wrote them/);
+  assert.doesNotMatch(pages.de, /herausgerechnet|beim Eintragen Ja gesagt/);
+});
