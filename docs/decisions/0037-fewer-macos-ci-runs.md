@@ -1,4 +1,4 @@
-# 0036 Fewer and shorter macOS CI runs
+# 0037 Fewer and shorter macOS CI runs
 
 - Status: accepted
 - Date: 2026-11-27
