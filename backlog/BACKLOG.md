@@ -1166,6 +1166,30 @@ Planning notes (planned 2026-11-25):
   - Not done, as follow-ups if the next run is still slow: one launch for several viewer tests (a launch screen that opens the gallery or the viewer directly), and typed element queries instead of `.any` descendants.
   - Mac: the `ios` job; `needs-mac-verification` until the run is green and the per-class sums are compared with the estimates above.
 
+### M2-T55 The mockup look: shared look and the title screen
+- status: todo
+- owner: ios-engineer
+- depends: M2-T54
+- implements: owner request of 2026-11-27 ("I made a mockup of the title screen; design the screens the app has to match the mockup"); extends the coffee look of M2-T41 (ADR 0032)
+- reference: `docs/design/title-screen-mockup.webp` (the owner's mockup of the title screen, German) and the promo art in `site/assets/promo/` (`marble.jpg` page background, `crema.jpg` button texture, `cup.svg`; AI-generated for Cupmark, rights in its README, marketing material that the app may reuse). The mockup is a picture of the intended look, not a pixel specification: match its mood and structure, keep what the app already does.
+- what the mockup shows: a dark marble background; the app icon and the name "Cupmark" at the top; a shelf with a horizontal carousel of bag tiles (the first tile "Packung scannen", then the user's bags, previous and next arrows, page dots); two large pill buttons with a crema texture ("Cup Shot" with a camera, "Brew hinzufügen"); a section "Dein Regal" with a bean glyph and a rounded card per bag (photo, name, "Gesamt 6,9 (Zubereitungen: 4)", roast date or "Kein Röstdatum", brew count, chevron); a row of four photo tiles (the last four brew photographs); a bottom bar "Statistik | Einstellungen". Colours: espresso browns, cream, amber.
+- acceptance:
+  - A design pass first, written down in `docs/design/` (short, with the tokens): the shared look as Theme tokens (marble background, crema pill button style, card style, section header with the bean glyph, shelf carousel tile, bottom bar), light and dark, and for every screen of the app (list them) what changes. The marble and crema images go into the asset catalogue (check the app size; one image set each, JPEG, no text in any image).
+  - Implement the shared look and the title screen (home) to match the mockup: the carousel with the scan tile first and the user's bags, the two pill buttons, "Dein Regal" with cards that keep today's content and navigation, the bottom bar with Statistik and Einstellungen. Every existing identifier, route and behaviour stays (the UI tests keep passing unchanged unless a layout moved an element, then the test follows the element and keeps its assertion).
+  - The two other elements of the mockup are existing product functions (owner, 2026-11-27): **"Cup Shot"** is the "take a picture of a brew" function (M2-T42b), reachable from the title screen; **the four tiles** are the last four photographs taken (the brew photos stored on the device, M2-T42, newest first). Build them as such, with no new data and no network: the tiles read the device's photo store, show fewer than four when there are fewer (nothing when there are none, no placeholder pictures of coffee), and a tap opens that photo in the brew photo viewer (M2-T43b; the tap target is the lead's assumption, confirm it in the pull request). Cup Shot opens the camera flow of M2-T42b; which brew the picture belongs to when it is started from the title screen is the one open point: default to the brew just added or, if none today, the newest brew, with a way to choose another, and say so in the pull request. Photos stay device-only (owner decision, no upload).
+  - No regressions of the standing rules: text on the marble and on the pills passes the contrast check (`scripts/check-ios-colours.mjs`, 4.5:1, both appearances; use scrims where needed), Dynamic Type up to the accessibility sizes (no clipped or overlapping text), VoiceOver labels and order, Reduce Motion and Reduce Transparency, 44-point targets; all strings from the catalogue, en and de (the mockup is German; check the German strings match), nothing typed; the carousel works without the arrows (swipe, VoiceOver adjustable action).
+  - Mac: the `ios` job; `needs-mac-verification` until it passes. Also check on a device (the owner) and attach screenshots to the pull request. Serialize with other iOS pull requests.
+
+### M2-T56 The mockup look on the other screens
+- status: todo
+- owner: ios-engineer
+- depends: M2-T55
+- implements: owner request of 2026-11-27 (every screen of the app matches the mockup look)
+- acceptance:
+  - Apply the shared look from M2-T55 to every other screen, following the list and the per-screen notes in `docs/design/`: bag screen (with its averages section and method switcher), brew form, rating screen (sliders and markers), brew list, brew photo gallery and viewer, recipes and starting points, statistics, settings, onboarding and consent, lookup and confirm flow, sync issues. The planner may split this into several pull requests of a few screens each; each pull request is one macOS run, so keep them few and serialize them.
+  - The same standing rules as M2-T55 (contrast, Dynamic Type, VoiceOver, strings, identifiers and behaviour unchanged, no new typed input). Forms and long lists stay plain and readable: the marble goes behind the screen, not behind dense text.
+  - Mac: the `ios` job; `needs-mac-verification` until it passes, and the owner's device check.
+
 ## M3 Aggregation
 
 Goal: community aggregates per bean and per method, and the rankings, are rebuilt every night from the source of truth, so they converge on create, edit, delete, consent change and account deletion with no incremental bookkeeping. A failed run changes nothing.
