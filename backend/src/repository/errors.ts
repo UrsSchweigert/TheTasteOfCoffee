@@ -101,3 +101,8 @@ export class AccountDeletedError extends RepositoryError {
 export class DeletionIncompleteError extends RepositoryError {
   public override readonly name = 'DeletionIncompleteError';
 }
+
+/** The write of the nightly rebuild left requests unprocessed after its retries. The run fails; the next night repairs it. */
+export class AggregateWriteIncompleteError extends RepositoryError {
+  public override readonly name = 'AggregateWriteIncompleteError';
+}
