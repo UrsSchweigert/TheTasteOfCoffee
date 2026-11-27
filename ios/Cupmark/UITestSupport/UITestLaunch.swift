@@ -1,5 +1,6 @@
 #if DEBUG
 import Foundation
+import UIKit
 
 /// The launch argument of the UI tests (M2-T33): `-CupmarkUITestScreen <screen>` starts the app
 /// on one screen with an in-memory store, fixture data and a stub API (`UITestHarness`). No
@@ -12,6 +13,10 @@ import Foundation
 struct UITestLaunch: Equatable, Sendable {
     /// The argument's name. The next argument is the screen's raw value.
     static let argument = "-CupmarkUITestScreen"
+    /// Optional second argument (M2-T54): no animations in this launch. Transitions, sheets and
+    /// the system's own animations then end at once, so the UI test waits for no animation to
+    /// settle before the next query. Without it the app animates as always.
+    static let disableAnimationsArgument = "-CupmarkUITestDisableAnimations"
 
     /// The screens the UI tests audit (M2-T33 acceptance) and the other start states.
     enum Screen: String, CaseIterable, Sendable {
@@ -44,6 +49,8 @@ struct UITestLaunch: Equatable, Sendable {
     }
 
     let screen: Screen
+    /// Whether the launch asked for no animations (`disableAnimationsArgument`).
+    let animationsDisabled: Bool
 
     /// The launch of `arguments` (`ProcessInfo.processInfo.arguments`), nil without the
     /// argument or with a value that names no screen; the app then starts as it always does.
@@ -56,6 +63,16 @@ struct UITestLaunch: Equatable, Sendable {
             return nil
         }
         self.screen = screen
+        self.animationsDisabled = arguments.contains(UITestLaunch.disableAnimationsArgument)
+    }
+
+    /// Turns the UIKit animations off when the launch asked for it (the SwiftUI ones are turned
+    /// off by `UITestRootView`). Called once, on the main actor, from the root view's `.task` (after the first frame, before the screen is made).
+    @MainActor
+    func applyAnimationSetting() {
+        if animationsDisabled {
+            UIView.setAnimationsEnabled(false)
+        }
     }
 }
 #endif

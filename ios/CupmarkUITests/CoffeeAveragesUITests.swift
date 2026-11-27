@@ -14,14 +14,7 @@ final class CoffeeAveragesUITests: XCTestCase {
 
     @MainActor
     private func launchShelf() -> XCUIApplication {
-        let app = XCUIApplication()
-        app.launchArguments = [
-            "-CupmarkUITestScreen", "shelf",
-            "-AppleLanguages", "(en)",
-            "-AppleLocale", "en_US",
-        ]
-        app.launch()
-        return app
+        UITestKit.launch(screen: "shelf")
     }
 
     /// The first element with `identifier`, whatever its type (SwiftUI picks the type).
@@ -39,26 +32,12 @@ final class CoffeeAveragesUITests: XCTestCase {
         add(attachment)
     }
 
-    /// Scrolls `element` into the middle band of the window and returns whether it got there.
+    /// Scrolls `element` into the middle band of the window and returns whether it is on screen
+    /// and can be tapped. Stops at the end of the scroll (`UITestKit.scrollToMiddle`), where an
+    /// element at the end of a list cannot reach the middle, instead of swiping on 25 times.
     @MainActor
-    private func scrollToMiddle(_ element: XCUIElement, in app: XCUIApplication, attempts: Int = 25) -> Bool {
-        let window = app.windows.firstMatch.frame
-        for _ in 0..<attempts {
-            if element.exists && element.isHittable {
-                let middle = element.frame.midY
-                if middle > window.height * 0.15 && middle < window.height * 0.8 {
-                    return true
-                }
-                if middle >= window.height * 0.8 {
-                    app.swipeUp(velocity: .slow)
-                } else {
-                    app.swipeDown(velocity: .slow)
-                }
-            } else {
-                app.swipeUp()
-            }
-        }
-        return element.exists && element.isHittable
+    private func scrollToMiddle(_ element: XCUIElement, in app: XCUIApplication, attempts: Int = 15) -> Bool {
+        UITestKit.scrollToMiddle(element, in: app, band: 0.15...0.8, attempts: attempts)
     }
 
     /// Opens the shelf's bags one after the other until one shows the element with
@@ -122,7 +101,10 @@ final class CoffeeAveragesUITests: XCTestCase {
                 }
             }
             idleSwipes = seen.count == before ? idleSwipes + 1 : 0
-            app.swipeUp()
+            // The end of the list is a swipe that moves nothing: every row was read by then.
+            if !UITestKit.swipeUpIfPossible(app) {
+                break
+            }
         }
         if seen.count < 8 {
             attachDiagnostics(app, "rows seen: \(seen)")
