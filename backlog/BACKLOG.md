@@ -1130,7 +1130,7 @@ Planning notes (planned 2026-11-25):
   - VoiceOver, Dynamic Type, en and de strings (existing keys reused), no typed text. Mac: the `ios` job; `needs-mac-verification` until it passes.
 
 ### M2-T52 The bag's averages: one section with a method switcher
-- status: needs-mac-verification (written on Linux; Swift, XCTest and the UI tests have not run)
+- status: done (#111; macOS run green)
 - owner: ios-engineer
 - depends: M2-T44, M2-T50
 - implements: owner feedback of 2026-11-26 (the bag screen still has two kinds of rating sections, one over all ratings and one more per method; the owner wants ONE section with a drop-down switcher, "All methods" or one specific method); ADR 0027 addendum M2-T52
@@ -1142,7 +1142,7 @@ Planning notes (planned 2026-11-25):
   - The numbers come from `CoffeeAverages.methods`, no second implementation. Tests: unit tests of the options, the fallback, "All" equals the unfiltered rows, a method equals its entry; a UI test with the harness that picks a method and sees the count change and the per-method sections gone. Mac: the `ios` job; `needs-mac-verification` until it passes.
 
 ### M2-T53 Consent texts follow the nightly rebuild
-- status: needs-mac-verification
+- status: done (#127; macOS run green)
 - owner: ios-engineer
 - depends: M2-T29
 - implements: owner decision of 2026-11-26/27 (ADR 0035): withdrawing sharing removes the user's ratings from the community numbers at the next successful nightly update, the personal log is untouched; re-consent counts all rated brews again, ratings made before the first consent too; deleting a brew or the account removes its ratings at the next successful nightly update; community numbers are up to about a day old
@@ -1152,7 +1152,7 @@ Planning notes (planned 2026-11-25):
   - `scripts/check-ios-strings.mjs` passes. Mac: the `ios` job; `needs-mac-verification` until it passes.
 
 ### M2-T54 Faster UI tests on the macOS runner
-- status: needs-mac-verification
+- status: done (#134; macOS run green, the `ios` job 20.5 min against about 31; per-class sums not yet compared with the estimates)
 - owner: ios-engineer
 - depends: M2-T52
 - implements: owner request of 2026-11-27 (the macOS CI runs are too slow). Measured on the last green run: the `ios` job's Test step took 35.5 minutes and the 32 UI test cases summed to 1,666 s: `BrewPhotoViewerUITests` 584 s (5 tests), `BrewPhotoUITests` 407 s (2), `StatisticsMethodPickerUITests` 172 s (1), the accessibility tests 142 s (14), `CoffeeAveragesSwitcherUITests` 77 s, `CoffeeAveragesUITests` 70 s (2), `StartingPointsUITests` 69 s, `AveragesInContextUITests` 65 s (3).
@@ -1295,7 +1295,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - The per-rule property "a brew rejected by the rule leaves the output equal to a history without it" is stated per rule and holds for rules 1 to 5 only (no consent, unrated, future, before roast, burst). It does not hold for bag dose (a dose reject still holds a place in the burst window), straight-lining (judges the whole history) or the daily cap (a cap reject still used the bag in rule 6); those three are tested with explicit examples instead.
 
 ### M3-T7 Repository: paged scan reader, aggregate persistence, single read path
-- status: in-review (code and tests; the DynamoDB Local suite test/integration/aggregates.test.ts is written but was not run in the sandbox, no Docker)
+- status: done (merged; the DynamoDB Local suite runs in the backend CI job)
 - owner: backend-engineer
 - decision: undecodable OLD `AGG#`/`RANK#` items do not fail the Scan (kept as key-only entries, then overwritten or deleted; `readAggregate` still throws `CorruptItemError` on them) because failing would block the run that repairs them. A deliberate departure from the literal ADR 0035 point 7 text.
 - M4 note: map `CorruptItemError` to a generic 500 that carries nothing about the bean. The threshold is per part (ADR 0035 point 10), so a served note, intensity or bucket may come from one user among 5 or more raters; per-value suppression, if wanted, is an M4 decision.
@@ -1314,7 +1314,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - `readAggregate` withholds each optional part (buy-again, each intensity dimension, notes, each recipe histogram) whose own distinct-rater count is below 5, while returning the rest; tests at 4 and 5 for each part, with an item that has 5 overall raters and 1 for a part. It returns "not available" for an item with (UTC day of the read) - (stamp day) > `MAX_AGE_DAYS`, the stamp being the UTC day of the run's single run-time read (tests with an injected now: stamp day D, read on D+3 served, read on D+4 not available). M4 serves only rounded means, spreads and shares, never raw sums or weighted counts.
 
 ### M3-T8 Nightly job handler
-- status: in-review
+- status: done (merged; handler tests and the DynamoDB Local suite green in CI)
 - built: `backend/src/handlers/nightly-aggregates.ts` (export `handler`, bundle `backend/dist/nightly-aggregates/index.mjs`, so the Lambda handler string for M3-T9 is `index.handler` and `BackendHandler` in `infra/src/functions.ts` needs the name `nightly-aggregates`); tests `backend/test/handlers/nightly-aggregates.test.ts`. Environment: `TABLE_NAME` (region from the Lambda runtime). `createNightlyHandler(deps)` is the testable core.
 - decision (duration and share): the wall clock is read once (the run time). Duration and share of the timeout come from `context.getRemainingTimeInMillis()` at start and end (share = used / remaining at start, which is approximately the configured timeout), so M3-T9 needs no timeout environment variable.
 - decision (SDK retries): the client is created with `maxAttempts: 10` (`SDK_MAX_ATTEMPTS`) for throttled Scan pages.
@@ -1350,7 +1350,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - infra/README.md documents the job, the dry-run event, how to disable the schedule, the flag (turn it on in a pull request when `users_seen` or the Cognito console shows more than 100 users), the alarms, and the owner's one-time subscription step.
 
 ### M3-T10 Replay and load test of the rebuild
-- status: in-review (CI step open)
+- status: done (#135: the replay tests run in the backend CI job against DynamoDB Local)
 - owner: backend-engineer
 - follow-up: the code and tests exist (in-memory half run; the DynamoDB Local half and the 60 s budget on a CI runner have not run). Add the CI step to the backend job after the integration step: `Replay and load test (DynamoDB Local)`, env `DYNAMODB_ENDPOINT: http://localhost:8000` and `REQUIRE_DYNAMODB_LOCAL: "1"`, run `npm run test:replay` (about 20 s), together with the docs-rebuild test step, in one small ci.yml change after #122 merges. The task is done when that step has passed in CI.
 - depends: M3-T8
@@ -1408,7 +1408,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - It touches only `cupmark-` resources (invariant 9), and a test fails if it names any other.
 
 ### M3-T14 Owner dev deploy of the nightly job
-- status: blocked
+- status: todo (owner: dev deploy; agents never run cdk deploy)
 - owner: human
 - needs: human (the owner re-applies the guardrails with the `dynamodb:Scan` change from M3-T9, approves and runs the dev deploy; agents never run `cdk deploy`)
 - depends: M3-T9, M3-T11
@@ -1420,7 +1420,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - The prod stage is not deployed in M3.
 
 ### M3-T15 Owner checks the first dev runs and tunes thresholds
-- status: blocked
+- status: todo (owner: after the first dev runs)
 - owner: human
 - needs: human (the owner runs `scripts/smoke/post-deploy-checks.sh dev --dry-run-job`, reads the per-reason counts and the share of the timeout used, and decides whether to change a bound in `backend/src/aggregation/config.ts`)
 - depends: M3-T13, M3-T14
