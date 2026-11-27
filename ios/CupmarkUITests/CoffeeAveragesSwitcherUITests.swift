@@ -78,9 +78,17 @@ final class CoffeeAveragesSwitcherUITests: XCTestCase {
         }
         XCTAssertTrue(picker.label.contains("Method"), "the picker has a label: \(picker.label)")
 
-        let count = element("coffee-averages-count", in: app)
-        XCTAssertTrue(count.waitForExistence(timeout: 10), "the count is shown")
+        // A list builds only the rows near the window: scroll to the count (right under the
+        // picker) before reading it, then make sure the picker can be tapped.
+        guard let count = scrollTo("coffee-averages-count", in: app) else {
+            attachDiagnostics(app, "missing: the count of all methods")
+            XCTFail("the count is not shown")
+            return
+        }
         XCTAssertTrue(count.label.contains("4"), "all methods count every rated brew: \(count.label)")
+        for _ in 0..<3 where !picker.isHittable {
+            app.swipeDown()
+        }
 
         picker.tap()
         // The identifier may not survive on a menu item: fall back to the first menu button
