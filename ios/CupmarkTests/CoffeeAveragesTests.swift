@@ -318,4 +318,55 @@ final class CoffeeAveragesTests: XCTestCase {
         )
         XCTAssertEqual(result.ratedBrews, 1)
     }
+
+    // MARK: - The method switcher (M2-T52)
+
+    private func twoMethodBrews() throws -> [StatisticsBrew] {
+        let first = try method(0)
+        let second = try method(1)
+        return [
+            brew(in: bag, method: first, rating: rating(8)),
+            brew(in: bag, method: first, rating: rating(6)),
+            brew(in: bag, method: second, rating: rating(2)),
+            brew(in: bag, method: second, rating: rating(4)),
+            brew(in: bag, method: try method(2), rating: rating(9)),
+        ]
+    }
+
+    func testTheSwitcherOffersAllAndEachMethodWithEnoughRatedBrewsInVocabularyOrder() throws {
+        let result = averages(try twoMethodBrews())
+        XCTAssertEqual(result.choices, [.all, .method(try method(0)), .method(try method(1))], "the third method has one brew only")
+        XCTAssertEqual(averages([]).choices, [.all])
+        XCTAssertEqual(averages([brew(in: bag, method: try method(0), rating: rating(5))]).choices, [.all], "no method qualifies: no switcher")
+    }
+
+    func testAllEqualsTheUnfilteredRowsAndCount() throws {
+        let result = averages(try twoMethodBrews())
+        let shown = result.shown(for: .all)
+        XCTAssertEqual(shown.rows, result.rows)
+        XCTAssertEqual(shown.ratedBrews, result.ratedBrews)
+        XCTAssertEqual(shown.ratedBrews, 5)
+    }
+
+    func testAMethodShowsThatMethodsEntry() throws {
+        let result = averages(try twoMethodBrews())
+        let chosen = try method(1)
+        let entry = try XCTUnwrap(result.methods.first { $0.method == chosen })
+        let shown = result.shown(for: .method(chosen))
+        XCTAssertEqual(shown.rows, entry.rows)
+        XCTAssertEqual(shown.ratedBrews, entry.ratedBrews)
+        XCTAssertEqual(shown.ratedBrews, 2)
+        XCTAssertEqual(try XCTUnwrap(shown.rows.first).mean, 3, accuracy: 0.0001)
+    }
+
+    func testAMethodThatVanishesFallsBackToAll() throws {
+        var brews = try twoMethodBrews()
+        let chosen = CoffeeAveragesChoice.method(try method(1))
+        XCTAssertEqual(averages(brews).resolved(chosen), chosen)
+        // One of its two brews is removed: it drops below the threshold.
+        brews[2] = brew(in: bag, method: try method(1), rating: rating(2), removed: true)
+        let after = averages(brews)
+        XCTAssertEqual(after.resolved(chosen), .all)
+        XCTAssertEqual(after.shown(for: chosen), after.shown(for: .all))
+    }
 }
