@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { REASON_IDS } from '../../src/generated/aggregation.ts';
 import type { RebuildResult } from '../../src/aggregation/rebuild/types.ts';
-import { SDK_MAX_ATTEMPTS, createNightlyHandler, handler as entryPoint } from '../../src/handlers/nightly-aggregates.ts';
+import { SDK_MAX_ATTEMPTS, createNightlyHandler, newDynamoClient, handler as entryPoint } from '../../src/handlers/nightly-aggregates.ts';
 import type { NightlyStore } from '../../src/handlers/nightly-aggregates.ts';
 import { AggregateRepository } from '../../src/repository/index.ts';
 import { BEAN, BREWED_MS, OTHER_BEAN, RUN_MS, brewItem, profileItem, seedCrowd, shelfItem, sub, ulid } from '../repository/aggregate-fixtures.ts';
@@ -36,7 +36,8 @@ function harness(table: FakeTable, o: { runMs?: number; usedMs?: number; store?:
     ...(o.rebuild === undefined ? {} : { rebuild: o.rebuild }),
   });
   return {
-    run: (event: unknown = {}) => {
+    run: (...args: [event?: unknown]) => {
+      const event: unknown = args.length === 0 ? {} : args[0];
       let calls = 0;
       return handle(event, { getRemainingTimeInMillis: () => (calls++ === 0 ? TIMEOUT_MS : TIMEOUT_MS - (o.usedMs ?? 0)) });
     },
@@ -348,7 +349,8 @@ describe('the entry point', () => {
     expect(JSON.parse(String(logs[0]))).toEqual({ operation: 'nightly-aggregates', status: 'FAILED', stage: 'configuration', error: 'TableNameMissing' });
   });
 
-  it('sets the SDK retry attempts for a throttled Scan above the default of 3', () => {
+  it('builds the SDK client with SDK_MAX_ATTEMPTS, above the default of 3', async () => {
     expect(SDK_MAX_ATTEMPTS).toBeGreaterThan(3);
+    expect(await newDynamoClient().config.maxAttempts()).toBe(SDK_MAX_ATTEMPTS);
   });
 });

@@ -20,7 +20,6 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { utcDay } from '../aggregation/age.ts';
 import { rebuild as rebuildAggregates } from '../aggregation/rebuild/rebuild.ts';
 import type { AggregateItem, RankingItem, RebuildInput, RebuildResult } from '../aggregation/rebuild/types.ts';
-import { ENV } from '../api/config.ts';
 import { REASON_IDS } from '../generated/aggregation.ts';
 import { AggregateRepository } from '../repository/index.ts';
 import type { ExistingAggregates, RebuildScan, WriteReport } from '../repository/index.ts';
@@ -32,6 +31,14 @@ import type { ExistingAggregates, RebuildScan, WriteReport } from '../repository
  * Scan). A page that still fails fails the run (ADR 0035 point 7).
  */
 export const SDK_MAX_ATTEMPTS = 10;
+
+/** Environment variable with the table name (the same name as ENV.tableName of the API; not imported, since src/api/config.ts pulls the SSM client into this bundle). */
+const TABLE_NAME_VARIABLE = 'TABLE_NAME';
+
+/** The SDK client of the job, with the retry attempts for throttled Scan pages. */
+export function newDynamoClient(): DynamoDBClient {
+  return new DynamoDBClient({ maxAttempts: SDK_MAX_ATTEMPTS });
+}
 
 /** What the job needs from the aggregate repository (the real `AggregateRepository` fits). */
 export interface NightlyStore {
@@ -81,8 +88,11 @@ export function createNightlyHandler(deps: NightlyDependencies): (event: unknown
     const runTimeMs = deps.now();
     let stage: Stage = 'scan';
 
-    const elapsedMs = (): number => Math.max(0, startRemainingMs - context.getRemainingTimeInMillis());
-    const shareOfTimeout = (): number => (startRemainingMs > 0 ? round3(elapsedMs() / startRemainingMs) : 0);
+    /** One read of the remaining time gives both numbers, so they always agree. */
+    const timing = (): { duration_ms: number; share_of_timeout: number } => {
+      const duration = Math.max(0, startRemainingMs - context.getRemainingTimeInMillis());
+      return { duration_ms: duration, share_of_timeout: startRemainingMs > 0 ? round3(duration / startRemainingMs) : 0 };
+    };
 
     try {
       const scan = await deps.store.scanForRebuild();
@@ -103,8 +113,7 @@ export function createNightlyHandler(deps: NightlyDependencies): (event: unknown
           operation: 'nightly-aggregates',
           status: 'OK',
           dry_run: dryRun,
-          duration_ms: elapsedMs(),
-          share_of_timeout: shareOfTimeout(),
+          ...timing(),
           items_scanned: scan.itemsScanned,
           users_seen: result.counts.users_seen,
           brews_seen: result.counts.brews_seen,
@@ -125,10 +134,12 @@ export function createNightlyHandler(deps: NightlyDependencies): (event: unknown
           dry_run: dryRun,
           stage,
           error: errorName(error),
-          duration_ms: elapsedMs(),
-          share_of_timeout: shareOfTimeout(),
+          ...timing(),
         }),
       );
+      // The Lambda runtime also logs the error's own message and stack. So error
+      // messages in the repository and arithmetic code must stay fixed text
+      // without values (see src/repository/errors.ts).
       throw error;
     }
   };
@@ -138,12 +149,12 @@ let configured: ((event: unknown, context: NightlyContext) => Promise<void>) | u
 
 export async function handler(event: unknown, context: NightlyContext): Promise<void> {
   if (configured === undefined) {
-    const tableName = process.env[ENV.tableName] ?? '';
+    const tableName = process.env[TABLE_NAME_VARIABLE] ?? '';
     if (tableName === '') {
       console.log(JSON.stringify({ operation: 'nightly-aggregates', status: 'FAILED', stage: 'configuration', error: 'TableNameMissing' }));
       throw new Error('TABLE_NAME is not set');
     }
-    const client = DynamoDBDocumentClient.from(new DynamoDBClient({ maxAttempts: SDK_MAX_ATTEMPTS }));
+    const client = DynamoDBDocumentClient.from(newDynamoClient());
     configured = createNightlyHandler({
       store: new AggregateRepository({ client, tableName }),
       now: () => Date.now(),
