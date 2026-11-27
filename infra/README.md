@@ -103,7 +103,7 @@ An EventBridge Scheduler schedule calls DynamoDB's `ExportTableToPointInTime` di
 | Group, schedule | `cupmark-<stage>-jobs`, `cupmark-<stage>-weekly-export` |
 | When | `cron(0 3 ? * SUN *)` in UTC, no flexible window, two retries (the `ClientToken` is the scheduled time, identical on every retry of one run, so a retry should not start a second export; to be verified on the first run). Enabled on both stages. |
 | Request | `FULL_EXPORT`, `DYNAMODB_JSON`, bucket `cupmark-<stage>-backups-<account>`, prefix `exports/<scheduled time, ISO 8601>` (no trailing slash). DynamoDB adds `AWSDynamoDB/<export id>/` below it: `manifest-summary.json`, `manifest-files.json` and `data/*.json.gz`. |
-| Role | `cupmark-<stage>-export-scheduler`, trusted by `scheduler.amazonaws.com` for this account and this one schedule only (`aws:SourceAccount` and `aws:SourceArn`), with the boundary. `dynamodb:ExportTableToPointInTime` on the table ARN; `s3:AbortMultipartUpload`, `s3:PutObject`, `s3:PutObjectAcl` on `<backup bucket>/exports/*`. Nothing else. |
+| Role | `cupmark-<stage>-export-scheduler`, trusted by `scheduler.amazonaws.com` for this account only (`aws:SourceAccount`; no `aws:SourceArn`, see ADR 0035), with the boundary. `dynamodb:ExportTableToPointInTime` on the table ARN; `s3:AbortMultipartUpload`, `s3:PutObject`, `s3:PutObjectAcl` on `<backup bucket>/exports/*`. Nothing else. |
 | Lifecycle | The backup bucket moves objects to Glacier Flexible Retrieval after 30 days and expires them after 365 (see Buckets). |
 
 **Owner, before the first deploy.** The boundary gets one new narrow statement, `WeeklyTableExportWrites` (`s3:AbortMultipartUpload` and `s3:PutObjectAcl` on `arn:aws:s3:::cupmark-*-backups-*/exports/*`), which AWS lists for the caller of an export. Review the diff of `scripts/aws/cupmark-boundary-policy.json`, then run `scripts/aws/apply-guardrails.sh` (dry run) and `scripts/aws/apply-guardrails.sh --apply` with an admin or SSO identity, not root. Agents do not run it. After the first run (Sunday, or started by hand), check three things: `exports/<date>/AWSDynamoDB/<id>/manifest-summary.json` exists; the real key layout, because a prefix without a trailing slash may give a double slash or no separator, and if so the restore paths below must be fixed; and that a retry did not produce a second export.
@@ -132,7 +132,7 @@ The Lambda `cupmark-<stage>-nightly-aggregates` (handler `index.handler` from `b
 | Part | Value |
 | --- | --- |
 | Schedule | `cupmark-<stage>-nightly-aggregates` in the group `cupmark-<stage>-jobs` (the one `src/export.ts` creates), `cron(0 2 * * ? *)` UTC, flexible window 15 minutes, one Scheduler retry (Lambda's own async retries are 0), no dead-letter queue, input `{}`. |
-| Scheduler role | `cupmark-<stage>-nightly-scheduler`: `lambda:InvokeFunction` on this function only; trusted by the Scheduler for this account and this one schedule. |
+| Scheduler role | `cupmark-<stage>-nightly-scheduler`: `lambda:InvokeFunction` on this function only; trusted by the Scheduler for this account only (`aws:SourceAccount`, no `aws:SourceArn`; ADR 0035). |
 | State | `dev` ENABLED. `prod` DISABLED until the owner enables it (`nightlyScheduleEnabled` in `STAGE_SETTINGS`, `src/config.ts`, in a pull request). |
 
 **Disable the schedule** (stop the nightly runs): set `nightlyScheduleEnabled: false` for the stage in `src/config.ts` and deploy; or, in an emergency, disable the schedule in the console (the next deploy puts it back to the configured state).

@@ -5,7 +5,7 @@
 // stage's backup bucket, whose lifecycle moves them to archive storage after 30 days and
 // deletes them after 365 (src/data.ts).
 
-import { Aws, Fn, Stack } from 'aws-cdk-lib';
+import { Aws, Fn } from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as scheduler from 'aws-cdk-lib/aws-scheduler';
 import { Construct } from 'constructs';
@@ -61,17 +61,12 @@ export class CupmarkExport extends Construct {
       roleName,
       description: `Lets the Scheduler start the weekly export of cupmark-${stage}-main`,
       assumedBy: new iam.ServicePrincipal('scheduler.amazonaws.com', {
-        // Confused-deputy guard: only this account, and only this one schedule. The ARN is
-        // built from the literal names, not a GetAtt of the schedule (that would be a cycle).
+        // Account-only guard. With aws:SourceArn set to this schedule's ARN, CreateSchedule was
+        // refused ("must allow AWS EventBridge Scheduler to assume the role", ADR 0035
+        // Addendum 3); the cause is not confirmed (the schedule-group ARN is untried). The
+        // role can only start this one table export; the aws:SourceAccount condition remains.
         conditions: {
-          StringEquals: {
-            'aws:SourceAccount': Aws.ACCOUNT_ID,
-            'aws:SourceArn': Stack.of(this).formatArn({
-              service: 'scheduler',
-              resource: 'schedule',
-              resourceName: `${jobsGroupName(stage)}/${scheduleName}`,
-            }),
-          },
+          StringEquals: { 'aws:SourceAccount': Aws.ACCOUNT_ID },
         },
       }),
       inlinePolicies: {

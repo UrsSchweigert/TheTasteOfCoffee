@@ -99,16 +99,12 @@ export class CupmarkNightly extends Construct {
       roleName,
       description: `Lets the Scheduler invoke ${fnName}`,
       assumedBy: new iam.ServicePrincipal('scheduler.amazonaws.com', {
-        // Confused-deputy guard: only this account, and only this one schedule.
+        // Account-only guard. With aws:SourceArn set to this schedule's ARN, CreateSchedule was
+        // refused ("must allow AWS EventBridge Scheduler to assume the role", ADR 0035
+        // Addendum 3); the cause is not confirmed (the schedule-group ARN is untried). The
+        // role can only invoke this one function; the aws:SourceAccount condition remains.
         conditions: {
-          StringEquals: {
-            'aws:SourceAccount': Aws.ACCOUNT_ID,
-            'aws:SourceArn': Stack.of(this).formatArn({
-              service: 'scheduler',
-              resource: 'schedule',
-              resourceName: `${jobsGroupName(stage)}/${scheduleName}`,
-            }),
-          },
+          StringEquals: { 'aws:SourceAccount': Aws.ACCOUNT_ID },
         },
       }),
       inlinePolicies: {
