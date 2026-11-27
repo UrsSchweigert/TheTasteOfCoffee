@@ -162,8 +162,8 @@ export const ALLOWED_RESOURCE_TYPES: Readonly<Record<string, ResourceRule>> = {
   'AWS::S3::Bucket': { why: 'photo, backup and deletion-log buckets', names: [optionalName('BucketName')] },
   'AWS::S3::BucketPolicy': { why: 'TLS-only bucket policy', names: [] },
   'AWS::Lambda::Function': { why: 'API and worker functions', names: [optionalName('FunctionName')] },
+  'AWS::Lambda::EventInvokeConfig': { why: 'no Lambda async retries for the nightly job (retries are the Scheduler\'s)', names: [] },
   'AWS::Lambda::Permission': { why: 'API Gateway and Scheduler invoke', names: [] },
-  'AWS::Lambda::EventSourceMapping': { why: 'table stream to aggregator', names: [] },
   'AWS::Logs::LogGroup': {
     why: '14-day log retention',
     names: [{ path: ['LogGroupName'], prefixes: ['/aws/lambda/cupmark-{stage}-', '/cupmark/{stage}/'], required: true }],
@@ -188,13 +188,14 @@ export const ALLOWED_RESOURCE_TYPES: Readonly<Record<string, ResourceRule>> = {
   'AWS::ApiGatewayV2::Authorizer': { why: 'built-in JWT authorizer', names: [] },
   'AWS::Scheduler::ScheduleGroup': { why: 'group for the schedules', names: [optionalName('Name')] },
   'AWS::Scheduler::Schedule': {
-    why: 'nightly rankings and weekly export',
+    why: 'nightly aggregates rebuild and weekly export',
     // The policy allows schedule/cupmark-*/*: the default group would be denied.
     names: [requiredName('GroupName'), optionalName('Name')],
   },
-  'AWS::CloudWatch::Alarm': { why: 'Lambda errors and throttles', names: [optionalName('AlarmName')] },
+  'AWS::CloudWatch::Alarm': { why: 'nightly job failure alarms (ADR 0035, flag-gated)', names: [optionalName('AlarmName')] },
   'AWS::SNS::Topic': { why: 'alarm notifications', names: [optionalName('TopicName')] },
-  'AWS::SNS::Subscription': { why: 'alarm notifications', names: [] },
+  // No AWS::SNS::Subscription: the owner subscribes by hand (invariant 8, ADR 0035).
+  'AWS::SNS::TopicPolicy': { why: 'only CloudWatch alarms of this account may publish', names: [] },
   'AWS::Budgets::Budget': {
     why: 'alerts at 10, 25 and 50 USD',
     names: [{ path: ['Budget', 'BudgetName'], prefixes: [STAGE_PREFIX], required: true }],

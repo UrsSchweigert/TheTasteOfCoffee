@@ -19,7 +19,7 @@ interface Statement {
   readonly Resource: unknown;
 }
 
-const PARTS = ['api', 'health', 'apple-idp'] as const;
+const PARTS = ['api', 'health', 'apple-idp', 'nightly-aggregates'] as const;
 
 /** Every `Fn::GetAtt` below `value`, as [logical id, attribute]. */
 function getAtts(value: unknown): [string, string][] {
@@ -55,7 +55,7 @@ describe.each(STAGES)('stage %s', (stage) => {
 
   it('no inline role policy refers to any attribute of a log group', () => {
     const logGroupIds = new Set(Object.entries(resources).filter(([, r]) => r.Type === 'AWS::Logs::LogGroup').map(([id]) => id));
-    expect(logGroupIds.size).toBe(3);
+    expect(logGroupIds.size).toBe(4);
     for (const role of roles) {
       const hits = getAtts(role.Properties.Policies).filter(([id]) => logGroupIds.has(id));
       expect(hits, String(role.Properties.RoleName)).toEqual([]);

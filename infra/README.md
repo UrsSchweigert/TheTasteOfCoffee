@@ -33,6 +33,7 @@ src/github-oidc.ts the stack cupmark-github-oidc: the GitHub OIDC trust and Cupm
 src/data.ts        the DynamoDB table and the three S3 buckets (M1-T1, M1-T6)
 src/identity.ts    the Cognito user pool, its domain, the iOS app client and the Apple provider (M1-T2)
 src/functions.ts   one Lambda function: bundle, role, concurrency cap, 14-day log group
+src/nightly.ts     the nightly aggregates function, its schedule and the optional failure alarms (M3-T9)
 src/api.ts         the HTTP API, its authorizer and stage, the api and health functions (M1-T2)
 src/routes.ts      the route list, checked against contracts/openapi.yaml
 src/guards.ts      synth-time guards for invariants 5, 6 and 9, and least privilege
@@ -123,6 +124,33 @@ An export is a restore source for a point older than the 35 days of point-in-tim
 6. Switch over by a reviewed change of the table name in `src/data.ts` (a human decision, as with every table change; never by editing the live table). Keep the old table until the new one is confirmed.
 
 The import and the restore-time commands are the owner's: agents never run them against the real account.
+
+## Nightly aggregates (`src/nightly.ts`, M3-T9)
+
+The Lambda `cupmark-<stage>-nightly-aggregates` (handler `index.handler` from `backend/dist/nightly-aggregates/`, Node 22, arm64, no VPC, no reserved or provisioned concurrency) scans the table and rewrites the community aggregate and ranking items (ADR 0035). Timeout 300 s and memory 512 MB are the stage constants `NIGHTLY_TIMEOUT_SECONDS` and `NIGHTLY_MEMORY_MB` in `src/config.ts` (M3-T10 measures the run and supports both). Its role has `dynamodb:Scan`, `BatchWriteItem`, `PutItem` and `DeleteItem` on the table ARN only (no index, no stream) plus the log permissions, under the boundary.
+
+| Part | Value |
+| --- | --- |
+| Schedule | `cupmark-<stage>-nightly-aggregates` in the group `cupmark-<stage>-jobs` (the one `src/export.ts` creates), `cron(0 2 * * ? *)` UTC, flexible window 15 minutes, one Scheduler retry (Lambda's own async retries are 0), no dead-letter queue, input `{}`. |
+| Scheduler role | `cupmark-<stage>-nightly-scheduler`: `lambda:InvokeFunction` on this function only; trusted by the Scheduler for this account and this one schedule. |
+| State | `dev` ENABLED. `prod` DISABLED until the owner enables it (`nightlyScheduleEnabled` in `STAGE_SETTINGS`, `src/config.ts`, in a pull request). |
+
+**Disable the schedule** (stop the nightly runs): set `nightlyScheduleEnabled: false` for the stage in `src/config.ts` and deploy; or, in an emergency, disable the schedule in the console (the next deploy puts it back to the configured state).
+
+**Dry run.** Invoke the function with `{ "dry_run": true }`: it scans, rebuilds, logs the same line (per-reason counts, `users_seen`, share of the timeout) and writes nothing. `scripts/smoke/post-deploy-checks.sh <stage> --dry-run-job` (M3-T13) does this.
+
+**Failure alarms (off by default).** `STAGE_SETTINGS[stage].failureAlarms.enabled` in `src/config.ts` is `false` for `dev` and `prod`: no alarm and no topic exist (ADR 0035, Addendum 2). Turn it on in a pull request when `users_seen` in the nightly log line, or the Cognito console, shows more than 100 users. Then the stack adds the SNS topic `cupmark-<stage>-alerts` and two alarms, both publishing to it:
+
+- `cupmark-<stage>-nightly-aggregates-errors`: `AWS/Lambda` `Errors` of the function, Sum, `>= 1` over 86,400 s.
+- `cupmark-<stage>-nightly-aggregates-missing-run`: `Invocations`, Sum, `< 1` over 25 hours (`MISSING_RUN_ALARM_PERIOD_HOURS`), missing data counts as breaching. On `prod` it exists only while the schedule is enabled.
+
+With the flag on, the missing-run alarm goes to ALARM right after the deploy and stays there until the first scheduled run has happened (missing data counts as breaching): expect one notification. If CloudWatch rejects the 90,000 s period, the fallback is `Period` 3600, `EvaluationPeriods` 25, `DatapointsToAlarm` 25 and missing data breaching (never a 1-day period with 2 evaluation periods).
+
+The function has Lambda's own asynchronous retries turned off (`MaximumRetryAttempts` 0 in an `AWS::Lambda::EventInvokeConfig`), so with the Scheduler's one retry a night runs at most twice. The role may write only partitions `BEAN#*` and `RANK#*` (`dynamodb:LeadingKeys` condition on the write actions; `Scan` carries no key and has its own statement).
+
+The topic policy lets only `cloudwatch.amazonaws.com` publish, for this account and alarms named `cupmark-<stage>-*`. The stack never subscribes anyone and holds no address (invariant 8; an `AWS::SNS::Subscription` fails the guard). **Owner, one time per stage after the flag is on:** subscribe your own address (console, or `aws sns subscribe --topic-arn <topic arn> --protocol email --notification-endpoint <address> --region eu-central-1`) and confirm the mail. To test, `aws cloudwatch set-alarm-state --alarm-name cupmark-<stage>-nightly-aggregates-errors --state-value ALARM --state-reason test`; the alarm returns to `OK` at its next evaluation. Cost: alarms are about 0.10 USD per alarm per month, the topic and a few mails are free tier.
+
+**Owner, before the deploy (M3-T9, M3-T14).** The boundary `scripts/aws/cupmark-boundary-policy.json` gets two new narrow statements: `NightlyAggregatesScan` (`dynamodb:Scan` on `table/cupmark-*-main` only, so not on an index or a stream) and `NightlySchedulerInvokesCupmarkFunctions` (`lambda:InvokeFunction` on `function:cupmark-*` of this account and region). Review that diff, then run `scripts/aws/apply-guardrails.sh` (dry run) and `scripts/aws/apply-guardrails.sh --apply` with an admin or SSO identity, not root. Agents never run it. The execution policy already allows the alarms and the topic (`cloudwatch:*`, `sns:*` on `cupmark-*`).
 
 ## Identity (`src/identity.ts`)
 
