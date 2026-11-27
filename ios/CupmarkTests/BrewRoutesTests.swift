@@ -4,7 +4,7 @@ import XCTest
 
 /// The brew routes (M2-T40): value routes, resolved by destinations at the stack root, so
 /// back from a rating shows the brew list. The destinations' registration is checked in
-/// `scripts/ios-scripts.test.mjs`; the push and pop run in `AccessibilityAuditTests` on a Mac.
+/// `scripts/ios-scripts.test.mjs`; the push and pop run in `AccessibilityVoiceOverTests` on a Mac.
 final class BrewRoutesTests: XCTestCase {
     func testRoutesAreEqualByTheirId() {
         let id = UUID()

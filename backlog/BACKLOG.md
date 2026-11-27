@@ -886,6 +886,7 @@ Planning notes (planned 2026-11-25):
   - `performAccessibilityAudit()` runs at the default text size and the largest accessibility size on these screens: sign-in, scanner fallback, lookup result, pick-list entry, shelf, brew form, timer, rating, recipes, statistics, onboarding and settings. It reports its findings in the log (`AUDIT-ISSUE` lines) and does not fail the build: the owner decided on 2026-11-26 that the app needs the essentials (labels, values, 44-point targets, text that scales and nothing cut off), not a full accessibility certification. The remaining findings are judged on a device in M2-T34.
   - Every slider, stepper and pick list has a VoiceOver label and value, for example "Aroma, 7.5 of 10". Scores and steppers support the adjustable action.
   - Mac: the `ios` job. The VoiceOver walk-through on a device is in M2-T34.
+  - Note (ADR 0037): the audits no longer run on pull requests. The `AUDIT-ISSUE` lines are in the weekly or manual run of `.github/workflows/ios-audits.yml`, not in the `ios` job log. The smoke tests in `AccessibilityVoiceOverTests` gate that each screen appears and the timer starts.
 
 ### M2-T34 Device run against dev
 - status: done (the owner ran the device flow against dev and reported it passed, 2026-11-26)
