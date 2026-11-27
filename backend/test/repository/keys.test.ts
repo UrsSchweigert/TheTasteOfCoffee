@@ -25,11 +25,13 @@ import {
   parseBrewSortKey,
   parseRecipeSortKey,
   parseReviewQueueSortKey,
+  parseAggregateSortKey,
+  parseBeanPk,
+  parseRankingPk,
   parseShelfSortKey,
   pendingLabelPhotoKey,
   profileKey,
   rankingKey,
-  raterMarkerKey,
   recipeKey,
   reviewQueueKey,
   shelfEntryKey,
@@ -103,7 +105,6 @@ describe('user partition keys', () => {
       () => brewRefKey(user, ID),
       () => recipeKey(user, ID),
       () => lookupCounterKey(user, '2026-11-25'),
-      () => raterMarkerKey(BEAN, user),
     ]) {
       expect(build).toThrow(InvalidKeyError);
     }
@@ -217,7 +218,6 @@ describe('bean catalogue keys', () => {
     expect(() => reviewQueueKey(new Date(), bad)).toThrow(InvalidKeyError);
     expect(() => aggregateAllKey(bad)).toThrow(InvalidKeyError);
     expect(() => aggregateMethodKey(bad, 'v60')).toThrow(InvalidKeyError);
-    expect(() => raterMarkerKey(bad, USER)).toThrow(InvalidKeyError);
   });
 
   it('stores UPC-A as EAN-13 with a leading 0, so both forms of one product share one key', () => {
@@ -293,22 +293,19 @@ describe('aggregate, rater and ranking keys', () => {
     expect(() => aggregateMethodKey(BEAN, value as Method)).toThrow(InvalidKeyError);
   });
 
-  it('builds the rater marker from the verified user id only', () => {
-    expect(raterMarkerKey(BEAN, USER)).toEqual({ pk: `BEAN#${BEAN}`, sk: `RATER#${SUB}` });
-    // @ts-expect-error a raw string is not a UserId
-    expect(() => raterMarkerKey(BEAN, SUB)).toThrow(InvalidKeyError);
-  });
-
   it('builds the ranking keys for each facet', () => {
     expect(rankingKey({ kind: 'all' }, '2026-11-25')).toEqual({ pk: 'RANK#ALL', sk: '2026-11-25' });
     expect(rankingKey({ kind: 'method', value: 'v60' }, '2026-11-25')).toEqual({ pk: 'RANK#METHOD#v60', sk: '2026-11-25' });
     expect(rankingKey({ kind: 'process', value: 'washed' }, '2026-11-25').pk).toBe('RANK#PROCESS#washed');
     expect(rankingKey({ kind: 'roast_level', value: 'medium_light' }, '2026-11-25').pk).toBe('RANK#ROAST_LEVEL#medium_light');
     expect(rankingKey({ kind: 'price_band', value: 'under_15' }, '2026-11-25').pk).toBe('RANK#PRICE_BAND#under_15');
+    expect(rankingKey({ kind: 'origin', value: 'indonesia' }, '2026-11-25')).toEqual({ pk: 'RANK#ORIGIN#indonesia', sk: '2026-11-25' });
   });
 
   it.each([
-    ['an unknown kind', { kind: 'origin', value: 'ethiopia' }],
+    ['an unknown kind', { kind: 'region', value: 'ethiopia' }],
+    ['an origin from another list', { kind: 'origin', value: 'v60' }],
+    ['an injected origin', { kind: 'origin', value: 'kenya#x' }],
     ['a value from another list', { kind: 'method', value: 'washed' }],
     ['an injected value', { kind: 'process', value: 'washed#x' }],
     ['an empty value', { kind: 'price_band', value: '' }],
@@ -327,6 +324,31 @@ describe('aggregate, rater and ranking keys', () => {
     ['a date with a suffix', '2026-11-25#x'],
   ])('rejects %s as a ranking period', (_name, period) => {
     expect(() => rankingKey({ kind: 'all' }, period)).toThrow(InvalidKeyError);
+  });
+});
+
+describe('aggregate and ranking key parsers', () => {
+  it('read back what the builders make, and nothing else', () => {
+    for (const facet of [
+      { kind: 'all' },
+      { kind: 'method', value: 'v60' },
+      { kind: 'process', value: 'washed' },
+      { kind: 'roast_level', value: 'medium_light' },
+      { kind: 'price_band', value: 'under_15' },
+      { kind: 'origin', value: 'indonesia' },
+    ] as const) {
+      expect(parseRankingPk(rankingKey(facet, '2026-11-25').pk)).toEqual(facet);
+    }
+    for (const pk of ['RANK#', 'RANK#ORIGIN#v60', 'RANK#METHOD#washed', 'RANK#ALL#x', 'RANK#all', 'RANK#NOPE#v60', 'RANK#ORIGIN#kenya#x', 'BEAN#' + BEAN]) {
+      expect(parseRankingPk(pk)).toBeUndefined();
+    }
+    expect(parseBeanPk(`BEAN#${BEAN}`)).toBe(BEAN);
+    expect(parseBeanPk(`BEAN#${BEAN}#x`)).toBeUndefined();
+    expect(parseAggregateSortKey('AGG#ALL')).toEqual({ kind: 'all' });
+    expect(parseAggregateSortKey('AGG#METHOD#v60')).toEqual({ kind: 'method', method: 'v60' });
+    for (const sk of ['AGG#', 'AGG#METHOD#', 'AGG#METHOD#ALL', 'AGG#METHOD#v60#x', 'META', 'AGG#all']) {
+      expect(parseAggregateSortKey(sk)).toBeUndefined();
+    }
   });
 });
 

@@ -13,6 +13,11 @@ import type { APIGatewayProxyEventV2WithJWTAuthorizer } from 'aws-lambda';
 /** Cognito `sub`: a lower-case UUID. Anything else is rejected. */
 const COGNITO_SUB = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
+/** True for a string shaped like a Cognito `sub`. Mints nothing: only `userIdFromEvent` makes a `UserId`. For the nightly scan, which reads the id from a partition key. */
+export function isCognitoSub(value: string): boolean {
+  return COGNITO_SUB.test(value);
+}
+
 const MINT: unique symbol = Symbol('UserId');
 
 let mint: (sub: string) => UserId;

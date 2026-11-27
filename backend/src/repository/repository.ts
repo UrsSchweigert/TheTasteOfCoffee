@@ -20,7 +20,8 @@
 //   recreate the partition (ADR 0017, Addendum). A failed check is
 //   AccountDeletedError (API: 401). Single puts, updates and deletes of the
 //   caller's items are transactions for that reason.
-// - The aggregation pipeline (M3) is not here; keys.ts has its key builders.
+// - The aggregation pipeline (M3) is not here: aggregate-repository.ts (scan, replace,
+//   readAggregate) is its own class, so this one never touches aggregate keys.
 import {
   ConditionalCheckFailedException,
   TransactionCanceledException,
@@ -253,8 +254,8 @@ const MAX_LIMIT = 100;
 
 const KeyAttributes = z.object({ pk: z.string(), sk: z.string() });
 
-const ProfileItem = KeyAttributes.extend({ values: ProfileSchema });
-const ShelfItem = KeyAttributes.extend({
+export const ProfileItem = KeyAttributes.extend({ values: ProfileSchema });
+export const ShelfItem = KeyAttributes.extend({
   shelfEntryId: IdSchema,
   beanId: IdSchema,
   values: ShelfEntryInputSchema,
@@ -264,7 +265,7 @@ const ShelfItem = KeyAttributes.extend({
  * entry's bean at the time of the write: the reference count needs the first,
  * and the aggregator (M3) reads the bean of a removed brew from its old image.
  */
-const BrewItem = KeyAttributes.extend({
+export const BrewItem = KeyAttributes.extend({
   brewId: IdSchema,
   shelfEntryId: IdSchema,
   beanId: IdSchema,
@@ -272,7 +273,7 @@ const BrewItem = KeyAttributes.extend({
 }).refine((item) => item.shelfEntryId === item.values.shelf_entry_id);
 const BrewRefItem = KeyAttributes.extend({ brewId: IdSchema, brewSk: z.string(), createdAt: z.string() });
 const RecipeItem = KeyAttributes.extend({ recipeId: IdSchema, values: RecipeInputSchema });
-const BeanItem = KeyAttributes.extend({
+export const BeanItem = KeyAttributes.extend({
   beanId: IdSchema,
   status: z.enum(['unverified', 'verified', 'rejected']),
   createdAt: z.string(),
@@ -371,7 +372,7 @@ function limitOf(options: ListOptions): number {
   return limit;
 }
 
-function beanOf(item: BeanItemShape): BeanRecord {
+export function beanOf(item: BeanItemShape): BeanRecord {
   const bean: Bean = {
     bean_id: item.beanId,
     vocabulary_version: item.vocabularyVersion,

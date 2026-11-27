@@ -418,6 +418,15 @@ describe('rankings', () => {
     expect(rebuild(input({ ...base })).rankings).toHaveLength(2);
   });
 
+  it('resolves the origin by the bean\'s own vocabulary version: a v1 bean (no origin list) gets no origin ranking even if an operator sets one later (pinned, M3-T7)', () => {
+    // Decision pinned here, to be revisited when the operator tool is planned: it must bump the bean's
+    // version, or this lookup must resolve against the operator value's version. Until then a v1 bean is unranked by origin.
+    const origins = (version: 1 | 2 | 3): unknown[] =>
+      rebuild(input({ ...crowd(5), beans: [bean('bean1', { vocabulary_version: version, verified: true, operator_attributes: { origin: 'sumatra' } })] })).rankings.flatMap((r) => (r.facet.kind === 'origin' ? [r.facet.value] : []));
+    expect(origins(1)).toEqual([]);
+    expect(origins(3)).toEqual(['indonesia']);
+  });
+
   it('gives blend, other and unknown no ranking', () => {
     for (const attributes of [{ origin: 'blend' }, { origin: 'other' }, { origin: 'unknown' }, { process: 'other' }, { process: 'unknown' }] as const) {
       const facets = rebuild(input({ ...crowd(5), beans: [bean('bean1', { verified: true, operator_attributes: attributes })] })).rankings.map((r) => r.facet.kind);

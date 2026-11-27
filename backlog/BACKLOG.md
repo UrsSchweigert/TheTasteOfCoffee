@@ -1269,7 +1269,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - The per-rule property "a brew rejected by the rule leaves the output equal to a history without it" is stated per rule and holds for rules 1 to 5 only (no consent, unrated, future, before roast, burst). It does not hold for bag dose (a dose reject still holds a place in the burst window), straight-lining (judges the whole history) or the daily cap (a cap reject still used the bag in rule 6); those three are tested with explicit examples instead.
 
 ### M3-T7 Repository: paged scan reader, aggregate persistence, single read path
-- status: todo
+- status: in-review (code and tests; the DynamoDB Local suite test/integration/aggregates.test.ts is written but was not run in the sandbox, no Docker)
 - owner: backend-engineer
 - depends: M3-T5
 - implements: docs/05-system-design.md, Data model, Aggregation pipeline; ADR 0035; ADR 0034; CLAUDE.md invariant 4
