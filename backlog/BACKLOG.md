@@ -1138,7 +1138,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
 
 - **Owner decisions (2026-11-26).**
   1. Nightly Scan: one scheduled job Scans the table and rebuilds all aggregates from scratch. The Scan reads the whole table anyway, so the rebuild adds compute, not read cost.
-  2. Withdrawal removes contributions: withdrawing consent costs one profile write and takes effect at the next nightly run (up to about a day). It removes the user's ratings from the community numbers only; the personal log is untouched. Re-consent counts all the user's rated brews again from the next run. Account deletion, brew deletion and edits converge on their own because the rebuild starts from current data.
+  2. Withdrawal removes contributions: withdrawing consent costs one profile write and takes effect at the next successful nightly run (up to about a day). It removes the user's ratings from the community numbers only; the personal log is untouched. Re-consent counts all the user's rated brews again from the next run. Account deletion, brew deletion and edits converge on their own because the rebuild starts from current data.
   3. Daily one-vote weights: every cup counts. A user's plausible cups of one bean on one UTC day share one vote, each cup weighing 1/n. Distinct raters count users, never weights.
   4. Cap 10: at most 10 cups of one bean per user per UTC day count; the excess is ignored.
 - **Removed from the plan** (superseded by the nightly rebuild): the DynamoDB stream mapping and aggregator Lambda trigger, day-slot items, rater-marker maintenance (`RATER#` items), difference-apply logic, the consent-change handling task (M3-T18) and the live-consent read mechanism. The table's stream stays enabled (M1-T1 pins it; unread, it costs nothing). Whether to switch it off is a Proposed addition for the owner, not part of this milestone.
@@ -1151,12 +1151,12 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
 - **M4 reads, M3 never serves.** No route returns aggregates in M3. The one read function (T7) exists so M4's paid routes have exactly one path to aggregate keys.
 
 ### M3-T1 ADR: nightly rebuild replaces the incremental aggregator
-- status: todo
+- status: done
 - owner: planner (the lead writes it under ADR 0014; the owner already decided the four points below, so it is recorded, not re-decided)
 - depends: none
 - implements: docs/05-system-design.md, Aggregation pipeline; docs/07-open-questions.md D1, D2; the owner decisions of 2026-11-26
 - acceptance:
-  - `docs/decisions/0035-nightly-aggregate-rebuild.md` supersedes the incremental stream design (ADR 0010 stays for key and ranking facet formats; the ADR says which parts of 0010 and 0017 it replaces: the "subtract on delete" mechanism of D2 and the "consent at write time" rule of D1).
+  - `docs/decisions/0035-nightly-rebuild-of-community-aggregates.md` supersedes the incremental stream design (ADR 0010 stays for key and ranking facet formats; the ADR says which parts of 0010 and 0017 it replaces: the "subtract on delete" mechanism of D2 and the "consent at write time" rule of D1).
   - It records:
     - the owner decisions of 2026-11-26 (nightly Scan, withdrawal removes contributions at the next run, daily one-vote weights, cap 10);
     - the weight definition exactly as in the planning notes: groups per (user, bean, UTC day) for bean-level and per (user, bean, method, UTC day) for method-level, `L = 2520`, the integer bound and the fail-closed assertion, distinct raters as distinct users;
@@ -1179,6 +1179,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - Histogram bucket definitions for the recipe parameters the aggregates keep (dose-to-water ratio, grind coarseness, water temperature, brew time; the exact parameter set is the one docs/04 F4 names), each as an ordered list of bucket ids with exact numeric edges, per method where the method field rules (v3) differ. Edges are exact in binary floating point or scaled integers (ADR 0004). Tests: buckets are contiguous, non-overlapping, cover the vocabulary range of their field, and every id is unique.
   - The aggregate item shapes are documented in `contracts/README.md` (not in `openapi.yaml`, since no route returns them in M3): per criterion the integer half-point sum and weighted count, intensity and note counts, buy-again counts, bucket counts, distinct-rater count; no string field other than ids from the vocabulary or this file.
   - `scripts/check-no-free-text.sh` passes; backend regenerates its types and `npm run check:generated` passes.
+  - Item shapes also carry, per criterion, the integer sum of squares (weight x half-points squared; bound 1,008,000 per cup, ADR 0035), the run day stamp, and a distinct-rater count for each optional part: buy-again, each intensity dimension, the flavour notes and each recipe parameter histogram. The eight criteria need none (all are required, ADR 0026).
 
 ### M3-T3 Rebuild configuration and exact arithmetic
 - status: todo
@@ -1190,6 +1191,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - Exact helpers: `weightOf(n)` returns `L / n` for 1 to 10 and throws for any other n; a test proves `n x weightOf(n) === L` for every n and that no division leaves a remainder.
   - An integer accumulator adds weighted half-point scores and asserts `Number.isSafeInteger` after every addition; overflow fails the run. A test pushes sums to the stated bound (200 users x 10 cups x 20 half-points x L) with room to spare, and a test with a forced overflow fails closed.
   - Property test: adding the same weighted values in any order gives the same sum.
+  - A named constant `MAX_AGE_DAYS = 3` (age limit of a stamped aggregate, ADR 0035 point 7a) and the sum-of-squares bound (400 x L per cup) beside the sum bound, with the same safe-integer assertion; the bound test covers both.
 
 ### M3-T4 Plausibility rules (pure)
 - status: todo
@@ -1214,6 +1216,9 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - Beans below the minimum raters still get their aggregate item (so M4 can say "not enough raters yet" without a second read path), but no ranking entry; the read function of M3-T7 is the only gate.
   - Unit tests: a user with 3 cups of one bean on one day weighs 1/3 each and the day totals exactly one vote; two methods on one day give different n at bean and method level (state the numbers in the test); two users on the same bean give 2 raters; one user across 30 days gives 1 rater.
   - Exactness test: a hand-picked set whose naive floating-point mean would differ in the last digits gives an exact integer sum and the exact rational mean.
+  - Per criterion the sum of squares is kept as well; each optional part (buy-again, each intensity dimension, notes, each recipe histogram) carries its own distinct-rater count. Every item is stamped with the run day.
+  - The ranking facets are `all`, method, process, roast level, price band and origin (`RANK#ORIGIN#<id>`, by country; region beans roll up to their country; `blend`, `other`, `unknown` unranked). Origin, process and roast level rank only beans with operator-verified attributes. The price band facet uses weight groups (user, bean, band, day) and the 5-rater minimum within the band.
+  - Tests: the spread (mean and variance from sums) is exact against a BigInt reference; a bean with 5 raters of whom one logged buy-again carries a part count of 1.
 
 ### M3-T6 Oracle fixture and property tests for the rebuild
 - status: todo
@@ -1232,6 +1237,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
     - each plausibility rule: a brew rejected by the rule leaves the output equal to a history without it;
     - exact arithmetic: all sums are safe integers and the rational mean `sum / (L x votes)` matches a BigInt reference computation.
   - A test that the rebuild of an empty history is empty and does not throw.
+  - The oracle fixture includes a bean with 5 raters where only one carries buy-again and one intensity, with the part counts written out, and a price band case with weight groups per band.
 
 ### M3-T7 Repository: paged scan reader, aggregate persistence, single read path
 - status: todo
@@ -1245,6 +1251,9 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - Structural tests: (a) no file outside `backend/src/repository/` and `backend/src/aggregation/` mentions the aggregate or ranking key builders; (b) within the repository, only `readAggregate` reads aggregate keys; (c) nothing under `backend/src/aggregation/` or the job handler imports or reads `contracts/reference/` (ADR 0034).
   - The unused rater-marker key builder and its prefix are removed from `keys.ts`, and the comment "written by the aggregator, M3" is corrected.
   - DynamoDB Local tests: a scan over more than one page returns every relevant item once; an injected failure on page 2 returns nothing; the replace deletes stale items and is idempotent.
+  - The Scan also returns the existing aggregate and ranking items (skipped by no prefix), so the writer can compare. `replaceAggregates` writes only new or changed `AGG#` items (an unchanged one is rewritten only when its run-day stamp is 2 or more days behind), plus the deletes. Ranking items are keyed by the run day, so each night all are new and yesterday's are deleted (a cost bounded by ranked beans x facets); the changed-only rule does not apply to them. A test shows a second run on the same day with the same input writes nothing.
+  - `keys.ts` gains the origin ranking facet (`RANK#ORIGIN#<id>`).
+  - `readAggregate` withholds each optional part (buy-again, each intensity dimension, notes, each recipe histogram) whose own distinct-rater count is below 5, while returning the rest; tests at 4 and 5 for each part, with an item that has 5 overall raters and 1 for a part. It returns "not available" for an item with (UTC day of the read) - (stamp day) > `MAX_AGE_DAYS`, the stamp being the UTC day of the run's single run-time read (tests with an injected now: stamp day D, read on D+3 served, read on D+4 not available). M4 serves only rounded means, spreads and shares, never raw sums or weighted counts.
 
 ### M3-T8 Nightly job handler
 - status: todo
@@ -1258,6 +1267,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - A dry-run event (`{ "dry_run": true }`) does the scan and the rebuild, logs the same line and writes nothing, so the owner can tune thresholds on dev data (M3-T15) without changing the table.
   - The handler takes no input that selects users or beans (invariant 3 does not apply to it, since it is not a user route, and a test shows an event carrying a user id is ignored).
   - Tests with a fake repository: success, scan failure, rebuild failure, write failure, dry run, an empty table.
+  - A test with an injected now using `readAggregate`: last success on day D, a read on D+3 is still served and a read on D+4 is "not available" (the scan failing on the nights between), so a withdrawn or deleted user's ratings stop being served.
 
 ### M3-T9 Infra: nightly schedule, permissions, timeout and memory
 - status: todo
@@ -1306,10 +1316,12 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
 - implements: ADR 0035; docs/05-system-design.md; docs/07-open-questions.md D1, D2; docs/04-specification.md F4
 - acceptance:
   - docs/05: the components diagram and text no longer show a stream-driven aggregator (the nightly job replaces it); Data model drops the rater-marker row and describes the aggregate items as rebuilt nightly; "Aggregation pipeline" is rewritten (scan, filters, weights, cap, plausibility, write, failure rule, staleness, scale trigger); the TTL paragraph no longer says the aggregator ignores TTL deletes and tombstones.
-  - docs/07 D1: consent withdrawal removes the user's contributions from the community numbers at the next nightly run; re-consent counts all rated brews again; the personal log is untouched. D2: no subtraction; account deletion removes the user's brews and the next run no longer counts them. Both rows cite ADR 0035 and stay "decided by: lead (ADR 0014)".
+  - docs/07 D1: consent withdrawal removes the user's contributions from the community numbers at the next successful nightly run; re-consent counts all rated brews again; the personal log is untouched. D2: no subtraction; account deletion removes the user's brews and the next run no longer counts them. Both rows cite ADR 0035 and stay "decided by: lead (ADR 0014)".
   - docs/04 F4: every cup counts, one vote per bean per day (weights), at most 10 cups of a bean per day, automatic plausibility rules with the closed reason list, numbers are up to a day old.
-  - Privacy wording for M6 (privacy policy, App Privacy answers, companion page): "If you withdraw sharing, your ratings are removed from the community numbers at the next nightly update. Your own log is not changed." The M6 scope line in this file gets the same sentence.
+  - Privacy wording for M6 (privacy policy, App Privacy answers, companion page): "If you withdraw sharing, your ratings are removed from the community numbers at the next successful nightly update. Your own log is not changed." The M6 scope line in this file gets the same sentence.
   - A grep test or review check: no remaining doc says the aggregator subtracts, "counts only brews whose author had consent at write time", or "one rating per user-bean-day".
+  - The doc-grep test excludes `docs/decisions/` (ADR text is history: ADR 0034 says deleted brews "are subtracted (D2)").
+  - docs/05 data model lists the sum of squares per criterion, the run-day stamp and the per-part rater counts; docs/05 and docs/04 F4 say give-to-get is decided in M4 from the user's own shelf or brews (no rater marker); docs/06 and the "three small workers" text follow ADR 0035 point 14.
 
 ### M3-T13 Post-deploy checks for the nightly job
 - status: todo
@@ -1350,7 +1362,7 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
 
 ### M3-T18 Removed: consent-change handling
 - status: removed (superseded by the nightly rebuild, 2026-11-26)
-- reason: withdrawal and re-consent are one profile write that the next nightly run applies; there is no consent-change task, no subtraction, no per-user recompute and no live-consent read.
+- reason: withdrawal and re-consent are one profile write that the next successful nightly run applies; there is no consent-change task, no subtraction, no per-user recompute and no live-consent read.
 
 ## M4 Paid tier
 
@@ -1370,7 +1382,7 @@ From M1-T4d (ADR 0016, D10): the operator CLI reads label photos from `labels/<p
 
 Goal: TestFlight, then App Store. Not yet planned. Mostly human tasks.
 
-Privacy wording (from M3, 2026-11-26): withdrawing sharing removes the user's ratings from the community numbers at the next nightly update, not from their own log; the privacy policy, the App Privacy answers and the companion page say so.
+Privacy wording (from M3, 2026-11-26): withdrawing sharing removes the user's ratings from the community numbers at the next successful nightly update, not from their own log; the privacy policy, the App Privacy answers and the companion page say so.
 
 Scope: App Store listing, screenshots, privacy nutrition labels, privacy policy and terms, TestFlight round with the persona interviews, production deployment, launch checklist.
 
