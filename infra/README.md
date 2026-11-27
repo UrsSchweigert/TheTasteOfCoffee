@@ -60,7 +60,7 @@ Everything here is `RemovalPolicy.RETAIN` (CloudFormation `DeletionPolicy` and `
 | Billing | `PAY_PER_REQUEST` (on-demand), also for the index | No fixed fee (invariant 5). |
 | Point-in-time recovery | on, 35 days | Restore to any second of the last 35 days. |
 | Deletion protection | on | A stack or console delete cannot drop the table. |
-| Stream | `NEW_AND_OLD_IMAGES` | The aggregator applies the difference on edits and deletes. |
+| Stream | `NEW_AND_OLD_IMAGES` | Enabled and read by nothing: the community aggregates are rebuilt nightly from a Scan (ADR 0035), so the stream costs nothing and cannot drift. |
 | Encryption | AWS-owned key (`SSEEnabled: false` in the template means "AWS-owned", not "unencrypted") | Encrypted at rest with no KMS key and no KMS request charges. |
 | TTL | on attribute `expires_at` (number, epoch seconds) | Only an Open Food Facts miss (`BARCODE#<ean>` / `OFF`) and the daily lookup counter (`USER#<id>` / `LOOKUPS#<date>`) carry it. Deletion happens some time after expiry, so reads still check the time. TTL deletes are free and appear in the stream. |
 | Table class | `STANDARD` | |

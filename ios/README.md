@@ -456,7 +456,22 @@ M2-T41, ADR 0032. A warm espresso and cream look on system fonts; the sets are t
 
 Targets: `Cupmark` (the app), `CupmarkTests` (unit tests, hosted in the app, `TEST_HOST`) and `CupmarkUITests` (UI tests, M2-T33: `com.apple.product-type.bundle.ui-testing`, `TEST_TARGET_NAME = Cupmark`, no host). Both test targets are in the `Cupmark` scheme's test action. `node scripts/check-xcode-project.mjs` checks the project file and the scheme on Linux: every object id defined once and every referenced id defined, each target with its configuration list (Debug and Release), build phases, product and dependency proxy, a UI-test target without `TEST_HOST`, and every test target in the scheme's test action.
 
-Signing: bundle id `app.cupmark.Cupmark`, automatic signing, no team id. Simulator and CI builds pass `CODE_SIGNING_ALLOWED=NO`. A device build needs the developer's own team, set locally and not committed.
+Signing: bundle id `app.cupmark.Cupmark`, automatic signing, `DEVELOPMENT_TEAM = 2F695PTZC6` on the app and both test targets (the Team ID is configuration, not a secret; M2-T12). Certificates and profiles are never in the repository: Xcode and Xcode Cloud manage them. Simulator and CI builds pass `CODE_SIGNING_ALLOWED=NO`.
+
+## TestFlight (Xcode Cloud)
+
+M2-T12, ADR 0036. Xcode Cloud builds from the repository and uploads to TestFlight; GitHub Actions stays the CI for pull requests.
+
+- **Workflow** (created once by the owner in Xcode: Integrate, Create Workflow; grant Xcode Cloud read access to the GitHub repository; team `2F695PTZC6`; the App Store Connect app of `app.cupmark.Cupmark`):
+  - start condition: manual, or a tag on `main`;
+  - action: Archive iOS, scheme `Cupmark`, configuration Release;
+  - post-action: TestFlight internal testing, to an internal group the owner creates;
+  - stage: dev (Release uses `Config/Dev.xcconfig`, ADR 0023, until M6).
+- **No secrets** in the workflow (no environment variables holding keys) and none in the repository. Apple manages signing for the workflow.
+- **Build number:** Xcode Cloud numbers its builds itself (the project file still says 1; the first accepted build was 6), so no script sets it. The marketing version is in the project file.
+- **Start a build:** in Xcode, Report navigator, Cloud, select the workflow, Start Build; or in App Store Connect, Xcode Cloud, Start Build; or on a tag change (for example `v*`) if the workflow has that start condition. The build number is shown in the build's list entry and in TestFlight next to the version, for example 0.1.0 (7).
+- **Check the build:** install it from TestFlight on a device and report its build number on M2-T12.
+- **Upload requirements** already in the project: an app icon, `ITSAppUsesNonExemptEncryption = NO`, `PrivacyInfo.xcprivacy`.
 
 ## Build and test
 
