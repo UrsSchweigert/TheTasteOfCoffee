@@ -115,10 +115,7 @@ describe.each(STAGES)('stage %s', (stage) => {
     );
   });
 
-  // The export scheduler role is checked on its own below: two of its S3 actions are not in
-  // the boundary yet (M3-T11, owner to re-apply the guardrails), and that gap is pinned there.
-  const functionRoles = roles.filter((r) => !String(r.Properties.RoleName).endsWith('-export-scheduler'));
-  it.each(functionRoles.map((r) => [String(r.Properties.RoleName), r] as const))(
+  it.each(roles.map((r) => [String(r.Properties.RoleName), r] as const))(
     'CupmarkBoundary allows everything %s is granted',
     (_name, role) => {
       const missing: string[] = [];
@@ -133,24 +130,6 @@ describe.each(STAGES)('stage %s', (stage) => {
       expect(missing).toEqual([]);
     },
   );
-
-  it('CupmarkBoundary allows the export scheduler role ExportTableToPointInTime and PutObject, and lacks exactly AbortMultipartUpload and PutObjectAcl (M3-T11)', () => {
-    const role = roles.find((r) => r.Properties.RoleName === `cupmark-${stage}-export-scheduler`);
-    expect(role).toBeDefined();
-    const docs = (role?.Properties.Policies as { PolicyDocument: { Statement: Statement[] } }[]).map((p) => p.PolicyDocument);
-    const missing: string[] = [];
-    for (const s of docs.flatMap((d) => d.Statement)) {
-      for (const action of list(s.Action)) {
-        for (const resource of list(s.Resource).map((r) => arnOf(r, template.Resources))) {
-          if (!allows(boundary, action, resource)) missing.push(`${action} on ${resource}`);
-        }
-      }
-    }
-    // When the owner adds these two to the boundary (scripts/aws/cupmark-boundary-policy.json)
-    // and re-applies it, this list becomes empty and this test is changed to expect [].
-    const bucket = `arn:aws:s3:::cupmark-${stage}-backups-${FAKE_ACCOUNT}/exports/*`;
-    expect(missing.sort()).toEqual([`s3:AbortMultipartUpload on ${bucket}`, `s3:PutObjectAcl on ${bucket}`]);
-  });
 
   it('CupmarkCfnExecution lets CloudFormation create and configure every bucket of the stack, unchanged by ADR 0017', () => {
     const buckets = Object.values(template.Resources).filter((r) => r.Type === 'AWS::S3::Bucket');
@@ -287,6 +266,18 @@ describe('the boundary stays narrow', () => {
         expect(allows(boundary, action, `${photos}/uploads/x.jpg`), `${action} ${stage} uploads`).toBe(true);
         for (const prefix of ['catalogue/', 'verified/', 'entries/', '']) {
           expect(allows(boundary, action, `${photos}/${prefix}x.jpg`), `${action} ${stage} ${prefix}`).toBe(false);
+        }
+      }
+    }
+  });
+
+  it('allows AbortMultipartUpload and PutObjectAcl only under exports/ of a Cupmark backup bucket (M3-T11)', () => {
+    for (const stage of STAGES) {
+      const backups = `arn:aws:s3:::cupmark-${stage}-backups-${FAKE_ACCOUNT}`;
+      for (const action of ['s3:AbortMultipartUpload', 's3:PutObjectAcl']) {
+        expect(allows(boundary, action, `${backups}/exports/x`), action).toBe(true);
+        for (const other of [`${backups}/x`, `${backups}/entries/x`, `arn:aws:s3:::cupmark-${stage}-photos-${FAKE_ACCOUNT}/exports/x`, `arn:aws:s3:::cupmark-${stage}-deletion-log-${FAKE_ACCOUNT}/exports/x`, 'arn:aws:s3:::derschweigert-backups-1/exports/x']) {
+          expect(allows(boundary, action, other), `${action} ${other}`).toBe(false);
         }
       }
     }

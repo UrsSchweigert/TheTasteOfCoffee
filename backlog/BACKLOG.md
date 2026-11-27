@@ -1302,10 +1302,10 @@ Planning notes (re-planned 2026-11-26 around the owner-approved redesign; this r
   - This test runs in the nightly or on-demand CI job, not on every pull request, if it takes more than 60 seconds; the workflow change is part of this task.
 
 ### M3-T11 Weekly export to S3
-- status: done (code and tests; the human step below is open before the deploy in M3-T14)
+- status: done (code and tests; the owner's guardrail re-apply and first-run check below are open before the deploy in M3-T14)
 - owner: infra-engineer
 - depends: M1-T1
-- needs: human (checked 2026-11-27: `dynamodb:ExportTableToPointInTime` on `table/cupmark-*` and `s3:PutObject` on `cupmark-*/*` are in `scripts/aws/cupmark-boundary-policy.json`, but `s3:AbortMultipartUpload` and `s3:PutObjectAcl`, which AWS lists for the caller of an export, are not. The role is capped by the boundary, so the export may fail with AccessDenied until the owner adds both on `arn:aws:s3:::cupmark-*/*` and re-applies the guardrails with `scripts/aws/apply-guardrails.sh` before M3-T14. This task did not edit the boundary file. `test/policies.test.ts` pins the gap and must then expect none. The schedule group `cupmark-<stage>-jobs` is created here; M3-T9 must reuse it, not create it again)
+- needs: human (the boundary lacked `s3:AbortMultipartUpload` and `s3:PutObjectAcl`, which AWS lists for the caller of an export. This task adds the narrow statement `WeeklyTableExportWrites` for them on `arn:aws:s3:::cupmark-*-backups-*/exports/*` to `scripts/aws/cupmark-boundary-policy.json`. The owner reviews that diff, then runs `scripts/aws/apply-guardrails.sh` (dry run) and `scripts/aws/apply-guardrails.sh --apply` with an admin or SSO identity, not root, before M3-T14; agents never run it. After the first run the owner checks the real key layout under `exports/` (no trailing slash in the prefix) and fixes the restore paths in infra/README.md if needed. The schedule group `cupmark-<stage>-jobs` is created here; M3-T9 must reuse it, not create it again)
 - implements: docs/05-system-design.md, Persistence and recovery; unchanged from the earlier plan
 - acceptance:
   - A weekly EventBridge Scheduler schedule uses the universal target `ExportTableToPointInTime` (no Lambda) for the stage's table, writing to `cupmark-<stage>-backups-<account>` with a dated prefix, full export, DynamoDB JSON.

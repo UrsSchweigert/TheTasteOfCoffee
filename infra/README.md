@@ -95,17 +95,19 @@ All three buckets: all public access blocked, object ownership `BucketOwnerEnfor
 
 ## Weekly export (`src/export.ts`, M3-T11)
 
-An EventBridge Scheduler schedule calls DynamoDB's `ExportTableToPointInTime` directly (universal target `arn:aws:scheduler:::aws-sdk:dynamodb:exportTableToPointInTime`): no Lambda, no code. The export reads the point-in-time-recovery data, so it uses no read capacity; it costs about 0.10 USD per GB of table size, once a week.
+An EventBridge Scheduler schedule calls DynamoDB's `ExportTableToPointInTime` directly (universal target `arn:aws:scheduler:::aws-sdk:dynamodb:exportTableToPointInTime`): no Lambda, no code. The export reads the point-in-time-recovery data, so it uses no read capacity; it is billed per GB of table size per run (about 0.10 to 0.11 USD per GB; check the AWS price list), once a week.
 
 | Part | Value |
 | --- | --- |
 | Group, schedule | `cupmark-<stage>-jobs`, `cupmark-<stage>-weekly-export` |
-| When | `cron(0 3 ? * SUN *)` in UTC, no flexible window, two retries (the `ClientToken` is the schedule's execution id, so a retry cannot start a second export). Enabled on both stages. |
-| Request | `FULL_EXPORT`, `DYNAMODB_JSON`, bucket `cupmark-<stage>-backups-<account>`, prefix `exports/<scheduled time, ISO 8601>/`. DynamoDB adds `AWSDynamoDB/<export id>/` below it: `manifest-summary.json`, `manifest-files.json` and `data/*.json.gz`. |
-| Role | `cupmark-<stage>-export-scheduler`, trusted by `scheduler.amazonaws.com` for this account only, with the boundary. `dynamodb:ExportTableToPointInTime` on the table ARN; `s3:AbortMultipartUpload`, `s3:PutObject`, `s3:PutObjectAcl` on `<backup bucket>/exports/*`. Nothing else. |
+| When | `cron(0 3 ? * SUN *)` in UTC, no flexible window, two retries (the `ClientToken` is the scheduled time, identical on every retry of one run, so a retry should not start a second export; to be verified on the first run). Enabled on both stages. |
+| Request | `FULL_EXPORT`, `DYNAMODB_JSON`, bucket `cupmark-<stage>-backups-<account>`, prefix `exports/<scheduled time, ISO 8601>` (no trailing slash). DynamoDB adds `AWSDynamoDB/<export id>/` below it: `manifest-summary.json`, `manifest-files.json` and `data/*.json.gz`. |
+| Role | `cupmark-<stage>-export-scheduler`, trusted by `scheduler.amazonaws.com` for this account and this one schedule only (`aws:SourceAccount` and `aws:SourceArn`), with the boundary. `dynamodb:ExportTableToPointInTime` on the table ARN; `s3:AbortMultipartUpload`, `s3:PutObject`, `s3:PutObjectAcl` on `<backup bucket>/exports/*`. Nothing else. |
 | Lifecycle | The backup bucket moves objects to Glacier Flexible Retrieval after 30 days and expires them after 365 (see Buckets). |
 
-**Owner, before the first deploy.** `scripts/aws/cupmark-boundary-policy.json` allows `s3:PutObject` on `cupmark-*/*` but not `s3:AbortMultipartUpload` or `s3:PutObjectAcl`, which AWS lists for the caller of an export. The boundary caps the role, so without them the export may fail with AccessDenied. Review and add both, then re-apply with `scripts/aws/apply-guardrails.sh`; `test/policies.test.ts` pins the gap and is changed to expect none when it is closed. Check the first Sunday's run (or start one by hand, see below) and see that `exports/<date>/AWSDynamoDB/<id>/manifest-summary.json` appears.
+**Owner, before the first deploy.** The boundary gets one new narrow statement, `WeeklyTableExportWrites` (`s3:AbortMultipartUpload` and `s3:PutObjectAcl` on `arn:aws:s3:::cupmark-*-backups-*/exports/*`), which AWS lists for the caller of an export. Review the diff of `scripts/aws/cupmark-boundary-policy.json`, then run `scripts/aws/apply-guardrails.sh` (dry run) and `scripts/aws/apply-guardrails.sh --apply` with an admin or SSO identity, not root. Agents do not run it. After the first run (Sunday, or started by hand), check three things: `exports/<date>/AWSDynamoDB/<id>/manifest-summary.json` exists; the real key layout, because a prefix without a trailing slash may give a double slash or no separator, and if so the restore paths below must be fixed; and that a retry did not produce a second export.
+
+`AWS::Scheduler::Schedule` has no `Tags` property, so the schedule itself carries no `project=cupmark` tag. The group and the role are tagged, and the schedule is named `cupmark-<stage>-` inside the group: this is not an invariant 9 gap.
 
 **Checking a run.** In the console: DynamoDB, the table, Exports to S3. With the CLI: `aws dynamodb list-exports --table-arn <table arn> --region eu-central-1`. A failed call is retried twice by the Scheduler; after that the week has no export (no queue, no alarm). The newest export is one week old at most, and point-in-time recovery covers the last 35 days.
 

@@ -5,7 +5,7 @@
 // stage's backup bucket, whose lifecycle moves them to archive storage after 30 days and
 // deletes them after 365 (src/data.ts).
 
-import { Aws, Fn } from 'aws-cdk-lib';
+import { Aws, Fn, Stack } from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as scheduler from 'aws-cdk-lib/aws-scheduler';
 import { Construct } from 'constructs';
@@ -55,13 +55,24 @@ export class CupmarkExport extends Construct {
     super(scope, id);
     const { stage, data } = props;
     const roleName = `${NAME_PREFIX}${stage}-export-scheduler`;
+    const scheduleName = `${NAME_PREFIX}${stage}-weekly-export`;
 
     this.role = new iam.Role(this, 'Role', {
       roleName,
       description: `Lets the Scheduler start the weekly export of cupmark-${stage}-main`,
       assumedBy: new iam.ServicePrincipal('scheduler.amazonaws.com', {
-        // Only schedules of this account (confused-deputy guard).
-        conditions: { StringEquals: { 'aws:SourceAccount': Aws.ACCOUNT_ID } },
+        // Confused-deputy guard: only this account, and only this one schedule. The ARN is
+        // built from the literal names, not a GetAtt of the schedule (that would be a cycle).
+        conditions: {
+          StringEquals: {
+            'aws:SourceAccount': Aws.ACCOUNT_ID,
+            'aws:SourceArn': Stack.of(this).formatArn({
+              service: 'scheduler',
+              resource: 'schedule',
+              resourceName: `${jobsGroupName(stage)}/${scheduleName}`,
+            }),
+          },
+        },
       }),
       inlinePolicies: {
         [roleName]: new iam.PolicyDocument({
@@ -85,7 +96,7 @@ export class CupmarkExport extends Construct {
     this.group = new scheduler.CfnScheduleGroup(this, 'Group', { name: jobsGroupName(stage) });
 
     this.schedule = new scheduler.CfnSchedule(this, 'Schedule', {
-      name: `${NAME_PREFIX}${stage}-weekly-export`,
+      name: scheduleName,
       description: 'Weekly full export of the table to the backup bucket (DynamoDB JSON)',
       groupName: jobsGroupName(stage),
       state: 'ENABLED',
@@ -96,17 +107,18 @@ export class CupmarkExport extends Construct {
         arn: EXPORT_TARGET_ARN,
         roleArn: this.role.roleArn,
         retryPolicy: { maximumRetryAttempts: EXPORT_MAX_RETRY_ATTEMPTS },
-        // Scheduler fills the two context attributes when it calls: the scheduled time
-        // (ISO 8601, so the prefix is dated and sorts) and the execution id, which stays
-        // the same across retries so a retried call cannot start a second export.
+        // Scheduler fills the context attribute when it calls: the scheduled time (ISO 8601,
+        // so the prefix is dated and sorts). It is the same on every retry of one run, so
+        // it is also the ClientToken: a retried call should not start a second export
+        // (to be verified on the first run).
         input: Fn.join('', [
           '{"TableArn":"',
           data.table.tableArn,
           '","S3Bucket":"',
           data.backupBucket.bucketName,
-          `","S3Prefix":"${EXPORT_PREFIX}<aws.scheduler.scheduled-time>/`,
+          `","S3Prefix":"${EXPORT_PREFIX}<aws.scheduler.scheduled-time>`,
           `","ExportFormat":"${EXPORT_FORMAT}","ExportType":"${EXPORT_TYPE}",`,
-          '"ClientToken":"<aws.scheduler.execution-id>"}',
+          '"ClientToken":"<aws.scheduler.scheduled-time>"}',
         ]),
       },
     });

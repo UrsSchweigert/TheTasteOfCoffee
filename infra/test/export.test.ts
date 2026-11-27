@@ -67,10 +67,10 @@ describe.each(STAGES)('stage %s', (stage) => {
     expect(JSON.parse(text)).toEqual({
       TableArn: 'TABLE_ARN',
       S3Bucket: 'BACKUP_BUCKET',
-      S3Prefix: 'exports/<aws.scheduler.scheduled-time>/',
+      S3Prefix: 'exports/<aws.scheduler.scheduled-time>',
       ExportFormat: 'DYNAMODB_JSON',
       ExportType: 'FULL_EXPORT',
-      ClientToken: '<aws.scheduler.execution-id>',
+      ClientToken: '<aws.scheduler.scheduled-time>',
     });
     expect(tableId).toBeDefined();
     expect(backupId).toBeDefined();
@@ -91,7 +91,14 @@ describe.each(STAGES)('stage %s', (stage) => {
           Effect: 'Allow',
           Action: 'sts:AssumeRole',
           Principal: { Service: 'scheduler.amazonaws.com' },
-          Condition: { StringEquals: { 'aws:SourceAccount': { Ref: 'AWS::AccountId' } } },
+          Condition: {
+            StringEquals: {
+              'aws:SourceAccount': { Ref: 'AWS::AccountId' },
+              'aws:SourceArn': {
+                'Fn::Join': ['', ['arn:aws:scheduler:eu-central-1:', { Ref: 'AWS::AccountId' }, `:schedule/cupmark-${stage}-jobs/cupmark-${stage}-weekly-export`]],
+              },
+            },
+          },
         },
       ],
     });
