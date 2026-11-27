@@ -61,9 +61,10 @@ export class CupmarkExport extends Construct {
       roleName,
       description: `Lets the Scheduler start the weekly export of cupmark-${stage}-main`,
       assumedBy: new iam.ServicePrincipal('scheduler.amazonaws.com', {
-        // Account-only guard. Scheduler validates the role at create time without the schedule
-        // ARN in context, so an aws:SourceArn condition makes CreateSchedule fail. The role can
-        // only start this one table export; the aws:SourceAccount condition remains.
+        // Account-only guard. With aws:SourceArn set to this schedule's ARN, CreateSchedule was
+        // refused ("must allow AWS EventBridge Scheduler to assume the role", ADR 0035
+        // Addendum 3); the cause is not confirmed (the schedule-group ARN is untried). The
+        // role can only start this one table export; the aws:SourceAccount condition remains.
         conditions: {
           StringEquals: { 'aws:SourceAccount': Aws.ACCOUNT_ID },
         },
