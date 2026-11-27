@@ -402,6 +402,7 @@ describe.each(STAGES)('stage %s', (stage) => {
       [`cupmark-${stage}-api`]: ['cognito-idp:AdminDeleteUser', 'dynamodb:DeleteItem', 's3:DeleteObject', 's3:DeleteObjectVersion'],
       [`cupmark-${stage}-apple-idp`]: ['cognito-idp:DeleteIdentityProvider'],
       [`cupmark-${stage}-health`]: [],
+      [`cupmark-${stage}-export-scheduler`]: [],
     };
     for (const [, r] of resources(template, 'AWS::IAM::Role')) {
       const deletes = statementsOf(r).flatMap(actionsOf).filter((a) => /delete/i.test(a));

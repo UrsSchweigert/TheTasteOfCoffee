@@ -111,7 +111,7 @@ describe.each(STAGES)('stage %s', (stage) => {
 
   it('has roles to check', () => {
     expect(roles.map((r) => r.Properties.RoleName).sort()).toEqual(
-      [`cupmark-${stage}-api`, `cupmark-${stage}-apple-idp`, `cupmark-${stage}-health`].sort(),
+      [`cupmark-${stage}-api`, `cupmark-${stage}-apple-idp`, `cupmark-${stage}-export-scheduler`, `cupmark-${stage}-health`].sort(),
     );
   });
 
@@ -266,6 +266,18 @@ describe('the boundary stays narrow', () => {
         expect(allows(boundary, action, `${photos}/uploads/x.jpg`), `${action} ${stage} uploads`).toBe(true);
         for (const prefix of ['catalogue/', 'verified/', 'entries/', '']) {
           expect(allows(boundary, action, `${photos}/${prefix}x.jpg`), `${action} ${stage} ${prefix}`).toBe(false);
+        }
+      }
+    }
+  });
+
+  it('allows AbortMultipartUpload and PutObjectAcl only under exports/ of a Cupmark backup bucket (M3-T11)', () => {
+    for (const stage of STAGES) {
+      const backups = `arn:aws:s3:::cupmark-${stage}-backups-${FAKE_ACCOUNT}`;
+      for (const action of ['s3:AbortMultipartUpload', 's3:PutObjectAcl']) {
+        expect(allows(boundary, action, `${backups}/exports/x`), action).toBe(true);
+        for (const other of [`${backups}/x`, `${backups}/entries/x`, `arn:aws:s3:::cupmark-${stage}-photos-${FAKE_ACCOUNT}/exports/x`, `arn:aws:s3:::cupmark-${stage}-deletion-log-${FAKE_ACCOUNT}/exports/x`, 'arn:aws:s3:::derschweigert-backups-1/exports/x']) {
+          expect(allows(boundary, action, other), `${action} ${other}`).toBe(false);
         }
       }
     }

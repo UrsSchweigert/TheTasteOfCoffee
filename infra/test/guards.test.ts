@@ -82,7 +82,7 @@ describe('positive control', () => {
       inlineFunction(stack, 'Named', { functionName: 'cupmark-dev-named' });
       inlineFunction(stack, 'Unnamed');
       new sns.Topic(stack, 'Alerts');
-      new scheduler.CfnScheduleGroup(stack, 'Group', { name: 'cupmark-dev-jobs' });
+      new scheduler.CfnScheduleGroup(stack, 'Group', { name: 'cupmark-dev-probe-group' });
     }, { validateTemplates: true });
     expect(formatViolations(violations)).toBe('');
   });
